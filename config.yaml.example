@@ -1,0 +1,74 @@
+# Task Agent Configuration
+# Copy this file to config.yaml and customize for your environment.
+# Environment variables can be referenced as ${VAR_NAME}.
+
+flows:
+  task_agent:
+    enabled: true
+
+    # Profile: which backends to use for tasks, state, and notifications.
+    # Built-in: "redmine" (Redmine + Teams + MCP).
+    # For prompt-only mode (no external task tracker), use the CLI:
+    #   python -m task_agent run -p "your task here"
+    profile: redmine
+    # profile_config: {}          # profile-specific overrides
+
+    # MCP servers: enable/disable all MCP tool servers
+    mcp_enabled: true
+    mcp_servers: [redmine]
+
+    # Polling: detect [AGENT]-tagged issues in these projects
+    projects:
+      - my-project
+    detection_tag: "[AGENT]"
+    poll_interval: 120             # seconds between polls (daemon mode)
+    tick_interval: 30              # seconds between ticks
+
+    # Execution
+    task_model: opus               # model for task execution
+    task_timeout_seconds: 1800     # 30 min max per task
+    budget_per_task_usd: 10.0      # 0 = unlimited
+    max_active_sessions: 3
+
+    # Validation (separate cheap model reviews the work)
+    validation_model: opus
+    validation_budget_usd: 0.50
+    max_retries: 1                 # retry once on PARTIAL verdict
+    auto_commit: true              # commit on PASS verdict
+
+    # Supervisor mode: decompose large tasks into subtasks
+    supervisor_mode: true
+    decompose_model: ""            # empty = use task_model
+    subtask_model: ""              # empty = use task_model
+    subtask_budget_usd: 5.0
+    summarize_model: haiku
+
+    # Working directories
+    use_worktrees: true            # git worktree isolation per task
+    default_work_dir: ""           # fallback CWD for agent
+    work_dirs: {}                  # tag -> directory mapping
+    #   MYPROJECT: /path/to/project
+
+    # Prompt templates (override built-in prompts/ directory)
+    # prompts_dir: ""
+
+claude:
+  cli_type: claude                 # "claude" or "agent"
+  model: sonnet
+  timeout_seconds: 1800
+  max_concurrent: 5
+
+dashboard:
+  port: 8082
+  # admin_token: ${DASHBOARD_ADMIN_TOKEN}
+
+# Teams notifications (optional, requires profile: redmine)
+teams:
+  enabled: false
+  # webhooks:
+  #   task_agent: ${TEAMS_TASK_AGENT_WEBHOOK_URL}
+
+logging:
+  log_level: INFO
+  store_agent_traces: true
+  store_thinking: false

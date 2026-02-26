@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Environment
+.env
+.mcp.env
+
+# Runtime data
+data/logs/
+data/runs/
+data/reports/
+data/state/
+data/traces/
+data/prompt_tasks/
+data/live_state.json
+
+# Daemon
+*.pid
+
+# IDE / editor configs (local to each developer)
+.claude/
+.cursor/
+.mcp.json
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+.nfs*

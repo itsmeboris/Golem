@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Task Agent Dashboard</title>
+<link rel="stylesheet" href="/dashboard/shared.css">
+<style>
+/* ── :root overrides for task dashboard ───────────────────── */
+:root{
+  --sidebar-width:340px;
+  --metrics-min:130px;
+  --tab-pre-max-h:400px;
+  --responsive-sidebar:280px;
+}
+
+/* ── Task List ────────────────────────────────────────────── */
+.task-list{flex:1;overflow-y:auto;padding:0.5rem}
+.task-list::-webkit-scrollbar{width:4px}
+.task-list::-webkit-scrollbar-thumb{background:var(--border-active);border-radius:2px}
+
+/* ── Task Card ────────────────────────────────────────────── */
+.task-card{
+  padding:0.75rem 0.85rem;margin-bottom:0.35rem;border-radius:var(--radius);
+  cursor:pointer;transition:all 0.15s;border-left:3px solid transparent;
+  background:transparent
+}
+.task-card:hover{background:var(--bg-elevated)}
+.task-card.selected{background:var(--bg-hover);border-left-color:var(--blue)}
+.task-card .tc-top{display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem}
+.task-card .tc-id{font-size:0.8rem;font-weight:700;color:var(--text-secondary)}
+.task-card .tc-badge{
+  font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;
+  padding:0.1rem 0.4rem;border-radius:999px;margin-left:auto;white-space:nowrap
+}
+.task-card .tc-subject{font-size:0.78rem;color:var(--text-secondary);line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.task-card .tc-meta{display:flex;gap:0.75rem;margin-top:0.35rem;font-size:0.7rem;color:var(--text-muted)}
+.task-card .tc-meta span{display:flex;align-items:center;gap:0.2rem}
+
+/* ── State colors for cards ───────────────────────────────── */
+.task-card.state-completed{border-left-color:var(--green)}
+.task-card.state-completed .tc-badge{background:#064e3b;color:var(--green)}
+.task-card.state-failed{border-left-color:var(--red)}
+.task-card.state-failed .tc-badge{background:#450a0a;color:var(--red)}
+.task-card.state-running{border-left-color:var(--blue)}
+.task-card.state-running .tc-badge{background:#172554;color:var(--blue)}
+.task-card.state-validating{border-left-color:var(--purple)}
+.task-card.state-validating .tc-badge{background:#1e1b4b;color:var(--purple)}
+.task-card.state-detected{border-left-color:var(--yellow)}
+.task-card.state-detected .tc-badge{background:#422006;color:var(--yellow)}
+.task-card.state-retrying{border-left-color:var(--orange)}
+.task-card.state-retrying .tc-badge{background:#431407;color:var(--orange)}
+.task-card.selected .tc-subject,.task-card.selected .tc-id{color:var(--text-primary)}
+
+/* ── Overview Stats ───────────────────────────────────────── */
+.overview-state{padding:1.5rem 2rem 3rem;max-width:1100px}
+.overview-state h2{font-size:1.15rem;font-weight:600;margin-bottom:1rem;color:var(--text-primary)}
+.stat-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:0.6rem;margin-bottom:1.25rem}
+.stat-card{
+  background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:0.7rem 0.85rem
+}
+.stat-card .sc-label{font-size:0.65rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:0.1rem}
+.stat-card .sc-value{font-size:1.15rem;font-weight:700;color:var(--text-primary)}
+.stat-card .sc-value.green{color:var(--green)}
+.stat-card .sc-value.red{color:var(--red)}
+.stat-card .sc-value.blue{color:var(--blue)}
+
+/* ── Task Detail ──────────────────────────────────────────── */
+.task-detail{padding:1.5rem 2rem 3rem;max-width:1100px}
+
+/* Header */
+.task-header{margin-bottom:1.25rem}
+.task-header .th-top{display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;margin-bottom:0.35rem}
+.task-header .th-id{font-size:1.3rem;font-weight:800;color:var(--text-primary)}
+.task-header .th-badge{
+  font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;
+  padding:0.2rem 0.6rem;border-radius:999px
+}
+.task-header .th-mode{
+  font-size:0.65rem;padding:0.15rem 0.5rem;border-radius:var(--radius);
+  background:var(--bg-elevated);color:var(--text-secondary);border:1px solid var(--border)
+}
+.task-header .th-subject{font-size:0.95rem;color:var(--text-secondary);line-height:1.4}
+
+/* ── Phase Banner ─────────────────────────────────────────── */
+.phase-banner{
+  display:flex;align-items:center;gap:0.6rem;padding:0.55rem 0.85rem;margin-bottom:1rem;
+  border-radius:var(--radius);background:var(--bg-surface);border:1px solid var(--border);
+  font-size:0.78rem;color:var(--text-secondary)
+}
+.phase-banner .phase-icon{font-size:1rem;flex-shrink:0}
+.phase-banner .phase-label{font-weight:600;color:var(--text-primary)}
+.phase-banner .phase-detail{color:var(--text-muted);margin-left:auto;font-size:0.72rem}
+.phase-banner.active{border-color:var(--blue);background:#0c1629}
+.phase-banner.done{border-color:var(--green);opacity:0.7}
+
+/* ── Pipeline ─────────────────────────────────────────────── */
+.pipeline-section{margin-bottom:1.5rem}
+.pipeline-section h3{font-size:0.85rem;font-weight:600;color:var(--text-secondary);margin-bottom:0.75rem;text-transform:uppercase;letter-spacing:0.05em}
+.pipeline{position:relative;padding-left:0.25rem}
+
+.pipeline-node{position:relative;padding-left:2rem;padding-bottom:0}
+.pipeline-node:not(:last-child){padding-bottom:0}
+.pipeline-node:not(:last-child)::before{
+  content:'';position:absolute;left:0.55rem;top:1.5rem;bottom:0;
+  width:2px;background:var(--border-active)
+}
+.pipeline-node.completed::before{background:#065f46}
+.pipeline-node.failed::before{background:#7f1d1d}
+
+.node-dot{
+  position:absolute;left:0;top:0.45rem;width:1.25rem;height:1.25rem;
+  border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-size:0.65rem;font-weight:700;z-index:1
+}
+.node-dot.completed{background:#064e3b;color:var(--green)}
+.node-dot.failed{background:#450a0a;color:var(--red)}
+.node-dot.running{background:#172554;color:var(--blue)}
+.node-dot.pending{background:var(--bg-elevated);color:var(--text-muted)}
+.node-dot.running{animation:pulse-dot 2s infinite}
+
+.node-header{
+  display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0.5rem;
+  border-radius:var(--radius);cursor:pointer;transition:background 0.12s;min-height:2rem
+}
+.node-header:hover{background:var(--bg-elevated)}
+.node-subject{flex:1;font-size:0.82rem;color:var(--text-primary)}
+.node-meta{display:flex;align-items:center;gap:0.5rem;font-size:0.72rem;color:var(--text-muted);white-space:nowrap}
+.node-meta .nm-badge{
+  font-size:0.6rem;font-weight:700;padding:0.1rem 0.35rem;border-radius:999px;
+  text-transform:uppercase
+}
+.nm-badge.DEFERRED{background:#422006;color:var(--yellow)}
+.nm-badge.PASS{background:#064e3b;color:var(--green)}
+.nm-badge.FAIL{background:#450a0a;color:var(--red)}
+.nm-badge.PARTIAL{background:#431407;color:var(--orange)}
+.node-chevron{color:var(--text-muted);font-size:0.65rem;transition:transform 0.2s;width:1rem;text-align:center}
+.pipeline-node.expanded .node-chevron{transform:rotate(90deg)}
+
+.node-content{
+  max-height:0;overflow:hidden;transition:max-height 0.35s ease-out;
+  margin-top:0;margin-left:0.5rem;margin-bottom:0
+}
+.pipeline-node.expanded .node-content{max-height:2000px;overflow:visible;margin-top:0.35rem;margin-bottom:0.75rem}
+
+/* ── Subtask Live Feed ────────────────────────────────────── */
+.subtask-live-feed{
+  max-height:120px;overflow-y:auto;background:var(--bg-terminal,#0d1117);
+  border:1px solid var(--border);padding:0.35rem 0.5rem;border-radius:var(--radius);
+  margin:0.35rem 0 0.5rem 0.5rem;font-size:0.7rem;line-height:1.5
+}
+.subtask-live-feed .term-line{font-size:0.68rem;padding:0.05rem 0}
+
+/* ── Terminal ─────────────────────────────────────────────── */
+.terminal-section{margin-bottom:1.5rem}
+.terminal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem}
+.terminal-header h3{font-size:0.85rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em}
+.terminal-controls{display:flex;gap:0.5rem;align-items:center}
+.terminal-controls button,.terminal-controls select{
+  background:var(--bg-elevated);color:var(--text-secondary);border:1px solid var(--border);
+  padding:0.3rem 0.6rem;border-radius:var(--radius);font-size:0.72rem;cursor:pointer;
+  transition:all 0.12s
+}
+.terminal-controls button:hover{background:var(--bg-hover);color:var(--text-primary)}
+.terminal-controls button.active{background:var(--border-focus);color:#fff;border-color:var(--border-focus)}
+
+.terminal{
+  background:var(--bg-terminal);border:1px solid var(--border);border-radius:var(--radius-lg);
+  padding:0.75rem 1rem;font-family:var(--font-mono);font-size:0.78rem;line-height:1.65;
+  max-height:500px;overflow-y:auto;overflow-x:hidden
+}
+.terminal::-webkit-scrollbar{width:4px}
+.terminal::-webkit-scrollbar-thumb{background:var(--border-active);border-radius:2px}
+.terminal.inline{max-height:350px;border-radius:var(--radius);font-size:0.75rem}
+
+.term-line{display:flex;gap:0.4rem;padding:0.1rem 0;align-items:baseline}
+.term-icon{min-width:1.1rem;text-align:center;flex-shrink:0}
+.term-text{flex:1;word-break:break-word}
+.term-tool{color:var(--yellow);font-size:0.72rem;min-width:0;max-width:15rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0}
+
+.term-line.tool-call{color:var(--cyan)}
+.term-line.tool-result{color:var(--text-muted)}
+.term-line.tool-result .term-text{color:var(--green-dim);opacity:0.6;font-size:0.73rem}
+.term-line.tool-result.error{color:var(--red)}
+.term-line.tool-result.error .term-text{color:var(--red);opacity:0.9}
+.term-line.text-line{color:var(--text-primary)}
+.term-line.thinking{color:var(--text-muted);font-style:italic}
+.term-line.thinking .term-text{
+  max-height:1.65em;overflow:hidden;transition:max-height 0.25s;cursor:pointer
+}
+.term-line.thinking.expanded .term-text{max-height:none;white-space:pre-wrap}
+.term-line.error-line{color:var(--red)}
+.term-line.result-line{color:var(--green);font-weight:600;border-top:1px solid var(--border);margin-top:0.2rem;padding-top:0.3rem}
+.term-line.system-init{color:var(--blue);opacity:0.6;font-size:0.72rem}
+.term-line.supervisor-event{color:var(--blue);font-weight:600}
+.term-line.supervisor-event.error{color:var(--red)}
+
+.term-load-more{text-align:center;padding:0.5rem}
+.term-load-more button{
+  background:var(--bg-elevated);color:var(--text-secondary);border:1px solid var(--border);
+  padding:0.3rem 0.8rem;border-radius:var(--radius);font-size:0.72rem;cursor:pointer
+}
+.term-load-more button:hover{background:var(--bg-hover)}
+.terminal-loading{color:var(--text-muted);font-size:0.8rem;padding:1rem;text-align:center;font-style:italic}
+.terminal-empty{color:var(--text-muted);font-size:0.8rem;padding:1.5rem;text-align:center}
+.terminal-error{color:var(--red);font-size:0.8rem;padding:1rem;text-align:center}
+
+@keyframes slide-in{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
+.term-line.new{animation:slide-in 0.12s ease-out}
+</style>
+</head>
+<body>
+
+<button class="mobile-toggle" onclick="toggleSidebar()">&#9776;</button>
+
+<div class="layout">
+  <!-- ─── Sidebar ─── -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <h1><span class="logo">&#9881;</span> Task Agent</h1>
+      <div class="sidebar-stats" id="sidebar-stats">Loading...</div>
+    </div>
+    <div class="sidebar-filters">
+      <input type="search" id="task-search" placeholder="Filter tasks...">
+      <select id="state-filter">
+        <option value="">All</option>
+        <option value="running">Running</option>
+        <option value="completed">Completed</option>
+        <option value="failed">Failed</option>
+        <option value="validating">Validating</option>
+        <option value="detected">Detected</option>
+      </select>
+    </div>
+    <div class="task-list" id="task-list">
+      <div class="skeleton skeleton-card"></div>
+      <div class="skeleton skeleton-card"></div>
+      <div class="skeleton skeleton-card"></div>
+    </div>
+  </aside>
+
+  <!-- ─── Main ─── -->
+  <main class="main" id="main">
+    <!-- Overview state (shown when no task is selected) -->
+    <div class="overview-state" id="overview-state">
+      <div class="config-bar" id="config-bar" style="display:none"></div>
+      <div class="stat-cards" id="stat-cards"></div>
+      <div class="empty-state" id="empty-state">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <h2>Select a task</h2>
+        <p>Choose a task from the sidebar to view execution details.</p>
+      </div>
+    </div>
+
+    <!-- Task detail (hidden until selected) -->
+    <div class="task-detail hidden" id="task-detail">
+      <header class="task-header" id="task-header"></header>
+      <div class="metrics-row" id="metrics-row"></div>
+      <div id="phase-banner-container"></div>
+      <div class="pipeline-section hidden" id="pipeline-section">
+        <h3>Subtask Pipeline</h3>
+        <div class="pipeline" id="pipeline"></div>
+      </div>
+      <div class="terminal-section hidden" id="terminal-section">
+        <div class="terminal-header">
+          <h3>Output</h3>
+          <div class="terminal-controls">
+            <button id="btn-thinking" onclick="toggleThinking()">Show thinking</button>
+            <button id="btn-text" class="active" onclick="toggleText()">Hide text</button>
+          </div>
+        </div>
+        <div class="terminal" id="terminal"></div>
+      </div>
+      <div class="validation-section hidden" id="validation-section">
+        <h3>Validation</h3>
+        <div class="validation-card" id="validation-card"></div>
+      </div>
+      <div class="info-tabs" id="info-tabs">
+        <div class="tab-bar" id="tab-bar">
+          <button class="tab-btn active" data-tab="errors" onclick="activateTab('errors')">Errors</button>
+          <button class="tab-btn" data-tab="tools" onclick="activateTab('tools')">Tools</button>
+          <button class="tab-btn" data-tab="raw" onclick="activateTab('raw')">Raw Session</button>
+        </div>
+        <div id="tab-errors" class="tab-content active"></div>
+        <div id="tab-tools" class="tab-content"></div>
+        <div id="tab-raw" class="tab-content"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="/dashboard/shared.js"></script>
+<script>
+/* ── State ─────────────────────────────────────────────────── */
+let _sessions = {};
+let _selectedId = null;
+let _traceCache = {};
+let _expandedSubtasks = new Set();
+let _showThinking = false;
+let _showText = true;
+let _prevFingerprints = {};
+let _liveSnap = {};
+let _allTraceEvents = {};  /* subtaskId -> full events array (for load-more) */
+
+/* ── Sidebar rendering ─────────────────────────────────────── */
+function renderSidebar() {
+  const list = $('#task-list');
+  const search = ($('#task-search').value || '').toLowerCase();
+  const stateFilter = $('#state-filter').value;
+  const entries = Object.entries(_sessions);
+
+  if (!entries.length) {
+    list.innerHTML = '<div class="sidebar-empty">No sessions yet. Tasks will appear when [AGENT] issues are detected.</div>';
+    $('#sidebar-stats').textContent = '0 sessions';
+    return;
+  }
+
+  /* Sort: active first (by created_at asc), then terminal (by updated_at desc) */
+  const active = [];
+  const terminal = [];
+  for (const [id, s] of entries) {
+    if (['completed', 'failed'].includes(s.state)) terminal.push([id, s]);
+    else active.push([id, s]);
+  }
+  active.sort((a, b) => (a[1].created_at || '').localeCompare(b[1].created_at || ''));
+  terminal.sort((a, b) => (b[1].updated_at || '').localeCompare(a[1].updated_at || ''));
+  const sorted = [...active, ...terminal];
+
+  /* Filter */
+  const filtered = sorted.filter(([id, s]) => {
+    if (stateFilter && s.state !== stateFilter) return false;
+    if (search) {
+      const hay = `#${id} ${s.parent_subject || ''} ${s.state || ''}`.toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+
+  /* Stats */
+  const activeCount = active.length;
+  const totalCount = entries.length;
+  const liveDot = _liveSnap.active_count > 0 ? 'active' : 'idle';
+  $('#sidebar-stats').innerHTML =
+    `${activeCount} active / ${totalCount} total` +
+    `<span class="sidebar-live"><span class="live-dot ${liveDot}"></span>${_liveSnap.active_count || 0} running</span>`;
+
+  /* Render cards */
+  list.innerHTML = filtered.map(([id, s]) => {
+    const sel = id === _selectedId ? ' selected' : '';
+    const state = s.state || 'detected';
+    const subject = esc(truncText((s.parent_subject || '').replace(/^\[AGENT\]\s*/, ''), 80));
+    const cost = s.total_cost_usd ? fmtCost(s.total_cost_usd) : '';
+    const dur = s.duration_seconds ? fmtDuration(s.duration_seconds)
+      : (state === 'detected' && s.grace_deadline) ? fmtCountdown(s.grace_deadline)
+      : fmtAgo(s.created_at);
+    const verdict = s.validation_verdict || '';
+
+    return `<div class="task-card state-${state}${sel}" data-id="${id}" onclick="selectTask('${id}')">
+      <div class="tc-top">
+        <span class="tc-id">#${id}</span>
+        ${verdict ? `<span class="tc-badge" style="${verdictBadgeStyle(verdict)}">${esc(verdict)}</span>` : ''}
+        <span class="tc-badge">${esc(state)}</span>
+      </div>
+      <div class="tc-subject">${subject}</div>
+      <div class="tc-meta">
+        ${cost ? `<span>${cost}</span>` : ''}
+        ${dur ? `<span>${dur}</span>` : ''}
+        ${s.milestone_count ? `<span>${s.milestone_count} steps</span>` : ''}
+        ${s.execution_mode ? `<span>${esc(s.execution_mode)}</span>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function verdictBadgeStyle(v) {
+  if (v === 'PASS') return 'background:#064e3b;color:#4ade80';
+  if (v === 'FAIL') return 'background:#450a0a;color:#f87171';
+  if (v === 'PARTIAL') return 'background:#431407;color:#fb923c';
+  return 'background:#422006;color:#fbbf24';
+}
+
+/* ── Task selection & routing ──────────────────────────────── */
+function selectTask(id) {
+  _selectedId = id;
+  _expandedSubtasks.clear();
+  location.hash = '/task/' + id;
+
+  $$('.task-card').forEach(el => el.classList.toggle('selected', el.dataset.id === id));
+  $('#overview-state').classList.add('hidden');
+  $('#task-detail').classList.remove('hidden');
+
+  const s = _sessions[id];
+  if (s) renderTaskDetail(id, s);
+}
+
+function deselectTask() {
+  _selectedId = null;
+  _expandedSubtasks.clear();
+  history.pushState(null, '', location.pathname);
+  $('#overview-state').classList.remove('hidden');
+  $('#task-detail').classList.add('hidden');
+  $$('.task-card.selected').forEach(el => el.classList.remove('selected'));
+  renderOverview();
+}
+
+function handleHash() {
+  const hash = location.hash;
+  const m = hash.match(/^#\/task\/(\d+)/);
+  if (!m) { deselectTask(); return; }
+  const id = m[1];
+  if (_sessions[id]) selectTask(id);
+  else _selectedId = id; /* will render when data arrives */
+
+  /* Auto-expand subtask if in hash */
+  const sub = hash.match(/\/sub\/(\d+)/);
+  if (sub) _expandedSubtasks.add(parseInt(sub[1]));
+}
+
+/* ── Overview rendering ────────────────────────────────────── */
+function renderOverview() {
+  const entries = Object.entries(_sessions);
+  const statCards = $('#stat-cards');
+  const emptyState = $('#empty-state');
+
+  if (!entries.length) {
+    statCards.innerHTML = '';
+    emptyState.classList.remove('hidden');
+    return;
+  }
+
+  emptyState.classList.add('hidden');
+
+  /* Compute aggregate stats */
+  let totalTasks = entries.length;
+  let totalCost = 0;
+  let totalDuration = 0;
+  let durationCount = 0;
+  const byState = {};
+
+  for (const [id, s] of entries) {
+    const state = s.state || 'detected';
+    byState[state] = (byState[state] || 0) + 1;
+    if (s.total_cost_usd) totalCost += s.total_cost_usd;
+    if (s.duration_seconds) {
+      totalDuration += s.duration_seconds;
+      durationCount++;
+    }
+  }
+
+  const avgDuration = durationCount > 0 ? totalDuration / durationCount : 0;
+  const completed = byState['completed'] || 0;
+  const failed = byState['failed'] || 0;
+  const running = byState['running'] || 0;
+  const validating = byState['validating'] || 0;
+  const detected = byState['detected'] || 0;
+  const retrying = byState['retrying'] || 0;
+
+  statCards.innerHTML = `
+    <div class="stat-card"><div class="sc-label">Total Tasks</div><div class="sc-value">${totalTasks}</div></div>
+    <div class="stat-card"><div class="sc-label">Completed</div><div class="sc-value green">${completed}</div></div>
+    <div class="stat-card"><div class="sc-label">Failed</div><div class="sc-value ${failed ? 'red' : ''}">${failed}</div></div>
+    <div class="stat-card"><div class="sc-label">Running</div><div class="sc-value ${running ? 'blue' : ''}">${running}</div></div>
+    ${validating ? `<div class="stat-card"><div class="sc-label">Validating</div><div class="sc-value">${validating}</div></div>` : ''}
+    ${detected ? `<div class="stat-card"><div class="sc-label">Detected</div><div class="sc-value">${detected}</div></div>` : ''}
+    ${retrying ? `<div class="stat-card"><div class="sc-label">Retrying</div><div class="sc-value">${retrying}</div></div>` : ''}
+    <div class="stat-card"><div class="sc-label">Total Cost</div><div class="sc-value">${fmtCost(totalCost)}</div></div>
+    <div class="stat-card"><div class="sc-label">Avg Duration</div><div class="sc-value">${fmtDuration(avgDuration)}</div></div>`;
+}
+
+/* ── Task Detail rendering ─────────────────────────────────── */
+function renderTaskDetail(id, s) {
+  renderHeader(id, s);
+  renderMetrics(s);
+  renderPhaseBanner(s);
+  renderPipeline(id, s);
+  renderEventLog(s);
+  renderValidation(s);
+  renderInfoTabs(s);
+}
+
+function renderHeader(id, s) {
+  const state = s.state || 'detected';
+  const subject = esc(s.parent_subject || '');
+  const mode = s.execution_mode || '';
+  const sha = s.commit_sha || '';
+
+  $('#task-header').innerHTML = `
+    <button class="back-btn" onclick="deselectTask()">&larr; Dashboard</button>
+    <div class="th-top">
+      <span class="th-id">#${id}</span>
+      ${mode ? `<span class="th-mode">${esc(mode)}</span>` : ''}
+      <span class="th-badge" style="${stateBadgeStyle(state)}">${esc(state)}</span>
+      ${sha ? `<span class="th-mode" title="${esc(sha)}">&#10003; ${esc(sha.slice(0, 7))}</span>` : ''}
+    </div>
+    <div class="th-subject">${subject}</div>`;
+}
+
+function stateBadgeStyle(state) {
+  const map = {
+    completed: 'background:#064e3b;color:#4ade80',
+    failed: 'background:#450a0a;color:#f87171',
+    running: 'background:#172554;color:#60a5fa',
+    validating: 'background:#1e1b4b;color:#a78bfa',
+    detected: 'background:#422006;color:#fbbf24',
+    retrying: 'background:#431407;color:#fb923c',
+  };
+  return map[state] || 'background:#1e293b;color:#94a3b8';
+}
+
+function renderMetrics(s) {
+  const cards = [];
+  if (s.state === 'detected' && s.grace_deadline) {
+    cards.push({ label: 'Starts In', value: fmtCountdown(s.grace_deadline), cls: 'blue' });
+  }
+  cards.push(
+    { label: 'Cost', value: s.total_cost_usd ? fmtCost(s.total_cost_usd) : (s.state === 'running' ? '...' : '-'), cls: '' },
+    { label: 'Duration', value: fmtDuration(s.duration_seconds), cls: '' },
+    { label: 'Milestones', value: s.milestone_count || 0, cls: '' },
+    { label: 'Retries', value: s.retry_count || 0, cls: s.retry_count > 0 ? 'red' : '' },
+    { label: 'Subtasks', value: (s.subtask_results || []).length, cls: '' },
+  );
+  if (s.validation_cost_usd) {
+    cards.push({ label: 'Validation Cost', value: fmtCost(s.validation_cost_usd), cls: '' });
+  }
+
+  $('#metrics-row').innerHTML = cards.map(c =>
+    `<div class="metric-card">
+      <div class="mc-label">${c.label}</div>
+      <div class="mc-value ${c.cls}">${c.value}</div>
+    </div>`
+  ).join('');
+}
+
+/* ── Phase Banner ──────────────────────────────────────────── */
+function renderPhaseBanner(s) {
+  const container = $('#phase-banner-container');
+  if (s.execution_mode !== 'supervisor' || !s.state || s.state === 'detected') {
+    container.innerHTML = '';
+    return;
+  }
+
+  const phase = s.supervisor_phase || '';
+  const plan = s.subtask_plan || [];
+  const done = (s.subtask_results || []).length;
+  const total = plan.length || '?';
+  const activeId = s.active_subtask_id || 0;
+  const activeName = activeId ? (plan.find(p => p.id === activeId) || {}).subject || `#${activeId}` : '';
+
+  let icon, label, detail, cls;
+  const terminal = ['completed', 'failed'].includes(s.state);
+
+  if (terminal) {
+    icon = s.state === 'completed' ? '\u2713' : '\u2717';
+    label = s.state === 'completed' ? 'Completed' : 'Failed';
+    detail = `${done}/${total} subtasks`;
+    cls = 'done';
+  } else {
+    switch (phase) {
+      case 'decomposing':
+        icon = '\u2699'; label = 'Decomposing task into subtasks\u2026'; detail = ''; cls = 'active'; break;
+      case 'executing':
+        icon = '\u25B6'; label = `Executing subtask ${done + 1}/${total}`; detail = esc(activeName); cls = 'active'; break;
+      case 'summarizing':
+        icon = '\u270E'; label = 'Summarizing results\u2026'; detail = `${done}/${total} subtasks done`; cls = 'active'; break;
+      case 'validating':
+        icon = '\uD83D\uDD0D'; label = 'Validating changes\u2026'; detail = ''; cls = 'active'; break;
+      case 'committing':
+        icon = '\u2B06'; label = 'Committing & closing\u2026'; detail = ''; cls = 'active'; break;
+      default:
+        icon = '\u23F3'; label = 'Working\u2026'; detail = ''; cls = 'active';
+    }
+  }
+
+  container.innerHTML = `<div class="phase-banner ${cls}">
+    <span class="phase-icon">${icon}</span>
+    <span class="phase-label">${label}</span>
+    ${detail ? `<span class="phase-detail">${detail}</span>` : ''}
+  </div>`;
+}
+
+/* ── Pipeline ──────────────────────────────────────────────── */
+function _subtaskLiveEvents(s, subtaskId) {
+  /* Filter event_log entries tagged with this subtask_id. */
+  return (s.event_log || []).filter(e => e.subtask_id === subtaskId);
+}
+
+function renderPipeline(parentId, s) {
+  const section = $('#pipeline-section');
+  const plan = s.subtask_plan || [];
+  const results = s.subtask_results || [];
+
+  /* Show pipeline if we have a plan OR completed results (backward compat) */
+  if (s.execution_mode !== 'supervisor' || (!plan.length && !results.length)) {
+    section.classList.add('hidden');
+    return;
+  }
+  section.classList.remove('hidden');
+
+  /* Build a map of completed subtask results by issue_id */
+  const resultMap = {};
+  for (const r of results) resultMap[r.issue_id] = r;
+
+  const activeSubtaskId = s.active_subtask_id || 0;
+
+  /* Use plan if available, fall back to results for old sessions */
+  const entries = plan.length ? plan : results.map(r => ({id: r.issue_id, subject: r.subject}));
+
+  $('#pipeline').innerHTML = entries.map((entry, idx) => {
+    const stId = entry.id;
+    const subject = entry.subject || `Subtask #${stId}`;
+    const result = resultMap[stId];
+    const isActive = stId === activeSubtaskId;
+
+    /* Determine status: completed result, active, or pending */
+    let status, icon;
+    if (result) {
+      status = result.status || 'completed';
+      icon = status === 'completed' ? '\u2713' : status === 'failed' ? '\u2717' : '\u25CB';
+    } else if (isActive) {
+      status = 'running';
+      icon = '\u25B6';
+    } else {
+      status = 'pending';
+      icon = '\u25CB';
+    }
+
+    const expanded = _expandedSubtasks.has(stId);
+    const expandedCls = expanded ? ' expanded' : '';
+
+    /* Live events for this subtask */
+    const liveEvents = _subtaskLiveEvents(s, stId);
+
+    /* Mini feed: show last few events for completed or active subtasks */
+    let liveFeedHtml = '';
+    if (isActive) {
+      const recent = liveEvents.slice(-8);
+      liveFeedHtml = recent.length
+        ? `<div class="subtask-live-feed">${recent.map(renderTermLine).join('')}</div>`
+        : '';
+    } else if (result && liveEvents.length) {
+      const recent = liveEvents.slice(-5);
+      liveFeedHtml = `<div class="subtask-live-feed">${recent.map(renderTermLine).join('')}</div>`;
+    }
+
+    /* Meta info: show cost/duration for completed, event count for active */
+    let metaHtml = '';
+    if (result) {
+      metaHtml = `
+        ${result.verdict ? `<span class="nm-badge ${result.verdict}">${esc(result.verdict)}</span>` : ''}
+        <span>${fmtCost(result.cost_usd)}</span>
+        <span>${fmtDuration(result.duration_seconds)}</span>`;
+    } else if (isActive) {
+      metaHtml = `<span>${liveEvents.length} events</span>`;
+    }
+
+    return `<div class="pipeline-node ${status}${expandedCls}" data-sid="${stId}">
+      <div class="node-dot ${status}">${icon}</div>
+      <div class="node-header" onclick="toggleSubtask('${parentId}', ${stId})">
+        <span class="node-subject">${esc(subject)}</span>
+        <span class="node-meta">${metaHtml}</span>
+        ${result ? '<span class="node-chevron">\u25B8</span>' : ''}
+      </div>
+      ${liveFeedHtml}
+      <div class="node-content" id="subtask-content-${stId}">
+        ${expanded ? '<div class="terminal-loading">Loading trace\u2026</div>' : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  /* Load traces for expanded nodes */
+  for (const stId of _expandedSubtasks) {
+    loadSubtaskTerminal(parentId, stId);
+  }
+}
+
+async function toggleSubtask(parentId, subtaskId) {
+  if (_expandedSubtasks.has(subtaskId)) {
+    _expandedSubtasks.delete(subtaskId);
+  } else {
+    _expandedSubtasks.add(subtaskId);
+  }
+  const s = _sessions[_selectedId];
+  if (s) renderPipeline(_selectedId, s);
+  if (_expandedSubtasks.has(subtaskId)) {
+    await loadSubtaskTerminal(parentId, subtaskId);
+  }
+}
+
+async function loadSubtaskTerminal(parentId, subtaskId) {
+  const cacheKey = parentId + '-' + subtaskId;
+  const container = document.getElementById('subtask-content-' + subtaskId);
+  if (!container) return;
+
+  if (_traceCache[cacheKey]) {
+    renderTerminalInto(container, _traceCache[cacheKey].events, cacheKey);
+    return;
+  }
+
+  container.innerHTML = '<div class="terminal-loading">Loading trace\u2026</div>';
+  try {
+    const res = await fetch('/api/subtask-trace/' + parentId + '/' + subtaskId);
+    if (!res.ok) {
+      container.innerHTML = '<div class="terminal-empty">No trace available for this subtask.</div>';
+      return;
+    }
+    const data = await res.json();
+    _traceCache[cacheKey] = data;
+    _allTraceEvents[cacheKey] = data.events;
+    renderTerminalInto(container, data.events, cacheKey);
+  } catch (e) {
+    container.innerHTML = '<div class="terminal-error">Failed to load trace.</div>';
+  }
+}
+
+/* ── Terminal Renderer ─────────────────────────────────────── */
+function renderTermLine(ev) {
+  /* Determine format: event_log entry (kind) vs trace entry (type) */
+  const kind = ev.kind || ev.type || '';
+  const toolName = ev.tool_name || '';
+  const text = ev.summary || ev.text || '';
+  const isError = ev.is_error;
+
+  let icon, cls, display, toolHtml = '';
+
+  switch (kind) {
+    case 'tool_call':
+      icon = '\u2699'; cls = 'tool-call';
+      display = text || toolName;
+      break;
+    case 'tool_result':
+      icon = '\u2192'; cls = 'tool-result' + (isError ? ' error' : '');
+      display = truncText(text, 150);
+      break;
+    case 'text':
+      if (!_showText) return '';
+      icon = '\u2026'; cls = 'text-line';
+      display = truncText(text, 250);
+      break;
+    case 'thinking':
+      if (!_showThinking) return '';
+      icon = '~'; cls = 'thinking';
+      display = truncText(text, 120);
+      break;
+    case 'error':
+      icon = '\u2717'; cls = 'error-line';
+      display = truncText(text, 200);
+      break;
+    case 'result':
+      icon = '\u2501'; cls = 'result-line';
+      display = text;
+      break;
+    case 'supervisor':
+      icon = isError ? '\u2717' : '\u25C6'; cls = 'supervisor-event' + (isError ? ' error' : '');
+      display = text;
+      break;
+    case 'system_init':
+      icon = '\u25B6'; cls = 'system-init';
+      display = text;
+      break;
+    default:
+      icon = '\u00B7'; cls = '';
+      display = text || kind;
+  }
+
+  return `<div class="term-line ${cls}">` +
+    `<span class="term-icon">${icon}</span>` +
+    (toolName && kind === 'tool_call' ? '' : '') +
+    `<span class="term-text">${esc(display)}</span>` +
+    `</div>`;
+}
+
+function renderTerminalInto(container, events, cacheKey) {
+  const MAX_RENDER = 200;
+  const filtered = filterTermEvents(events);
+
+  let html = '';
+  if (filtered.length > MAX_RENDER) {
+    const older = filtered.length - MAX_RENDER;
+    const recent = filtered.slice(-MAX_RENDER);
+    html = `<div class="term-load-more"><button onclick="loadOlderEvents(this,'${cacheKey}')">Show ${older} older events</button></div>`;
+    html += recent.map(renderTermLine).join('');
+  } else {
+    html = filtered.map(renderTermLine).join('');
+  }
+
+  container.innerHTML = '<div class="terminal inline">' + html + '</div>';
+  const term = container.querySelector('.terminal');
+  if (term) term.scrollTop = term.scrollHeight;
+}
+
+function filterTermEvents(events) {
+  return events.filter(e => {
+    const kind = e.kind || e.type;
+    if (kind === 'thinking' && !_showThinking) return false;
+    if (kind === 'text' && !_showText) return false;
+    return true;
+  });
+}
+
+function loadOlderEvents(btn, cacheKey) {
+  const events = _allTraceEvents[cacheKey] || _traceCache[cacheKey]?.events || [];
+  const container = btn.closest('.node-content') || btn.closest('.terminal-section');
+  if (!container) return;
+  const filtered = filterTermEvents(events);
+  const termEl = container.querySelector('.terminal');
+  if (termEl) {
+    termEl.innerHTML = filtered.map(renderTermLine).join('');
+  }
+}
+
+/* Event log for parent session.
+   In supervisor mode, only show supervisor-level events (no subtask_id) —
+   subtask events are rendered in the pipeline section's per-subtask feeds. */
+function renderEventLog(s) {
+  const section = $('#terminal-section');
+  const allEvents = s.event_log || [];
+
+  if (!allEvents.length) {
+    section.classList.add('hidden');
+    return;
+  }
+
+  section.classList.remove('hidden');
+
+  /* Update section heading for supervisor mode */
+  const heading = section.querySelector('h3');
+  if (heading) {
+    heading.textContent = s.execution_mode === 'supervisor' ? 'Supervisor Output' : 'Output';
+  }
+
+  /* In supervisor mode, filter to supervisor-only events */
+  const events = s.execution_mode === 'supervisor'
+    ? allEvents.filter(e => !e.subtask_id)
+    : allEvents;
+
+  const terminal = $('#terminal');
+  const filtered = filterTermEvents(events);
+
+  if (!filtered.length) {
+    terminal.innerHTML = '<div class="terminal-empty">Supervisor events will appear here during decomposition and validation.</div>';
+    return;
+  }
+
+  const MAX = 200;
+  let html = '';
+  if (filtered.length > MAX) {
+    const older = filtered.length - MAX;
+    html = `<div class="term-load-more"><button onclick="loadOlderParentEvents(this)">Show ${older} older events</button></div>`;
+    html += filtered.slice(-MAX).map(renderTermLine).join('');
+  } else {
+    html = filtered.map(renderTermLine).join('');
+  }
+  terminal.innerHTML = html;
+  terminal.scrollTop = terminal.scrollHeight;
+}
+
+function loadOlderParentEvents(btn) {
+  const s = _sessions[_selectedId];
+  if (!s) return;
+  const allEvents = s.event_log || [];
+  /* Respect supervisor filter */
+  const events = s.execution_mode === 'supervisor'
+    ? allEvents.filter(e => !e.subtask_id)
+    : allEvents;
+  const filtered = filterTermEvents(events);
+  const terminal = $('#terminal');
+  terminal.innerHTML = filtered.map(renderTermLine).join('');
+}
+
+function toggleThinking() {
+  _showThinking = !_showThinking;
+  const btn = $('#btn-thinking');
+  btn.textContent = _showThinking ? 'Hide thinking' : 'Show thinking';
+  btn.classList.toggle('active', _showThinking);
+  /* Re-render current view */
+  if (_selectedId && _sessions[_selectedId]) {
+    renderEventLog(_sessions[_selectedId]);
+    renderPipeline(_selectedId, _sessions[_selectedId]);
+  }
+}
+
+function toggleText() {
+  _showText = !_showText;
+  const btn = $('#btn-text');
+  btn.textContent = _showText ? 'Hide text' : 'Show text';
+  btn.classList.toggle('active', _showText);
+  /* Re-render current view */
+  if (_selectedId && _sessions[_selectedId]) {
+    renderEventLog(_sessions[_selectedId]);
+    renderPipeline(_selectedId, _sessions[_selectedId]);
+  }
+}
+
+/* ── Validation ────────────────────────────────────────────── */
+function renderValidation(s) {
+  const section = $('#validation-section');
+  if (!s.validation_verdict) {
+    section.classList.add('hidden');
+    return;
+  }
+  section.classList.remove('hidden');
+
+  const concerns = (s.validation_concerns || []);
+  const confidence = s.validation_confidence != null ? (s.validation_confidence * 100).toFixed(0) + '%' : '';
+
+  $('#validation-card').innerHTML = `
+    <div class="vc-top">
+      <span class="vc-verdict ${s.validation_verdict}">${esc(s.validation_verdict)}</span>
+      ${confidence ? `<span class="vc-confidence">${confidence} confidence</span>` : ''}
+    </div>
+    ${s.validation_summary ? `<div class="vc-summary">${esc(s.validation_summary)}</div>` : ''}
+    ${concerns.length ? `<ul class="vc-concerns">${concerns.map(c => `<li>${esc(c)}</li>`).join('')}</ul>` : ''}`;
+}
+
+/* ── Info Tabs ─────────────────────────────────────────────── */
+function activateTab(name) {
+  $$('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  $$('.tab-content').forEach(c => c.classList.toggle('active', c.id === 'tab-' + name));
+}
+
+function renderInfoTabs(s) {
+  /* Errors */
+  const errors = s.errors || [];
+  $('#tab-errors').innerHTML = errors.length
+    ? errors.map(e => `<div class="error-item">${esc(e)}</div>`).join('')
+    : '<div class="terminal-empty">No errors recorded.</div>';
+
+  /* Tools */
+  const tools = s.tools_called || [];
+  const mcpTools = s.mcp_tools_called || [];
+  let toolsHtml = '';
+  if (tools.length || mcpTools.length) {
+    toolsHtml = '<div style="margin-bottom:0.5rem">';
+    toolsHtml += tools.map(t => `<span class="tool-chip">${esc(t)}</span>`).join('');
+    toolsHtml += mcpTools.map(t => `<span class="tool-chip mcp">${esc(t)}</span>`).join('');
+    toolsHtml += '</div>';
+  } else {
+    toolsHtml = '<div class="terminal-empty">No tools recorded.</div>';
+  }
+  $('#tab-tools').innerHTML = toolsHtml;
+
+  /* Raw */
+  $('#tab-raw').innerHTML = `<pre>${esc(JSON.stringify(s, null, 2))}</pre>`;
+}
+
+/* ── Config Bar ────────────────────────────────────────────── */
+async function loadConfig() {
+  try {
+    const res = await fetch('/api/config');
+    const cfg = await res.json();
+    const el = $('#config-bar');
+    if (!cfg || !Object.keys(cfg).length) { el.style.display = 'none'; return; }
+    el.style.display = '';
+    let html = '';
+    if (cfg.model) html += `<span><span class="cfg-label">Model</span><span class="cfg-val">${esc(cfg.model)}</span></span>`;
+    if (cfg.max_concurrent) html += `<span><span class="cfg-label">Concurrency</span><span class="cfg-val">${cfg.max_concurrent}</span></span>`;
+    if (cfg.budget) html += `<span><span class="cfg-label">Budget</span><span class="cfg-val">$${cfg.budget}</span></span>`;
+    if (cfg.flows) {
+      html += '<span><span class="cfg-label">Flows</span>';
+      for (const [name, on] of Object.entries(cfg.flows)) {
+        html += `<span class="cfg-chip ${on ? 'on' : 'off'}">${esc(name)}</span>`;
+      }
+      html += '</span>';
+    }
+    el.innerHTML = html;
+  } catch (e) { $('#config-bar').style.display = 'none'; }
+}
+
+/* ── Data Fetching ─────────────────────────────────────────── */
+async function fetchSessions() {
+  try {
+    const res = await fetch('/api/sessions');
+    const data = await res.json();
+    _sessions = data.sessions || {};
+    renderSidebar();
+
+    /* Update overview if no task is selected */
+    if (!_selectedId) {
+      renderOverview();
+    }
+
+    /* Update selected task if its data changed */
+    if (_selectedId && _sessions[_selectedId]) {
+      const s = _sessions[_selectedId];
+      const fp = s.state + '|' + (s.milestone_count || 0) + '|' + (s.total_cost_usd || 0) + '|' +
+        ((s.event_log || []).length) + '|' + (s.validation_verdict || '') + '|' +
+        ((s.subtask_results || []).length);
+      /* Always re-render detected sessions so the grace countdown updates */
+      if (s.state === 'detected' || _prevFingerprints[_selectedId] !== fp) {
+        _prevFingerprints[_selectedId] = fp;
+        renderTaskDetail(_selectedId, s);
+      }
+    }
+
+    /* If we were waiting for data for a hash-selected task */
+    if (_selectedId && !$('#task-detail').classList.contains('hidden') && _sessions[_selectedId]) {
+      /* Already rendered above */
+    } else if (_selectedId && _sessions[_selectedId]) {
+      selectTask(_selectedId);
+    }
+  } catch (e) {
+    console.error('Failed to fetch sessions:', e);
+  }
+}
+
+async function fetchLive() {
+  try {
+    const res = await fetch('/api/live');
+    _liveSnap = await res.json();
+  } catch (e) { /* ignore */ }
+}
+
+/* ── Initialization ────────────────────────────────────────── */
+$('#task-search').addEventListener('input', renderSidebar);
+$('#state-filter').addEventListener('change', renderSidebar);
+window.addEventListener('hashchange', handleHash);
+
+async function init() {
+  await Promise.all([loadConfig(), fetchSessions(), fetchLive()]);
+  if (location.hash) handleHash();
+  else renderOverview();
+
+  /* Polling */
+  setInterval(fetchSessions, 3000);
+  setInterval(fetchLive, 3000);
+}
+
+init();
+</script>
+</body>
+</html>

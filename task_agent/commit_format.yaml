@@ -1,0 +1,25 @@
+# Commit message tag definitions.
+# The agent uses these when auto-committing work.
+# Customize for your project.
+
+main_tags:
+  - FEATURE
+  - BUG
+  - FIX
+  - REFACTOR
+  - DOCS
+  - TEST
+  - BUILD
+  - CI
+  - PERF
+  - STYLE
+  - CHORE
+
+sub_tags:
+  areas:
+    - CORE
+    - INFRA
+    - CONFIG
+    - UTILS
+    - TESTS
+    - DOCS

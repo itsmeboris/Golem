@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent Automation — Admin</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,sans-serif;background:#0f172a;color:#e2e8f0;line-height:1.6}
+.container{max-width:900px;margin:0 auto;padding:1.5rem}
+h1{font-size:1.6rem;font-weight:600;margin-bottom:1rem;color:#f8fafc}
+h2{font-size:1.15rem;font-weight:600;margin-bottom:.75rem;color:#f8fafc}
+a{color:#60a5fa;text-decoration:none}
+a:hover{text-decoration:underline}
+.muted{color:#64748b}
+.back-link{margin-bottom:1.5rem;display:inline-block;font-size:.85rem}
+
+/* --- Login form --- */
+.login-panel{background:#1e293b;border-radius:.75rem;padding:2rem;border:1px solid #334155;max-width:400px;margin:3rem auto}
+.login-panel h2{text-align:center;margin-bottom:1rem}
+.login-panel p{text-align:center;color:#94a3b8;font-size:.85rem;margin-bottom:1.5rem}
+.login-row{display:flex;gap:.5rem}
+.login-input{flex:1;background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:.5rem .75rem;border-radius:.375rem;font-size:.85rem}
+.login-input:focus{outline:none;border-color:#3b82f6}
+.login-btn{background:#3b82f6;color:#fff;border:none;padding:.5rem 1.25rem;border-radius:.375rem;font-size:.85rem;cursor:pointer;font-weight:600}
+.login-btn:hover{background:#2563eb}
+.login-error{color:#f87171;font-size:.8rem;margin-top:.5rem;text-align:center;display:none}
+
+/* --- Flow control panel --- */
+.section{margin-bottom:1.5rem}
+.panel{background:#1e293b;border-radius:.75rem;padding:1.25rem;border:1px solid #334155;margin-bottom:1.5rem}
+.panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem}
+.flow-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:.75rem}
+.fc-card{background:#0f172a;border-radius:.75rem;padding:1rem 1.25rem;border:1px solid #334155;display:flex;align-items:center;justify-content:space-between;gap:.75rem}
+.fc-info{display:flex;align-items:center;gap:.5rem;min-width:0}
+.fc-name{font-weight:600;font-size:.95rem;color:#cbd5e1;text-transform:capitalize;white-space:nowrap}
+.fc-state{font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;padding:.15rem .5rem;border-radius:999px;font-weight:600;white-space:nowrap}
+.fc-state.running{background:#064e3b;color:#4ade80}
+.fc-state.stopped{background:#450a0a;color:#f87171}
+.fc-state.disabled{background:#1e293b;color:#64748b}
+.fc-state.available{background:#422006;color:#fbbf24}
+.fc-actions{display:flex;gap:.4rem;flex-shrink:0}
+.fc-btn{padding:.35rem .75rem;border-radius:.375rem;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #334155;transition:background .15s}
+.fc-btn.start{background:#064e3b;color:#4ade80;border-color:#065f46}
+.fc-btn.start:hover{background:#065f46}
+.fc-btn.stop{background:#450a0a;color:#f87171;border-color:#7f1d1d}
+.fc-btn.stop:hover{background:#7f1d1d}
+.fc-btn.restart{background:#172554;color:#60a5fa;border-color:#1e3a8a}
+.fc-btn.restart:hover{background:#1e3a8a}
+.fc-btn:disabled{opacity:.4;cursor:not-allowed}
+.status-msg{font-size:.8rem;color:#94a3b8}
+.logout-btn{background:none;border:1px solid #334155;color:#94a3b8;padding:.3rem .75rem;border-radius:.375rem;font-size:.75rem;cursor:pointer}
+.logout-btn:hover{background:#1e293b;color:#e2e8f0}
+</style>
+</head>
+<body>
+<div class="container">
+<a href="/dashboard" class="back-link">&larr; Back to dashboard</a>
+<h1>Admin Panel</h1>
+
+<!-- Login -->
+<div id="login-view" class="login-panel">
+  <h2>Authentication Required</h2>
+  <p>Enter the admin token to manage flows.</p>
+  <div class="login-row">
+    <input type="password" id="token-input" class="login-input" placeholder="Admin token" autocomplete="off">
+    <button class="login-btn" onclick="doLogin()">Login</button>
+  </div>
+  <div id="login-error" class="login-error">Invalid token</div>
+</div>
+
+<!-- Admin content (hidden until auth) -->
+<div id="admin-view" style="display:none">
+  <div class="panel">
+    <div class="panel-header">
+      <h2 style="margin:0">Flow Control</h2>
+      <div style="display:flex;align-items:center;gap:.75rem">
+        <span class="status-msg" id="fc-status-msg"></span>
+        <button class="logout-btn" onclick="doLogout()">Logout</button>
+      </div>
+    </div>
+    <div id="fc-flows" class="flow-grid"></div>
+  </div>
+</div>
+
+</div>
+<script>
+const $=s=>document.querySelector(s);
+let _token='';
+
+function getToken(){return sessionStorage.getItem('admin_token')||''}
+function setToken(t){sessionStorage.setItem('admin_token',t);_token=t}
+function clearToken(){sessionStorage.removeItem('admin_token');_token=''}
+
+function authHeaders(){return {'Content-Type':'application/json','Authorization':'Bearer '+_token}}
+
+async function doLogin(){
+  const input=$('#token-input');
+  const tok=input.value.trim();
+  if(!tok)return;
+  /* Verify the token by making a test request */
+  try{
+    const res=await fetch('/api/flow/status');
+    if(!res.ok){$('#login-error').style.display='block';$('#login-error').textContent='Dashboard not connected';return}
+    /* Try a start with a dummy flow to check auth — use stop with empty flows instead */
+    const authRes=await fetch('/api/flow/stop',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({flows:[]})});
+    if(authRes.status===401){$('#login-error').style.display='block';$('#login-error').textContent='Invalid token';return}
+    if(authRes.status===403){$('#login-error').style.display='block';$('#login-error').textContent='Admin features not configured on server';return}
+  }catch(e){$('#login-error').style.display='block';$('#login-error').textContent='Connection failed';return}
+  setToken(tok);
+  showAdmin();
+}
+
+function doLogout(){
+  clearToken();
+  showLogin();
+}
+
+function showLogin(){
+  $('#login-view').style.display='';
+  $('#admin-view').style.display='none';
+  $('#login-error').style.display='none';
+  $('#token-input').value='';
+}
+
+function showAdmin(){
+  $('#login-view').style.display='none';
+  $('#admin-view').style.display='';
+  refreshFlowControl();
+}
+
+/* --- Flow control --- */
+async function refreshFlowControl(){
+  try{
+    const res=await fetch('/api/flow/status');
+    if(!res.ok){$('#fc-flows').innerHTML='<div class="muted">Dashboard not connected to daemon</div>';return}
+    const data=await res.json();
+    const flows=data.flows||{};
+    const el=$('#fc-flows');
+    const entries=Object.entries(flows);
+    if(!entries.length){el.innerHTML='<div class="muted">No flows configured</div>';return}
+    el.innerHTML=entries.map(([name,state])=>{
+      const isRunning=state==='running';
+      return `<div class="fc-card">
+        <div class="fc-info">
+          <span class="fc-name">${esc(name.replace('_',' '))}</span>
+          <span class="fc-state ${esc(state)}">${esc(state)}</span>
+        </div>
+        <div class="fc-actions">
+          <button class="fc-btn start" onclick="fcAction('start','${esc(name)}')" ${isRunning?'disabled':''}>Start</button>
+          <button class="fc-btn stop" onclick="fcAction('stop','${esc(name)}')" ${!isRunning?'disabled':''}>Stop</button>
+          <button class="fc-btn restart" onclick="fcRestart('${esc(name)}')">Restart</button>
+        </div>
+      </div>`;
+    }).join('');
+  }catch(e){$('#fc-flows').innerHTML='<div class="muted">Error loading flow status</div>'}
+}
+
+async function fcAction(action,name){
+  const msg=$('#fc-status-msg');
+  msg.textContent=action==='start'?'Starting '+name+'...':'Stopping '+name+'...';
+  try{
+    const res=await fetch('/api/flow/'+action,{method:'POST',headers:authHeaders(),body:JSON.stringify({flows:[name]})});
+    if(res.status===401){msg.textContent='Session expired — please re-login';doLogout();return}
+    const data=await res.json();
+    const result=(data.results||{})[name]||'unknown';
+    msg.textContent=name+': '+result;
+    setTimeout(refreshFlowControl,500);
+  }catch(e){msg.textContent='Error: '+e.message}
+}
+
+async function fcRestart(name){
+  const msg=$('#fc-status-msg');
+  msg.textContent='Restarting '+name+'...';
+  try{
+    await fetch('/api/flow/stop',{method:'POST',headers:authHeaders(),body:JSON.stringify({flows:[name]})});
+    await new Promise(r=>setTimeout(r,300));
+    const res=await fetch('/api/flow/start',{method:'POST',headers:authHeaders(),body:JSON.stringify({flows:[name]})});
+    if(res.status===401){msg.textContent='Session expired';doLogout();return}
+    const data=await res.json();
+    const result=(data.results||{})[name]||'unknown';
+    msg.textContent=name+': restarted ('+result+')';
+    setTimeout(refreshFlowControl,500);
+  }catch(e){msg.textContent='Error: '+e.message}
+}
+
+function esc(s){if(!s)return '';const d=document.createElement('div');d.textContent=String(s);return d.innerHTML}
+
+/* --- Enter key on token input --- */
+$('#token-input').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
+
+/* --- Init --- */
+_token=getToken();
+if(_token){showAdmin()}else{showLogin()}
+setInterval(()=>{if(_token)refreshFlowControl()},5000);
+</script>
+</body>
+</html>
