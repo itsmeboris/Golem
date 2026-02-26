@@ -1,0 +1,47 @@
+#!/bin/bash
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+failed=0
+
+printf "${BOLD}=== pre-push: black ===${NC}\n"
+if ! python -m black --check task_agent/ --quiet 2>/dev/null; then
+    printf "${RED}black: formatting issues found. Run 'python -m black task_agent/' to fix.${NC}\n"
+    failed=1
+else
+    printf "${GREEN}black: ok${NC}\n"
+fi
+
+printf "${BOLD}=== pre-push: pylint ===${NC}\n"
+if ! python -m pylint --errors-only task_agent/ 2>/dev/null; then
+    printf "${RED}pylint: errors found${NC}\n"
+    failed=1
+else
+    printf "${GREEN}pylint: ok${NC}\n"
+fi
+
+printf "${BOLD}=== pre-push: pytest ===${NC}\n"
+if [[ "${AGENT_WORKTREE:-}" == "1" ]]; then
+    printf "${YELLOW}pytest: skipped (agent worktree — validated by supervisor)${NC}\n"
+elif ! python -m pytest task_agent/tests/ -m "" -x -q --tb=line 2>/dev/null; then
+    printf "${RED}pytest: test failures${NC}\n"
+    failed=1
+else
+    printf "${GREEN}pytest: ok${NC}\n"
+fi
+
+if [[ $failed -ne 0 ]]; then
+    printf "\n${RED}${BOLD}Pre-push checks failed. Push aborted.${NC}\n"
+    printf "Use ${YELLOW}git push --no-verify${NC} to bypass (not recommended).\n"
+    exit 1
+fi
+
+printf "\n${GREEN}${BOLD}All pre-push checks passed.${NC}\n"
