@@ -1,20 +1,17 @@
 #!/usr/bin/env python3
-"""CLI entry point for the Task Agent system.
-
-Sets DATA_DIR to ``data/agent/`` so that logs, traces, reports, and state are
-isolated from the regular flows system.
+"""CLI entry point for Golem.
 
 Subcommands:
-    python main_agent.py run -p "fix the bug"      # run from inline prompt (simplest)
-    python main_agent.py run -p "refactor" --bg    # prompt in background
-    python main_agent.py run 4895049               # execute a Redmine task
-    python main_agent.py run 4895049 --dry         # preview without executing
-    python main_agent.py poll                      # scan for [AGENT] issues
-    python main_agent.py poll --run                # scan + execute all found
-    python main_agent.py daemon --foreground       # tick-loop daemon
-    python main_agent.py stop                      # stop daemon
-    python main_agent.py status                    # show run stats
-    python main_agent.py dashboard                 # standalone dashboard
+    golem run -p "fix the bug"          # run from inline prompt (simplest)
+    golem run -p "refactor" --bg        # prompt in background
+    golem run 4895049                   # execute a task by tracker ID
+    golem run 4895049 --dry             # preview without executing
+    golem poll                          # scan for [AGENT] issues
+    golem poll --run                    # scan + execute all found
+    golem daemon --foreground           # tick-loop daemon
+    golem stop                          # stop daemon
+    golem status                        # show run stats
+    golem dashboard                     # standalone dashboard
 """
 
 import argparse
@@ -54,7 +51,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 
-logger = logging.getLogger("Tools.AgentAutomation.Agent")
+logger = logging.getLogger("golem.cli")
 
 DEFAULT_DAEMON_LOG_DIR = DATA_DIR / "logs"
 DEFAULT_PID_FILE = DATA_DIR / "daemon.pid"
@@ -749,14 +746,14 @@ def main() -> int:
     """CLI entry point for the task-agent system."""
     parser = argparse.ArgumentParser(
         description="Task Agent System",
-        prog="agent-automation-agent",
+        prog="golem",
     )
     parser.add_argument(
         "-c",
         "--config",
         type=Path,
-        default="config_agent.yaml",
-        help="Path to configuration file (default: config_agent.yaml)",
+        default="config.yaml",
+        help="Path to configuration file (default: config.yaml)",
     )
     parser.add_argument(
         "-v", "--verbose", action="store_true", help="Enable verbose logging"

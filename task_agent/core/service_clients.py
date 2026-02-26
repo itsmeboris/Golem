@@ -12,7 +12,7 @@ import requests
 
 from .defaults import REDMINE_URL
 
-logger = logging.getLogger("Tools.AgentAutomation.ServiceClients")
+logger = logging.getLogger("golem.core.service_clients")
 
 # Transient HTTP status codes that warrant a retry.
 _RETRYABLE_STATUS_CODES = {429, 502, 503, 504}

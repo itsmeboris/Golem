@@ -16,7 +16,7 @@ from .triggers.base import TriggerEvent
 
 _FC = TypeVar("_FC", bound=FlowConfig)
 
-logger = logging.getLogger("Tools.AgentAutomation.Flows")
+logger = logging.getLogger("golem.core.flow_base")
 
 TRACES_DIR = DATA_DIR / "traces"
 
@@ -83,7 +83,7 @@ class WebhookableFlow(ABC):
 class BaseFlow(ABC):
     """Minimal contract for all flows: a name and a handle method."""
 
-    logger = logging.getLogger("Tools.AgentAutomation.Flows")
+    logger = logging.getLogger("golem.core.flow_base")
 
     def __init__(
         self,

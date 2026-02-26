@@ -14,7 +14,7 @@ import logging
 import re
 from pathlib import Path
 
-logger = logging.getLogger("Tools.AgentAutomation.Flows.TaskAgent.WorkDir")
+logger = logging.getLogger("golem.workdir")
 
 # Match `work_dir: /some/path` on its own line in the description.
 _WORKDIR_DIRECTIVE_RE = re.compile(r"(?:^|\n)\s*work_dir:\s*(\S+)", re.IGNORECASE)

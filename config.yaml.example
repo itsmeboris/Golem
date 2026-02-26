@@ -1,4 +1,4 @@
-# Task Agent Configuration
+# Golem Configuration
 # Copy this file to config.yaml and customize for your environment.
 # Environment variables can be referenced as ${VAR_NAME}.
 
@@ -7,15 +7,14 @@ flows:
     enabled: true
 
     # Profile: which backends to use for tasks, state, and notifications.
-    # Built-in: "redmine" (Redmine + Teams + MCP).
-    # For prompt-only mode (no external task tracker), use the CLI:
-    #   python -m task_agent run -p "your task here"
-    profile: redmine
+    # Built-in profiles: "local" (log to stdout), "redmine" (Redmine + Teams + MCP).
+    # For prompt-only mode, just use: golem run -p "your task here"
+    profile: local
     # profile_config: {}          # profile-specific overrides
 
     # MCP servers: enable/disable all MCP tool servers
-    mcp_enabled: true
-    mcp_servers: [redmine]
+    mcp_enabled: false
+    mcp_servers: []
 
     # Polling: detect [AGENT]-tagged issues in these projects
     projects:

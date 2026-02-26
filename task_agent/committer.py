@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 from .core.commit_format import load_commit_format
 
-logger = logging.getLogger("Tools.AgentAutomation.Flows.TaskAgent.Committer")
+logger = logging.getLogger("golem.committer")
 
 
 @dataclass

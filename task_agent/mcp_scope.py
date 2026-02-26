@@ -13,7 +13,7 @@ Customize ``_KEYWORD_SERVERS`` and ``_BASE_SERVERS`` for your environment.
 
 import logging
 
-logger = logging.getLogger("Tools.AgentAutomation.Flows.TaskAgent.MCPScope")
+logger = logging.getLogger("golem.mcp_scope")
 
 # Keyword → additional MCP servers to include.
 # Customize this mapping for the MCP servers available in your deployment.
@@ -31,8 +31,7 @@ _KEYWORD_SERVERS: dict[str, list[str]] = {
     "ticket": ["redmine"],
 }
 
-# Always included (empty list if no base servers needed)
-_BASE_SERVERS: list[str] = ["redmine"]
+_BASE_SERVERS: list[str] = []
 
 
 def determine_mcp_scope(subtask_subject: str) -> list[str]:

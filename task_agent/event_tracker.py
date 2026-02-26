@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 
 from .core.run_log import format_duration
 
-logger = logging.getLogger("Tools.AgentAutomation.Flows.TaskAgent.EventTracker")
+logger = logging.getLogger("golem.event_tracker")
 
 
 @dataclass

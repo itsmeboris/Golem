@@ -5,7 +5,7 @@ import logging
 import re
 from typing import Any
 
-logger = logging.getLogger("Tools.AgentAutomation.JsonExtract")
+logger = logging.getLogger("golem.core.json_extract")
 
 
 def extract_json(text: str, require_key: str | None = None) -> dict[str, Any] | None:

@@ -3,12 +3,27 @@ requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "task-agent"
+name = "golem-agent"
 version = "0.1.0"
-description = "Pluggable AI task agent — executes tasks via Claude CLI with profile-based backends"
+description = "An autonomous AI task agent — picks up work, executes it, validates the results, and reports back."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
+keywords = ["ai", "agent", "automation", "claude", "llm", "task-execution"]
+authors = [
+    { name = "Boris Sobol" },
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development :: Quality Assurance",
+]
 dependencies = [
     "requests>=2.28",
     "pyyaml>=6.0",
@@ -16,15 +31,24 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-redmine = []          # Redmine backend (uses requests, included in base)
-teams = []            # Teams notifications (uses requests, included in base)
 dashboard = [
     "fastapi>=0.100",
     "uvicorn>=0.20",
 ]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "black>=23.0",
+    "pylint>=3.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/itsmeboris/golem"
+Repository = "https://github.com/itsmeboris/golem"
+Issues = "https://github.com/itsmeboris/golem/issues"
 
 [project.scripts]
-task-agent = "task_agent.cli:main"
+golem = "task_agent.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["task_agent*"]

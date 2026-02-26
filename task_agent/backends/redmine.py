@@ -14,14 +14,25 @@ from ..core.service_clients import _request_with_retry, get_redmine_headers
 
 from ..interfaces import TaskStatus
 
-logger = logging.getLogger("Tools.AgentAutomation.Backends.Redmine")
+logger = logging.getLogger("golem.backends.redmine")
 
-# Redmine status IDs (standard across our projects).
-_STATUS_MAP: dict[str, int] = {
+_DEFAULT_STATUS_MAP: dict[str, int] = {
     TaskStatus.IN_PROGRESS: 2,
-    TaskStatus.FIXED: 16,
+    TaskStatus.FIXED: 3,
     TaskStatus.CLOSED: 5,
 }
+
+_status_map: dict[str, int] = dict(_DEFAULT_STATUS_MAP)
+
+
+def configure_status_ids(mapping: dict[str, int]) -> None:
+    """Override Redmine status IDs for non-standard instances.
+
+    Example::
+
+        configure_status_ids({TaskStatus.FIXED: 16})
+    """
+    _status_map.update(mapping)
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +133,7 @@ class RedmineStateBackend:
 
     def update_status(self, task_id: int | str, status: str) -> bool:
         """Map canonical status to Redmine status ID and update."""
-        redmine_status = _STATUS_MAP.get(status)
+        redmine_status = _status_map.get(status)
         if redmine_status is None:
             logger.warning("Unknown canonical status %r for task #%s", status, task_id)
             return False

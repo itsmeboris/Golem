@@ -22,7 +22,7 @@ import os
 import subprocess
 from pathlib import Path
 
-logger = logging.getLogger("Tools.AgentAutomation.Agents.TaskAgent.WorktreeManager")
+logger = logging.getLogger("golem.worktree_manager")
 
 # Worktrees live under data/agent/worktrees/<issue_id>/
 _WORKTREE_SUBDIR = "worktrees"

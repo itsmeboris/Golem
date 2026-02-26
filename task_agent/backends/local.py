@@ -12,7 +12,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger("Tools.AgentAutomation.Backends.Local")
+logger = logging.getLogger("golem.backends.local")
 
 
 # ---------------------------------------------------------------------------

@@ -641,30 +641,26 @@ class TestGetIssueSubject:
 
 
 class TestMCPScope:
-    def test_base_always_includes_redmine(self):
+    def test_no_base_servers_by_default(self):
         result = determine_mcp_scope("Some generic task")
-        assert "redmine" in result
+        assert result == []
 
     def test_jenkins_keywords(self):
         result = determine_mcp_scope("Investigate Jenkins CI failure")
         assert "jenkins" in result
-        assert "redmine" in result
 
     def test_gerrit_keywords(self):
         result = determine_mcp_scope("Review the gerrit change")
         assert "gerrit" in result
-        assert "redmine" in result
 
     def test_confluence_keywords(self):
         result = determine_mcp_scope("Update the wiki documentation")
         assert "confluence" in result
-        assert "redmine" in result
 
     def test_multiple_keywords(self):
         result = determine_mcp_scope("Jenkins build review on gerrit")
         assert "jenkins" in result
         assert "gerrit" in result
-        assert "redmine" in result
 
 
 # -- Notifications (card builders) ------------------------------------------
@@ -804,7 +800,7 @@ class TestTaskAgentFlow:
 
     def test_mcp_servers(self, monkeypatch, tmp_path):
         flow = self._make_flow(monkeypatch, tmp_path)
-        assert "redmine" in flow.mcp_servers
+        assert flow.mcp_servers == []
 
     @pytest.mark.asyncio
     async def test_handle_creates_session(self, monkeypatch, tmp_path):

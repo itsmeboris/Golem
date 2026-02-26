@@ -328,7 +328,6 @@ class TestKeywordToolProvider:
         tp = KeywordToolProvider()
         servers = tp.servers_for_subject("Investigate Jenkins failure")
         assert "jenkins" in servers
-        assert "redmine" in servers
 
     def test_custom_base_and_keywords(self):
         from task_agent.backends.mcp_tools import KeywordToolProvider
@@ -488,10 +487,10 @@ class TestFlowWithProfile:
         assert flow._profile is not None
         assert flow._profile.name == "test"
 
-    def test_flow_mcp_servers_redmine(self, monkeypatch, tmp_path):
+    def test_flow_mcp_servers_default_empty(self, monkeypatch, tmp_path):
         flow = self._make_flow(monkeypatch, tmp_path)
         servers = flow.mcp_servers
-        assert "redmine" in servers
+        assert servers == []
 
     def test_flow_mcp_servers_null_provider(self, monkeypatch, tmp_path):
         profile = _make_test_profile()
@@ -684,7 +683,6 @@ class TestOrchestratorProfileHelpers:
         orch = self._make_orchestrator(profile=profile)
         servers = orch._get_mcp_servers("[AGENT] Investigate Jenkins failure")
         assert "jenkins" in servers
-        assert "redmine" in servers
 
     def test_no_profile_raises_on_update_task(self):
         """When no profile is set, _update_task raises AttributeError."""
@@ -985,9 +983,9 @@ class TestRedmineBackendMocked:
         assert desc == "Full task description from Redmine"
 
     def test_redmine_status_mapping(self):
-        from task_agent.backends.redmine import _STATUS_MAP
+        from task_agent.backends.redmine import _status_map
         from task_agent.interfaces import TaskStatus
 
-        assert _STATUS_MAP[TaskStatus.IN_PROGRESS] == 2
-        assert _STATUS_MAP[TaskStatus.FIXED] == 16
-        assert _STATUS_MAP[TaskStatus.CLOSED] == 5
+        assert _status_map[TaskStatus.IN_PROGRESS] == 2
+        assert _status_map[TaskStatus.FIXED] == 3
+        assert _status_map[TaskStatus.CLOSED] == 5

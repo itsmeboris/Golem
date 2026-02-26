@@ -12,7 +12,7 @@ from typing import Any
 
 from .config import DATA_DIR
 
-logger: logging.Logger = logging.getLogger("Tools.AgentAutomation.RunLog")
+logger: logging.Logger = logging.getLogger("golem.core.run_log")
 
 DEFAULT_RUN_LOG: Path = DATA_DIR / "runs" / "runs.jsonl"
 

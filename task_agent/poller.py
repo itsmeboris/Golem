@@ -20,7 +20,7 @@ import requests
 from .core.defaults import HTTP_TIMEOUT
 from .core.service_clients import get_redmine_headers, get_redmine_url
 
-logger = logging.getLogger("Tools.AgentAutomation.Flows.TaskAgent.Poller")
+logger = logging.getLogger("golem.poller")
 
 
 def is_agent_task(subject: str, detection_tag: str = "[AGENT]") -> bool:

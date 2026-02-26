@@ -13,11 +13,11 @@ from dotenv import load_dotenv
 
 from .cli_wrapper import CLIType
 
-logger: logging.Logger = logging.getLogger("Tools.AgentAutomation.Config")
+logger: logging.Logger = logging.getLogger("golem.core.config")
 
 # .parent chain: core/ → task_agent/ (the package itself)
 PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent
-DATA_DIR: Path = PROJECT_ROOT / os.environ.get("AGENT_AUTOMATION_DATA_DIR", "data")
+DATA_DIR: Path = PROJECT_ROOT / os.environ.get("GOLEM_DATA_DIR", "data")
 
 
 @dataclass

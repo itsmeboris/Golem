@@ -3,7 +3,7 @@
 import json
 import logging
 
-logger = logging.getLogger("Tools.AgentAutomation.CLIWrapper")
+logger = logging.getLogger("golem.core.stream_printer")
 
 
 class StreamPrinter:

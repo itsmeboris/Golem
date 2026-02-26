@@ -13,7 +13,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-logger = logging.getLogger("Tools.AgentAutomation.LiveState")
+logger = logging.getLogger("golem.core.live_state")
 
 DEFAULT_LIVE_STATE_FILE = (
     Path(__file__).resolve().parent.parent / "data" / "live_state.json"

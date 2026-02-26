@@ -1,5 +1,7 @@
-"""Task-agent orchestration flow — long-running task execution via state machine."""
+"""Golem — an autonomous AI task agent."""
+
+__version__ = "0.1.0"
 
 from .flow import TaskAgentFlow
 
-__all__ = ["TaskAgentFlow"]
+__all__ = ["TaskAgentFlow", "__version__"]

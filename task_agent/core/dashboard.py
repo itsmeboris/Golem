@@ -15,7 +15,7 @@ from .config import DATA_DIR
 from .live_state import LiveState, read_live_snapshot
 from .run_log import read_runs
 
-logger = logging.getLogger("Tools.AgentAutomation.Dashboard")
+logger = logging.getLogger("golem.core.dashboard")
 
 try:
     from fastapi import Query
@@ -602,7 +602,7 @@ def format_status_text(since_hours: int = 24, flow: str | None = None) -> str:
 
     scope = f" — {flow}" if flow else ""
     lines = [
-        f"=== Agent Automation Status (last {since_hours}h{scope}) ===",
+        f"=== Golem Status (last {since_hours}h{scope}) ===",
     ]
 
     lines += _format_live_section(LiveState.get().snapshot())

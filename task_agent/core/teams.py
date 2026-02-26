@@ -8,7 +8,7 @@ import requests
 
 from .defaults import POST_TIMEOUT
 
-logger = logging.getLogger("Tools.AgentAutomation.Teams")
+logger = logging.getLogger("golem.core.teams")
 
 ADAPTIVE_CARD_SCHEMA = "http://adaptivecards.io/schemas/adaptive-card.json"
 ADAPTIVE_CARD_VERSION = "1.4"

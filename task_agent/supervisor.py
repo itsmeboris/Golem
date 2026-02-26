@@ -37,7 +37,7 @@ from .validation import ValidationVerdict, run_validation
 from .workdir import resolve_work_dir
 from .worktree_manager import cleanup_worktree, create_worktree, merge_and_cleanup
 
-logger = logging.getLogger("Tools.AgentAutomation.Agents.TaskAgent.Supervisor")
+logger = logging.getLogger("golem.supervisor")
 
 
 class TaskSupervisor:

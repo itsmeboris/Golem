@@ -33,7 +33,7 @@ from .orchestrator import (
 )
 from .profile import TaskAgentProfile, build_profile
 
-logger = logging.getLogger("Tools.AgentAutomation.Flows.TaskAgent")
+logger = logging.getLogger("golem.flow")
 
 
 class TaskAgentFlow(BaseFlow, PollableFlow, WebhookableFlow):

@@ -14,7 +14,7 @@ from ..notifications import (
     build_task_started_card,
 )
 
-logger = logging.getLogger("Tools.AgentAutomation.Backends.TeamsNotifier")
+logger = logging.getLogger("golem.backends.teams_notifier")
 
 
 class TeamsNotifier:

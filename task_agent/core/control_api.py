@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     Dispatcher = Any
     PollingTrigger = Any
 
-logger = logging.getLogger("Tools.AgentAutomation.ControlAPI")
+logger = logging.getLogger("golem.core.control_api")
 
 try:
     from fastapi import APIRouter, HTTPException, Request

@@ -19,7 +19,7 @@ from pathlib import Path
 
 from .stream_printer import StreamPrinter as _StreamPrinter
 
-logger = logging.getLogger("Tools.AgentAutomation.CLIWrapper")
+logger = logging.getLogger("golem.core.cli_wrapper")
 
 # .parent chain: core/ → task_agent/ (package root)
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent

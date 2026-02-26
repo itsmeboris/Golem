@@ -4,7 +4,7 @@
 
 import os
 
-os.environ.setdefault("AGENT_AUTOMATION_DATA_DIR", "data")
+os.environ.setdefault("GOLEM_DATA_DIR", "data")
 
 from .cli import main  # noqa: E402
 

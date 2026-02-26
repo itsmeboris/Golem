@@ -25,7 +25,7 @@ from .core.json_extract import extract_json
 
 from .prompts import format_prompt
 
-logger = logging.getLogger("Tools.AgentAutomation.Flows.TaskAgent.Validation")
+logger = logging.getLogger("golem.validation")
 
 
 @dataclass

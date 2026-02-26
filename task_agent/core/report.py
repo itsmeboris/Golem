@@ -3,7 +3,7 @@
 import logging
 from pathlib import Path
 
-logger = logging.getLogger("Tools.AgentAutomation.Report")
+logger = logging.getLogger("golem.core.report")
 
 
 class ReportWriter:
