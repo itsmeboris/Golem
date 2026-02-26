@@ -165,6 +165,20 @@ class TestLoadCommitFormat:
         assert fmt.sub_tags_areas == ("A1",)
         _clear_cache()
 
+    def test_oserror_on_mtime_returns_cached(self, tmp_path):
+        _clear_cache()
+        cfg = tmp_path / "cached.yaml"
+        cfg.write_text("main_tags:\n  - CACHED\n")
+        fmt1 = load_commit_format(cfg)
+        assert fmt1.main_tags == ("CACHED",)
+
+        with patch(
+            "golem.core.commit_format.os.path.getmtime", side_effect=OSError("gone")
+        ):
+            fmt2 = load_commit_format(cfg)
+        assert fmt2.main_tags == ("CACHED",)
+        _clear_cache()
+
     def test_rereads_on_mtime_change(self, tmp_path):
         _clear_cache()
         cfg = tmp_path / "evolving.yaml"

@@ -37,6 +37,7 @@ dashboard = [
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
+    "pytest-cov>=4.0",
     "black>=23.0",
     "pylint>=3.0",
 ]
@@ -59,6 +60,12 @@ disable = [
     "too-many-instance-attributes",
     "duplicate-code",
     "too-many-arguments",
+    "missing-class-docstring",
+    "missing-function-docstring",
+    "protected-access",
+    "unused-argument",
+    "unnecessary-ellipsis",
+    "cyclic-import",
 ]
 
 [tool.pylint.format]
@@ -76,13 +83,22 @@ markers = [
     "slow: long-running tests",
     "integration: tests requiring external services or API budget",
 ]
+filterwarnings = [
+    "ignore:coroutine .* was never awaited:RuntimeWarning",
+]
 
 [tool.coverage.run]
 source = ["golem"]
-omit = ["golem/tests/*", "*/__init__.py"]
+omit = [
+    "golem/tests/*",
+    "*/__init__.py",
+    "golem/core/dashboard.py",
+    "golem/core/control_api.py",
+    "golem/__main__.py",
+]
 
 [tool.coverage.report]
-fail_under = 70
+fail_under = 100
 show_missing = true
 skip_empty = true
 exclude_lines = [

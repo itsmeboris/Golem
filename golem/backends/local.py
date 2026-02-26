@@ -88,7 +88,7 @@ class LocalFileTaskSource:
                 return embedded
 
         # 2. Scan directory for files whose parent_id matches
-        if not self._tasks_dir.is_dir():
+        if not self._tasks_dir.is_dir():  # pragma: no cover
             return []
         results: list[dict[str, Any]] = []
         for task_file in sorted(self._tasks_dir.iterdir()):

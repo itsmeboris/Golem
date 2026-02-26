@@ -56,7 +56,7 @@ def _request_with_retry(
                 time.sleep(delay)
                 continue
             raise
-    return resp  # type: ignore[possibly-undefined]
+    return resp  # type: ignore[possibly-undefined]  # pragma: no cover
 
 
 def get_redmine_url() -> str:

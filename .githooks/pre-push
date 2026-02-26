@@ -28,14 +28,15 @@ else
     printf "${GREEN}pylint: ok${NC}\n"
 fi
 
-printf "${BOLD}=== pre-push: pytest ===${NC}\n"
+printf "${BOLD}=== pre-push: pytest + coverage ===${NC}\n"
 if [[ "${AGENT_WORKTREE:-}" == "1" ]]; then
     printf "${YELLOW}pytest: skipped (agent worktree — validated by supervisor)${NC}\n"
-elif ! python -m pytest golem/tests/ -m "" -x -q --tb=line 2>/dev/null; then
-    printf "${RED}pytest: test failures${NC}\n"
+elif ! python -m pytest golem/tests/ -m "" -x -q --tb=line \
+        --cov=golem --cov-report=term-missing:skip-covered --cov-fail-under=90 2>/dev/null; then
+    printf "${RED}pytest: test failures or coverage below 90%%${NC}\n"
     failed=1
 else
-    printf "${GREEN}pytest: ok${NC}\n"
+    printf "${GREEN}pytest + coverage: ok${NC}\n"
 fi
 
 if [[ $failed -ne 0 ]]; then

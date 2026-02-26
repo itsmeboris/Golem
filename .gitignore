@@ -33,6 +33,10 @@ pyrightconfig.json
 *.swo
 *~
 
+# Coverage
+.coverage
+htmlcov/
+
 # OS
 .DS_Store
 Thumbs.db

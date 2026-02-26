@@ -148,3 +148,80 @@ class TestRichSummaryIntegration:
         tracker = TaskEventTracker(session_id=1)
         m = tracker.handle_event(_tool_use_event("Bash"))
         assert m.summary == "Called Bash"
+
+
+class TestToolCallCompletedNoError:
+    def test_completed_no_error_returns_none(self):
+        tracker = TaskEventTracker(session_id=1)
+        event = {
+            "type": "tool_call",
+            "subtype": "completed",
+            "tool_call": {"mcpToolCall": {"result": {}}},
+        }
+        m = tracker.handle_event(event)
+        assert m is None
+
+
+class TestAssistantNonDictBlock:
+    def test_non_dict_block_skipped(self):
+        tracker = TaskEventTracker(session_id=1)
+        event = {
+            "type": "assistant",
+            "message": {
+                "content": ["just a string", {"type": "text", "text": "hello."}]
+            },
+        }
+        m = tracker.handle_event(event)
+        assert m is not None
+        assert m.kind == "text"
+
+    def test_tool_result_block_in_assistant(self):
+        tracker = TaskEventTracker(session_id=1)
+        event = {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {"type": "tool_result", "is_error": True, "content": "bad stuff"},
+                ]
+            },
+        }
+        m = tracker.handle_event(event)
+        assert m is not None
+        assert m.is_error is True
+
+
+class TestToolResultListContent:
+    def test_list_content_joined(self):
+        tracker = TaskEventTracker(session_id=1)
+        event = {
+            "type": "tool_result",
+            "is_error": False,
+            "content": [{"text": "part1"}, {"text": "part2"}],
+        }
+        m = tracker.handle_event(event)
+        assert m is not None
+        assert "part1" in m.summary
+        assert "part2" in m.summary
+
+
+class TestFindContentBlocksMessagePath:
+    def test_message_content_path(self):
+        tracker = TaskEventTracker(session_id=1)
+        event = {
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": "via message."}]},
+        }
+        m = tracker.handle_event(event)
+        assert m is not None
+        assert "via message" in m.summary
+
+    def test_dict_content_block(self):
+        blocks = TaskEventTracker._find_content_blocks(
+            {"content_block": {"type": "text", "text": "hi"}}
+        )
+        assert len(blocks) == 1
+        assert blocks[0]["type"] == "text"
+
+    def test_no_content_returns_empty(self):
+        blocks = TaskEventTracker._find_content_blocks({"type": "unknown"})
+        assert not blocks

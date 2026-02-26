@@ -83,6 +83,26 @@ class TestProfileRegistry:
         names = available_profiles()
         assert "redmine" in names
 
+    def test_ensure_builtins_registers_on_empty(self):
+        import sys
+
+        from golem.profile import (
+            _PROFILE_FACTORIES,
+            _ensure_builtins_registered,
+        )
+
+        saved = dict(_PROFILE_FACTORIES)
+        saved_mod = sys.modules.pop("golem.backends.profiles", None)
+        _PROFILE_FACTORIES.clear()
+        try:
+            _ensure_builtins_registered()
+            assert "redmine" in _PROFILE_FACTORIES
+        finally:
+            _PROFILE_FACTORIES.clear()
+            _PROFILE_FACTORIES.update(saved)
+            if saved_mod is not None:
+                sys.modules["golem.backends.profiles"] = saved_mod
+
     def test_custom_profile_registration(self):
         from golem.profile import (
             GolemProfile,
