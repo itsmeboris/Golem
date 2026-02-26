@@ -3,10 +3,12 @@
 # pylint: disable=missing-class-docstring,missing-function-docstring
 # pylint: disable=protected-access
 
+import asyncio
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import requests as _req
 
 from task_agent.core.config import (
     Config,
@@ -14,6 +16,27 @@ from task_agent.core.config import (
     load_config,
     _parse_task_agent_config,
 )
+from task_agent.core.triggers.base import TriggerEvent
+from task_agent.event_tracker import Milestone, TaskEventTracker, TrackerState
+from task_agent.flow import TaskAgentFlow
+from task_agent.mcp_scope import determine_mcp_scope
+from task_agent.notifications import (
+    _fmt_duration,
+    build_task_activity_card,
+    build_task_completed_card,
+    build_task_failure_card,
+    build_task_started_card,
+)
+from task_agent.orchestrator import (
+    TaskOrchestrator,
+    TaskSession,
+    TaskSessionState,
+    load_sessions,
+    recover_sessions,
+    save_sessions,
+)
+from task_agent.poller import get_issue_subject, is_agent_task
+from task_agent.prompts import format_prompt, load_prompt
 
 
 # -- Config parsing ---------------------------------------------------------
@@ -39,7 +62,7 @@ class TestTaskAgentFlowConfig:
             tick_interval=60,
             budget_per_task_usd=25.0,
             detection_tag="[BOT]",
-            default_work_dir="/opt/chipsim",
+            default_work_dir="/opt/workspace",
             task_model="opus",
             task_timeout_seconds=3600,
             progress_interval_seconds=120,
@@ -47,7 +70,7 @@ class TestTaskAgentFlowConfig:
         assert config.tick_interval == 60
         assert config.budget_per_task_usd == 25.0
         assert config.detection_tag == "[BOT]"
-        assert config.default_work_dir == "/opt/chipsim"
+        assert config.default_work_dir == "/opt/workspace"
         assert config.task_model == "opus"
         assert config.task_timeout_seconds == 3600
         assert config.progress_interval_seconds == 120
@@ -68,7 +91,7 @@ class TestParseTaskAgentConfig:
             "enabled": False,
             "poll_interval": 180,
             "tick_interval": 45,
-            "projects": ["chipsim", "chipsim-phy"],
+            "projects": ["my-project", "my-project-ext"],
             "grace_period_seconds": 300,
             "budget_per_task_usd": 20.0,
             "max_active_sessions": 5,
@@ -82,7 +105,7 @@ class TestParseTaskAgentConfig:
         assert config.enabled is False
         assert config.poll_interval == 180
         assert config.tick_interval == 45
-        assert config.projects == ["chipsim", "chipsim-phy"]
+        assert config.projects == ["my-project", "my-project-ext"]
         assert config.grace_period_seconds == 300
         assert config.budget_per_task_usd == 20.0
         assert config.detection_tag == "[BOT]"
@@ -110,7 +133,7 @@ flows:
     tick_interval: 45
     detection_tag: "[BOT]"
     projects:
-      - chipsim
+      - my-project
     budget_per_task_usd: 20.0
     task_model: opus
     progress_interval_seconds: 90
@@ -120,7 +143,7 @@ flows:
         assert config.task_agent.enabled is True
         assert config.task_agent.tick_interval == 45
         assert config.task_agent.detection_tag == "[BOT]"
-        assert config.task_agent.projects == ["chipsim"]
+        assert config.task_agent.projects == ["my-project"]
         assert config.task_agent.budget_per_task_usd == 20.0
         assert config.task_agent.task_model == "opus"
         assert config.task_agent.progress_interval_seconds == 90
@@ -131,8 +154,6 @@ flows:
 
 class TestMilestone:
     def test_defaults(self):
-        from task_agent.event_tracker import Milestone
-
         m = Milestone(kind="tool_call")
         assert m.kind == "tool_call"
         assert m.tool_name == ""
@@ -140,8 +161,6 @@ class TestMilestone:
         assert m.is_error is False
 
     def test_custom(self):
-        from task_agent.event_tracker import Milestone
-
         m = Milestone(
             kind="error",
             tool_name="Bash",
@@ -156,8 +175,6 @@ class TestMilestone:
 
 class TestTrackerState:
     def test_defaults(self):
-        from task_agent.event_tracker import TrackerState
-
         s = TrackerState()
         assert not s.tools_called
         assert not s.mcp_tools_called
@@ -170,8 +187,6 @@ class TestTrackerState:
 
 class TestTaskEventTracker:
     def test_handle_tool_call_started(self):
-        from task_agent.event_tracker import TaskEventTracker
-
         tracker = TaskEventTracker(session_id=1)
         event = {
             "type": "tool_call",
@@ -189,8 +204,6 @@ class TestTaskEventTracker:
         assert "redmine_get_issue" in tracker.state.mcp_tools_called
 
     def test_handle_tool_call_rejected(self):
-        from task_agent.event_tracker import TaskEventTracker
-
         tracker = TaskEventTracker(session_id=1)
         event = {
             "type": "tool_call",
@@ -211,8 +224,6 @@ class TestTaskEventTracker:
         assert len(tracker.state.errors) == 1
 
     def test_handle_assistant_tool_use(self):
-        from task_agent.event_tracker import TaskEventTracker
-
         tracker = TaskEventTracker(session_id=1)
         event = {
             "type": "assistant",
@@ -234,8 +245,6 @@ class TestTaskEventTracker:
         assert "Edit" in tracker.state.tools_called
 
     def test_handle_tool_result_error(self):
-        from task_agent.event_tracker import TaskEventTracker
-
         tracker = TaskEventTracker(session_id=1)
         event = {
             "type": "tool_result",
@@ -249,8 +258,6 @@ class TestTaskEventTracker:
         assert len(tracker.state.errors) == 1
 
     def test_handle_tool_result_ok(self):
-        from task_agent.event_tracker import TaskEventTracker
-
         tracker = TaskEventTracker(session_id=1)
         event = {
             "type": "tool_result",
@@ -263,8 +270,6 @@ class TestTaskEventTracker:
         assert milestone.is_error is False
 
     def test_handle_result_event(self):
-        from task_agent.event_tracker import TaskEventTracker
-
         tracker = TaskEventTracker(session_id=1)
         event = {
             "type": "result",
@@ -278,8 +283,6 @@ class TestTaskEventTracker:
         assert tracker.state.finished is True
 
     def test_milestone_count_increments(self):
-        from task_agent.event_tracker import TaskEventTracker
-
         tracker = TaskEventTracker(session_id=1)
 
         # Tool call
@@ -302,8 +305,6 @@ class TestTaskEventTracker:
         assert len(tracker.state.event_log) == 2
 
     def test_callback_invoked(self):
-        from task_agent.event_tracker import TaskEventTracker
-
         callbacks = []
         tracker = TaskEventTracker(
             session_id=1,
@@ -321,8 +322,6 @@ class TestTaskEventTracker:
         assert state.milestone_count == 1
 
     def test_dedup_tool_names(self):
-        from task_agent.event_tracker import TaskEventTracker
-
         tracker = TaskEventTracker(session_id=1)
         for _ in range(3):
             tracker.handle_event(
@@ -337,8 +336,6 @@ class TestTaskEventTracker:
         assert tracker.state.milestone_count == 3
 
     def test_to_dict(self):
-        from task_agent.event_tracker import TaskEventTracker
-
         tracker = TaskEventTracker(session_id=42)
         tracker.handle_event(
             {
@@ -354,8 +351,6 @@ class TestTaskEventTracker:
         assert d["last_text"] == ""
 
     def test_mcp_tool_detection(self):
-        from task_agent.event_tracker import TaskEventTracker
-
         tracker = TaskEventTracker(session_id=1)
         tracker.handle_event(
             {
@@ -369,8 +364,6 @@ class TestTaskEventTracker:
         assert not tracker.state.tools_called
 
     def test_empty_tool_result_ignored(self):
-        from task_agent.event_tracker import TaskEventTracker
-
         tracker = TaskEventTracker(session_id=1)
         milestone = tracker.handle_event(
             {
@@ -383,8 +376,6 @@ class TestTaskEventTracker:
         assert tracker.state.milestone_count == 0
 
     def test_assistant_text_captured_in_last_text(self):
-        from task_agent.event_tracker import TaskEventTracker
-
         tracker = TaskEventTracker(session_id=1)
         event = {
             "type": "assistant",
@@ -410,8 +401,6 @@ class TestTaskEventTracker:
         )
 
     def test_assistant_text_does_not_overwrite_with_empty(self):
-        from task_agent.event_tracker import TaskEventTracker
-
         tracker = TaskEventTracker(session_id=1)
         tracker.handle_event(
             {
@@ -442,8 +431,6 @@ class TestTaskEventTracker:
 
 class TestTaskSession:
     def test_defaults(self):
-        from task_agent.orchestrator import TaskSession, TaskSessionState
-
         s = TaskSession(parent_issue_id=100)
         assert s.state == TaskSessionState.DETECTED
         assert s.total_cost_usd == 0.0
@@ -456,8 +443,6 @@ class TestTaskSession:
         assert s.duration_seconds == 0.0
 
     def test_to_dict_roundtrip(self):
-        from task_agent.orchestrator import TaskSession, TaskSessionState
-
         s = TaskSession(
             parent_issue_id=200,
             parent_subject="Test task",
@@ -489,13 +474,6 @@ class TestTaskSession:
 
 class TestSessionPersistence:
     def test_save_and_load(self, tmp_path):
-        from task_agent.orchestrator import (
-            TaskSession,
-            TaskSessionState,
-            load_sessions,
-            save_sessions,
-        )
-
         path = tmp_path / "sessions.json"
         sessions = {
             1: TaskSession(
@@ -520,14 +498,10 @@ class TestSessionPersistence:
         assert loaded[2].state == TaskSessionState.COMPLETED
 
     def test_load_missing_file(self, tmp_path):
-        from task_agent.orchestrator import load_sessions
-
         loaded = load_sessions(tmp_path / "missing.json")
         assert not loaded
 
     def test_load_corrupt_file(self, tmp_path):
-        from task_agent.orchestrator import load_sessions
-
         path = tmp_path / "bad.json"
         path.write_text("not json", encoding="utf-8")
         loaded = load_sessions(path)
@@ -536,12 +510,6 @@ class TestSessionPersistence:
 
 class TestRecoverSessions:
     def test_resets_running_to_detected(self):
-        from task_agent.orchestrator import (
-            TaskSession,
-            TaskSessionState,
-            recover_sessions,
-        )
-
         sessions = {
             1: TaskSession(
                 parent_issue_id=1,
@@ -559,12 +527,6 @@ class TestRecoverSessions:
         assert sessions[2].state == TaskSessionState.DETECTED
 
     def test_skips_completed_sessions(self):
-        from task_agent.orchestrator import (
-            TaskSession,
-            TaskSessionState,
-            recover_sessions,
-        )
-
         sessions = {
             1: TaskSession(
                 parent_issue_id=1,
@@ -587,12 +549,6 @@ class TestRecoverSessions:
 
 class TestStateTransitions:
     def test_detected_stays_during_grace_period(self):
-        from task_agent.orchestrator import (
-            TaskOrchestrator,
-            TaskSession,
-            TaskSessionState,
-        )
-
         future = (datetime.now(timezone.utc) + timedelta(seconds=300)).isoformat()
         session = TaskSession(
             parent_issue_id=100,
@@ -604,21 +560,12 @@ class TestStateTransitions:
         task_config = TaskAgentFlowConfig()
         orch = TaskOrchestrator(session, config, task_config)
 
-        import asyncio
-
         asyncio.run(orch._tick_detected())
 
         assert session.state == TaskSessionState.DETECTED
 
     def test_detected_to_running_after_grace(self):
         """After grace period, DETECTED transitions to RUNNING (then agent runs)."""
-        from task_agent.orchestrator import (
-            TaskOrchestrator,
-            TaskSession,
-            TaskSessionState,
-        )
-        from unittest.mock import AsyncMock, patch
-
         past = (datetime.now(timezone.utc) - timedelta(seconds=10)).isoformat()
         session = TaskSession(
             parent_issue_id=100,
@@ -631,9 +578,6 @@ class TestStateTransitions:
         config = MagicMock()
         task_config = TaskAgentFlowConfig()
         orch = TaskOrchestrator(session, config, task_config)
-
-        # Mock _run_agent to avoid actually spawning CLI
-        import asyncio
 
         with patch.object(orch, "_run_agent", new=AsyncMock()):
             asyncio.run(orch._tick_detected())
@@ -648,24 +592,18 @@ class TestStateTransitions:
 
 class TestIsAgentTask:
     def test_matches_default_tag(self):
-        from task_agent.poller import is_agent_task
-
         assert is_agent_task("[AGENT] Fix parser regression") is True
         assert is_agent_task("[Agent] Fix parser regression") is True
         assert is_agent_task("Fix parser [AGENT]") is True
         assert is_agent_task("Fix parser regression") is False
 
     def test_custom_tag(self):
-        from task_agent.poller import is_agent_task
-
         assert is_agent_task("[BOT] Fix it", detection_tag="[BOT]") is True
         assert is_agent_task("[AGENT] Fix it", detection_tag="[BOT]") is False
 
 
 class TestGetIssueSubject:
     def test_returns_subject_on_success(self, monkeypatch):
-        from task_agent.poller import get_issue_subject
-
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.raise_for_status = MagicMock()
@@ -679,9 +617,6 @@ class TestGetIssueSubject:
         assert get_issue_subject(123) == "[AGENT] Add tick.py --teams flag"
 
     def test_returns_fallback_on_failure(self, monkeypatch):
-        import requests as _req
-        from task_agent.poller import get_issue_subject
-
         monkeypatch.setattr(
             "task_agent.poller.requests.get",
             MagicMock(side_effect=_req.RequestException("timeout")),
@@ -691,8 +626,6 @@ class TestGetIssueSubject:
         assert result == "[AGENT] task #456"
 
     def test_returns_fallback_on_empty_subject(self, monkeypatch):
-        from task_agent.poller import get_issue_subject
-
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.raise_for_status = MagicMock()
@@ -709,35 +642,25 @@ class TestGetIssueSubject:
 
 class TestMCPScope:
     def test_base_always_includes_redmine(self):
-        from task_agent.mcp_scope import determine_mcp_scope
-
         result = determine_mcp_scope("Some generic task")
         assert "redmine" in result
 
     def test_jenkins_keywords(self):
-        from task_agent.mcp_scope import determine_mcp_scope
-
         result = determine_mcp_scope("Investigate Jenkins CI failure")
         assert "jenkins" in result
         assert "redmine" in result
 
     def test_gerrit_keywords(self):
-        from task_agent.mcp_scope import determine_mcp_scope
-
         result = determine_mcp_scope("Review the gerrit change")
         assert "gerrit" in result
         assert "redmine" in result
 
     def test_confluence_keywords(self):
-        from task_agent.mcp_scope import determine_mcp_scope
-
         result = determine_mcp_scope("Update the wiki documentation")
         assert "confluence" in result
         assert "redmine" in result
 
     def test_multiple_keywords(self):
-        from task_agent.mcp_scope import determine_mcp_scope
-
         result = determine_mcp_scope("Jenkins build review on gerrit")
         assert "jenkins" in result
         assert "gerrit" in result
@@ -749,8 +672,6 @@ class TestMCPScope:
 
 class TestNotifications:
     def test_build_task_started_card(self):
-        from task_agent.notifications import build_task_started_card
-
         card = build_task_started_card(
             parent_id=100,
             subject="Fix everything",
@@ -761,8 +682,6 @@ class TestNotifications:
         assert "#100" in body_str
 
     def test_build_task_completed_card(self):
-        from task_agent.notifications import build_task_completed_card
-
         card = build_task_completed_card(
             parent_id=100,
             subject="Fix everything",
@@ -778,8 +697,6 @@ class TestNotifications:
         assert "29" in body_str
 
     def test_build_task_completed_card_short_duration(self):
-        from task_agent.notifications import build_task_completed_card
-
         card = build_task_completed_card(
             parent_id=100,
             subject="Quick task",
@@ -791,8 +708,6 @@ class TestNotifications:
         assert "45s" in body_str
 
     def test_build_task_activity_card(self):
-        from task_agent.notifications import build_task_activity_card
-
         card = build_task_activity_card(
             parent_id=100,
             subject="Fix everything",
@@ -807,8 +722,6 @@ class TestNotifications:
         assert "1m 2s" in body_str
 
     def test_build_task_failure_card(self):
-        from task_agent.notifications import build_task_failure_card
-
         card = build_task_failure_card(
             parent_id=100,
             subject="Fix everything",
@@ -823,8 +736,6 @@ class TestNotifications:
         assert "1m 12s" in body_str
 
     def test_fmt_duration(self):
-        from task_agent.notifications import _fmt_duration
-
         assert _fmt_duration(0) == "0s"
         assert _fmt_duration(45) == "45s"
         assert _fmt_duration(60) == "1m 0s"
@@ -836,27 +747,19 @@ class TestNotifications:
 
 class TestPrompts:
     def test_load_prompt(self):
-        from task_agent.prompts import load_prompt
-
         text = load_prompt("decompose_task.txt")
         assert "subtasks" in text.lower()
 
     def test_load_run_task_prompt(self):
-        from task_agent.prompts import load_prompt
-
         text = load_prompt("run_task.txt")
         assert "autonomous" in text.lower()
         assert "{task_description}" in text
 
     def test_load_prompt_not_found(self):
-        from task_agent.prompts import load_prompt
-
         with pytest.raises(FileNotFoundError):
             load_prompt("nonexistent.txt")
 
     def test_format_prompt(self):
-        from task_agent.prompts import format_prompt
-
         text = format_prompt(
             "run_task.txt",
             issue_id=100,
@@ -864,8 +767,6 @@ class TestPrompts:
         assert "#100" in text
 
     def test_format_prompt_legacy(self):
-        from task_agent.prompts import format_prompt
-
         text = format_prompt(
             "execute_subtask.txt",
             parent_id=100,
@@ -884,9 +785,6 @@ class TestPrompts:
 
 class TestTaskAgentFlow:
     def _make_flow(self, monkeypatch, tmp_path):
-        from task_agent.flow import TaskAgentFlow
-
-        # Isolate session state
         sessions_path = tmp_path / "sessions.json"
         monkeypatch.setattr(
             "task_agent.orchestrator.SESSIONS_FILE", sessions_path
@@ -895,7 +793,7 @@ class TestTaskAgentFlow:
         config = Config(
             task_agent=TaskAgentFlowConfig(
                 enabled=True,
-                projects=["chipsim"],
+                projects=["my-project"],
             ),
         )
         return TaskAgentFlow(config)
@@ -910,8 +808,6 @@ class TestTaskAgentFlow:
 
     @pytest.mark.asyncio
     async def test_handle_creates_session(self, monkeypatch, tmp_path):
-        from task_agent.core.triggers.base import TriggerEvent
-
         flow = self._make_flow(monkeypatch, tmp_path)
         event = TriggerEvent(
             flow_name="task_agent",
@@ -927,8 +823,6 @@ class TestTaskAgentFlow:
 
     @pytest.mark.asyncio
     async def test_handle_skips_duplicate(self, monkeypatch, tmp_path):
-        from task_agent.core.triggers.base import TriggerEvent
-
         flow = self._make_flow(monkeypatch, tmp_path)
         event = TriggerEvent(
             flow_name="task_agent",
@@ -965,8 +859,6 @@ class TestTaskAgentFlow:
 
     def test_reset_state(self, monkeypatch, tmp_path):
         flow = self._make_flow(monkeypatch, tmp_path)
-        from task_agent.orchestrator import TaskSession, TaskSessionState
-
         flow._sessions[1] = TaskSession(
             parent_issue_id=1, state=TaskSessionState.RUNNING
         )

@@ -19,7 +19,7 @@ logger = logging.getLogger("Tools.AgentAutomation.Flows.TaskAgent.WorkDir")
 # Match `work_dir: /some/path` on its own line in the description.
 _WORKDIR_DIRECTIVE_RE = re.compile(r"(?:^|\n)\s*work_dir:\s*(\S+)", re.IGNORECASE)
 
-# Match [TAG] patterns in the subject (e.g. [CHIPSIM], [CHIPSIM_IB]).
+# Match [TAG] patterns in the subject (e.g. [MYPROJECT], [MYPROJECT_V2]).
 _SUBJECT_TAG_RE = re.compile(r"\[([A-Za-z0-9_-]+)\]")
 
 

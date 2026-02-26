@@ -28,3 +28,42 @@ task-agent = "task_agent.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["task_agent*"]
+
+[tool.pylint."messages control"]
+disable = [
+    "import-outside-toplevel",
+    "too-few-public-methods",
+    "too-many-instance-attributes",
+    "duplicate-code",
+    "too-many-arguments",
+]
+
+[tool.pylint.format]
+max-line-length = 99
+
+[tool.pylint.main]
+load-plugins = []
+source-roots = ["."]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["task_agent/tests"]
+addopts = "-m 'not integration'"
+markers = [
+    "slow: long-running tests",
+    "integration: tests requiring external services or API budget",
+]
+
+[tool.coverage.run]
+source = ["task_agent"]
+omit = ["task_agent/tests/*", "*/__init__.py"]
+
+[tool.coverage.report]
+fail_under = 70
+show_missing = true
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

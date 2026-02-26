@@ -28,6 +28,7 @@ data/live_state.json
 .mcp.json
 .vscode/
 .idea/
+pyrightconfig.json
 *.swp
 *.swo
 *~

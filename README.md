@@ -1,6 +1,21 @@
-# Task Agent
+<p align="center">
+  <img src="assets/golem-logo.png" alt="Golem" width="280" />
+</p>
 
-An autonomous AI task execution system powered by Claude CLI. Picks up tasks from a tracker (e.g. Redmine), executes them via Claude, validates the results, and reports back -- all without human intervention.
+<h1 align="center">Golem</h1>
+
+<p align="center">
+  <em>An autonomous AI task agent — picks up work, executes it, validates the results, and reports back. No human in the loop.</em>
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick Start</a> •
+  <a href="#how-it-works">How It Works</a> •
+  <a href="#configuration">Configuration</a> •
+  <a href="#writing-a-custom-profile">Custom Profiles</a>
+</p>
+
+---
 
 ## How It Works
 
@@ -84,7 +99,7 @@ Switch profiles with a single config field: `profile: redmine` or `profile: loca
 
 ```bash
 # Clone and install
-git clone <repo-url> task-agent && cd task-agent
+git clone https://github.com/itsmeboris/golem.git && cd golem
 pip install -e .
 
 # For dashboard support:

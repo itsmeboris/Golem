@@ -1,4 +1,4 @@
-"""Single source of truth for ChipSim commit message tag definitions.
+"""Single source of truth for commit message tag definitions.
 
 Loads ``commit_format.yaml`` once and exposes the tags as plain data
 so both prompt templates and validation code reference the same list.
