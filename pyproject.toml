@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "golem-agent"
 version = "0.1.0"
-description = "An autonomous AI task agent — picks up work, executes it, validates the results, and reports back."
+description = "An autonomous AI agent — picks up work, executes it, validates the results, and reports back."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -16,7 +16,6 @@ authors = [
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -48,10 +47,10 @@ Repository = "https://github.com/itsmeboris/golem"
 Issues = "https://github.com/itsmeboris/golem/issues"
 
 [project.scripts]
-golem = "task_agent.cli:main"
+golem = "golem.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["task_agent*"]
+include = ["golem*"]
 
 [tool.pylint."messages control"]
 disable = [
@@ -71,7 +70,7 @@ source-roots = ["."]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["task_agent/tests"]
+testpaths = ["golem/tests"]
 addopts = "-m 'not integration'"
 markers = [
     "slow: long-running tests",
@@ -79,8 +78,8 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["task_agent"]
-omit = ["task_agent/tests/*", "*/__init__.py"]
+source = ["golem"]
+omit = ["golem/tests/*", "*/__init__.py"]
 
 [tool.coverage.report]
 fail_under = 70

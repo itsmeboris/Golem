@@ -15,9 +15,9 @@ git config core.hooksPath .githooks
 3. Run the checks locally:
 
 ```bash
-black task_agent/
-pylint --errors-only task_agent/
-pytest task_agent/tests/ -x -q
+black golem/
+pylint --errors-only golem/
+pytest golem/tests/ -x -q
 ```
 
 4. Push — the pre-push hook runs all three automatically
@@ -37,10 +37,10 @@ Implement the five protocols in `interfaces.py` (`TaskSource`, `StateBackend`, `
 
 ## Tests
 
-Tests live in `task_agent/tests/`. Run the full suite with:
+Tests live in `golem/tests/`. Run the full suite with:
 
 ```bash
-pytest task_agent/tests/ -x -q
+pytest golem/tests/ -x -q
 ```
 
 Mark slow or integration tests appropriately:

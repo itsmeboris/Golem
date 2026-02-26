@@ -3,7 +3,7 @@
 # Environment variables can be referenced as ${VAR_NAME}.
 
 flows:
-  task_agent:
+  golem:
     enabled: true
 
     # Profile: which backends to use for tasks, state, and notifications.
@@ -65,7 +65,7 @@ dashboard:
 teams:
   enabled: false
   # webhooks:
-  #   task_agent: ${TEAMS_TASK_AGENT_WEBHOOK_URL}
+  #   golem: ${TEAMS_GOLEM_WEBHOOK_URL}
 
 logging:
   log_level: INFO

@@ -196,7 +196,7 @@ profile: redmine   # or: local, github, your-custom-profile
 <summary><strong>Project Layout</strong></summary>
 
 ```
-task_agent/
+golem/
 ├── cli.py                 # CLI entry point
 ├── flow.py                # Tick-driven poll → detect → orchestrate loop
 ├── orchestrator.py        # State-machine session lifecycle
@@ -255,7 +255,7 @@ See [`config.yaml.example`](config.yaml.example) for the full annotated template
 ```bash
 REDMINE_URL=https://redmine.example.com
 REDMINE_API_KEY=your-api-key
-TEAMS_TASK_AGENT_WEBHOOK_URL=https://...   # optional
+TEAMS_GOLEM_WEBHOOK_URL=https://...   # optional
 ```
 
 ---
@@ -265,9 +265,9 @@ TEAMS_TASK_AGENT_WEBHOOK_URL=https://...   # optional
 Implement the five protocols from `interfaces.py` and register:
 
 ```python
-from task_agent.profile import register_profile, TaskAgentProfile
-from task_agent.backends.local import LogNotifier, NullToolProvider
-from task_agent.prompts import FilePromptProvider
+from golem.profile import register_profile, GolemProfile
+from golem.backends.local import LogNotifier, NullToolProvider
+from golem.prompts import FilePromptProvider
 
 class GitHubTaskSource:
     def poll_tasks(self, projects, detection_tag, timeout=30):
@@ -282,7 +282,7 @@ class GitHubStateBackend:
         ...
 
 def _build_github_profile(config):
-    return TaskAgentProfile(
+    return GolemProfile(
         name="github",
         task_source=GitHubTaskSource(),
         state_backend=GitHubStateBackend(),
@@ -308,9 +308,9 @@ profile: github
 pip install -e ".[dashboard]"
 pip install pytest black pylint
 
-pytest task_agent/tests/ -x -q        # run tests
-black task_agent/                      # format
-pylint --errors-only task_agent/       # lint
+pytest golem/tests/ -x -q        # run tests
+black golem/                      # format
+pylint --errors-only golem/       # lint
 ```
 
 A [pre-push hook](.githooks/pre-push) runs all three automatically. Enable it with:

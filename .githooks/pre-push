@@ -13,15 +13,15 @@ NC='\033[0m'
 failed=0
 
 printf "${BOLD}=== pre-push: black ===${NC}\n"
-if ! python -m black --check task_agent/ --quiet 2>/dev/null; then
-    printf "${RED}black: formatting issues found. Run 'python -m black task_agent/' to fix.${NC}\n"
+if ! python -m black --check golem/ --quiet 2>/dev/null; then
+    printf "${RED}black: formatting issues found. Run 'python -m black golem/' to fix.${NC}\n"
     failed=1
 else
     printf "${GREEN}black: ok${NC}\n"
 fi
 
 printf "${BOLD}=== pre-push: pylint ===${NC}\n"
-if ! python -m pylint --errors-only task_agent/ 2>/dev/null; then
+if ! python -m pylint --errors-only golem/ 2>/dev/null; then
     printf "${RED}pylint: errors found${NC}\n"
     failed=1
 else
@@ -31,7 +31,7 @@ fi
 printf "${BOLD}=== pre-push: pytest ===${NC}\n"
 if [[ "${AGENT_WORKTREE:-}" == "1" ]]; then
     printf "${YELLOW}pytest: skipped (agent worktree — validated by supervisor)${NC}\n"
-elif ! python -m pytest task_agent/tests/ -m "" -x -q --tb=line 2>/dev/null; then
+elif ! python -m pytest golem/tests/ -m "" -x -q --tb=line 2>/dev/null; then
     printf "${RED}pytest: test failures${NC}\n"
     failed=1
 else

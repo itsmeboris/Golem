@@ -15,9 +15,9 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install black pylint
-      - run: black --check task_agent/
+      - run: black --check golem/
       - run: pip install -e .
-      - run: pylint --errors-only task_agent/ --ignore=tests
+      - run: pylint --errors-only golem/ --ignore=tests
 
   test:
     runs-on: ubuntu-latest
@@ -30,4 +30,4 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
-      - run: pytest task_agent/tests/ -x -q --tb=short
+      - run: pytest golem/tests/ -x -q --tb=short
