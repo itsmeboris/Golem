@@ -32,6 +32,7 @@ from .orchestrator import (
     save_sessions,
     _now_iso,
 )
+from .priority_gate import PriorityGate
 from .profile import GolemProfile, build_profile
 
 logger = logging.getLogger("golem.flow")
@@ -59,7 +60,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         self._session_tasks: dict[int, asyncio.Task] = {}
         self._work_dir_lock = asyncio.Lock()
         max_concurrent = self._task_config.max_active_sessions or 3
-        self._api_semaphore = asyncio.Semaphore(max_concurrent)
+        self._gate = PriorityGate(max_concurrent)
 
         # Build pluggable profile from config (always required)
         profile_name = self._task_config.profile if self._task_config else "redmine"
@@ -255,16 +256,18 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                 self._spawn_session_task(sid)
 
     async def _run_session(self, session_id: int) -> None:
-        """Drive a single session to completion, acquiring the API semaphore
-        only when real work needs to be done."""
+        """Drive a single session to completion, acquiring a priority-gated
+        slot before each tick."""
         session = self._sessions[session_id]
+        live = LiveState.get()
+        event_id = f"golem-{session.parent_issue_id}"
         try:
-            while (
-                self._running
-                and session.state
-                not in (TaskSessionState.COMPLETED, TaskSessionState.FAILED)
+            while self._running and session.state not in (
+                TaskSessionState.COMPLETED,
+                TaskSessionState.FAILED,
             ):
-                async with self._api_semaphore:
+                live.mark_queued(event_id)
+                async with self._gate.slot(session.priority):
                     prev_state = session.state
                     orchestrator = TaskOrchestrator(
                         session,
@@ -291,9 +294,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             logger.exception("Session #%d crashed unexpectedly", session_id)
             session.state = TaskSessionState.FAILED
             session.errors.append("session task crashed")
-            self._handle_state_transition(
-                session, TaskSessionState.RUNNING
-            )
+            self._handle_state_transition(session, TaskSessionState.RUNNING)
             self._save_state()
         finally:
             self._session_tasks.pop(session_id, None)

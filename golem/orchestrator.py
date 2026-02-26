@@ -92,6 +92,7 @@ class TaskSession:
     parent_issue_id: int
     parent_subject: str = ""
     state: TaskSessionState = TaskSessionState.DETECTED
+    priority: int = 5
     created_at: str = ""
     updated_at: str = ""
     grace_deadline: str = ""
@@ -140,6 +141,7 @@ class TaskSession:
             parent_issue_id=data["parent_issue_id"],
             parent_subject=data.get("parent_subject", ""),
             state=TaskSessionState(data["state"]),
+            priority=data.get("priority", 5),
             created_at=data.get("created_at", ""),
             updated_at=data.get("updated_at", ""),
             grace_deadline=data.get("grace_deadline", ""),
