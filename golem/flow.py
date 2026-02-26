@@ -1,13 +1,14 @@
-"""Golem flow — orchestrates long-running tasks via a tick-driven state machine (v2).
+"""Golem flow — orchestrates long-running tasks via independent session runners.
 
-Detects Redmine issues tagged ``[AGENT]``, manages TaskSessions, and drives
-single-agent-per-task execution through periodic ticks.  Real-time monitoring
-via ``TaskEventTracker`` per session.
+Detects issues tagged ``[AGENT]``, manages TaskSessions, and drives
+single-agent-per-task execution with each session running in its own
+``asyncio.Task``.  A shared semaphore controls API concurrency while
+detection runs in a separate loop so new issues are picked up immediately.
 
 Key exports:
 - ``GolemFlow`` — the main flow class; implements ``BaseFlow``,
   ``PollableFlow``, and ``WebhookableFlow``.  Manages session lifecycle from
-  detection through completion/failure and sends Teams notifications at each
+  detection through completion/failure and sends notifications at each
   state transition.
 """
 
@@ -54,8 +55,11 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         self._trackers: dict[int, TaskEventTracker] = {}
         self._processed_ids: set[int] = set()
         self._running = False
-        self._tick_task: asyncio.Task | None = None
+        self._detection_task: asyncio.Task | None = None
+        self._session_tasks: dict[int, asyncio.Task] = {}
         self._work_dir_lock = asyncio.Lock()
+        max_concurrent = self._task_config.max_active_sessions or 3
+        self._api_semaphore = asyncio.Semaphore(max_concurrent)
 
         # Build pluggable profile from config (always required)
         profile_name = self._task_config.profile if self._task_config else "redmine"
@@ -101,6 +105,9 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         logger.info("Created new task session for #%d: %s", issue_id, subject[:60])
 
         self._profile.notifier.notify_started(issue_id, subject)
+
+        if self._running:
+            self._spawn_session_task(issue_id)
 
         return FlowResult(
             success=True,
@@ -162,39 +169,52 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
         return f"wh-golem-{issue_id}-{timestamp}"
 
-    # -- Tick loop ------------------------------------------------------------
+    # -- Session runner architecture -------------------------------------------
+    #
+    # Each session gets its own long-lived asyncio.Task that drives the
+    # orchestrator independently.  A shared semaphore gates how many sessions
+    # hit the Claude API concurrently.  Detection runs in a separate periodic
+    # loop so new issues are picked up immediately, regardless of how many
+    # sessions are in-flight.
 
     def start_tick_loop(self) -> asyncio.Task:
-        """Start the background tick loop.  Returns the asyncio Task."""
-        if self._tick_task is not None:
-            return self._tick_task
+        """Start detection loop and spawn tasks for existing active sessions."""
+        if self._detection_task is not None:
+            return self._detection_task
         self._running = True
-        self._tick_task = asyncio.create_task(self._session_tick_loop())
+        self._spawn_existing_sessions()
+        self._detection_task = asyncio.create_task(self._detection_loop())
         logger.info(
-            "Golem tick loop started (interval=%ds)",
+            "Golem started (detection_interval=%ds, max_concurrent=%d)",
             self._task_config.tick_interval,
+            self._task_config.max_active_sessions or 3,
         )
-        return self._tick_task
+        return self._detection_task
 
     def stop_tick_loop(self) -> None:
-        """Stop the background tick loop."""
+        """Stop detection loop and cancel all session tasks."""
         self._running = False
-        if self._tick_task is not None:
-            self._tick_task.cancel()
-            self._tick_task = None
+        if self._detection_task is not None:
+            self._detection_task.cancel()
+            self._detection_task = None
+        for sid, task in list(self._session_tasks.items()):
+            task.cancel()
+            logger.info("Cancelled session task #%d", sid)
+        self._session_tasks.clear()
 
-    async def _session_tick_loop(self) -> None:
-        """Periodically detect new issues and tick all active sessions."""
+    # -- Detection loop (runs independently of session execution) -----------
+
+    async def _detection_loop(self) -> None:
+        """Periodically poll for new [AGENT] issues and spawn session tasks."""
         while self._running:
             try:
                 self._detect_new_issues()
-                await self._tick_all_sessions()
             except Exception:  # pylint: disable=broad-exception-caught
-                logger.exception("Error in session tick loop")
+                logger.exception("Error in detection loop")
             await asyncio.sleep(self._task_config.tick_interval)
 
     def _detect_new_issues(self) -> None:
-        """Poll Redmine for new [AGENT] issues and create sessions."""
+        """Poll for new [AGENT] issues, create sessions, and spawn tasks."""
         live = LiveState.get()
         for item in self.poll_new_items():
             iid = item.get("issue_id")
@@ -205,52 +225,78 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             session = self._create_session(iid, subject)
             self._sessions[iid] = session
             self._save_state()
-            # Register in LiveState so the dashboard shows it immediately.
             event_id = f"golem-{iid}"
             model = self._task_config.task_model or "sonnet"
             live.enqueue(event_id, "golem", model)
             live.update_phase(event_id, "detected")
             logger.info("Detected new task: #%d %s", iid, subject[:60])
+            self._spawn_session_task(iid)
 
-    async def _tick_all_sessions(self) -> None:
-        """Run one tick for every active session (concurrent up to max_active)."""
-        active = {
-            sid: s
-            for sid, s in self._sessions.items()
-            if s.state
-            not in (
+    # -- Per-session task lifecycle -----------------------------------------
+
+    def _spawn_session_task(self, session_id: int) -> None:
+        """Create an independent asyncio.Task for a session."""
+        if session_id in self._session_tasks:
+            return
+        task = asyncio.create_task(
+            self._run_session(session_id),
+            name=f"golem-session-{session_id}",
+        )
+        self._session_tasks[session_id] = task
+        logger.info("Spawned task for session #%d", session_id)
+
+    def _spawn_existing_sessions(self) -> None:
+        """On startup, spawn tasks for sessions that survived a restart."""
+        for sid, session in self._sessions.items():
+            if session.state not in (
                 TaskSessionState.COMPLETED,
                 TaskSessionState.FAILED,
+            ):
+                self._spawn_session_task(sid)
+
+    async def _run_session(self, session_id: int) -> None:
+        """Drive a single session to completion, acquiring the API semaphore
+        only when real work needs to be done."""
+        session = self._sessions[session_id]
+        try:
+            while (
+                self._running
+                and session.state
+                not in (TaskSessionState.COMPLETED, TaskSessionState.FAILED)
+            ):
+                async with self._api_semaphore:
+                    prev_state = session.state
+                    orchestrator = TaskOrchestrator(
+                        session,
+                        self.config,
+                        self._task_config,
+                        on_progress=self._on_agent_progress,
+                        work_dir_lock=self._work_dir_lock,
+                        save_callback=self._save_state,
+                        profile=self._profile,
+                    )
+                    await orchestrator.tick()
+                    self._handle_state_transition(session, prev_state)
+                    self._save_state()
+
+                if session.state not in (
+                    TaskSessionState.COMPLETED,
+                    TaskSessionState.FAILED,
+                ):
+                    await asyncio.sleep(self._task_config.tick_interval)
+
+        except asyncio.CancelledError:
+            logger.info("Session #%d cancelled", session_id)
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.exception("Session #%d crashed unexpectedly", session_id)
+            session.state = TaskSessionState.FAILED
+            session.errors.append("session task crashed")
+            self._handle_state_transition(
+                session, TaskSessionState.RUNNING
             )
-        }
-
-        if not active:
-            return
-
-        max_concurrent = self._task_config.max_active_sessions or 3
-        sem = asyncio.Semaphore(max_concurrent)
-
-        async def _tick_one(session: "TaskSession") -> None:
-            async with sem:
-                prev_state = session.state
-                orchestrator = TaskOrchestrator(
-                    session,
-                    self.config,
-                    self._task_config,
-                    on_progress=self._on_agent_progress,
-                    work_dir_lock=self._work_dir_lock,
-                    save_callback=self._save_state,
-                    profile=self._profile,
-                )
-                await orchestrator.tick()
-                self._handle_state_transition(session, prev_state)
-
-        await asyncio.gather(
-            *(_tick_one(s) for s in active.values()),
-            return_exceptions=True,
-        )
-
-        self._save_state()
+            self._save_state()
+        finally:
+            self._session_tasks.pop(session_id, None)
 
     def _on_agent_progress(self, session: TaskSession, milestone: Milestone) -> None:
         """Central progress handler — updates LiveState and session from milestones."""

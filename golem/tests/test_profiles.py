@@ -16,7 +16,7 @@ import asyncio
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -565,8 +565,8 @@ class TestFlowWithProfile:
             ).isoformat(),
         )
         flow._sessions[600] = session
+        flow._running = True
 
-        # Capture the orchestrator creation
         created_orchs = []
         orig_init = None
 
@@ -580,10 +580,13 @@ class TestFlowWithProfile:
 
         monkeypatch.setattr(TaskOrchestrator, "__init__", capture_init)
 
-        # Mock tick to be a no-op
-        monkeypatch.setattr(TaskOrchestrator, "tick", AsyncMock())
+        async def completing_tick(self_orch):
+            self_orch.session.state = TaskSessionState.COMPLETED
+            return self_orch.session
 
-        asyncio.run(flow._tick_all_sessions())
+        monkeypatch.setattr(TaskOrchestrator, "tick", completing_tick)
+
+        asyncio.run(flow._run_session(600))
 
         assert len(created_orchs) == 1
         assert created_orchs[0].profile is not None
