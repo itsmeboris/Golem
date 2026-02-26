@@ -52,18 +52,22 @@ class TaskSource(Protocol):
 
         Each dict must have at minimum ``{"id": <str|int>, "subject": str}``.
         """
-        ...
+        ...  # pragma: no cover
+
+    def get_task_subject(self, task_id: int | str) -> str:
+        """Fetch the short subject/title of a task."""
+        ...  # pragma: no cover
 
     def get_task_description(self, task_id: int | str) -> str:
         """Fetch the full description/body text of a task."""
-        ...
+        ...  # pragma: no cover
 
     def get_child_tasks(self, parent_id: int | str) -> list[dict[str, Any]]:
         """Fetch child/sub-tasks of *parent_id*.
 
         Returns list of dicts with at minimum ``{"id": <str|int>, "subject": str}``.
         """
-        ...
+        ...  # pragma: no cover
 
     def create_child_task(
         self,
@@ -72,7 +76,7 @@ class TaskSource(Protocol):
         description: str,
     ) -> int | str | None:
         """Create a child task under *parent_id*.  Returns new task ID or ``None``."""
-        ...
+        ...  # pragma: no cover
 
 
 # ---------------------------------------------------------------------------
@@ -86,15 +90,15 @@ class StateBackend(Protocol):
 
     def update_status(self, task_id: int | str, status: str) -> bool:
         """Transition task to a canonical ``TaskStatus`` value.  Returns success."""
-        ...
+        ...  # pragma: no cover
 
     def post_comment(self, task_id: int | str, text: str) -> bool:
         """Post a comment/note on the task.  Returns success."""
-        ...
+        ...  # pragma: no cover
 
     def update_progress(self, task_id: int | str, percent: int) -> bool:
         """Update completion percentage (0-100).  Returns success."""
-        ...
+        ...  # pragma: no cover
 
 
 # ---------------------------------------------------------------------------
@@ -107,7 +111,7 @@ class Notifier(Protocol):
     """Sends lifecycle notifications to an external channel."""
 
     def notify_started(self, task_id: int | str, subject: str) -> None:
-        ...
+        ...  # pragma: no cover
 
     def notify_completed(
         self,
@@ -123,7 +127,7 @@ class Notifier(Protocol):
         commit_sha: str = "",
         retry_count: int = 0,
     ) -> None:
-        ...
+        ...  # pragma: no cover
 
     def notify_failed(
         self,
@@ -134,7 +138,7 @@ class Notifier(Protocol):
         cost_usd: float = 0.0,
         duration_s: float = 0.0,
     ) -> None:
-        ...
+        ...  # pragma: no cover
 
     def notify_escalated(
         self,
@@ -148,7 +152,7 @@ class Notifier(Protocol):
         duration_s: float = 0.0,
         retry_count: int = 0,
     ) -> None:
-        ...
+        ...  # pragma: no cover
 
 
 # ---------------------------------------------------------------------------
@@ -162,11 +166,11 @@ class ToolProvider(Protocol):
 
     def base_servers(self) -> list[str]:
         """Servers always included (e.g. ``["redmine"]`` or ``[]``)."""
-        ...
+        ...  # pragma: no cover
 
     def servers_for_subject(self, subject: str) -> list[str]:
         """Return full list of MCP servers for the given task subject."""
-        ...
+        ...  # pragma: no cover
 
 
 # ---------------------------------------------------------------------------
@@ -180,4 +184,4 @@ class PromptProvider(Protocol):
 
     def format(self, template_name: str, **kwargs: Any) -> str:
         """Load a template by name and fill placeholders."""
-        ...
+        ...  # pragma: no cover
