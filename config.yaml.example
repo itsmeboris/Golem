@@ -7,7 +7,7 @@ flows:
     enabled: true
 
     # Profile: which backends to use for tasks, state, and notifications.
-    # Built-in profiles: "local" (log to stdout), "redmine" (Redmine + Teams + MCP).
+    # Built-in profiles: "local" (log to stdout), "redmine" (Redmine + Slack/Teams + MCP).
     # For prompt-only mode, just use: golem run -p "your task here"
     profile: local
     # profile_config: {}          # profile-specific overrides
@@ -61,7 +61,14 @@ dashboard:
   port: 8082
   # admin_token: ${DASHBOARD_ADMIN_TOKEN}
 
-# Teams notifications (optional, requires profile: redmine)
+# Notifications (enable one or neither; Slack takes priority if both enabled)
+# Slack (Block Kit messages via incoming webhook)
+slack:
+  enabled: false
+  # webhooks:
+  #   golem: ${SLACK_GOLEM_WEBHOOK_URL}
+
+# Teams (Adaptive Cards via incoming webhook)
 teams:
   enabled: false
   # webhooks:

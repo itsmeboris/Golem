@@ -341,10 +341,14 @@ class TestSlackNotifier:
     def test_notify_completed(self):
         notifier, client = self._make_notifier()
         notifier.notify_completed(
-            "42", "Test task",
-            cost_usd=1.5, duration_s=60,
-            verdict="PASS", confidence=0.95,
-            commit_sha="abc123", retry_count=1,
+            "42",
+            "Test task",
+            cost_usd=1.5,
+            duration_s=60,
+            verdict="PASS",
+            confidence=0.95,
+            commit_sha="abc123",
+            retry_count=1,
         )
         client.send_to_channel.assert_called_once()
         payload = client.send_to_channel.call_args[0][1]
@@ -372,9 +376,7 @@ class TestSlackNotifier:
 
     def test_notify_escalated(self):
         notifier, client = self._make_notifier()
-        notifier.notify_escalated(
-            "42", "Test task", "FAIL", "Agent could not resolve"
-        )
+        notifier.notify_escalated("42", "Test task", "FAIL", "Agent could not resolve")
         client.send_to_channel.assert_called_once()
         payload = client.send_to_channel.call_args[0][1]
         text = json.dumps(payload["blocks"])
@@ -384,8 +386,13 @@ class TestSlackNotifier:
     def test_notify_escalated_with_concerns(self):
         notifier, client = self._make_notifier()
         notifier.notify_escalated(
-            "42", "Test", "FAIL", "summary",
-            concerns=["c1"], cost_usd=2.0, retry_count=1,
+            "42",
+            "Test",
+            "FAIL",
+            "summary",
+            concerns=["c1"],
+            cost_usd=2.0,
+            retry_count=1,
         )
         payload = client.send_to_channel.call_args[0][1]
         text = json.dumps(payload["blocks"])
@@ -547,7 +554,9 @@ class TestProfileSwitching:
 
         config = Config(
             golem=GolemFlowConfig(profile="redmine"),
-            slack=SlackConfig(enabled=True, webhooks={"golem": "https://hooks.slack.com/test"}),
+            slack=SlackConfig(
+                enabled=True, webhooks={"golem": "https://hooks.slack.com/test"}
+            ),
         )
         profile = build_profile("redmine", config)
         assert isinstance(profile.notifier, SlackNotifier)
@@ -558,7 +567,9 @@ class TestProfileSwitching:
 
         config = Config(
             golem=GolemFlowConfig(profile="redmine"),
-            teams=TeamsConfig(enabled=True, webhooks={"golem": "https://teams.test/webhook"}),
+            teams=TeamsConfig(
+                enabled=True, webhooks={"golem": "https://teams.test/webhook"}
+            ),
         )
         profile = build_profile("redmine", config)
         assert isinstance(profile.notifier, TeamsNotifier)
@@ -569,8 +580,12 @@ class TestProfileSwitching:
 
         config = Config(
             golem=GolemFlowConfig(profile="redmine"),
-            slack=SlackConfig(enabled=True, webhooks={"golem": "https://hooks.slack.com/test"}),
-            teams=TeamsConfig(enabled=True, webhooks={"golem": "https://teams.test/webhook"}),
+            slack=SlackConfig(
+                enabled=True, webhooks={"golem": "https://hooks.slack.com/test"}
+            ),
+            teams=TeamsConfig(
+                enabled=True, webhooks={"golem": "https://teams.test/webhook"}
+            ),
         )
         profile = build_profile("redmine", config)
         assert isinstance(profile.notifier, SlackNotifier)
@@ -1135,7 +1150,9 @@ class TestSlackConfig:
         )
         config = load_config(cfg_file)
         assert config.slack.enabled is True
-        assert config.slack.webhooks["golem"] == "https://hooks.slack.com/services/T/B/X"
+        assert (
+            config.slack.webhooks["golem"] == "https://hooks.slack.com/services/T/B/X"
+        )
 
     def test_slack_and_teams_both_parsed(self, tmp_path):
         from golem.core.config import load_config
@@ -1171,6 +1188,7 @@ class TestSlackClient:
             return resp
 
         import golem.core.slack as slack_mod
+
         monkeypatch.setattr(slack_mod.requests, "post", mock_post)
 
         client = SlackClient(webhooks={"golem": "https://hooks.slack.com/test"})
@@ -1192,10 +1210,13 @@ class TestSlackClient:
             return resp
 
         import golem.core.slack as slack_mod
+
         monkeypatch.setattr(slack_mod.requests, "post", mock_post)
 
         client = SlackClient(webhooks={"ch": "https://hooks.slack.com/test"})
-        assert client.send_message("https://hooks.slack.com/test", {"text": "hi"}) is False
+        assert (
+            client.send_message("https://hooks.slack.com/test", {"text": "hi"}) is False
+        )
 
     def test_send_message_request_exception(self, monkeypatch):
         from golem.core.slack import SlackClient
@@ -1205,7 +1226,10 @@ class TestSlackClient:
             raise _req.ConnectionError("refused")
 
         import golem.core.slack as slack_mod
+
         monkeypatch.setattr(slack_mod.requests, "post", mock_post)
 
         client = SlackClient(webhooks={"ch": "https://hooks.slack.com/test"})
-        assert client.send_message("https://hooks.slack.com/test", {"text": "hi"}) is False
+        assert (
+            client.send_message("https://hooks.slack.com/test", {"text": "hi"}) is False
+        )

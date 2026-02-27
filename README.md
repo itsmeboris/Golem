@@ -188,7 +188,7 @@ profile: redmine   # or: local, github, your-custom-profile
 |-----------|---------|-----------------|---------------|
 | `TaskSource` | Discover and read tasks | Redmine REST API | YAML files |
 | `StateBackend` | Update status, post comments | Redmine REST API | Log to stdout |
-| `Notifier` | Send lifecycle notifications | Teams Adaptive Cards | Log to stdout |
+| `Notifier` | Send lifecycle notifications | Slack or Teams (configurable) | Log to stdout |
 | `ToolProvider` | Select MCP servers per task | Keyword-based scoping | None |
 | `PromptProvider` | Load prompt templates | `prompts/` directory | `prompts/` |
 
@@ -214,7 +214,8 @@ golem/
 │
 ├── backends/              # Pluggable backend implementations
 │   ├── redmine.py         #   Redmine TaskSource + StateBackend
-│   ├── teams_notifier.py  #   Teams webhook notifier
+│   ├── slack_notifier.py  #   Slack Block Kit notifier
+│   ├── teams_notifier.py  #   Teams Adaptive Card notifier
 │   ├── mcp_tools.py       #   Keyword-based MCP tool provider
 │   └── local.py           #   Null/log backends for local dev
 │
@@ -255,7 +256,8 @@ See [`config.yaml.example`](config.yaml.example) for the full annotated template
 ```bash
 REDMINE_URL=https://redmine.example.com
 REDMINE_API_KEY=your-api-key
-TEAMS_GOLEM_WEBHOOK_URL=https://...   # optional
+TEAMS_GOLEM_WEBHOOK_URL=https://...   # optional, or use Slack:
+SLACK_GOLEM_WEBHOOK_URL=https://hooks.slack.com/services/T/B/X  # optional
 ```
 
 ---

@@ -32,9 +32,7 @@ def _section(text: str) -> dict[str, Any]:
 def _fields(pairs: list[tuple[str, str]]) -> dict[str, Any]:
     return {
         "type": "section",
-        "fields": [
-            {"type": "mrkdwn", "text": f"*{k}:*\n{v}"} for k, v in pairs if v
-        ],
+        "fields": [{"type": "mrkdwn", "text": f"*{k}:*\n{v}"} for k, v in pairs if v],
     }
 
 
@@ -70,7 +68,9 @@ class SlackNotifier:
         commit_sha: str = "",
         retry_count: int = 0,
     ) -> None:
-        emoji = ":white_check_mark:" if retry_count == 0 else ":arrows_counterclockwise:"
+        emoji = (
+            ":white_check_mark:" if retry_count == 0 else ":arrows_counterclockwise:"
+        )
         blocks: list[dict[str, Any]] = [
             _header(f"Golem Completed: #{task_id}", emoji),
             _section(subject[:300]),
@@ -107,11 +107,13 @@ class SlackNotifier:
         blocks = [
             _header(f"Golem Failed: #{task_id}", ":x:"),
             _section(subject[:300]),
-            _fields([
-                ("Error", reason[:200]),
-                ("Cost", f"${cost_usd:.2f}"),
-                ("Duration", _fmt_duration(duration_s)),
-            ]),
+            _fields(
+                [
+                    ("Error", reason[:200]),
+                    ("Cost", f"${cost_usd:.2f}"),
+                    ("Duration", _fmt_duration(duration_s)),
+                ]
+            ),
         ]
         self._send(blocks, f"Golem failed #{task_id}")
 
@@ -130,12 +132,14 @@ class SlackNotifier:
         blocks: list[dict[str, Any]] = [
             _header(f"Golem Needs Review: #{task_id}", ":warning:"),
             _section(subject[:300]),
-            _fields([
-                ("Verdict", verdict),
-                ("Cost", f"${cost_usd:.2f}"),
-                ("Duration", _fmt_duration(duration_s)),
-                ("Retried", "Yes" if retry_count else "No"),
-            ]),
+            _fields(
+                [
+                    ("Verdict", verdict),
+                    ("Cost", f"${cost_usd:.2f}"),
+                    ("Duration", _fmt_duration(duration_s)),
+                    ("Retried", "Yes" if retry_count else "No"),
+                ]
+            ),
         ]
         if summary:
             blocks.append(_section(f"*Summary*: {summary[:300]}"))
