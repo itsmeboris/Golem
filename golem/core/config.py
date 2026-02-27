@@ -136,6 +136,14 @@ class TeamsConfig:
 
 
 @dataclass
+class SlackConfig:
+    """Slack incoming webhook integration settings."""
+
+    enabled: bool = False
+    webhooks: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
 class Config:
     """Top-level application configuration."""
 
@@ -146,6 +154,7 @@ class Config:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     polling: PollingConfig = field(default_factory=PollingConfig)
     teams: TeamsConfig = field(default_factory=TeamsConfig)
+    slack: SlackConfig = field(default_factory=SlackConfig)
     dry_run: bool = False
 
     def get_flow_config(self, flow_name: str) -> FlowConfig | None:
@@ -284,6 +293,13 @@ def _parse_teams_config(data: dict[str, Any]) -> TeamsConfig:
     )
 
 
+def _parse_slack_config(data: dict[str, Any]) -> SlackConfig:
+    return SlackConfig(
+        enabled=data.get("enabled", False),
+        webhooks=data.get("webhooks", {}),
+    )
+
+
 def _find_config_path(config_path: str | Path | None) -> Path | None:
     if config_path is not None:
         return Path(config_path)
@@ -332,6 +348,7 @@ def load_config(config_path: str | Path | None = None) -> Config:
         logging=_parse_logging_config(raw_config.get("logging", {})),
         polling=_parse_polling_config(raw_config.get("polling", {})),
         teams=_parse_teams_config(raw_config.get("teams", {})),
+        slack=_parse_slack_config(raw_config.get("slack", {})),
     )
 
 

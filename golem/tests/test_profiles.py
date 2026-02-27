@@ -20,7 +20,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from golem.core.config import Config, GolemFlowConfig
+from golem.core.config import Config, GolemFlowConfig, SlackConfig, TeamsConfig
 
 
 # ---------------------------------------------------------------------------
@@ -322,6 +322,88 @@ class TestLogNotifier:
         n.notify_escalated("123", "Test task", "FAIL", "Agent could not fix")
 
 
+class TestSlackNotifier:
+    def _make_notifier(self):
+        from golem.backends.slack_notifier import SlackNotifier
+
+        client = MagicMock()
+        return SlackNotifier(client), client
+
+    def test_notify_started(self):
+        notifier, client = self._make_notifier()
+        notifier.notify_started("42", "Test task")
+        client.send_to_channel.assert_called_once()
+        payload = client.send_to_channel.call_args[0][1]
+        assert "blocks" in payload
+        assert "text" in payload
+        assert "#42" in payload["text"]
+
+    def test_notify_completed(self):
+        notifier, client = self._make_notifier()
+        notifier.notify_completed(
+            "42", "Test task",
+            cost_usd=1.5, duration_s=60,
+            verdict="PASS", confidence=0.95,
+            commit_sha="abc123", retry_count=1,
+        )
+        client.send_to_channel.assert_called_once()
+        payload = client.send_to_channel.call_args[0][1]
+        text = json.dumps(payload["blocks"])
+        assert "$1.50" in text
+        assert "PASS" in text
+        assert "`abc123`" in text
+
+    def test_notify_completed_with_concerns(self):
+        notifier, client = self._make_notifier()
+        notifier.notify_completed(
+            "42", "Test", concerns=["concern A", "concern B"], cost_usd=0
+        )
+        payload = client.send_to_channel.call_args[0][1]
+        text = json.dumps(payload["blocks"])
+        assert "concern A" in text
+        assert "concern B" in text
+
+    def test_notify_failed(self):
+        notifier, client = self._make_notifier()
+        notifier.notify_failed("42", "Test task", "Budget exceeded")
+        client.send_to_channel.assert_called_once()
+        payload = client.send_to_channel.call_args[0][1]
+        assert any("Budget exceeded" in str(b) for b in payload["blocks"])
+
+    def test_notify_escalated(self):
+        notifier, client = self._make_notifier()
+        notifier.notify_escalated(
+            "42", "Test task", "FAIL", "Agent could not resolve"
+        )
+        client.send_to_channel.assert_called_once()
+        payload = client.send_to_channel.call_args[0][1]
+        text = json.dumps(payload["blocks"])
+        assert "FAIL" in text
+        assert "Agent could not resolve" in text
+
+    def test_notify_escalated_with_concerns(self):
+        notifier, client = self._make_notifier()
+        notifier.notify_escalated(
+            "42", "Test", "FAIL", "summary",
+            concerns=["c1"], cost_usd=2.0, retry_count=1,
+        )
+        payload = client.send_to_channel.call_args[0][1]
+        text = json.dumps(payload["blocks"])
+        assert "c1" in text
+        assert "Yes" in text  # retried = Yes
+
+    def test_send_failure_does_not_raise(self):
+        notifier, client = self._make_notifier()
+        client.send_to_channel.side_effect = RuntimeError("connection failed")
+        notifier.notify_started("42", "Test task")
+
+    def test_satisfies_notifier_protocol(self):
+        from golem.interfaces import Notifier
+
+        notifier, _ = self._make_notifier()
+        assert isinstance(notifier, Notifier)
+
+
 class TestNullToolProvider:
     def test_base_servers_empty(self):
         from golem.backends.local import NullToolProvider
@@ -454,10 +536,44 @@ class TestProfileSwitching:
         from golem.profile import build_profile
 
         config = Config(golem=GolemFlowConfig(profile="redmine"))
-        # teams.enabled defaults to False
         assert config.teams.enabled is False
+        assert config.slack.enabled is False
         profile = build_profile("redmine", config)
         assert isinstance(profile.notifier, LogNotifier)
+
+    def test_redmine_profile_slack_enabled_uses_slack_notifier(self):
+        from golem.backends.slack_notifier import SlackNotifier
+        from golem.profile import build_profile
+
+        config = Config(
+            golem=GolemFlowConfig(profile="redmine"),
+            slack=SlackConfig(enabled=True, webhooks={"golem": "https://hooks.slack.com/test"}),
+        )
+        profile = build_profile("redmine", config)
+        assert isinstance(profile.notifier, SlackNotifier)
+
+    def test_redmine_profile_teams_enabled_uses_teams_notifier(self):
+        from golem.backends.teams_notifier import TeamsNotifier
+        from golem.profile import build_profile
+
+        config = Config(
+            golem=GolemFlowConfig(profile="redmine"),
+            teams=TeamsConfig(enabled=True, webhooks={"golem": "https://teams.test/webhook"}),
+        )
+        profile = build_profile("redmine", config)
+        assert isinstance(profile.notifier, TeamsNotifier)
+
+    def test_slack_takes_priority_over_teams(self):
+        from golem.backends.slack_notifier import SlackNotifier
+        from golem.profile import build_profile
+
+        config = Config(
+            golem=GolemFlowConfig(profile="redmine"),
+            slack=SlackConfig(enabled=True, webhooks={"golem": "https://hooks.slack.com/test"}),
+            teams=TeamsConfig(enabled=True, webhooks={"golem": "https://teams.test/webhook"}),
+        )
+        profile = build_profile("redmine", config)
+        assert isinstance(profile.notifier, SlackNotifier)
 
 
 # ---------------------------------------------------------------------------
@@ -994,3 +1110,102 @@ class TestRedmineBackendMocked:
         assert _status_map[TaskStatus.IN_PROGRESS] == 2
         assert _status_map[TaskStatus.FIXED] == 3
         assert _status_map[TaskStatus.CLOSED] == 5
+
+
+# ---------------------------------------------------------------------------
+# Slack config parsing
+# ---------------------------------------------------------------------------
+
+
+class TestSlackConfig:
+    def test_default_slack_disabled(self):
+        config = Config()
+        assert config.slack.enabled is False
+        assert not config.slack.webhooks
+
+    def test_slack_config_from_yaml(self, tmp_path):
+        from golem.core.config import load_config
+
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(
+            "slack:\n"
+            "  enabled: true\n"
+            "  webhooks:\n"
+            "    golem: https://hooks.slack.com/services/T/B/X\n"
+        )
+        config = load_config(cfg_file)
+        assert config.slack.enabled is True
+        assert config.slack.webhooks["golem"] == "https://hooks.slack.com/services/T/B/X"
+
+    def test_slack_and_teams_both_parsed(self, tmp_path):
+        from golem.core.config import load_config
+
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(
+            "slack:\n"
+            "  enabled: true\n"
+            "  webhooks:\n"
+            "    golem: https://slack.test\n"
+            "teams:\n"
+            "  enabled: true\n"
+            "  webhooks:\n"
+            "    golem: https://teams.test\n"
+        )
+        config = load_config(cfg_file)
+        assert config.slack.enabled is True
+        assert config.teams.enabled is True
+
+
+# ---------------------------------------------------------------------------
+# SlackClient
+# ---------------------------------------------------------------------------
+
+
+class TestSlackClient:
+    def test_send_message_success(self, monkeypatch):
+        from golem.core.slack import SlackClient
+
+        def mock_post(*_args, **kwargs):
+            resp = MagicMock()
+            resp.status_code = 200
+            return resp
+
+        import golem.core.slack as slack_mod
+        monkeypatch.setattr(slack_mod.requests, "post", mock_post)
+
+        client = SlackClient(webhooks={"golem": "https://hooks.slack.com/test"})
+        assert client.send_to_channel("golem", {"text": "hello"}) is True
+
+    def test_send_message_missing_channel(self):
+        from golem.core.slack import SlackClient
+
+        client = SlackClient(webhooks={})
+        assert client.send_to_channel("golem", {"text": "hello"}) is False
+
+    def test_send_message_http_error(self, monkeypatch):
+        from golem.core.slack import SlackClient
+
+        def mock_post(*_args, **kwargs):
+            resp = MagicMock()
+            resp.status_code = 403
+            resp.text = "invalid_token"
+            return resp
+
+        import golem.core.slack as slack_mod
+        monkeypatch.setattr(slack_mod.requests, "post", mock_post)
+
+        client = SlackClient(webhooks={"ch": "https://hooks.slack.com/test"})
+        assert client.send_message("https://hooks.slack.com/test", {"text": "hi"}) is False
+
+    def test_send_message_request_exception(self, monkeypatch):
+        from golem.core.slack import SlackClient
+        import requests as _req
+
+        def mock_post(*_args, **kwargs):
+            raise _req.ConnectionError("refused")
+
+        import golem.core.slack as slack_mod
+        monkeypatch.setattr(slack_mod.requests, "post", mock_post)
+
+        client = SlackClient(webhooks={"ch": "https://hooks.slack.com/test"})
+        assert client.send_message("https://hooks.slack.com/test", {"text": "hi"}) is False
