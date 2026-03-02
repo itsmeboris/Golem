@@ -218,6 +218,7 @@ class TestCmdRun:
             parent_id=123,
             config=None,
             prompt="",
+            file="",
             dry=False,
             subject="",
             mcp=None,
@@ -232,6 +233,7 @@ class TestCmdRun:
             parent_id=None,
             config=None,
             prompt="",
+            file="",
         )
         result = cmd_run(args)
         assert result == 1
@@ -243,6 +245,7 @@ class TestCmdRun:
             parent_id=42,
             config=None,
             prompt="",
+            file="",
             dry=True,
             subject="",
             mcp=None,

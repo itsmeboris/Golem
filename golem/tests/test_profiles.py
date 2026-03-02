@@ -525,6 +525,60 @@ class TestFilePromptProvider:
 # ---------------------------------------------------------------------------
 
 
+class TestLocalProfile:
+    def test_build_local_profile(self):
+        from golem.profile import build_profile
+
+        config = Config(golem=GolemFlowConfig(profile="local"))
+        profile = build_profile("local", config)
+        assert profile.name == "local"
+        from golem.backends.local import (
+            LocalFileTaskSource,
+            NullStateBackend,
+        )
+
+        assert isinstance(profile.task_source, LocalFileTaskSource)
+        assert isinstance(profile.state_backend, NullStateBackend)
+
+    def test_local_profile_with_mcp_enabled(self):
+        from golem.backends.mcp_tools import KeywordToolProvider
+        from golem.profile import build_profile
+
+        config = Config(golem=GolemFlowConfig(profile="local", mcp_enabled=True))
+        profile = build_profile("local", config)
+        assert isinstance(profile.tool_provider, KeywordToolProvider)
+
+    def test_local_profile_with_mcp_disabled(self):
+        from golem.backends.local import NullToolProvider
+        from golem.profile import build_profile
+
+        config = Config(golem=GolemFlowConfig(profile="local", mcp_enabled=False))
+        profile = build_profile("local", config)
+        assert isinstance(profile.tool_provider, NullToolProvider)
+
+    def test_local_profile_uses_configured_notifier(self):
+        from golem.backends.slack_notifier import SlackNotifier
+        from golem.profile import build_profile
+
+        config = Config(
+            golem=GolemFlowConfig(profile="local"),
+            slack=SlackConfig(
+                enabled=True, webhooks={"golem": "https://hooks.slack.com/test"}
+            ),
+        )
+        profile = build_profile("local", config)
+        assert isinstance(profile.notifier, SlackNotifier)
+
+    def test_available_profiles_includes_local(self):
+        from golem.profile import available_profiles, build_profile
+
+        config = Config(golem=GolemFlowConfig())
+        build_profile("redmine", config)
+        names = available_profiles()
+        assert "local" in names
+        assert "redmine" in names
+
+
 class TestProfileSwitching:
     def test_redmine_profile_has_redmine_backends(self):
         from golem.backends.redmine import (

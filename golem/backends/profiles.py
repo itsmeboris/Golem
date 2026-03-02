@@ -1,6 +1,6 @@
 """Built-in profile factories — registered on import.
 
-Importing this module registers the ``redmine`` profile.
+Importing this module registers the ``redmine`` and ``local`` profiles.
 """
 
 from __future__ import annotations
@@ -52,5 +52,31 @@ def _build_redmine_profile(config: Any) -> GolemProfile:
     )
 
 
+def _build_local_profile(config: Any) -> GolemProfile:
+    """Build a local profile backed by file-based submissions."""
+    from ..core.config import DATA_DIR
+    from ..prompts import FilePromptProvider
+
+    from .local import LocalFileTaskSource, NullStateBackend, NullToolProvider
+    from .mcp_tools import KeywordToolProvider
+
+    task_config = config.get_flow_config("golem")
+    prompts_dir = task_config.prompts_dir if task_config else ""
+    mcp_enabled = task_config.mcp_enabled if task_config else False
+
+    submissions_dir = DATA_DIR / "submissions"
+    submissions_dir.mkdir(parents=True, exist_ok=True)
+
+    return GolemProfile(
+        name="local",
+        task_source=LocalFileTaskSource(submissions_dir),
+        state_backend=NullStateBackend(),
+        notifier=_build_notifier(config),
+        tool_provider=KeywordToolProvider() if mcp_enabled else NullToolProvider(),
+        prompt_provider=FilePromptProvider(prompts_dir or None),
+    )
+
+
 # -- Register on import -----------------------------------------------------
 register_profile("redmine", _build_redmine_profile)
+register_profile("local", _build_local_profile)

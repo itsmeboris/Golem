@@ -2,8 +2,8 @@
 """CLI entry point for Golem.
 
 Subcommands:
-    golem run -p "fix the bug"          # run from inline prompt (simplest)
-    golem run -p "refactor" --bg        # prompt in background
+    golem run -p "fix the bug"          # submit prompt to daemon
+    golem run -f plan.md                # submit prompt from file
     golem run 4895049                   # execute a task by tracker ID
     golem run 4895049 --dry             # preview without executing
     golem poll                          # scan for [AGENT] issues
@@ -22,10 +22,13 @@ import os
 import signal
 import sys
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
-from .core.config import DATA_DIR, load_config
+from .core.config import DATA_DIR, DashboardConfig, load_config
 from .core.daemon_utils import (
     daemonize,
     read_pid,
@@ -36,6 +39,7 @@ from .core.daemon_utils import (
 )
 from .core.run_log import format_duration
 from .core.stream_printer import StreamPrinter as _StreamPrinter
+from .core.control_api import wire_control_api
 from .core.triggers import FASTAPI_AVAILABLE
 from .orchestrator import (
     TaskOrchestrator,
@@ -358,7 +362,7 @@ async def _start_dashboard_server(
     import uvicorn
     from fastapi import FastAPI
 
-    from .core.control_api import control_router
+    from .core.control_api import control_router, health_router
     from .core.dashboard import mount_dashboard
 
     app = FastAPI(title="Golem Dashboard")
@@ -367,6 +371,8 @@ async def _start_dashboard_server(
     )
     if control_router is not None:
         app.include_router(control_router)
+    if health_router is not None:
+        app.include_router(health_router)
     uvi_config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="info")
     server = uvicorn.Server(uvi_config)
     task = asyncio.create_task(server.serve())
@@ -394,6 +400,8 @@ async def run_daemon(args, config) -> int:
     if flow is None:
         print("Golem is not enabled in config", file=sys.stderr)
         return 1
+
+    wire_control_api(golem_flow=flow)
 
     # Start dashboard
     from .core.dashboard import config_to_snapshot
@@ -432,11 +440,16 @@ def cmd_run(args) -> int:
     config = load_config(getattr(args, "config", None))
 
     prompt_text = getattr(args, "prompt", "")
+    file_path = getattr(args, "file", "")
+
     if prompt_text:
         return _cmd_run_prompt(args, config, prompt_text)
 
+    if file_path:
+        return _cmd_run_file(args, config, file_path)
+
     if args.parent_id is None:
-        print("Error: provide a task ID or use --prompt", file=sys.stderr)
+        print("Error: provide a task ID, --prompt, or --file", file=sys.stderr)
         return 1
 
     ok = run_issue(
@@ -452,118 +465,141 @@ def cmd_run(args) -> int:
 
 
 def _cmd_run_prompt(args, config, prompt_text):
-    """Run a task from an inline prompt through the orchestrator pipeline.
+    """Submit a prompt to the daemon for background execution.
 
-    Creates a synthetic local task and routes through ``run_issue()`` so the
-    prompt run gets the same validation, retry, commit, session tracking, and
-    dashboard visibility as a Redmine-sourced task.  The orchestrator handles
-    worktree creation, commit, and merge-back automatically.
+    Ensures the daemon is running (starts it if needed), then submits the
+    prompt via the HTTP API.  The daemon handles worktree creation, execution,
+    validation, commit, and merge-back.
     """
-    run_bg = getattr(args, "bg", False)
-    task_id = int(time.time())
+    port = config.dashboard.port if config.dashboard else DashboardConfig.port
+    _ensure_daemon(args, config, port)
 
-    # Background mode: fork to a log file and return immediately
-    if run_bg:
-        return _run_prompt_bg(args, prompt_text, task_id)
-
-    # Build a synthetic local profile with the prompt as task description.
-    # Default to no MCP in prompt mode — the user may not have MCP servers.
-    # Use --mcp to explicitly enable.
-    mcp_flag = getattr(args, "mcp", None)
-    mcp_enabled = mcp_flag if mcp_flag is not None else False
-    profile = _build_prompt_profile(task_id, prompt_text, mcp_enabled=mcp_enabled)
-    subject = f"[AGENT] {prompt_text[:80]}"
-
-    ok = run_issue(
-        task_id,
-        config,
-        dry=getattr(args, "dry", False),
-        subject_override=subject,
-        profile_override=profile,
+    subject = getattr(args, "subject", "") or ""
+    result = _submit_to_daemon(
+        prompt=prompt_text,
+        subject=subject,
+        port=port,
     )
 
-    if getattr(args, "dry", False):
-        return 0
-    return 0 if ok else 1
+    if not result:
+        return 1
+
+    task_id = result.get("task_id", "?")
+    print(f"\n  Submitted task #{task_id}")
+    print("  Track with: golem status")
+    return 0
 
 
-def _build_prompt_profile(task_id, prompt_text, mcp_enabled=False):
-    """Create a local profile with a synthetic task file for prompt mode."""
-    from .backends.local import (
-        LocalFileTaskSource,
-        LogNotifier,
-        NullStateBackend,
-        NullToolProvider,
-    )
-    from .backends.mcp_tools import KeywordToolProvider
-    from .profile import GolemProfile
-    from .prompts import FilePromptProvider
-
-    # Write a synthetic task file so the local task source can serve it
-    tasks_dir = DATA_DIR / "prompt_tasks"
-    tasks_dir.mkdir(parents=True, exist_ok=True)
-    task_file = tasks_dir / f"{task_id}.json"
-    task_file.write_text(
-        json.dumps(
-            {
-                "id": str(task_id),
-                "subject": f"[AGENT] {prompt_text[:80]}",
-                "description": prompt_text,
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
-
-    prompts_dir = Path(__file__).resolve().parent / "prompts"
-    return GolemProfile(
-        name="prompt",
-        task_source=LocalFileTaskSource(tasks_dir),
-        state_backend=NullStateBackend(),
-        notifier=LogNotifier(),
-        tool_provider=KeywordToolProvider() if mcp_enabled else NullToolProvider(),
-        prompt_provider=FilePromptProvider(prompts_dir),
-    )
+def _cmd_run_file(args, config, file_path):
+    """Read a prompt from *file_path* and submit it to the daemon."""
+    p = Path(file_path)
+    if not p.is_file():
+        print(f"Error: file not found: {file_path}", file=sys.stderr)
+        return 1
+    prompt_text = p.read_text(encoding="utf-8").strip()
+    if not prompt_text:
+        print(f"Error: file is empty: {file_path}", file=sys.stderr)
+        return 1
+    return _cmd_run_prompt(args, config, prompt_text)
 
 
-def _run_prompt_bg(args, prompt_text, task_id):
-    """Fork prompt execution to a background process with log file."""
-    import subprocess as _sp
+# ---------------------------------------------------------------------------
+# Daemon auto-start + HTTP submission
+# ---------------------------------------------------------------------------
 
-    log_dir = DATA_DIR / "logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / f"prompt_{task_id}.log"
 
-    # Re-invoke ourselves without --bg to avoid infinite recursion
-    cmd = [
-        sys.executable,
-        "-m",
-        "golem",
-    ]
-    if getattr(args, "config", None):
-        cmd += ["-c", str(args.config)]
-    cmd += ["run", "-p", prompt_text]
-    if getattr(args, "worktree", False):
-        cmd.append("--worktree")
-    if getattr(args, "mcp", None) is True:
-        cmd.append("--mcp")
-    elif getattr(args, "mcp", None) is False:
-        cmd.append("--no-mcp")
-    # Don't pass --bg again
+def _daemon_health(port: int) -> bool:
+    """Probe the daemon health endpoint.  Returns True if healthy."""
+    try:
+        url = f"http://127.0.0.1:{port}/api/health"
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            return resp.status == 200
+    except (urllib.error.URLError, OSError):
+        return False
 
-    with open(log_file, "w", encoding="utf-8") as lf:
-        proc = _sp.Popen(  # pylint: disable=consider-using-with
-            cmd,
-            stdout=lf,
-            stderr=_sp.STDOUT,
-            start_new_session=True,
+
+def _ensure_daemon(args, config, port: int) -> None:
+    """Make sure the daemon is running; start it in background if not."""
+    if _daemon_health(port):
+        return
+
+    pid = read_pid(DEFAULT_PID_FILE)
+    if pid is not None:
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            remove_pid(DEFAULT_PID_FILE)
+
+    if not _daemon_health(port):
+        print("  Starting daemon in background...")
+        import subprocess as _sp
+
+        cmd = [sys.executable, "-m", "golem"]
+        cfg_path = getattr(args, "config", None)
+        if cfg_path:
+            cmd += ["-c", str(cfg_path)]
+        cmd += ["daemon"]
+
+        log_dir = DATA_DIR / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        bg_log = log_dir / f"agent_{stamp}.log"
+
+        with open(bg_log, "w", encoding="utf-8") as lf:
+            _sp.Popen(  # pylint: disable=consider-using-with
+                cmd,
+                stdout=lf,
+                stderr=_sp.STDOUT,
+                start_new_session=True,
+            )
+
+        for _ in range(30):
+            time.sleep(0.5)
+            if _daemon_health(port):
+                print(f"  Daemon started (log: {bg_log})")
+                return
+
+        print(
+            "  Warning: daemon may not be ready yet. "
+            "Check logs or run 'golem daemon --foreground'.",
+            file=sys.stderr,
         )
 
-    print(f"  Background PID: {proc.pid}")
-    print(f"  Log: {log_file}")
-    print(f"  Task ID: {task_id}")
-    print(f"\n  Follow output: tail -f {log_file}")
-    return 0
+
+def _submit_to_daemon(
+    prompt: str,
+    port: int,
+    subject: str = "",
+    file_path: str = "",
+    work_dir: str = "",
+) -> dict | None:
+    """POST a task to the daemon's /api/submit endpoint."""
+    payload: dict[str, Any] = {}
+    if file_path:
+        payload["file"] = file_path
+    else:
+        payload["prompt"] = prompt
+    if subject:
+        payload["subject"] = subject
+    if work_dir:
+        payload["work_dir"] = work_dir
+
+    url = f"http://127.0.0.1:{port}/api/submit"
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=data, headers={"Content-Type": "application/json"}, method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        print(f"  Submit failed ({exc.code}): {body}", file=sys.stderr)
+        return None
+    except (urllib.error.URLError, OSError) as exc:
+        print(f"  Submit failed: {exc}", file=sys.stderr)
+        return None
 
 
 def cmd_poll(args) -> int:
@@ -724,7 +760,7 @@ def cmd_dashboard(args) -> int:
         default_port = cfg.dashboard.port
     except Exception:  # pylint: disable=broad-except
         snap = None
-        default_port = 8082
+        default_port = DashboardConfig.port
 
     port = getattr(args, "port", None) or default_port
     app = FastAPI(title="Golem Dashboard")
@@ -766,22 +802,18 @@ def main() -> int:
     run_p.add_argument(
         "parent_id", nargs="?", type=int, default=None, help="Task/issue ID"
     )
-    run_p.add_argument(
+    run_prompt_group = run_p.add_mutually_exclusive_group()
+    run_prompt_group.add_argument(
         "--prompt",
         "-p",
         default="",
-        help="Run from inline prompt (no external services)",
+        help="Submit inline prompt to daemon for execution",
     )
-    run_p.add_argument(
-        "--worktree",
-        "-w",
-        action="store_true",
-        help="Run in an isolated git worktree (for prompt mode)",
-    )
-    run_p.add_argument(
-        "--bg",
-        action="store_true",
-        help="Run in background with output to log file (for prompt mode)",
+    run_prompt_group.add_argument(
+        "--file",
+        "-f",
+        default="",
+        help="Submit prompt from file to daemon for execution",
     )
     run_p.add_argument("--dry", action="store_true", help="Preview without executing")
     run_p.add_argument("--subject", default="", help="Override issue subject")

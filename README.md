@@ -19,14 +19,15 @@
   <a href="#why-golem">Why Golem</a>&nbsp;&nbsp;·&nbsp;&nbsp;
   <a href="#how-it-works">How It Works</a>&nbsp;&nbsp;·&nbsp;&nbsp;
   <a href="#configuration">Configuration</a>&nbsp;&nbsp;·&nbsp;&nbsp;
-  <a href="#custom-profiles">Custom Profiles</a>
+  <a href="#custom-profiles">Custom Profiles</a>&nbsp;&nbsp;·&nbsp;&nbsp;
+  <a href="#http-api">HTTP API</a>
 </p>
 
 ---
 
-Golem connects to your issue tracker, watches for tagged tasks, spins up Claude agents to solve them, validates the output, commits the results, and notifies your team — in a continuous loop.
+Golem runs as a daemon, picks up work from your issue tracker or direct prompts, spins up Claude agents, validates the output, commits the results, and notifies your team — in a continuous loop.
 
-Tag an issue. Walk away. It's done.
+Submit a prompt. Walk away. It's done.
 
 ---
 
@@ -34,7 +35,7 @@ Tag an issue. Walk away. It's done.
 
 Most AI coding tools wait for you to invoke them. Golem runs the other way around.
 
-**Fire-and-forget** — Golem runs as a daemon, continuously polling your tracker for tagged issues. No manual invocation, no babysitting. It picks up work on its own, executes, validates, commits, and reports back.
+**Daemon-centric** — Everything runs through the daemon. Submit a prompt from the CLI, drop a file, or hit the HTTP API — the daemon picks it up, executes it in the background, and reports back. If the daemon isn't running, `golem run` starts it automatically.
 
 **Parallel execution** — Multiple Claude instances run simultaneously, each on a different task. Every task gets its own git worktree, so concurrent work never collides. When tasks complete, changes merge cleanly back into your branch.
 
@@ -67,32 +68,41 @@ cp config.yaml.example config.yaml     # tweak settings
 ### 3. Run
 
 ```bash
-# Run a single task by issue ID
-golem run 12345
-
-# Run a task from a plain-text prompt (no tracker needed)
+# Submit a prompt — daemon starts automatically if not running
 golem run -p "Refactor the logging module to use structured JSON"
 
-# Poll for tasks continuously (daemon mode)
+# Submit a prompt from a file (great for detailed plans)
+golem run -f plan.md
+
+# Run a single task by tracker issue ID
+golem run 12345
+
+# Start the daemon in the foreground (for debugging/monitoring)
 golem daemon --foreground
 
+# Check what's running
+golem status
+
 # Launch the web dashboard
-golem dashboard --port 8082
+golem dashboard --port 8081
 ```
 
 ---
 
 ## How It Works
 
-### Execution Pipeline
+### Daemon-Centric Architecture
+
+The daemon is the single execution engine. All task execution flows through it, regardless of how the task was submitted.
 
 ```mermaid
 flowchart TB
-    prompt["Task Prompt"] --> flow
+    cli["golem run -p / -f"] -- "HTTP POST /api/submit" --> daemon
+    api["External Tool / AI"] -- "HTTP POST /api/submit" --> daemon
+    drop["File Drop<br/>data/submissions/*.json"] --> daemon
+    tracker["Issue Tracker<br/>(plugin)"] -. "poll" .-> daemon
 
-    tracker["Issue Tracker<br/>(plugin)"] -. "poll" .-> flow
-
-    subgraph golem ["Golem Engine"]
+    subgraph daemon ["Golem Daemon"]
         flow["Flow Engine"] --> super["Supervisor"]
         super -- "decompose" --> plan["Subtask Plan"]
 
@@ -110,6 +120,18 @@ flowchart TB
     val -- PARTIAL --> retry["Retry"]
     retry --> plan
 ```
+
+### Submitting Tasks
+
+There are three ways to submit work to the daemon:
+
+| Method | How | Best for |
+|--------|-----|----------|
+| **CLI** | `golem run -p "..."` or `golem run -f plan.md` | Interactive use — auto-starts daemon if needed |
+| **HTTP API** | `POST /api/submit {"prompt": "..."}` | Programmatic use, external AI agents |
+| **File drop** | Write JSON to `data/submissions/` | Batch pipelines, cross-system integration |
+
+The daemon auto-starts when you use `golem run -p` or `golem run -f`. It probes `GET /api/health` to confirm readiness before submitting.
 
 ### Task Lifecycle
 
@@ -171,7 +193,7 @@ flowchart LR
 
     ts -.- redmine["Redmine API"]
     ts -.- github["GitHub Issues"]
-    ts -.- yaml["Local YAML"]
+    ts -.- filedrop["File Drop<br/>(submissions/)"]
 
     nf -.- teams["Teams Cards"]
     nf -.- slack["Slack Webhook"]
@@ -181,23 +203,26 @@ flowchart LR
 Switch with one line in config:
 
 ```yaml
-profile: redmine   # or: local, github, your-custom-profile
+profile: local     # file-based submissions, no external services
+profile: redmine   # Redmine issue tracking + Slack/Teams + MCP
 ```
 
 | Interface | Purpose | Redmine profile | Local profile |
 |-----------|---------|-----------------|---------------|
-| `TaskSource` | Discover and read tasks | Redmine REST API | YAML files |
-| `StateBackend` | Update status, post comments | Redmine REST API | Log to stdout |
+| `TaskSource` | Discover and read tasks | Redmine REST API | File drop (`data/submissions/`) |
+| `StateBackend` | Update status, post comments | Redmine REST API | No-op |
 | `Notifier` | Send lifecycle notifications | Slack or Teams (configurable) | Log to stdout |
-| `ToolProvider` | Select MCP servers per task | Keyword-based scoping | None |
+| `ToolProvider` | Select MCP servers per task | Keyword-based scoping | None (or keyword-based if `mcp_enabled`) |
 | `PromptProvider` | Load prompt templates | `prompts/` directory | `prompts/` |
+
+The `local` profile is the default for prompt-based workflows. Submitted prompts (via CLI, HTTP API, or file drop) are always handled through the daemon's submission pipeline regardless of which profile is active.
 
 <details>
 <summary><strong>Project Layout</strong></summary>
 
 ```
 golem/
-├── cli.py                 # CLI entry point
+├── cli.py                 # CLI entry point (daemon auto-start, submit)
 ├── flow.py                # Tick-driven poll → detect → orchestrate loop
 ├── orchestrator.py        # State-machine session lifecycle
 ├── supervisor.py          # Task decomposition and synthesis
@@ -217,15 +242,20 @@ golem/
 │   ├── slack_notifier.py  #   Slack Block Kit notifier
 │   ├── teams_notifier.py  #   Teams Adaptive Card notifier
 │   ├── mcp_tools.py       #   Keyword-based MCP tool provider
-│   └── local.py           #   Null/log backends for local dev
+│   ├── local.py           #   File-drop task source + null backends
+│   └── profiles.py        #   Built-in profile factories (local, redmine)
 │
 ├── prompts/               # Prompt templates
 ├── core/                  # Shared utilities
 │   ├── cli_wrapper.py     #   Claude CLI subprocess wrapper
 │   ├── config.py          #   YAML config with env expansion
+│   ├── control_api.py     #   REST API (health, submit, flow control)
 │   ├── dashboard.py       #   Web dashboard
 │   ├── flow_base.py       #   BaseFlow / PollableFlow
 │   └── ...
+│
+├── data/
+│   └── submissions/       # File-drop directory (daemon watches this)
 │
 └── tests/                 # Test suite
 ```
@@ -242,7 +272,7 @@ See [`config.yaml.example`](config.yaml.example) for the full annotated template
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `profile` | `redmine` | Backend profile (`redmine`, `local`, or custom) |
+| `profile` | `local` | Backend profile (`local`, `redmine`, or custom) |
 | `task_model` | `sonnet` | Claude model for execution |
 | `budget_per_task_usd` | `10.0` | Max spend per task (0 = unlimited) |
 | `supervisor_mode` | `true` | Decompose complex tasks into subtasks |
@@ -300,6 +330,34 @@ Then in `config.yaml`:
 
 ```yaml
 profile: github
+```
+
+---
+
+## HTTP API
+
+The daemon exposes a REST API (served on the dashboard port, default `8081`).
+
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/api/health` | GET | None | Readiness probe — returns `{"ok": true, "pid": ..., "uptime_seconds": ...}` |
+| `/api/submit` | POST | None | Submit a task — accepts `{"prompt": "..."}` or `{"file": "/path/to/file.md"}` with optional `subject` and `work_dir` |
+| `/api/flow/status` | GET | None | Status of all configured flows |
+| `/api/flow/start` | POST | Admin | Start flows by name |
+| `/api/flow/stop` | POST | Admin | Stop flows by name |
+
+**Submit examples:**
+
+```bash
+# Inline prompt
+curl -X POST http://localhost:8081/api/submit \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Add retry logic to the HTTP client"}'
+
+# From a file on the daemon host
+curl -X POST http://localhost:8081/api/submit \
+  -H "Content-Type: application/json" \
+  -d '{"file": "/home/user/plan.md", "subject": "Refactor auth module"}'
 ```
 
 ---

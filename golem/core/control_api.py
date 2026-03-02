@@ -1,8 +1,9 @@
 """Standalone flow-control API router.
 
-Provides ``/api/flow/start``, ``/api/flow/stop``, and ``/api/flow/status``
-endpoints as a FastAPI ``APIRouter``.  Can be mounted on the webhook app,
-a standalone control server, or the dashboard app.
+Provides ``/api/flow/start``, ``/api/flow/stop``, ``/api/flow/status``,
+``/api/health``, and ``/api/submit`` endpoints as a FastAPI ``APIRouter``.
+Can be mounted on the webhook app, a standalone control server, or the
+dashboard app.
 
 Runtime dependencies are injected once via :func:`wire_control_api`.
 """
@@ -12,6 +13,9 @@ Runtime dependencies are injected once via :func:`wire_control_api`.
 from __future__ import annotations
 
 import logging
+import os
+import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -36,18 +40,23 @@ except ImportError:
 _polling_trigger: "PollingTrigger | None" = None
 _dispatcher: "Dispatcher | None" = None
 _admin_token: str = ""
+_golem_flow: "Any | None" = None
+_start_time: float = time.time()
 
 
 def wire_control_api(
     polling_trigger: "PollingTrigger | None" = None,
     dispatcher: "Dispatcher | None" = None,
     admin_token: str = "",
+    golem_flow: "Any | None" = None,
 ) -> None:
     """Inject runtime dependencies.  Called once at daemon startup."""
-    global _polling_trigger, _dispatcher, _admin_token
+    global _polling_trigger, _dispatcher, _admin_token, _golem_flow, _start_time
     _polling_trigger = polling_trigger
     _dispatcher = dispatcher
     _admin_token = admin_token
+    _golem_flow = golem_flow
+    _start_time = time.time()
 
 
 def _maybe_start_tick(flow_name: str) -> None:
@@ -140,6 +149,68 @@ if FASTAPI_AVAILABLE:
             status = {k: v for k, v in status.items() if k == only}
         return {"ok": True, "flows": status}
 
+    # -- Health + Submit endpoints (no admin token required) ----------------
+
+    health_router = APIRouter(prefix="/api", tags=["daemon"])
+
+    @health_router.get("/health")
+    async def health_check():
+        """Lightweight health check for CLI daemon-readiness probing."""
+        return {
+            "ok": True,
+            "pid": os.getpid(),
+            "uptime_seconds": round(time.time() - _start_time, 1),
+        }
+
+    @health_router.post("/submit")
+    async def submit_task(request: Request):
+        """Submit a prompt task to the running daemon.
+
+        Accepts JSON::
+
+            {"prompt": "...", "subject": "...", "work_dir": "...", "mcp": true}
+
+        or::
+
+            {"file": "/path/to/prompt.md"}
+
+        Returns ``{"ok": true, "task_id": ..., "status": "submitted"}``.
+        """
+        if _golem_flow is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Daemon not ready — GolemFlow not wired",
+            )
+
+        payload = await request.json()
+        prompt = payload.get("prompt", "")
+        file_path = payload.get("file", "")
+
+        if file_path and not prompt:
+            p = Path(file_path)
+            if not p.is_file():
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"File not found: {file_path}",
+                )
+            prompt = p.read_text(encoding="utf-8")
+
+        if not prompt:
+            raise HTTPException(
+                status_code=400,
+                detail="Either 'prompt' or 'file' is required",
+            )
+
+        subject = payload.get("subject", "")
+        work_dir = payload.get("work_dir", "")
+        result = _golem_flow.submit_task(
+            prompt=prompt,
+            subject=subject,
+            work_dir=work_dir,
+        )
+        return {"ok": True, **result}
+
 else:
     # Provide a no-op router when FastAPI is not installed.
     control_router = None  # type: ignore[assignment]
+    health_router = None  # type: ignore[assignment]

@@ -1,6 +1,7 @@
 # pylint: disable=too-few-public-methods
 """Tests for golem.flow — full coverage."""
 import asyncio
+import json
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
@@ -514,8 +515,6 @@ class TestOnAgentProgress:
 
 class TestLoadStateWithRecovery:
     def test_logs_recovered_sessions(self, monkeypatch, tmp_path):
-        import json
-
         sessions_path = tmp_path / "golem_sessions.json"
         sessions_path.parent.mkdir(parents=True, exist_ok=True)
         data = {
@@ -697,6 +696,279 @@ class TestFlowName:
     def test_name_is_golem(self, monkeypatch, tmp_path):
         flow = _make_flow(monkeypatch, tmp_path)
         assert flow.name == "golem"
+
+
+class TestSubmitTask:
+    def test_creates_file_and_session(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow._running = True
+
+        spawned = []
+        monkeypatch.setattr(flow, "_spawn_session_task", spawned.append)
+
+        result = flow.submit_task("refactor the auth module", subject="[AGENT] Auth")
+        assert result["status"] == "submitted"
+        task_id = result["task_id"]
+
+        assert task_id in flow._sessions
+        session = flow._sessions[task_id]
+        assert session.execution_mode == "prompt"
+        assert session.parent_subject == "[AGENT] Auth"
+        assert task_id in spawned
+
+        task_file = flow._submissions_dir / f"{task_id}.json"
+        assert task_file.exists()
+
+    def test_auto_generates_subject(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path)
+        monkeypatch.setattr(flow, "_spawn_session_task", lambda sid: None)
+
+        result = flow.submit_task("do something cool")
+        task_id = result["task_id"]
+        session = flow._sessions[task_id]
+        assert session.parent_subject.startswith("[AGENT]")
+
+    def test_not_spawned_when_not_running(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow._running = False
+
+        spawned = []
+        monkeypatch.setattr(flow, "_spawn_session_task", spawned.append)
+
+        flow.submit_task("test prompt")
+        assert not spawned
+
+
+class TestScanSubmissions:
+    def test_picks_up_json_files(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow._running = True
+
+        sub_dir = flow._submissions_dir
+        sub_dir.mkdir(parents=True, exist_ok=True)
+
+        task_data = {
+            "id": "9001",
+            "subject": "[AGENT] File drop test",
+            "description": "do it",
+        }
+        (sub_dir / "9001.json").write_text(json.dumps(task_data))
+
+        spawned = []
+        monkeypatch.setattr(flow, "_spawn_session_task", spawned.append)
+
+        mock_live = MagicMock()
+        monkeypatch.setattr("golem.flow.LiveState.get", lambda: mock_live)
+
+        flow._scan_submissions()
+
+        assert 9001 in flow._sessions
+        assert flow._sessions[9001].execution_mode == "prompt"
+        assert 9001 in spawned
+
+        done_file = sub_dir / "done" / "9001.json"
+        assert done_file.exists()
+        assert not (sub_dir / "9001.json").exists()
+
+    def test_skips_already_tracked(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow._running = True
+
+        sub_dir = flow._submissions_dir
+        sub_dir.mkdir(parents=True, exist_ok=True)
+
+        task_data = {"id": "9002", "subject": "[AGENT] Dup", "description": "dup"}
+        (sub_dir / "9002.json").write_text(json.dumps(task_data))
+
+        flow._sessions[9002] = TaskSession(parent_issue_id=9002)
+
+        mock_live = MagicMock()
+        monkeypatch.setattr("golem.flow.LiveState.get", lambda: mock_live)
+
+        flow._scan_submissions()
+        mock_live.enqueue.assert_not_called()
+
+    def test_empty_dir(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow._scan_submissions()
+
+    def test_invalid_id_skipped(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow._running = True
+
+        sub_dir = flow._submissions_dir
+        sub_dir.mkdir(parents=True, exist_ok=True)
+
+        (sub_dir / "bad.json").write_text(
+            json.dumps({"id": "not-a-number", "subject": "test"})
+        )
+
+        mock_live = MagicMock()
+        monkeypatch.setattr("golem.flow.LiveState.get", lambda: mock_live)
+
+        flow._scan_submissions()
+        assert not flow._sessions
+
+
+class TestSubmitTaskWithWorkDir:
+    def test_includes_work_dir(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path)
+        monkeypatch.setattr(flow, "_spawn_session_task", lambda sid: None)
+
+        result = flow.submit_task("do work", work_dir="/my/project")
+        task_id = result["task_id"]
+
+        task_file = flow._submissions_dir / f"{task_id}.json"
+        data = json.loads(task_file.read_text())
+        assert data["work_dir"] == "/my/project"
+
+
+class TestScanSubmissionsEdgeCases:
+    def test_skips_directories(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow._running = True
+
+        sub_dir = flow._submissions_dir
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        (sub_dir / "done.json").mkdir()
+
+        mock_live = MagicMock()
+        monkeypatch.setattr("golem.flow.LiveState.get", lambda: mock_live)
+
+        flow._scan_submissions()
+        assert not flow._sessions
+
+    def test_skips_non_json_files(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow._running = True
+
+        sub_dir = flow._submissions_dir
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        (sub_dir / "readme.txt").write_text("not a task")
+
+        mock_live = MagicMock()
+        monkeypatch.setattr("golem.flow.LiveState.get", lambda: mock_live)
+
+        flow._scan_submissions()
+        assert not flow._sessions
+
+    def test_skips_unparseable_files(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow._running = True
+
+        sub_dir = flow._submissions_dir
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        (sub_dir / "bad.json").write_text("{invalid json")
+
+        mock_live = MagicMock()
+        monkeypatch.setattr("golem.flow.LiveState.get", lambda: mock_live)
+
+        flow._scan_submissions()
+        assert not flow._sessions
+
+    def test_nonexistent_dir(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow._submissions_dir = tmp_path / "nonexistent"
+        flow._scan_submissions()
+
+
+class TestDetectNewIssuesWithSubmissions:
+    def test_scans_submissions_in_detection(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path)
+
+        monkeypatch.setattr(flow, "poll_new_items", lambda: [])
+
+        scanned = []
+        monkeypatch.setattr(flow, "_scan_submissions", lambda: scanned.append(True))
+
+        mock_live = MagicMock()
+        monkeypatch.setattr("golem.flow.LiveState.get", lambda: mock_live)
+
+        flow._detect_new_issues()
+        assert scanned
+
+
+class TestRunSessionWithSubmissionProfile:
+    async def test_uses_submission_profile_for_prompt_sessions(
+        self, monkeypatch, tmp_path
+    ):
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow._running = True
+
+        session = TaskSession(
+            parent_issue_id=8001,
+            parent_subject="prompt task",
+            state=TaskSessionState.DETECTED,
+            execution_mode="prompt",
+            grace_deadline=(
+                datetime.now(timezone.utc) - timedelta(seconds=10)
+            ).isoformat(),
+        )
+        flow._sessions[8001] = session
+
+        mock_live = MagicMock()
+        monkeypatch.setattr("golem.flow.LiveState.get", lambda: mock_live)
+
+        from golem.orchestrator import TaskOrchestrator
+
+        captured_profiles = []
+
+        orig_init = TaskOrchestrator.__init__
+
+        def capture_init(self_orch, *args, **kwargs):
+            orig_init(self_orch, *args, **kwargs)
+            captured_profiles.append(self_orch.profile)
+
+        monkeypatch.setattr(TaskOrchestrator, "__init__", capture_init)
+
+        async def completing_tick(self_orch):
+            self_orch.session.state = TaskSessionState.COMPLETED
+
+        monkeypatch.setattr(TaskOrchestrator, "tick", completing_tick)
+
+        await flow._run_session(8001)
+
+        assert len(captured_profiles) == 1
+        assert captured_profiles[0].name == "submission"
+
+    async def test_uses_main_profile_for_normal_sessions(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow._running = True
+
+        session = TaskSession(
+            parent_issue_id=8002,
+            parent_subject="normal task",
+            state=TaskSessionState.DETECTED,
+            grace_deadline=(
+                datetime.now(timezone.utc) - timedelta(seconds=10)
+            ).isoformat(),
+        )
+        flow._sessions[8002] = session
+
+        mock_live = MagicMock()
+        monkeypatch.setattr("golem.flow.LiveState.get", lambda: mock_live)
+
+        from golem.orchestrator import TaskOrchestrator
+
+        captured_profiles = []
+
+        orig_init = TaskOrchestrator.__init__
+
+        def capture_init(self_orch, *args, **kwargs):
+            orig_init(self_orch, *args, **kwargs)
+            captured_profiles.append(self_orch.profile)
+
+        monkeypatch.setattr(TaskOrchestrator, "__init__", capture_init)
+
+        async def completing_tick(self_orch):
+            self_orch.session.state = TaskSessionState.COMPLETED
+
+        monkeypatch.setattr(TaskOrchestrator, "tick", completing_tick)
+
+        await flow._run_session(8002)
+
+        assert len(captured_profiles) == 1
+        assert captured_profiles[0].name == "test"
 
 
 class TestSaveState:

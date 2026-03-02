@@ -13,7 +13,9 @@ Key exports:
 """
 
 import asyncio
+import json
 import logging
+import shutil
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -22,6 +24,7 @@ from .core.live_state import LiveState
 from .core.triggers.base import TriggerEvent
 from .core.flow_base import BaseFlow, FlowResult, PollableFlow, WebhookableFlow
 
+from .backends.local import LocalFileTaskSource, NullStateBackend, NullToolProvider
 from .event_tracker import Milestone, TaskEventTracker
 from .orchestrator import (
     TaskOrchestrator,
@@ -34,6 +37,9 @@ from .orchestrator import (
 )
 from .priority_gate import PriorityGate
 from .profile import GolemProfile, build_profile
+from .prompts import FilePromptProvider
+
+SUBMISSIONS_DIR = DATA_DIR / "submissions"
 
 logger = logging.getLogger("golem.flow")
 
@@ -65,6 +71,11 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         # Build pluggable profile from config (always required)
         profile_name = self._task_config.profile if self._task_config else "redmine"
         self._profile: GolemProfile = build_profile(profile_name, config)
+
+        self._submissions_dir = SUBMISSIONS_DIR
+        self._submissions_dir.mkdir(parents=True, exist_ok=True)
+        self._submission_source = LocalFileTaskSource(self._submissions_dir)
+        self._submission_profile = self._build_submission_profile()
 
         self._load_state()
 
@@ -215,7 +226,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             await asyncio.sleep(self._task_config.tick_interval)
 
     def _detect_new_issues(self) -> None:
-        """Poll for new [AGENT] issues, create sessions, and spawn tasks."""
+        """Poll for new [AGENT] issues and scan submissions directory."""
         live = LiveState.get()
         for item in self.poll_new_items():
             iid = item.get("issue_id")
@@ -232,6 +243,8 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             live.update_phase(event_id, "detected")
             logger.info("Detected new task: #%d %s", iid, subject[:60])
             self._spawn_session_task(iid)
+
+        self._scan_submissions()
 
     # -- Per-session task lifecycle -----------------------------------------
 
@@ -261,6 +274,11 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         session = self._sessions[session_id]
         live = LiveState.get()
         event_id = f"golem-{session.parent_issue_id}"
+        profile = (
+            self._submission_profile
+            if session.execution_mode == "prompt"
+            else self._profile
+        )
         try:
             while self._running and session.state not in (
                 TaskSessionState.COMPLETED,
@@ -276,7 +294,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                         on_progress=self._on_agent_progress,
                         work_dir_lock=self._work_dir_lock,
                         save_callback=self._save_state,
-                        profile=self._profile,
+                        profile=profile,
                     )
                     await orchestrator.tick()
                     self._handle_state_transition(session, prev_state)
@@ -372,6 +390,107 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                     cost_usd=session.total_cost_usd,
                     duration_s=session.duration_seconds,
                 )
+
+    # -- Submission support ----------------------------------------------------
+
+    def _build_submission_profile(self) -> GolemProfile:
+        """Build a profile for submitted prompt tasks."""
+        mcp_enabled = self._task_config.mcp_enabled if self._task_config else False
+        from .backends.mcp_tools import KeywordToolProvider
+
+        return GolemProfile(
+            name="submission",
+            task_source=self._submission_source,
+            state_backend=NullStateBackend(),
+            notifier=self._profile.notifier,
+            tool_provider=(
+                KeywordToolProvider() if mcp_enabled else NullToolProvider()
+            ),
+            prompt_provider=FilePromptProvider(None),
+        )
+
+    def submit_task(
+        self,
+        prompt: str,
+        subject: str = "",
+        work_dir: str = "",
+        mcp: bool | None = None,
+    ) -> dict[str, Any]:
+        """Write a submission file and immediately create + spawn a session.
+
+        Returns ``{"task_id": <int>, "status": "submitted"}``.
+        """
+        import time as _time
+
+        task_id = int(_time.time() * 1000)
+        if not subject:
+            subject = f"[AGENT] {prompt[:80]}"
+
+        self._submissions_dir.mkdir(parents=True, exist_ok=True)
+        task_file = self._submissions_dir / f"{task_id}.json"
+        task_data = {
+            "id": str(task_id),
+            "subject": subject,
+            "description": prompt,
+        }
+        if work_dir:
+            task_data["work_dir"] = work_dir
+        task_file.write_text(json.dumps(task_data, indent=2), encoding="utf-8")
+
+        session = self._create_session(task_id, subject)
+        session.execution_mode = "prompt"
+        self._sessions[task_id] = session
+        self._save_state()
+
+        logger.info("Submitted task #%d: %s", task_id, subject[:60])
+        self._profile.notifier.notify_started(task_id, subject)
+
+        if self._running:
+            self._spawn_session_task(task_id)
+
+        return {"task_id": task_id, "status": "submitted"}
+
+    def _scan_submissions(self) -> None:
+        """Pick up task files from the submissions directory."""
+        if not self._submissions_dir.is_dir():
+            return
+
+        done_dir = self._submissions_dir / "done"
+        live = LiveState.get()
+
+        for task_file in sorted(self._submissions_dir.iterdir()):
+            if task_file.suffix not in (".json", ".yaml", ".yml"):
+                continue
+            if task_file.is_dir():
+                continue
+
+            task = self._submission_source._load_file(task_file)
+            if task is None:
+                continue
+
+            try:
+                iid = int(task.get("id", 0))
+            except (ValueError, TypeError):
+                continue
+
+            if not iid or iid in self._sessions or iid in self._processed_ids:
+                continue
+
+            subject = task.get("subject", "")
+            session = self._create_session(iid, subject)
+            session.execution_mode = "prompt"
+            self._sessions[iid] = session
+            self._save_state()
+
+            event_id = f"golem-{iid}"
+            model = self._task_config.task_model or "sonnet"
+            live.enqueue(event_id, "golem", model)
+            live.update_phase(event_id, "detected")
+            logger.info("Picked up submission: #%d %s", iid, subject[:60])
+            self._spawn_session_task(iid)
+
+            done_dir.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(task_file), str(done_dir / task_file.name))
 
     # -- Session factory ------------------------------------------------------
 

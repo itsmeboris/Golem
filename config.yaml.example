@@ -7,7 +7,9 @@ flows:
     enabled: true
 
     # Profile: which backends to use for tasks, state, and notifications.
-    # Built-in profiles: "local" (log to stdout), "redmine" (Redmine + Slack/Teams + MCP).
+    # Built-in profiles:
+    #   "local"   — file-based submissions, no external services
+    #   "redmine" — Redmine issue tracking + Slack/Teams + MCP
     # For prompt-only mode, just use: golem run -p "your task here"
     profile: local
     # profile_config: {}          # profile-specific overrides
@@ -58,7 +60,7 @@ claude:
   max_concurrent: 5
 
 dashboard:
-  port: 8082
+  port: 8081
   # admin_token: ${DASHBOARD_ADMIN_TOKEN}
 
 # Notifications (enable one or neither; Slack takes priority if both enabled)

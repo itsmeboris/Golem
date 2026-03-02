@@ -1,19 +1,24 @@
 # pylint: disable=too-few-public-methods,not-callable,too-many-lines
 """Tests for golem.cli — full coverage."""
 import asyncio
+import json
 import signal
 import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from golem.cli import (
-    _build_prompt_profile,
+    _cmd_run_file,
     _cmd_run_prompt,
+    _daemon_health,
+    _ensure_daemon,
     _get_profile,
     _make_event_handler,
     _manage_golem_tick,
-    _run_prompt_bg,
+    _submit_to_daemon,
     _wait_for_exit,
     cmd_daemon,
     cmd_dashboard,
@@ -506,6 +511,7 @@ class TestRunDaemon:
             patch("golem.cli._manage_golem_tick", side_effect=fake_manage),
             patch("golem.cli._start_dashboard_server", side_effect=fake_dash),
             patch("golem.cli.config_to_snapshot", return_value={}, create=True),
+            patch("golem.cli.wire_control_api"),
         ):
             mock_live = MagicMock()
             mock_ls.get.return_value = mock_live
@@ -524,232 +530,342 @@ class TestRunDaemon:
 
 
 class TestCmdRunPrompt:
-    @patch("golem.cli.run_issue", return_value=True)
-    @patch("golem.cli._build_prompt_profile")
+    @patch(
+        "golem.cli._submit_to_daemon",
+        return_value={"task_id": 123, "status": "submitted"},
+    )
+    @patch("golem.cli._ensure_daemon")
     @patch("golem.cli.load_config")
-    def test_prompt_mode(self, mock_config, mock_build, mock_run):
+    def test_prompt_submits_to_daemon(self, mock_config, mock_ensure, mock_submit):
+        cfg = mock_config.return_value
+        cfg.dashboard.port = 8082
         args = SimpleNamespace(
             parent_id=None,
             config=None,
             prompt="fix the bug",
+            file="",
             dry=False,
             subject="",
             mcp=None,
-            bg=False,
         )
         result = cmd_run(args)
         assert result == 0
-        mock_build.assert_called_once()
-        mock_run.assert_called_once()
+        mock_ensure.assert_called_once()
+        mock_submit.assert_called_once()
 
-    @patch("golem.cli.run_issue", return_value=False)
-    @patch("golem.cli._build_prompt_profile")
+    @patch("golem.cli._submit_to_daemon", return_value=None)
+    @patch("golem.cli._ensure_daemon")
     @patch("golem.cli.load_config")
-    def test_prompt_mode_failure(self, mock_config, mock_build, mock_run):
+    def test_prompt_submit_failure(self, mock_config, mock_ensure, mock_submit):
+        cfg = mock_config.return_value
+        cfg.dashboard.port = 8082
         args = SimpleNamespace(
             parent_id=None,
             config=None,
             prompt="fail task",
+            file="",
             dry=False,
             subject="",
             mcp=None,
-            bg=False,
         )
         result = cmd_run(args)
         assert result == 1
 
-    @patch("golem.cli.run_issue", return_value=True)
-    @patch("golem.cli._build_prompt_profile")
+    @patch(
+        "golem.cli._submit_to_daemon",
+        return_value={"task_id": 1, "status": "submitted"},
+    )
+    @patch("golem.cli._ensure_daemon")
     @patch("golem.cli.load_config")
-    def test_prompt_dry_run(self, mock_config, mock_build, mock_run):
+    def test_prompt_with_subject(self, mock_config, mock_ensure, mock_submit):
+        cfg = mock_config.return_value
+        cfg.dashboard.port = 8082
         args = SimpleNamespace(
             parent_id=None,
             config=None,
-            prompt="dry task",
-            dry=True,
-            subject="",
-            mcp=None,
-            bg=False,
-        )
-        result = cmd_run(args)
-        assert result == 0
-
-    @patch("golem.cli._run_prompt_bg", return_value=0)
-    @patch("golem.cli.load_config")
-    def test_prompt_bg_mode(self, mock_config, mock_bg):
-        args = SimpleNamespace(
-            parent_id=None,
-            config=None,
-            prompt="bg task",
+            prompt="do work",
+            file="",
             dry=False,
-            subject="",
+            subject="Custom subject",
             mcp=None,
-            bg=True,
-        )
-        result = cmd_run(args)
-        assert result == 0
-        mock_bg.assert_called_once()
-
-    @patch("golem.cli.run_issue", return_value=True)
-    @patch("golem.cli._build_prompt_profile")
-    @patch("golem.cli.load_config")
-    def test_prompt_with_mcp_enabled(self, mock_config, mock_build, mock_run):
-        args = SimpleNamespace(
-            parent_id=None,
-            config=None,
-            prompt="mcp task",
-            dry=False,
-            subject="",
-            mcp=True,
-            bg=False,
         )
         cmd_run(args)
-        mock_build.assert_called_once()
-        _, kwargs = mock_build.call_args
-        assert kwargs.get("mcp_enabled") or mock_build.call_args[0][-1]
-
-    @patch("golem.cli.run_issue", return_value=True)
-    @patch("golem.cli._build_prompt_profile")
-    @patch("golem.cli.load_config")
-    def test_prompt_with_mcp_disabled(self, mock_config, mock_build, mock_run):
-        args = SimpleNamespace(
-            parent_id=None,
-            config=None,
-            prompt="no mcp task",
-            dry=False,
-            subject="",
-            mcp=False,
-            bg=False,
-        )
-        cmd_run(args)
-        mock_build.assert_called_once()
+        call_kwargs = mock_submit.call_args[1]
+        assert call_kwargs.get("subject") == "Custom subject"
 
 
 class TestCmdRunPromptDirect:
-    @patch("golem.cli.run_issue", return_value=True)
-    @patch("golem.cli._build_prompt_profile")
-    def test_direct_call(self, mock_build, mock_run):
-        args = SimpleNamespace(
-            bg=False,
-            mcp=None,
-            dry=False,
-            config=None,
-        )
+    @patch(
+        "golem.cli._submit_to_daemon",
+        return_value={"task_id": 42, "status": "submitted"},
+    )
+    @patch("golem.cli._ensure_daemon")
+    def test_direct_call(self, mock_ensure, mock_submit):
+        args = SimpleNamespace(subject="", config=None)
         config = MagicMock()
+        config.dashboard.port = 8082
         result = _cmd_run_prompt(args, config, "hello world")
         assert result == 0
-        mock_run.assert_called_once()
+        mock_submit.assert_called_once()
 
-    @patch("golem.cli.run_issue", return_value=True)
-    @patch("golem.cli._build_prompt_profile")
-    def test_dry_run(self, mock_build, mock_run):
-        args = SimpleNamespace(bg=False, mcp=None, dry=True, config=None)
+    @patch("golem.cli._submit_to_daemon", return_value=None)
+    @patch("golem.cli._ensure_daemon")
+    def test_failure(self, mock_ensure, mock_submit):
+        args = SimpleNamespace(subject="", config=None)
         config = MagicMock()
-        result = _cmd_run_prompt(args, config, "test")
-        assert result == 0
-
-    @patch("golem.cli.run_issue", return_value=False)
-    @patch("golem.cli._build_prompt_profile")
-    def test_failure(self, mock_build, mock_run):
-        args = SimpleNamespace(bg=False, mcp=None, dry=False, config=None)
-        config = MagicMock()
+        config.dashboard.port = 8082
         result = _cmd_run_prompt(args, config, "fail")
         assert result == 1
 
 
-class TestBuildPromptProfile:
-    def test_creates_profile_with_mcp(self, tmp_path):
-        with patch("golem.cli.DATA_DIR", tmp_path):
-            profile = _build_prompt_profile(12345, "do something", mcp_enabled=True)
+class TestDaemonHealth:
+    def test_healthy(self):
+        with patch("golem.cli.urllib.request.urlopen") as mock_open:
+            mock_resp = MagicMock()
+            mock_resp.status = 200
+            mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+            mock_resp.__exit__ = MagicMock(return_value=False)
+            mock_open.return_value = mock_resp
 
-        assert profile.name == "prompt"
-        from golem.backends.mcp_tools import KeywordToolProvider
+            assert _daemon_health(8082) is True
 
-        assert isinstance(profile.tool_provider, KeywordToolProvider)
+    def test_unreachable(self):
+        import urllib.error
 
-    def test_creates_profile_without_mcp(self, tmp_path):
-        with patch("golem.cli.DATA_DIR", tmp_path):
-            profile = _build_prompt_profile(12345, "do something", mcp_enabled=False)
-
-        assert profile.name == "prompt"
-        from golem.backends.local import NullToolProvider
-
-        assert isinstance(profile.tool_provider, NullToolProvider)
-
-    def test_writes_task_file(self, tmp_path):
-        with patch("golem.cli.DATA_DIR", tmp_path):
-            _build_prompt_profile(99999, "my prompt text")
-
-        task_file = tmp_path / "prompt_tasks" / "99999.json"
-        assert task_file.exists()
-        import json
-
-        data = json.loads(task_file.read_text())
-        assert data["id"] == "99999"
-        assert "my prompt text" in data["description"]
+        with patch(
+            "golem.cli.urllib.request.urlopen",
+            side_effect=urllib.error.URLError("refused"),
+        ):
+            assert _daemon_health(8082) is False
 
 
-class TestRunPromptBg:
-    def test_spawns_background(self, tmp_path, capsys):
+class TestEnsureDaemon:
+    @patch("golem.cli._daemon_health", return_value=True)
+    def test_already_running(self, mock_health):
+        args = SimpleNamespace(config=None)
+        config = MagicMock()
+        _ensure_daemon(args, config, 8082)
+        mock_health.assert_called_once_with(8082)
+
+    @patch("golem.cli._daemon_health", side_effect=[False, False, True])
+    @patch("golem.cli.read_pid", return_value=None)
+    @patch("golem.cli.time.sleep")
+    def test_starts_daemon(self, mock_sleep, mock_pid, mock_health, tmp_path):
         with patch("golem.cli.DATA_DIR", tmp_path), patch(
             "subprocess.Popen"
         ) as mock_popen:
-            mock_proc = MagicMock()
-            mock_proc.pid = 42
-            mock_popen.return_value = mock_proc
+            mock_popen.return_value = MagicMock()
+            args = SimpleNamespace(config=None)
+            config = MagicMock()
+            _ensure_daemon(args, config, 8082)
 
-            args = SimpleNamespace(config=None, worktree=False, mcp=None)
-            result = _run_prompt_bg(args, "test prompt", 1234)
+        mock_popen.assert_called_once()
 
+
+class TestSubmitToDaemon:
+    def test_success(self):
+        resp_data = {"ok": True, "task_id": 123, "status": "submitted"}
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(resp_data).encode()
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
+
+        with patch("golem.cli.urllib.request.urlopen", return_value=mock_resp):
+            result = _submit_to_daemon("do stuff", port=8082)
+
+        assert result is not None
+        assert result["task_id"] == 123
+
+    def test_http_error(self):
+        import urllib.error
+
+        exc = urllib.error.HTTPError(
+            "http://x", 500, "err", {}, MagicMock(read=lambda: b"error")
+        )
+        with patch("golem.cli.urllib.request.urlopen", side_effect=exc):
+            result = _submit_to_daemon("fail", port=8082)
+
+        assert result is None
+
+    def test_connection_error(self):
+        import urllib.error
+
+        with patch(
+            "golem.cli.urllib.request.urlopen",
+            side_effect=urllib.error.URLError("refused"),
+        ):
+            result = _submit_to_daemon("fail", port=8082)
+
+        assert result is None
+
+    def test_with_file_path(self):
+        resp_data = {"ok": True, "task_id": 1, "status": "submitted"}
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(resp_data).encode()
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
+
+        with patch(
+            "golem.cli.urllib.request.urlopen", return_value=mock_resp
+        ) as mock_open:
+            result = _submit_to_daemon("", port=8082, file_path="/tmp/plan.md")
+
+        assert result is not None
+        req = mock_open.call_args[0][0]
+        payload = json.loads(req.data.decode())
+        assert payload["file"] == "/tmp/plan.md"
+
+
+class TestCmdRunFile:
+    @patch(
+        "golem.cli._submit_to_daemon",
+        return_value={"task_id": 1, "status": "submitted"},
+    )
+    @patch("golem.cli._ensure_daemon")
+    def test_reads_file_and_submits(self, mock_ensure, mock_submit, tmp_path):
+        prompt_file = tmp_path / "plan.md"
+        prompt_file.write_text("Do this important thing")
+
+        args = SimpleNamespace(subject="", config=None)
+        config = MagicMock()
+        config.dashboard.port = 8082
+        result = _cmd_run_file(args, config, str(prompt_file))
         assert result == 0
-        out = capsys.readouterr().out
-        assert "42" in out
-        assert "1234" in out
+        mock_submit.assert_called_once()
 
-    def test_with_config_and_worktree(self, tmp_path, capsys):
+    def test_missing_file(self, capsys):
+        args = SimpleNamespace(subject="", config=None)
+        config = MagicMock()
+        config.dashboard.port = 8082
+        result = _cmd_run_file(args, config, "/nonexistent/file.md")
+        assert result == 1
+        err = capsys.readouterr().err
+        assert "not found" in err
+
+    def test_empty_file(self, tmp_path, capsys):
+        empty_file = tmp_path / "empty.md"
+        empty_file.write_text("")
+
+        args = SimpleNamespace(subject="", config=None)
+        config = MagicMock()
+        config.dashboard.port = 8082
+        result = _cmd_run_file(args, config, str(empty_file))
+        assert result == 1
+        err = capsys.readouterr().err
+        assert "empty" in err
+
+
+class TestCmdRunFileViaCmdRun:
+    @patch("golem.cli._cmd_run_file", return_value=0)
+    @patch("golem.cli.load_config")
+    def test_file_flag_routes_to_file_handler(self, mock_config, mock_file):
+        args = SimpleNamespace(
+            parent_id=None,
+            config=None,
+            prompt="",
+            file="plan.md",
+            dry=False,
+            subject="",
+            mcp=None,
+        )
+        result = cmd_run(args)
+        assert result == 0
+        mock_file.assert_called_once()
+
+
+class TestEnsureDaemonEdgeCases:
+    @patch("golem.cli._daemon_health", side_effect=[False, False] + [False] * 30)
+    @patch("golem.cli.read_pid", return_value=9999)
+    @patch("os.kill")
+    @patch("golem.cli.time.sleep")
+    def test_pid_exists_but_health_fails(
+        self, mock_sleep, mock_kill, mock_pid, mock_health, tmp_path, capsys
+    ):
         with patch("golem.cli.DATA_DIR", tmp_path), patch(
             "subprocess.Popen"
         ) as mock_popen:
-            mock_proc = MagicMock()
-            mock_proc.pid = 10
-            mock_popen.return_value = mock_proc
+            mock_popen.return_value = MagicMock()
+            args = SimpleNamespace(config=None)
+            config = MagicMock()
+            _ensure_daemon(args, config, 8082)
 
-            args = SimpleNamespace(config="/my/config.yaml", worktree=True, mcp=None)
-            result = _run_prompt_bg(args, "prompt", 5678)
+        err = capsys.readouterr().err
+        assert "may not be ready" in err
 
-        assert result == 0
+    @patch("golem.cli._daemon_health", side_effect=[False, False] + [False] * 30)
+    @patch("golem.cli.read_pid", return_value=9999)
+    @patch("os.kill", side_effect=OSError("not running"))
+    @patch("golem.cli.remove_pid")
+    @patch("golem.cli.time.sleep")
+    def test_stale_pid_removed_before_start(
+        self,
+        mock_sleep,
+        mock_remove,
+        mock_kill,
+        mock_pid,
+        mock_health,
+        tmp_path,
+        capsys,
+    ):
+        with patch("golem.cli.DATA_DIR", tmp_path), patch(
+            "subprocess.Popen"
+        ) as mock_popen:
+            mock_popen.return_value = MagicMock()
+            args = SimpleNamespace(config=None)
+            config = MagicMock()
+            _ensure_daemon(args, config, 8082)
+
+        mock_remove.assert_called()
+
+    @patch("golem.cli._daemon_health", side_effect=[False, False, True])
+    @patch("golem.cli.read_pid", return_value=None)
+    @patch("golem.cli.time.sleep")
+    def test_with_config_path(self, mock_sleep, mock_pid, mock_health, tmp_path):
+        with patch("golem.cli.DATA_DIR", tmp_path), patch(
+            "subprocess.Popen"
+        ) as mock_popen:
+            mock_popen.return_value = MagicMock()
+            args = SimpleNamespace(config="/my/config.yaml")
+            config = MagicMock()
+            _ensure_daemon(args, config, 8082)
+
         cmd = mock_popen.call_args[0][0]
         assert "-c" in cmd
         assert "/my/config.yaml" in cmd
-        assert "--worktree" in cmd
 
-    def test_with_mcp_true(self, tmp_path, capsys):
-        with patch("golem.cli.DATA_DIR", tmp_path), patch(
-            "subprocess.Popen"
-        ) as mock_popen:
-            mock_proc = MagicMock()
-            mock_proc.pid = 11
-            mock_popen.return_value = mock_proc
 
-            args = SimpleNamespace(config=None, worktree=False, mcp=True)
-            _run_prompt_bg(args, "prompt", 111)
+class TestSubmitToDaemonEdgeCases:
+    def test_with_subject(self):
+        resp_data = {"ok": True, "task_id": 1, "status": "submitted"}
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(resp_data).encode()
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
 
-        cmd = mock_popen.call_args[0][0]
-        assert "--mcp" in cmd
+        with patch(
+            "golem.cli.urllib.request.urlopen", return_value=mock_resp
+        ) as mock_open:
+            _submit_to_daemon("do stuff", port=8082, subject="Custom Subject")
 
-    def test_with_mcp_false(self, tmp_path, capsys):
-        with patch("golem.cli.DATA_DIR", tmp_path), patch(
-            "subprocess.Popen"
-        ) as mock_popen:
-            mock_proc = MagicMock()
-            mock_proc.pid = 12
-            mock_popen.return_value = mock_proc
+        req = mock_open.call_args[0][0]
+        payload = json.loads(req.data.decode())
+        assert payload["subject"] == "Custom Subject"
 
-            args = SimpleNamespace(config=None, worktree=False, mcp=False)
-            _run_prompt_bg(args, "prompt", 222)
+    def test_with_work_dir(self):
+        resp_data = {"ok": True, "task_id": 1, "status": "submitted"}
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(resp_data).encode()
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
 
-        cmd = mock_popen.call_args[0][0]
-        assert "--no-mcp" in cmd
+        with patch(
+            "golem.cli.urllib.request.urlopen", return_value=mock_resp
+        ) as mock_open:
+            _submit_to_daemon("do stuff", port=8082, work_dir="/path/to/project")
+
+        req = mock_open.call_args[0][0]
+        payload = json.loads(req.data.decode())
+        assert payload["work_dir"] == "/path/to/project"
 
 
 class TestCmdPollRunBranch:
@@ -1149,6 +1265,14 @@ class TestMainArgparseExtended:
         assert call_args.prompt == "hello"
 
     @patch("golem.cli.cmd_run", return_value=0)
+    def test_run_with_file(self, mock_run):
+        with patch("sys.argv", ["golem", "run", "-f", "plan.md"]):
+            result = main()
+        assert result == 0
+        call_args = mock_run.call_args[0][0]
+        assert call_args.file == "plan.md"
+
+    @patch("golem.cli.cmd_run", return_value=0)
     def test_run_with_mcp(self, mock_run):
         with patch("sys.argv", ["golem", "run", "-p", "task", "--mcp"]):
             result = main()
@@ -1177,6 +1301,112 @@ class TestMainArgparseExtended:
             main()
         call_args = mock_stop.call_args[0][0]
         assert call_args.dashboard is True
+
+
+class TestControlApiWiring:
+    def test_wire_control_api_sets_flow(self):
+        from golem.core.control_api import wire_control_api
+
+        mock_flow = MagicMock()
+        wire_control_api(golem_flow=mock_flow)
+
+        from golem.core import control_api
+
+        assert control_api._golem_flow is mock_flow
+        wire_control_api(golem_flow=None)
+
+    def test_health_endpoint(self):
+        from golem.core.control_api import health_check
+
+        result = asyncio.run(health_check())
+        assert result["ok"] is True
+        assert "pid" in result
+        assert "uptime_seconds" in result
+
+    def test_submit_without_flow_raises(self):
+        from golem.core.control_api import submit_task, wire_control_api
+        from fastapi import HTTPException
+
+        wire_control_api(golem_flow=None)
+
+        mock_request = MagicMock()
+        mock_request.json = AsyncMock(return_value={"prompt": "test"})
+
+        with patch("golem.core.control_api._golem_flow", None):
+            with pytest.raises(HTTPException) as exc_info:
+                asyncio.run(submit_task(mock_request))
+            assert exc_info.value.status_code == 503
+
+    def test_submit_with_prompt(self):
+        from golem.core.control_api import submit_task, wire_control_api
+
+        mock_flow = MagicMock()
+        mock_flow.submit_task.return_value = {"task_id": 42, "status": "submitted"}
+        wire_control_api(golem_flow=mock_flow)
+
+        mock_request = MagicMock()
+        mock_request.json = AsyncMock(return_value={"prompt": "do stuff"})
+
+        result = asyncio.run(submit_task(mock_request))
+        assert result["ok"] is True
+        assert result["task_id"] == 42
+        mock_flow.submit_task.assert_called_once_with(
+            prompt="do stuff", subject="", work_dir=""
+        )
+
+        wire_control_api(golem_flow=None)
+
+    def test_submit_with_file(self, tmp_path):
+        from golem.core.control_api import submit_task, wire_control_api
+
+        prompt_file = tmp_path / "plan.md"
+        prompt_file.write_text("detailed plan here")
+
+        mock_flow = MagicMock()
+        mock_flow.submit_task.return_value = {"task_id": 99, "status": "submitted"}
+        wire_control_api(golem_flow=mock_flow)
+
+        mock_request = MagicMock()
+        mock_request.json = AsyncMock(return_value={"file": str(prompt_file)})
+
+        result = asyncio.run(submit_task(mock_request))
+        assert result["ok"] is True
+        call_kwargs = mock_flow.submit_task.call_args[1]
+        assert "detailed plan here" in call_kwargs["prompt"]
+
+        wire_control_api(golem_flow=None)
+
+    def test_submit_missing_prompt_and_file(self):
+        from golem.core.control_api import submit_task, wire_control_api
+        from fastapi import HTTPException
+
+        mock_flow = MagicMock()
+        wire_control_api(golem_flow=mock_flow)
+
+        mock_request = MagicMock()
+        mock_request.json = AsyncMock(return_value={})
+
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(submit_task(mock_request))
+        assert exc_info.value.status_code == 400
+
+        wire_control_api(golem_flow=None)
+
+    def test_submit_nonexistent_file(self):
+        from golem.core.control_api import submit_task, wire_control_api
+        from fastapi import HTTPException
+
+        mock_flow = MagicMock()
+        wire_control_api(golem_flow=mock_flow)
+
+        mock_request = MagicMock()
+        mock_request.json = AsyncMock(return_value={"file": "/nonexistent/path.md"})
+
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(submit_task(mock_request))
+        assert exc_info.value.status_code == 400
+
+        wire_control_api(golem_flow=None)
 
 
 class TestMakeEventHandlerSaveFailure:
@@ -1294,6 +1524,7 @@ class TestStartDashboardServerAsync:
             patch("fastapi.FastAPI", return_value=mock_app),
             patch("golem.core.dashboard.mount_dashboard") as mock_mount,
             patch("golem.core.control_api.control_router", None),
+            patch("golem.core.control_api.health_router", None),
             patch("socket.getfqdn", return_value="test.local"),
         ):
             from golem.cli import _start_dashboard_server
