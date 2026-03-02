@@ -423,7 +423,7 @@ class TestSubmitEndpoint:
             side_effect=RuntimeError("boom")
         )
         req = _make_request(json_data={"prompt": "Do it"})
-        with pytest.raises(Exception, match="Internal error"):
+        with pytest.raises(Exception, match="Internal server error"):
             await submit_task(req)
 
 
@@ -572,7 +572,9 @@ class TestBatchSubmitEndpoint:
             {"prompt": "B", "depends_on": ["nonexistent"]},
         ]
         req = _make_request(json_data={"tasks": tasks})
-        with pytest.raises(Exception, match="index 1.*unknown depends_on key.*nonexistent"):
+        with pytest.raises(
+            Exception, match="index 1.*unknown depends_on key.*nonexistent"
+        ):
             await submit_batch(req)
 
     @pytest.mark.asyncio
@@ -608,7 +610,7 @@ class TestBatchSubmitEndpoint:
         )
         tasks = [{"prompt": "A"}]
         req = _make_request(json_data={"tasks": tasks})
-        with pytest.raises(Exception, match="Internal error"):
+        with pytest.raises(Exception, match="Internal server error"):
             await submit_batch(req)
 
     @pytest.mark.asyncio
@@ -681,7 +683,7 @@ class TestGetSessionEndpoint:
             "total_cost_usd": 1.23,
             "validation_cost_usd": 0.45,
         }
-        control_api._golem_flow._sessions = {42: session}
+        control_api._golem_flow.get_session = MagicMock(return_value=session)
         result = await get_session(42)
         assert result["ok"] is True
         assert result["session"]["parent_issue_id"] == 42
@@ -691,7 +693,7 @@ class TestGetSessionEndpoint:
     async def test_session_not_found(self, _wire_deps):
         from golem.core.control_api import get_session
 
-        control_api._golem_flow._sessions = {}
+        control_api._golem_flow.get_session = MagicMock(return_value=None)
         with pytest.raises(Exception, match="No session found"):
             await get_session(999)
 

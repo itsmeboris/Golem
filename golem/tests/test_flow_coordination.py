@@ -221,7 +221,9 @@ class TestDependencyWaiting:
         with _pt.raises(TaskExecutionError, match="Dependency #150"):
             await flow._wait_for_dependencies(session)
 
-    async def test_dep_failed_session_transitions_to_failed(self, monkeypatch, tmp_path):
+    async def test_dep_failed_session_transitions_to_failed(
+        self, monkeypatch, tmp_path
+    ):
         flow = _make_flow(monkeypatch, tmp_path, tick_interval=0)
         flow._running = True
 

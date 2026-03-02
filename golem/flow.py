@@ -25,7 +25,12 @@ from .core.triggers.base import TriggerEvent
 from .core.flow_base import BaseFlow, FlowResult, PollableFlow, WebhookableFlow
 
 from .backends.local import LocalFileTaskSource, NullStateBackend, NullToolProvider
-from .errors import InfrastructureError, TaskExecutionError
+from .errors import (
+    InfrastructureError,
+    TaskExecutionError,
+    TaskNotCancelableError,
+    TaskNotFoundError,
+)
 from .event_tracker import Milestone, TaskEventTracker
 from .merge_queue import MergeEntry, MergeQueue, MergeResult
 from .orchestrator import (
@@ -343,10 +348,10 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         except asyncio.CancelledError:
             logger.info("Session #%d cancelled", session_id)
         except TaskExecutionError as te:
-            logger.warning("Session #%d skipped: %s", session_id, te)
+            logger.error("Session #%d: %s", session_id, te)
             session.state = TaskSessionState.FAILED
             session.errors.append(str(te))
-            self._handle_state_transition(session, TaskSessionState.DETECTED)
+            self._handle_state_transition(session, TaskSessionState.RUNNING)
             self._save_state()
         except Exception:  # pylint: disable=broad-exception-caught
             logger.exception("Session #%d crashed unexpectedly", session_id)
@@ -360,8 +365,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
     async def _wait_for_dependencies(self, session: TaskSession) -> None:
         """Block until all sessions in ``depends_on`` have completed.
 
-        Raises :class:`TaskExecutionError` if any dependency failed,
-        preventing this session from running against an incomplete codebase.
+        Raises ``TaskExecutionError`` if any dependency failed.
         """
         while self._running:
             all_done = True
@@ -704,12 +708,15 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         }
     )
 
+    def get_session(self, task_id: int) -> "TaskSession | None":
+        return self._sessions.get(task_id)
+
     def cancel_session(self, task_id: int) -> dict:
         session = self._sessions.get(task_id)
         if session is None:
-            raise ValueError(f"Task {task_id} not found")
+            raise TaskNotFoundError(f"Task {task_id} not found")
         if session.state not in self.CANCELABLE_STATES:
-            raise ValueError(
+            raise TaskNotCancelableError(
                 f"Task {task_id} is in terminal state '{session.state.value}'"
             )
         prev_state = session.state

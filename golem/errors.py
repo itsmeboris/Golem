@@ -27,3 +27,11 @@ class ValidationError(GolemError):
     """Validation agent failed to produce a verdict."""
 
     retryable = True
+
+
+class TaskNotFoundError(GolemError):
+    pass
+
+
+class TaskNotCancelableError(GolemError):
+    pass

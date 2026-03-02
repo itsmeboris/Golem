@@ -12,14 +12,15 @@ Runtime dependencies are injected once via :func:`wire_control_api`.
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import os
 import time
-import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ..errors import TaskNotCancelableError, TaskNotFoundError
 from .triggers import FASTAPI_AVAILABLE
 
 if TYPE_CHECKING:
@@ -112,11 +113,6 @@ def _require_admin(request: "Request"):
 
 
 def _require_api_key(request: "Request"):
-    """Raise 401 if an API key is configured and the request lacks it.
-
-    Accepts ``Authorization: Bearer <key>`` header or ``?token=<key>`` query param.
-    When no API key is configured, all requests are allowed (backward compatible).
-    """
     if not _api_key:
         return
     token = ""
@@ -125,7 +121,7 @@ def _require_api_key(request: "Request"):
         token = auth[7:]
     if not token:
         token = request.query_params.get("token", "")
-    if not token or token != _api_key:
+    if not token or not hmac.compare_digest(token, _api_key):
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
@@ -240,10 +236,10 @@ if FASTAPI_AVAILABLE:
                 work_dir=work_dir,
             )
         except Exception:
-            logger.error("submit_task failed:\n%s", traceback.format_exc())
+            logger.exception("submit_task failed")
             raise HTTPException(
                 status_code=500,
-                detail=f"Internal error: {traceback.format_exc()}",
+                detail="Internal server error",
             ) from None
         return {"ok": True, **result}
 
@@ -260,11 +256,10 @@ if FASTAPI_AVAILABLE:
             )
         try:
             result = _golem_flow.cancel_session(task_id)
-        except ValueError as exc:
-            msg = str(exc)
-            if "not found" in msg:
-                raise HTTPException(status_code=404, detail=msg) from exc
-            raise HTTPException(status_code=409, detail=msg) from exc
+        except TaskNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except TaskNotCancelableError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"ok": True, **result}
 
     @health_router.post("/submit/batch")
@@ -314,7 +309,7 @@ if FASTAPI_AVAILABLE:
                     status_code=400,
                     detail=f"Task at index {i} is missing a non-empty 'prompt' string",
                 )
-            task_key = task.get("key", "") if isinstance(task, dict) else ""
+            task_key = task.get("key", "")
             if task_key:
                 known_keys.add(task_key)
             for dep in task.get("depends_on", []):
@@ -324,7 +319,7 @@ if FASTAPI_AVAILABLE:
                             status_code=400,
                             detail=(
                                 f"Task at index {i} has unknown depends_on key {dep!r}: "
-                                f"must reference a \'key\' declared by a preceding task"
+                                f"must reference a 'key' declared by a preceding task"
                             ),
                         )
                 elif not isinstance(dep, int) or dep < 0 or dep >= i:
@@ -340,23 +335,21 @@ if FASTAPI_AVAILABLE:
         try:
             result = _golem_flow.submit_batch(tasks, group_id=group_id)
         except Exception:
-            logger.error("submit_batch failed:\n%s", traceback.format_exc())
+            logger.exception("submit_batch failed")
             raise HTTPException(
                 status_code=500,
-                detail=f"Internal error: {traceback.format_exc()}",
+                detail="Internal server error",
             ) from None
         return {"ok": True, **result}
 
     @health_router.get("/sessions/{task_id}")
     async def get_session(task_id: int):
-        """Return full session dict for a single task by parent_issue_id."""
         if _golem_flow is None:
             raise HTTPException(
                 status_code=503,
                 detail="Daemon not ready — GolemFlow not wired",
             )
-        sessions = getattr(_golem_flow, "_sessions", {})
-        session = sessions.get(task_id)
+        session = _golem_flow.get_session(task_id)
         if session is None:
             raise HTTPException(
                 status_code=404,

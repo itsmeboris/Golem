@@ -11,6 +11,7 @@ import pytest
 from golem.core import control_api
 from golem.core.config import Config, GolemFlowConfig
 from golem.core.control_api import wire_control_api
+from golem.errors import TaskNotCancelableError, TaskNotFoundError
 from golem.orchestrator import TaskSession, TaskSessionState
 
 
@@ -57,20 +58,45 @@ def _make_flow(monkeypatch, tmp_path, **flow_kwargs):
 
 
 # ---------------------------------------------------------------------------
+# GolemFlow.get_session
+# ---------------------------------------------------------------------------
+
+
+class TestGetSession:
+    def test_returns_session(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path)
+        session = TaskSession(parent_issue_id=42, parent_subject="test")
+        flow._sessions[42] = session
+        assert flow.get_session(42) is session
+
+    def test_returns_none_for_missing(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path)
+        assert flow.get_session(999) is None
+
+
+# ---------------------------------------------------------------------------
 # GolemFlow.cancel_session
 # ---------------------------------------------------------------------------
 
 
-class TestCancelSessionFromDetected:
-    def test_cancel_detected(self, monkeypatch, tmp_path):
+class TestCancelSessionFromCancelableStates:
+    @pytest.mark.parametrize(
+        "state",
+        [
+            TaskSessionState.DETECTED,
+            TaskSessionState.RUNNING,
+            TaskSessionState.VALIDATING,
+            TaskSessionState.RETRYING,
+        ],
+    )
+    def test_cancel_from_cancelable_state(self, monkeypatch, tmp_path, state):
         flow = _make_flow(monkeypatch, tmp_path)
-        mock_live = MagicMock()
-        monkeypatch.setattr("golem.flow.LiveState.get", lambda: mock_live)
+        monkeypatch.setattr("golem.flow.LiveState.get", lambda: MagicMock())
 
         session = TaskSession(
             parent_issue_id=100,
-            parent_subject="detected task",
-            state=TaskSessionState.DETECTED,
+            parent_subject="test task",
+            state=state,
         )
         flow._sessions[100] = session
 
@@ -79,63 +105,6 @@ class TestCancelSessionFromDetected:
         assert result == {"task_id": 100, "status": "cancelled"}
         assert session.state == TaskSessionState.FAILED
         assert session.result_summary == "Cancelled by user"
-
-
-class TestCancelSessionFromRunning:
-    def test_cancel_running(self, monkeypatch, tmp_path):
-        flow = _make_flow(monkeypatch, tmp_path)
-        mock_live = MagicMock()
-        monkeypatch.setattr("golem.flow.LiveState.get", lambda: mock_live)
-
-        session = TaskSession(
-            parent_issue_id=101,
-            parent_subject="running task",
-            state=TaskSessionState.RUNNING,
-        )
-        flow._sessions[101] = session
-
-        result = flow.cancel_session(101)
-
-        assert result == {"task_id": 101, "status": "cancelled"}
-        assert session.state == TaskSessionState.FAILED
-
-
-class TestCancelSessionFromValidating:
-    def test_cancel_validating(self, monkeypatch, tmp_path):
-        flow = _make_flow(monkeypatch, tmp_path)
-        mock_live = MagicMock()
-        monkeypatch.setattr("golem.flow.LiveState.get", lambda: mock_live)
-
-        session = TaskSession(
-            parent_issue_id=102,
-            parent_subject="validating task",
-            state=TaskSessionState.VALIDATING,
-        )
-        flow._sessions[102] = session
-
-        result = flow.cancel_session(102)
-
-        assert result == {"task_id": 102, "status": "cancelled"}
-        assert session.state == TaskSessionState.FAILED
-
-
-class TestCancelSessionFromRetrying:
-    def test_cancel_retrying(self, monkeypatch, tmp_path):
-        flow = _make_flow(monkeypatch, tmp_path)
-        mock_live = MagicMock()
-        monkeypatch.setattr("golem.flow.LiveState.get", lambda: mock_live)
-
-        session = TaskSession(
-            parent_issue_id=103,
-            parent_subject="retrying task",
-            state=TaskSessionState.RETRYING,
-        )
-        flow._sessions[103] = session
-
-        result = flow.cancel_session(103)
-
-        assert result == {"task_id": 103, "status": "cancelled"}
-        assert session.state == TaskSessionState.FAILED
 
 
 class TestCancelSessionCancelsAsyncTask:
@@ -164,38 +133,27 @@ class TestCancelSessionNotFound:
     def test_raises_for_unknown_task(self, monkeypatch, tmp_path):
         flow = _make_flow(monkeypatch, tmp_path)
 
-        with pytest.raises(ValueError, match="not found"):
+        with pytest.raises(TaskNotFoundError, match="not found"):
             flow.cancel_session(999)
 
 
-class TestCancelSessionTerminalCompleted:
-    def test_raises_for_completed(self, monkeypatch, tmp_path):
+class TestCancelSessionTerminalStates:
+    @pytest.mark.parametrize(
+        "state",
+        [TaskSessionState.COMPLETED, TaskSessionState.FAILED],
+    )
+    def test_raises_for_terminal_state(self, monkeypatch, tmp_path, state):
         flow = _make_flow(monkeypatch, tmp_path)
 
         session = TaskSession(
             parent_issue_id=105,
-            parent_subject="done task",
-            state=TaskSessionState.COMPLETED,
+            parent_subject="terminal task",
+            state=state,
         )
         flow._sessions[105] = session
 
-        with pytest.raises(ValueError, match="terminal state"):
+        with pytest.raises(TaskNotCancelableError, match="terminal state"):
             flow.cancel_session(105)
-
-
-class TestCancelSessionTerminalFailed:
-    def test_raises_for_failed(self, monkeypatch, tmp_path):
-        flow = _make_flow(monkeypatch, tmp_path)
-
-        session = TaskSession(
-            parent_issue_id=106,
-            parent_subject="failed task",
-            state=TaskSessionState.FAILED,
-        )
-        flow._sessions[106] = session
-
-        with pytest.raises(ValueError, match="terminal state"):
-            flow.cancel_session(106)
 
 
 class TestCancelSessionTriggersTransition:
@@ -285,7 +243,7 @@ class TestCancelEndpoint404:
     async def test_not_found(self, _wire_cancel_deps):
         from golem.core.control_api import cancel_task
 
-        control_api._golem_flow.cancel_session.side_effect = ValueError(
+        control_api._golem_flow.cancel_session.side_effect = TaskNotFoundError(
             "Task 999 not found"
         )
         with pytest.raises(Exception) as exc_info:
@@ -302,7 +260,7 @@ class TestCancelEndpoint409:
     async def test_terminal_state(self, _wire_cancel_deps):
         from golem.core.control_api import cancel_task
 
-        control_api._golem_flow.cancel_session.side_effect = ValueError(
+        control_api._golem_flow.cancel_session.side_effect = TaskNotCancelableError(
             "Task 105 is in terminal state 'completed'"
         )
         with pytest.raises(Exception) as exc_info:
