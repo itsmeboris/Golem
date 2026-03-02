@@ -30,7 +30,7 @@ from .triggers import FASTAPI_AVAILABLE
 
 if FASTAPI_AVAILABLE:
     from fastapi import APIRouter, HTTPException, Request
-else:
+else:  # pragma: no cover
     APIRouter = None  # type: ignore[assignment,misc]
     HTTPException = None  # type: ignore[assignment,misc]
     Request = None  # type: ignore[assignment,misc]
@@ -209,7 +209,7 @@ if FASTAPI_AVAILABLE:
         )
         return {"ok": True, **result}
 
-else:
+else:  # pragma: no cover
     # Provide a no-op router when FastAPI is not installed.
     control_router = None  # type: ignore[assignment]
     health_router = None  # type: ignore[assignment]

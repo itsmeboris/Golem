@@ -22,7 +22,7 @@ try:
     from fastapi.responses import HTMLResponse, JSONResponse, Response
 
     FASTAPI_AVAILABLE = True
-except ImportError:
+except ImportError:  # pragma: no cover
     FASTAPI_AVAILABLE = False
     Query = None
     HTMLResponse = None
