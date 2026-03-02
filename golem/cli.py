@@ -14,8 +14,6 @@ Subcommands:
     golem dashboard                     # standalone dashboard
 """
 
-from __future__ import annotations
-
 import argparse
 import asyncio
 import json
@@ -28,7 +26,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from .core.config import DATA_DIR, DashboardConfig, load_config
 from .core.defaults import _now_iso
@@ -53,13 +51,6 @@ from .orchestrator import (
 )
 from .profile import build_profile
 
-if TYPE_CHECKING:
-    from collections.abc import Callable
-
-    from .core.config import Config, GolemFlowConfig
-    from .event_tracker import TaskEventTracker
-    from .profile import GolemProfile
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -76,14 +67,14 @@ DEFAULT_DASHBOARD_PID_FILE = DATA_DIR / "dashboard.pid"
 # ---------------------------------------------------------------------------
 
 
-def _get_profile(config: Config) -> GolemProfile:
+def _get_profile(config):
     """Build a GolemProfile from config.  Raises on failure."""
     tc = config.get_flow_config("golem")
     name = tc.profile if tc else "redmine"
     return build_profile(name, config)
 
 
-def _save_cli_session(session: TaskSession) -> None:
+def _save_cli_session(session):
     """Merge a CLI-created session into the on-disk sessions file."""
     sessions = load_sessions()
     sessions[session.parent_issue_id] = session
@@ -93,7 +84,7 @@ def _save_cli_session(session: TaskSession) -> None:
 _SEP = "·" * 40
 
 
-def _print_cli_summary(session: TaskSession) -> None:
+def _print_cli_summary(session):
     """Print final execution summary to stdout for CLI users."""
     sep = _SEP
     print(f"\n  {sep} result {sep}\n")
@@ -125,13 +116,7 @@ def _print_cli_summary(session: TaskSession) -> None:
             print(f"    - {err[:120]}")
 
 
-def _print_run_header(
-    parent_id: int,
-    subject: str,
-    profile: GolemProfile,
-    tc: GolemFlowConfig | None,
-    cwd_override: str,
-) -> None:
+def _print_run_header(parent_id, subject, profile, tc, cwd_override):
     """Print task info banner at the start of a CLI run."""
     print(f"\n{'='*60}")
     print(f"  GOLEM: #{parent_id}")
@@ -160,12 +145,7 @@ def _print_run_header(
     print(f"  CWD: {cwd_override or (tc.default_work_dir if tc else '') or '(auto)'}")
 
 
-def _make_event_handler(
-    tracker: TaskEventTracker,
-    printer: _StreamPrinter,
-    session: TaskSession | None = None,
-    start_time: float | None = None,
-) -> Callable[[dict[str, Any]], None]:
+def _make_event_handler(tracker, printer, session=None, start_time=None):
     """Build a stream-event handler that drives live session updates.
 
     Returns a callable ``handler(event)`` that:
@@ -207,14 +187,14 @@ def _make_event_handler(
 
 
 def run_issue(  # pylint: disable=too-many-arguments,too-many-locals
-    parent_id: int,
-    config: Config,
-    dry: bool = False,
-    subject_override: str = "",
-    profile_override: GolemProfile | None = None,
-    cwd_override: str = "",
-    mcp_override: bool | None = None,
-) -> bool:
+    parent_id,
+    config,
+    dry=False,
+    subject_override="",
+    profile_override=None,
+    cwd_override="",
+    mcp_override=None,
+):
     """Run a task through the orchestrator pipeline.
 
     Both Redmine tasks (``run <issue_id>``) and prompt-mode tasks
@@ -310,7 +290,7 @@ def run_issue(  # pylint: disable=too-many-arguments,too-many-locals
     return ok
 
 
-def poll_for_agent_issues(config: Config) -> list[dict[str, Any]]:
+def poll_for_agent_issues(config):
     """Scan configured projects for issues tagged with the detection tag."""
     tc = config.get_flow_config("golem")
     projects = tc.projects if tc else []
@@ -337,7 +317,7 @@ def poll_for_agent_issues(config: Config) -> list[dict[str, Any]]:
     return issues
 
 
-def print_results(results: list[tuple[int, bool]]) -> None:
+def print_results(results):
     """Print a summary table of task execution outcomes."""
     if not results:
         return
@@ -480,7 +460,7 @@ def cmd_run(args) -> int:
     return 0 if ok else 1
 
 
-def _cmd_run_prompt(args: argparse.Namespace, config: Config, prompt_text: str) -> int:
+def _cmd_run_prompt(args, config, prompt_text):
     """Submit a prompt to the daemon for background execution.
 
     Ensures the daemon is running (starts it if needed), then submits the
@@ -506,7 +486,7 @@ def _cmd_run_prompt(args: argparse.Namespace, config: Config, prompt_text: str) 
     return 0
 
 
-def _cmd_run_file(args: argparse.Namespace, config: Config, file_path: str) -> int:
+def _cmd_run_file(args, config, file_path):
     """Read a prompt from *file_path* and submit it to the daemon."""
     p = Path(file_path)
     if not p.is_file():
