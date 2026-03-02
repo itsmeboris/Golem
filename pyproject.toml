@@ -92,8 +92,6 @@ source = ["golem"]
 omit = [
     "golem/tests/*",
     "*/__init__.py",
-    "golem/core/dashboard.py",
-    "golem/core/control_api.py",
     "golem/__main__.py",
 ]
 

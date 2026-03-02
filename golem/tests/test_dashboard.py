@@ -1,0 +1,1009 @@
+# pylint: disable=too-few-public-methods
+"""Tests for golem.core.dashboard — dashboard helpers and route handlers."""
+
+import json
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from golem.core.dashboard import (
+    FASTAPI_AVAILABLE,
+    _FileCache,
+    _aggregate_stats,
+    _extract_assistant_events,
+    _extract_numeric_id,
+    _extract_user_events,
+    _find_subtask_trace,
+    _format_live_section,
+    _parse_trace,
+    _parse_trace_terminal,
+    _read_log_tail,
+    _read_sessions,
+    _resolve_paths,
+    _term_ev,
+    config_to_snapshot,
+    format_status_text,
+    mount_dashboard,
+)
+
+
+# ---------------------------------------------------------------------------
+# _extract_numeric_id
+# ---------------------------------------------------------------------------
+
+
+class TestExtractNumericId:
+    def test_golem_event_id(self):
+        assert _extract_numeric_id("golem-123-20260215") == ("golem", "123")
+
+    def test_golem_no_number(self):
+        assert _extract_numeric_id("golem-abc") == ("golem", "")
+
+    def test_non_golem(self):
+        assert _extract_numeric_id("other-123") == ("", "")
+
+
+# ---------------------------------------------------------------------------
+# _resolve_paths
+# ---------------------------------------------------------------------------
+
+
+class TestResolvePaths:
+    def test_non_golem_returns_none(self):
+        result = _resolve_paths("other-123")
+        assert result == {"trace": None, "prompt": None, "report": None}
+
+    def test_golem_no_files(self, tmp_path):
+        with patch("golem.core.dashboard.TRACES_DIR", tmp_path / "traces"):
+            with patch("golem.core.dashboard.REPORTS_DIR", tmp_path / "reports"):
+                result = _resolve_paths("golem-42-20260101")
+        assert result["trace"] is None
+        assert result["prompt"] is None
+        assert result["report"] is None
+
+    def test_golem_with_files(self, tmp_path):
+        traces = tmp_path / "traces" / "golem"
+        reports = tmp_path / "reports" / "golem"
+        traces.mkdir(parents=True)
+        reports.mkdir(parents=True)
+
+        (traces / "golem-42-20260101.jsonl").write_text("{}", encoding="utf-8")
+        (traces / "golem-42-20260101.prompt.txt").write_text("hi", encoding="utf-8")
+        (reports / "42.md").write_text("# Report", encoding="utf-8")
+
+        with patch("golem.core.dashboard.TRACES_DIR", tmp_path / "traces"):
+            with patch("golem.core.dashboard.REPORTS_DIR", tmp_path / "reports"):
+                result = _resolve_paths("golem-42-20260101")
+
+        assert result["trace"] is not None
+        assert result["prompt"] is not None
+        assert result["report"] is not None
+
+    def test_slash_replaced_in_safe_id(self, tmp_path):
+        """Event IDs with slashes get sanitized for file lookups."""
+        traces = tmp_path / "traces" / "golem"
+        traces.mkdir(parents=True)
+        (traces / "golem-5_sub1.jsonl").write_text("{}", encoding="utf-8")
+        with patch("golem.core.dashboard.TRACES_DIR", tmp_path / "traces"):
+            with patch("golem.core.dashboard.REPORTS_DIR", tmp_path / "reports"):
+                result = _resolve_paths("golem-5/sub1")
+        assert result["trace"] is not None
+
+
+# ---------------------------------------------------------------------------
+# _parse_trace
+# ---------------------------------------------------------------------------
+
+
+class TestParseTrace:
+    def test_parse_system_init(self, tmp_path):
+        p = tmp_path / "trace.jsonl"
+        p.write_text(
+            json.dumps(
+                {
+                    "type": "system",
+                    "subtype": "init",
+                    "model": "opus",
+                    "tools": ["Read"],
+                    "mcp_servers": [],
+                    "cwd": "/tmp",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        sections = _parse_trace(p)
+        assert len(sections) == 1
+        assert sections[0]["type"] == "system_init"
+        assert sections[0]["content"]["model"] == "opus"
+
+    def test_parse_assistant_thinking_and_text(self, tmp_path):
+        p = tmp_path / "trace.jsonl"
+        ev = {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {"type": "thinking", "thinking": "hmm"},
+                    {"type": "text", "text": "hello"},
+                ]
+            },
+        }
+        p.write_text(json.dumps(ev) + "\n", encoding="utf-8")
+        sections = _parse_trace(p)
+        assert len(sections) == 2
+        assert sections[0]["type"] == "thinking"
+        assert sections[1]["type"] == "response"
+
+    def test_parse_result(self, tmp_path):
+        p = tmp_path / "trace.jsonl"
+        ev = {
+            "type": "result",
+            "duration_ms": 5000,
+            "total_cost_usd": 0.12,
+            "num_turns": 3,
+            "is_error": False,
+            "usage": {"input": 100},
+        }
+        p.write_text(json.dumps(ev) + "\n", encoding="utf-8")
+        sections = _parse_trace(p)
+        assert len(sections) == 1
+        assert sections[0]["type"] == "result"
+        assert sections[0]["content"]["duration_ms"] == 5000
+
+    def test_skips_blank_and_invalid_json(self, tmp_path):
+        p = tmp_path / "trace.jsonl"
+        p.write_text("\n  \n{bad json}\n", encoding="utf-8")
+        assert _parse_trace(p) == []
+
+    def test_non_dict_content_blocks_ignored(self, tmp_path):
+        p = tmp_path / "trace.jsonl"
+        ev = {"type": "assistant", "message": {"content": ["just a string"]}}
+        p.write_text(json.dumps(ev) + "\n", encoding="utf-8")
+        sections = _parse_trace(p)
+        assert sections == []
+
+
+# ---------------------------------------------------------------------------
+# _term_ev
+# ---------------------------------------------------------------------------
+
+
+class TestTermEv:
+    def test_basic(self):
+        ev = _term_ev("text", "hello")
+        assert ev == {
+            "type": "text",
+            "text": "hello",
+            "tool_name": "",
+            "is_error": False,
+        }
+
+    def test_with_kwargs(self):
+        ev = _term_ev("tool_call", "Read", tool_name="Read", is_error=True)
+        assert ev["tool_name"] == "Read"
+        assert ev["is_error"] is True
+
+
+# ---------------------------------------------------------------------------
+# _extract_assistant_events / _extract_user_events
+# ---------------------------------------------------------------------------
+
+
+class TestExtractAssistantEvents:
+    def test_tool_use(self):
+        ev = {
+            "message": {
+                "content": [{"type": "tool_use", "name": "Read"}],
+            }
+        }
+        events: list = []
+        stats = {"tool_calls": 0, "errors": 0}
+        _extract_assistant_events(ev, events, stats)
+        assert len(events) == 1
+        assert events[0]["type"] == "tool_call"
+        assert stats["tool_calls"] == 1
+
+    def test_text_and_thinking(self):
+        ev = {
+            "message": {
+                "content": [
+                    {"type": "text", "text": "hi"},
+                    {"type": "thinking", "thinking": "hmm"},
+                ],
+            }
+        }
+        events: list = []
+        stats = {"tool_calls": 0, "errors": 0}
+        _extract_assistant_events(ev, events, stats)
+        assert len(events) == 2
+
+    def test_skips_non_dict_and_empty_text(self):
+        ev = {
+            "message": {
+                "content": [
+                    "just a string",
+                    {"type": "text", "text": ""},
+                    {"type": "thinking", "thinking": "  "},
+                ],
+            }
+        }
+        events: list = []
+        stats = {"tool_calls": 0, "errors": 0}
+        _extract_assistant_events(ev, events, stats)
+        assert events == []
+
+    def test_empty_message(self):
+        events: list = []
+        stats = {"tool_calls": 0, "errors": 0}
+        _extract_assistant_events({}, events, stats)
+        assert events == []
+
+
+class TestExtractUserEvents:
+    def test_tool_result_string_content(self):
+        ev = {
+            "message": {
+                "content": [{"tool_use_id": "1", "content": "ok", "is_error": False}]
+            }
+        }
+        events: list = []
+        stats = {"tool_calls": 0, "errors": 0}
+        _extract_user_events(ev, events, stats)
+        assert len(events) == 1
+        assert events[0]["type"] == "tool_result"
+        assert events[0]["is_error"] is False
+
+    def test_tool_result_list_content(self):
+        ev = {
+            "message": {
+                "content": [
+                    {
+                        "tool_use_id": "1",
+                        "content": [{"text": "a"}, {"text": "b"}],
+                        "is_error": False,
+                    }
+                ]
+            }
+        }
+        events: list = []
+        stats = {"tool_calls": 0, "errors": 0}
+        _extract_user_events(ev, events, stats)
+        assert "a b" in events[0]["text"]
+
+    def test_error_increments_counter(self):
+        ev = {
+            "message": {
+                "content": [{"tool_use_id": "1", "content": "fail", "is_error": True}]
+            }
+        }
+        events: list = []
+        stats = {"tool_calls": 0, "errors": 0}
+        _extract_user_events(ev, events, stats)
+        assert stats["errors"] == 1
+        assert events[0]["is_error"] is True
+
+    def test_skips_non_dict_blocks(self):
+        ev = {"message": {"content": ["plain string"]}}
+        events: list = []
+        stats = {"tool_calls": 0, "errors": 0}
+        _extract_user_events(ev, events, stats)
+        assert events == []
+
+    def test_skips_blocks_without_tool_use_id(self):
+        ev = {"message": {"content": [{"type": "text", "text": "hi"}]}}
+        events: list = []
+        stats = {"tool_calls": 0, "errors": 0}
+        _extract_user_events(ev, events, stats)
+        assert events == []
+
+
+# ---------------------------------------------------------------------------
+# _parse_trace_terminal
+# ---------------------------------------------------------------------------
+
+
+class TestParseTraceTerminal:
+    def test_full_trace(self, tmp_path):
+        p = tmp_path / "trace.jsonl"
+        lines = [
+            json.dumps(
+                {"type": "system", "subtype": "init", "model": "opus", "cwd": "/"}
+            ),
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {"content": [{"type": "tool_use", "name": "Read"}]},
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {
+                        "content": [
+                            {
+                                "tool_use_id": "1",
+                                "content": "done",
+                                "is_error": False,
+                            }
+                        ]
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "result",
+                    "total_cost_usd": 0.05,
+                    "duration_ms": 3000,
+                    "is_error": False,
+                }
+            ),
+        ]
+        p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        events, stats = _parse_trace_terminal(p)
+        assert stats["total_events"] == 4
+        assert stats["tool_calls"] == 1
+        assert stats["cost_usd"] == 0.05
+        types = [e["type"] for e in events]
+        assert "system_init" in types
+        assert "tool_call" in types
+        assert "result" in types
+
+    def test_skips_blank_and_bad_json(self, tmp_path):
+        p = tmp_path / "trace.jsonl"
+        p.write_text("\n  \n{bad json}\n", encoding="utf-8")
+        events, stats = _parse_trace_terminal(p)
+        assert events == []
+        assert stats["total_events"] == 0
+
+
+# ---------------------------------------------------------------------------
+# _aggregate_stats
+# ---------------------------------------------------------------------------
+
+
+class TestAggregateStats:
+    def test_empty(self):
+        s = _aggregate_stats([])
+        assert s["total_runs"] == 0
+        assert s["success_rate"] == 0.0
+        assert s["total_cost_usd"] == 0.0
+
+    def test_with_runs(self):
+        runs = [
+            {
+                "success": True,
+                "cost_usd": 0.10,
+                "duration_s": 10.0,
+                "flow": "golem",
+                "input_tokens": 100,
+                "output_tokens": 50,
+            },
+            {
+                "success": False,
+                "cost_usd": 0.05,
+                "duration_s": 5.0,
+                "flow": "golem",
+                "input_tokens": 80,
+                "output_tokens": 20,
+            },
+            {
+                "success": True,
+                "cost_usd": 0.20,
+                "flow": "other",
+                "input_tokens": 200,
+                "output_tokens": 100,
+            },
+        ]
+        s = _aggregate_stats(runs)
+        assert s["total_runs"] == 3
+        assert s["success_count"] == 2
+        assert s["failure_count"] == 1
+        assert s["success_rate"] == 66.7
+        assert s["total_cost_usd"] == 0.35
+        assert s["total_tokens"] == 550
+        assert "golem" in s["by_flow"]
+        assert s["by_flow"]["golem"]["total"] == 2
+        assert s["by_flow"]["other"]["success_rate"] == 100.0
+
+    def test_no_duration(self):
+        runs = [{"success": True, "flow": "x", "input_tokens": 0, "output_tokens": 0}]
+        s = _aggregate_stats(runs)
+        assert s["avg_duration_s"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# config_to_snapshot
+# ---------------------------------------------------------------------------
+
+
+class TestConfigToSnapshot:
+    def test_none_config(self):
+        assert config_to_snapshot(None) == {}
+
+    def test_valid_config(self):
+        golem_cfg = SimpleNamespace(enabled=True, model="opus")
+        claude_cfg = SimpleNamespace(
+            model="sonnet",
+            max_concurrent=4,
+            max_budget_usd=10.0,
+            timeout_seconds=600,
+        )
+        cfg = SimpleNamespace(claude=claude_cfg, golem=golem_cfg)
+        snap = config_to_snapshot(cfg)
+        assert snap["model"] == "sonnet"
+        assert snap["max_concurrent"] == 4
+        assert snap["flows"]["golem"] is True
+        assert snap["flow_models"]["golem"] == "opus"
+
+    def test_broken_config(self):
+        """Config that raises internally returns empty dict."""
+        assert config_to_snapshot(object()) == {}
+
+    def test_golem_flow_without_model(self):
+        golem_cfg = SimpleNamespace(enabled=False, model="")
+        claude_cfg = SimpleNamespace(
+            model="sonnet",
+            max_concurrent=1,
+            max_budget_usd=5,
+            timeout_seconds=300,
+        )
+        cfg = SimpleNamespace(claude=claude_cfg, golem=golem_cfg)
+        snap = config_to_snapshot(cfg)
+        assert snap["flows"]["golem"] is False
+        assert "golem" not in snap["flow_models"]
+
+    def test_config_without_golem(self):
+        claude_cfg = SimpleNamespace(
+            model="opus",
+            max_concurrent=2,
+            max_budget_usd=5,
+            timeout_seconds=300,
+        )
+        cfg = SimpleNamespace(claude=claude_cfg, golem=None)
+        snap = config_to_snapshot(cfg)
+        assert snap["flows"] == {}
+
+
+# ---------------------------------------------------------------------------
+# _read_sessions / _read_log_tail
+# ---------------------------------------------------------------------------
+
+
+class TestReadSessions:
+    def test_missing_file(self, tmp_path):
+        with patch("golem.core.dashboard._SESSIONS_FILE", tmp_path / "nope.json"):
+            assert _read_sessions() == {"sessions": {}}
+
+    def test_valid_file(self, tmp_path):
+        f = tmp_path / "sessions.json"
+        f.write_text('{"sessions": {"1": {"state": "running"}}}', encoding="utf-8")
+        with patch("golem.core.dashboard._SESSIONS_FILE", f):
+            data = _read_sessions()
+        assert "1" in data["sessions"]
+
+
+class TestReadLogTail:
+    def test_missing_log(self, tmp_path):
+        with patch("golem.core.dashboard._LOG_DIR", tmp_path):
+            result = _read_log_tail()
+        assert result == {"lines": [], "file": ""}
+
+    def test_valid_log(self, tmp_path):
+        log_file = tmp_path / "daemon_latest.log"
+        log_file.write_text("line1\nline2\nline3\n", encoding="utf-8")
+        with patch("golem.core.dashboard._LOG_DIR", tmp_path):
+            result = _read_log_tail(lines=2)
+        assert len(result["lines"]) == 2
+        assert result["total_lines"] == 3
+
+    def test_log_fewer_lines_than_requested(self, tmp_path):
+        log_file = tmp_path / "daemon_latest.log"
+        log_file.write_text("only one\n", encoding="utf-8")
+        with patch("golem.core.dashboard._LOG_DIR", tmp_path):
+            result = _read_log_tail(lines=100)
+        assert len(result["lines"]) == 1
+
+    def test_oserror_on_resolve(self, tmp_path):
+        log_file = tmp_path / "daemon_latest.log"
+        log_file.write_text("data", encoding="utf-8")
+        with patch("golem.core.dashboard._LOG_DIR", tmp_path):
+            with patch.object(Path, "resolve", side_effect=OSError("perm")):
+                result = _read_log_tail()
+        assert result == {"lines": [], "file": ""}
+
+
+# ---------------------------------------------------------------------------
+# _find_subtask_trace
+# ---------------------------------------------------------------------------
+
+
+class TestFindSubtaskTrace:
+    def test_found(self, tmp_path):
+        d = tmp_path / "golem"
+        d.mkdir()
+        (d / "golem-10-sub2.jsonl").write_text("{}", encoding="utf-8")
+        with patch("golem.core.dashboard.TRACES_DIR", tmp_path):
+            assert _find_subtask_trace("10", "2") is not None
+
+    def test_not_found(self, tmp_path):
+        with patch("golem.core.dashboard.TRACES_DIR", tmp_path):
+            assert _find_subtask_trace("99", "1") is None
+
+
+# ---------------------------------------------------------------------------
+# _FileCache
+# ---------------------------------------------------------------------------
+
+
+class TestFileCache:
+    def test_reads_file(self, tmp_path):
+        f = tmp_path / "test.html"
+        f.write_text("<html>hello</html>", encoding="utf-8")
+        cache = _FileCache(f)
+        assert cache.read() == "<html>hello</html>"
+
+    def test_returns_cached_on_same_mtime(self, tmp_path):
+        f = tmp_path / "test.html"
+        f.write_text("v1", encoding="utf-8")
+        cache = _FileCache(f)
+        assert cache.read() == "v1"
+        # Second read uses cache (same mtime)
+        assert cache.read() == "v1"
+
+    def test_reloads_on_mtime_change(self, tmp_path):
+        f = tmp_path / "test.html"
+        f.write_text("v1", encoding="utf-8")
+        cache = _FileCache(f)
+        assert cache.read() == "v1"
+        f.write_text("v2", encoding="utf-8")
+        # Force mtime difference
+        import os
+
+        os.utime(f, (f.stat().st_mtime + 1, f.stat().st_mtime + 1))
+        assert cache.read() == "v2"
+
+    def test_missing_file_returns_cached(self, tmp_path):
+        f = tmp_path / "nonexistent.html"
+        cache = _FileCache(f)
+        assert cache.read() == ""
+
+
+# ---------------------------------------------------------------------------
+# _format_live_section
+# ---------------------------------------------------------------------------
+
+
+class TestFormatLiveSection:
+    def test_empty_state(self):
+        snap = {
+            "active_count": 0,
+            "queue_depth": 0,
+            "active_tasks": [],
+            "models_active": {},
+        }
+        assert _format_live_section(snap) == []
+
+    def test_active_tasks(self):
+        snap = {
+            "active_count": 1,
+            "queue_depth": 0,
+            "active_tasks": [
+                {
+                    "event_id": "golem-1",
+                    "flow": "golem",
+                    "phase": "running",
+                    "elapsed_s": 5.0,
+                }
+            ],
+            "models_active": {"opus": 1},
+        }
+        lines = _format_live_section(snap)
+        assert any("Running now:" in ln for ln in lines)
+        assert any("opus" in ln for ln in lines)
+
+    def test_long_event_id_truncated(self):
+        snap = {
+            "active_count": 1,
+            "queue_depth": 0,
+            "active_tasks": [
+                {
+                    "event_id": "A" * 50,
+                    "flow": "golem",
+                    "phase": "running",
+                    "elapsed_s": 1.0,
+                }
+            ],
+            "models_active": {},
+        }
+        lines = _format_live_section(snap)
+        task_line = [ln for ln in lines if "..." in ln]
+        assert task_line  # long ID was truncated
+
+
+# ---------------------------------------------------------------------------
+# format_status_text
+# ---------------------------------------------------------------------------
+
+
+class TestFormatStatusText:
+    @patch("golem.core.dashboard.LiveState")
+    @patch("golem.core.dashboard.read_runs")
+    def test_basic_output(self, mock_read_runs, mock_ls):
+        mock_read_runs.return_value = [
+            {
+                "success": True,
+                "cost_usd": 0.1,
+                "duration_s": 10.0,
+                "flow": "golem",
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "started_at": "2026-01-01T00:00:00",
+                "event_id": "golem-1",
+            }
+        ]
+        mock_ls.get.return_value.snapshot.return_value = {
+            "active_count": 0,
+            "queue_depth": 0,
+            "active_tasks": [],
+            "models_active": {},
+        }
+        text = format_status_text(since_hours=24)
+        assert "Golem Status" in text
+        assert "Total runs:" in text
+        assert "golem" in text
+
+    @patch("golem.core.dashboard.LiveState")
+    @patch("golem.core.dashboard.read_runs")
+    def test_with_flow_filter(self, mock_read_runs, mock_ls):
+        mock_read_runs.return_value = []
+        mock_ls.get.return_value.snapshot.return_value = {
+            "active_count": 0,
+            "queue_depth": 0,
+            "active_tasks": [],
+            "models_active": {},
+        }
+        text = format_status_text(since_hours=12, flow="golem")
+        assert "golem" in text
+
+    @patch("golem.core.dashboard.LiveState")
+    @patch("golem.core.dashboard.read_runs")
+    def test_truncates_long_event_id(self, mock_read_runs, mock_ls):
+        mock_read_runs.return_value = [
+            {
+                "success": False,
+                "cost_usd": 0.0,
+                "flow": "golem",
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "started_at": "2026-01-01T00:00:00",
+                "event_id": "X" * 60,
+            }
+        ]
+        mock_ls.get.return_value.snapshot.return_value = {
+            "active_count": 0,
+            "queue_depth": 0,
+            "active_tasks": [],
+            "models_active": {},
+        }
+        text = format_status_text()
+        assert "..." in text
+
+
+# ---------------------------------------------------------------------------
+# mount_dashboard
+# ---------------------------------------------------------------------------
+
+
+class TestMountDashboard:
+    def test_no_fastapi(self):
+        """When FASTAPI_AVAILABLE is False, mount_dashboard is a no-op."""
+        app = MagicMock()
+        with patch("golem.core.dashboard.FASTAPI_AVAILABLE", False):
+            mount_dashboard(app)
+        app.get.assert_not_called()
+
+    def test_registers_routes(self):
+        """When FastAPI is available, routes are registered on the app."""
+        app = MagicMock()
+        with patch("golem.core.dashboard.FASTAPI_AVAILABLE", True):
+            with patch("golem.core.dashboard.Query"):
+                mount_dashboard(app, config_snapshot={"model": "opus"})
+        # Verify multiple @app.get() decorators were called
+        assert app.get.call_count >= 5
+
+
+class TestMountDashboardRoutes:
+    """Test actual route handler logic by capturing the registered handlers."""
+
+    @pytest.fixture()
+    def handlers(self):
+        """Mount dashboard on a mock app and return a dict of route handlers."""
+        app = MagicMock()
+        routes: dict = {}
+
+        def capture_route(path, **kwargs):
+            def decorator(fn):
+                routes[path] = fn
+                return fn
+
+            return decorator
+
+        app.get = capture_route
+        with patch("golem.core.dashboard.FASTAPI_AVAILABLE", True):
+            with patch(
+                "golem.core.dashboard.Query", lambda default=None, **kw: default
+            ):
+                mount_dashboard(
+                    app,
+                    config_snapshot={"model": "test"},
+                    live_state_file=None,
+                )
+        return routes
+
+    @pytest.mark.asyncio
+    async def test_api_config(self, handlers):
+        resp = await handlers["/api/config"]()
+        assert resp.body is not None
+
+    @pytest.mark.asyncio
+    async def test_api_runs(self, handlers):
+        with patch("golem.core.dashboard.read_runs", return_value=[]):
+            resp = await handlers["/api/runs"](flow=None, limit=100, since_hours=None)
+        body = json.loads(resp.body)
+        assert body["count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_api_runs_with_since(self, handlers):
+        with patch("golem.core.dashboard.read_runs", return_value=[]):
+            resp = await handlers["/api/runs"](flow="golem", limit=10, since_hours=1)
+        body = json.loads(resp.body)
+        assert body["count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_api_stats(self, handlers):
+        with patch("golem.core.dashboard.read_runs", return_value=[]):
+            resp = await handlers["/api/stats"](since_hours=24)
+        body = json.loads(resp.body)
+        assert body["total_runs"] == 0
+
+    @pytest.mark.asyncio
+    async def test_api_live_with_file(self):
+        """When live_state_file is set, it reads from disk."""
+        app = MagicMock()
+        routes: dict = {}
+
+        def capture_route(path, **kwargs):
+            def decorator(fn):
+                routes[path] = fn
+                return fn
+
+            return decorator
+
+        app.get = capture_route
+        with patch("golem.core.dashboard.FASTAPI_AVAILABLE", True):
+            with patch(
+                "golem.core.dashboard.Query", lambda default=None, **kw: default
+            ):
+                mount_dashboard(app, live_state_file=Path("/fake/state.json"))
+
+        with patch(
+            "golem.core.dashboard.read_live_snapshot",
+            return_value={"active_count": 0},
+        ):
+            resp = await routes["/api/live"]()
+        body = json.loads(resp.body)
+        assert body["active_count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_api_live_without_file(self, handlers):
+        """When live_state_file is None, uses LiveState singleton."""
+        with patch("golem.core.dashboard.LiveState") as mock_ls:
+            mock_ls.get.return_value.snapshot.return_value = {"active_count": 1}
+            resp = await handlers["/api/live"]()
+        body = json.loads(resp.body)
+        assert body["active_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_api_sessions(self, handlers):
+        with patch(
+            "golem.core.dashboard._read_sessions",
+            return_value={"sessions": {"1": {}}},
+        ):
+            resp = await handlers["/api/sessions"]()
+        body = json.loads(resp.body)
+        assert "1" in body["sessions"]
+
+    @pytest.mark.asyncio
+    async def test_api_sessions_error(self, handlers):
+        with patch(
+            "golem.core.dashboard._read_sessions",
+            side_effect=json.JSONDecodeError("bad", "", 0),
+        ):
+            resp = await handlers["/api/sessions"]()
+        body = json.loads(resp.body)
+        assert body == {"sessions": {}}
+
+    @pytest.mark.asyncio
+    async def test_api_logs(self, handlers):
+        with patch(
+            "golem.core.dashboard._read_log_tail",
+            return_value={"lines": ["hi"], "file": "test.log", "total_lines": 1},
+        ):
+            resp = await handlers["/api/logs"](lines=200)
+        body = json.loads(resp.body)
+        assert body["lines"] == ["hi"]
+
+    @pytest.mark.asyncio
+    async def test_api_trace_found(self, handlers, tmp_path):
+        trace_path = tmp_path / "trace.jsonl"
+        trace_path.write_text(
+            json.dumps({"type": "result", "duration_ms": 100}) + "\n",
+            encoding="utf-8",
+        )
+        with patch(
+            "golem.core.dashboard._resolve_paths",
+            return_value={"trace": trace_path, "prompt": None, "report": None},
+        ):
+            resp = await handlers["/api/trace/{event_id:path}"]("golem-1")
+        body = json.loads(resp.body)
+        assert body["event_id"] == "golem-1"
+        assert len(body["sections"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_api_trace_not_found(self, handlers):
+        with patch(
+            "golem.core.dashboard._resolve_paths",
+            return_value={"trace": None, "prompt": None, "report": None},
+        ):
+            resp = await handlers["/api/trace/{event_id:path}"]("golem-999")
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_api_prompt_found(self, handlers, tmp_path):
+        prompt_path = tmp_path / "prompt.txt"
+        prompt_path.write_text("Do the thing", encoding="utf-8")
+        with patch(
+            "golem.core.dashboard._resolve_paths",
+            return_value={"trace": None, "prompt": prompt_path, "report": None},
+        ):
+            resp = await handlers["/api/prompt/{event_id:path}"]("golem-1")
+        body = json.loads(resp.body)
+        assert body["prompt"] == "Do the thing"
+
+    @pytest.mark.asyncio
+    async def test_api_prompt_not_found(self, handlers):
+        with patch(
+            "golem.core.dashboard._resolve_paths",
+            return_value={"trace": None, "prompt": None, "report": None},
+        ):
+            resp = await handlers["/api/prompt/{event_id:path}"]("golem-1")
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_api_report_found(self, handlers, tmp_path):
+        report_path = tmp_path / "report.md"
+        report_path.write_text("# Report\nAll good", encoding="utf-8")
+        with patch(
+            "golem.core.dashboard._resolve_paths",
+            return_value={"trace": None, "prompt": None, "report": report_path},
+        ):
+            resp = await handlers["/api/report/{event_id:path}"]("golem-1")
+        body = json.loads(resp.body)
+        assert body["markdown"] == "# Report\nAll good"
+
+    @pytest.mark.asyncio
+    async def test_api_report_not_found(self, handlers):
+        with patch(
+            "golem.core.dashboard._resolve_paths",
+            return_value={"trace": None, "prompt": None, "report": None},
+        ):
+            resp = await handlers["/api/report/{event_id:path}"]("golem-1")
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_api_trace_terminal_found(self, handlers, tmp_path):
+        trace_path = tmp_path / "trace.jsonl"
+        trace_path.write_text(
+            json.dumps({"type": "result", "total_cost_usd": 0.1, "duration_ms": 100})
+            + "\n",
+            encoding="utf-8",
+        )
+        with patch(
+            "golem.core.dashboard._resolve_paths",
+            return_value={"trace": trace_path, "prompt": None, "report": None},
+        ):
+            resp = await handlers["/api/trace-terminal/{event_id:path}"]("golem-1")
+        body = json.loads(resp.body)
+        assert "events" in body
+        assert "stats" in body
+
+    @pytest.mark.asyncio
+    async def test_api_trace_terminal_not_found(self, handlers):
+        with patch(
+            "golem.core.dashboard._resolve_paths",
+            return_value={"trace": None, "prompt": None, "report": None},
+        ):
+            resp = await handlers["/api/trace-terminal/{event_id:path}"]("golem-1")
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_api_subtask_trace_from_file(self, handlers, tmp_path):
+        trace_path = tmp_path / "trace.jsonl"
+        trace_path.write_text(
+            json.dumps({"type": "result", "total_cost_usd": 0, "duration_ms": 0})
+            + "\n",
+            encoding="utf-8",
+        )
+        with patch("golem.core.dashboard._find_subtask_trace", return_value=trace_path):
+            resp = await handlers["/api/subtask-trace/{parent_id}/{subtask_id}"](
+                "10", "2"
+            )
+        body = json.loads(resp.body)
+        assert body["parent_id"] == "10"
+
+    @pytest.mark.asyncio
+    async def test_api_subtask_trace_from_session(self, handlers):
+        sessions_data = {
+            "sessions": {
+                "10": {
+                    "event_log": [
+                        {"subtask_id": 2, "type": "info"},
+                        {"subtask_id": 3, "type": "info"},
+                    ]
+                }
+            }
+        }
+        with patch("golem.core.dashboard._find_subtask_trace", return_value=None):
+            with patch(
+                "golem.core.dashboard._read_sessions", return_value=sessions_data
+            ):
+                resp = await handlers["/api/subtask-trace/{parent_id}/{subtask_id}"](
+                    "10", "2"
+                )
+        body = json.loads(resp.body)
+        assert body["source"] == "event_log"
+        assert len(body["events"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_api_subtask_trace_not_found(self, handlers):
+        with patch("golem.core.dashboard._find_subtask_trace", return_value=None):
+            with patch(
+                "golem.core.dashboard._read_sessions",
+                return_value={"sessions": {}},
+            ):
+                resp = await handlers["/api/subtask-trace/{parent_id}/{subtask_id}"](
+                    "10", "2"
+                )
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_dashboard_html(self, handlers):
+        with patch.object(_FileCache, "read", return_value="<html>dash</html>"):
+            resp = await handlers["/dashboard"]()
+        assert b"dash" in resp.body
+
+    @pytest.mark.asyncio
+    async def test_admin_html(self, handlers):
+        with patch.object(_FileCache, "read", return_value="<html>admin</html>"):
+            resp = await handlers["/dashboard/admin"]()
+        assert b"admin" in resp.body
+
+    @pytest.mark.asyncio
+    async def test_task_dashboard_html(self, handlers):
+        with patch.object(_FileCache, "read", return_value="<html>tasks</html>"):
+            resp = await handlers["/task-dashboard"]()
+        assert b"tasks" in resp.body
+
+    @pytest.mark.asyncio
+    async def test_shared_css(self, handlers):
+        with patch.object(_FileCache, "read", return_value="body { }"):
+            resp = await handlers["/dashboard/shared.css"]()
+        assert resp.body is not None
+
+    @pytest.mark.asyncio
+    async def test_shared_js(self, handlers):
+        with patch.object(_FileCache, "read", return_value="console.log(1)"):
+            resp = await handlers["/dashboard/shared.js"]()
+        assert resp.body is not None
