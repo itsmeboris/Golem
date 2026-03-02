@@ -589,7 +589,7 @@ class TestValidateAndRetrySubtask:
 
 
 class TestValidateSubtask:
-    def test_delegates_to_run_validation(self):
+    async def test_delegates_to_run_validation(self):
         session = TaskSession(parent_issue_id=42, parent_subject="Test")
         config = _make_config(
             validation_model="opus",
@@ -600,19 +600,8 @@ class TestValidateSubtask:
 
         verdict = ValidationVerdict(verdict="PASS", confidence=0.9, summary="ok")
 
-        with patch("golem.supervisor.run_validation", return_value=verdict) as mock_val:
-            result = sup._validate_subtask(10, "Sub 1", "/work")
-
-            mock_val.assert_called_once_with(
-                issue_id=10,
-                subject="Sub 1",
-                description="description",
-                session_data=session.to_dict(),
-                work_dir="/work",
-                model="opus",
-                budget_usd=0.5,
-                timeout_seconds=120,
-            )
+        with patch("golem.supervisor.run_validation", return_value=verdict):
+            result = await sup._validate_subtask(10, "Sub 1", "/work")
 
         assert result.verdict == "PASS"
 

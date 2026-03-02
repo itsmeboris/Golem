@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from .core.config import DATA_DIR, DashboardConfig, load_config
+from .core.defaults import _now_iso
 from .core.daemon_utils import (
     daemonize,
     read_pid,
@@ -71,11 +72,6 @@ def _get_profile(config):
     tc = config.get_flow_config("golem")
     name = tc.profile if tc else "redmine"
     return build_profile(name, config)
-
-
-def _now_iso():
-    """Return the current UTC time as an ISO-8601 string."""
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _save_cli_session(session):
@@ -185,7 +181,7 @@ def _make_event_handler(tracker, printer, session=None, start_time=None):
         try:
             _save_cli_session(session)
         except Exception:  # pylint: disable=broad-except
-            pass
+            logger.debug("Failed to save CLI session", exc_info=True)
 
     return handler
 
@@ -271,7 +267,7 @@ def run_issue(  # pylint: disable=too-many-arguments,too-many-locals
         try:
             _save_cli_session(sess)
         except Exception:  # pylint: disable=broad-except
-            pass
+            logger.debug("Failed to save CLI session", exc_info=True)
 
     print(f"\n  {_SEP} agent output {_SEP}\n")
     profile.notifier.notify_started(parent_id, subject)

@@ -287,12 +287,17 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                 live.mark_queued(event_id)
                 async with self._gate.slot(session.priority):
                     prev_state = session.state
+                    lock = (
+                        asyncio.Lock()
+                        if self._task_config.use_worktrees
+                        else self._work_dir_lock
+                    )
                     orchestrator = TaskOrchestrator(
                         session,
                         self.config,
                         self._task_config,
                         on_progress=self._on_agent_progress,
-                        work_dir_lock=self._work_dir_lock,
+                        work_dir_lock=lock,
                         save_callback=self._save_state,
                         profile=profile,
                     )
@@ -439,6 +444,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
 
         session = self._create_session(task_id, subject)
         session.execution_mode = "prompt"
+        session.grace_deadline = _now_iso()
         self._sessions[task_id] = session
         self._save_state()
 
@@ -479,6 +485,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             subject = task.get("subject", "")
             session = self._create_session(iid, subject)
             session.execution_mode = "prompt"
+            session.grace_deadline = _now_iso()
             self._sessions[iid] = session
             self._save_state()
 

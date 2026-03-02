@@ -7,14 +7,9 @@ via ``SlackClient``.
 import logging
 from typing import Any
 
+from ..core.defaults import _fmt_duration
+
 logger = logging.getLogger("golem.backends.slack_notifier")
-
-
-def _fmt_duration(seconds: float) -> str:
-    m, s = divmod(int(seconds), 60)
-    if m:
-        return f"{m}m {s}s"
-    return f"{s}s"
 
 
 def _header(text: str, emoji: str = "") -> dict[str, Any]:

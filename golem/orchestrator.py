@@ -30,6 +30,7 @@ from typing import Any
 
 from .core.cli_wrapper import CLIConfig, CLIResult, CLIType, invoke_cli_monitored
 from .core.config import DATA_DIR, PROJECT_ROOT, GolemFlowConfig
+from .core.defaults import _now_iso  # re-exported for backward compat (flow.py)
 from .core.report import ReportWriter
 from .core.run_log import RunRecord, format_duration, record_run
 from .core.flow_base import _write_prompt, _write_trace
@@ -170,10 +171,6 @@ class TaskSession:
             subtask_plan=data.get("subtask_plan", []),
             supervisor_phase=data.get("supervisor_phase", ""),
         )
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 # Type alias for progress callbacks: (session, milestone) -> None
@@ -387,7 +384,7 @@ class TaskOrchestrator:
             )
 
             # ── Phase 3: Validate ─────────────────────────────────────
-            verdict = self._run_validation(issue_id, work_dir)
+            verdict = await self._run_validation(issue_id, work_dir)
 
             # ── Phase 4: Retry or Escalate ────────────────────────────
             if verdict.verdict == "PASS":
@@ -439,13 +436,13 @@ class TaskOrchestrator:
                 "golem", event_id, result.trace_events
             )
 
-    def _run_validation(self, issue_id: int, work_dir: str) -> ValidationVerdict:
+    async def _run_validation(self, issue_id: int, work_dir: str) -> ValidationVerdict:
         """Phase 3: Spawn the validation agent and store the verdict."""
         self.session.state = TaskSessionState.VALIDATING
         self.session.updated_at = _now_iso()
 
         description = self._get_description(issue_id)
-        verdict = run_validation(
+        verdict = await self._run_validation_in_executor(
             issue_id=issue_id,
             subject=self.session.parent_subject,
             description=description,
@@ -464,6 +461,13 @@ class TaskOrchestrator:
             verdict.confidence,
         )
         return verdict
+
+    async def _run_validation_in_executor(self, **kwargs) -> ValidationVerdict:
+        from functools import partial
+
+        return await asyncio.get_running_loop().run_in_executor(
+            None, partial(run_validation, **kwargs)
+        )
 
     def _commit_and_complete(
         self, issue_id: int, work_dir: str, verdict: ValidationVerdict
@@ -634,7 +638,7 @@ class TaskOrchestrator:
         description = self._get_description(issue_id)
         session_data = self.session.to_dict()
 
-        retry_verdict = run_validation(
+        retry_verdict = await self._run_validation_in_executor(
             issue_id=issue_id,
             subject=self.session.parent_subject,
             description=description,
@@ -827,7 +831,7 @@ class TaskOrchestrator:
                 try:
                     self._save_callback()
                 except Exception:  # pylint: disable=broad-exception-caught
-                    pass  # logged at full checkpoint sites
+                    logger.debug("Checkpoint save failed", exc_info=True)
 
     def _populate_session_from_tracker(
         self,

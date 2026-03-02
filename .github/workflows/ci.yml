@@ -30,4 +30,4 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
-      - run: pytest golem/tests/ -x -q --tb=short
+      - run: python -m pytest golem/tests/ -x -q --tb=short --cov=golem --cov-report=term-missing:skip-covered --cov-fail-under=100

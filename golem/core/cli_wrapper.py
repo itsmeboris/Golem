@@ -21,8 +21,8 @@ from .stream_printer import StreamPrinter as _StreamPrinter
 
 logger = logging.getLogger("golem.core.cli_wrapper")
 
-# .parent chain: core/ → golem/ (package root)
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# .parent chain: core/ → golem/ → repo root
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 ProgressCallback = Callable[[dict], None]
 

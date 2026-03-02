@@ -266,6 +266,17 @@ class TestPrepareWorkDir:
             cleanup = _prepare_work_dir(str(tmp_path), [])
             cleanup()
 
+    def test_nothing_created_returns_noop(self, tmp_path):
+        target = tmp_path / "work"
+        target.mkdir()
+        with patch("golem.core.cli_wrapper._PROJECT_ROOT", tmp_path / "proj"), patch(
+            "golem.core.cli_wrapper._copy_mcp_json"
+        ), patch("golem.core.cli_wrapper._copy_mcp_env"), patch(
+            "golem.core.cli_wrapper._copy_claude_dir"
+        ):
+            cleanup = _prepare_work_dir(str(target), [])
+            cleanup()
+
     def test_cleanup_handles_oserror(self, tmp_path):
         target = tmp_path / "work"
         target.mkdir()

@@ -494,7 +494,7 @@ class TaskSupervisor:
         cost,
     ):
         """Validate subtask, retry on PARTIAL. Returns (verdict, cost, retry_count)."""
-        verdict = self._validate_subtask(child_id, child_subject, work_dir)
+        verdict = await self._validate_subtask(child_id, child_subject, work_dir)
         self.session.total_cost_usd += verdict.cost_usd
 
         retry_count = 0
@@ -509,7 +509,7 @@ class TaskSupervisor:
             )
             cost += retry_cost
             self.session.total_cost_usd += retry_cost
-            verdict = self._validate_subtask(child_id, child_subject, work_dir)
+            verdict = await self._validate_subtask(child_id, child_subject, work_dir)
             self.session.total_cost_usd += verdict.cost_usd
 
         return verdict, cost, retry_count
@@ -551,22 +551,28 @@ class TaskSupervisor:
             )
         return "\n".join(lines)
 
-    def _validate_subtask(
+    async def _validate_subtask(
         self, child_id: int, subject: str, work_dir: str
     ) -> ValidationVerdict:
         """Run per-subtask validation using the shared validation pipeline."""
+        from functools import partial
+
         description = self._get_description(child_id)
         session_data = self.session.to_dict()
 
-        return run_validation(
-            issue_id=child_id,
-            subject=subject,
-            description=description,
-            session_data=session_data,
-            work_dir=work_dir,
-            model=self.task_config.validation_model,
-            budget_usd=self.task_config.validation_budget_usd,
-            timeout_seconds=self.task_config.validation_timeout_seconds,
+        return await asyncio.get_running_loop().run_in_executor(
+            None,
+            partial(
+                run_validation,
+                issue_id=child_id,
+                subject=subject,
+                description=description,
+                session_data=session_data,
+                work_dir=work_dir,
+                model=self.task_config.validation_model,
+                budget_usd=self.task_config.validation_budget_usd,
+                timeout_seconds=self.task_config.validation_timeout_seconds,
+            ),
         )
 
     async def _retry_subtask(

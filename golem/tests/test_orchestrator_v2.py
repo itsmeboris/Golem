@@ -728,7 +728,7 @@ class TestPersistTraces:
 
 
 class TestRunValidation:
-    def test_runs_validation_and_stores_verdict(self):
+    async def test_runs_validation_and_stores_verdict(self):
         session = TaskSession(parent_issue_id=42, parent_subject="Fix")
         profile = MagicMock()
         profile.task_source.get_task_description.return_value = "desc"
@@ -740,8 +740,10 @@ class TestRunValidation:
             summary="good",
             cost_usd=0.1,
         )
-        with patch("golem.orchestrator.run_validation", return_value=verdict):
-            result = orch._run_validation(42, "/work")
+        with patch.object(
+            orch, "_run_validation_in_executor", return_value=verdict
+        ):
+            result = await orch._run_validation(42, "/work")
 
         assert result.verdict == "PASS"
         assert session.state == TaskSessionState.VALIDATING

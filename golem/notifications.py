@@ -16,7 +16,7 @@ Key exports:
 
 from typing import Any
 
-from .core.defaults import REDMINE_ISSUES_URL
+from .core.defaults import REDMINE_ISSUES_URL, _fmt_duration
 from .core.teams import (
     _card_envelope,
     _fact_set,
@@ -24,14 +24,6 @@ from .core.teams import (
     _open_url_action,
     _text_block,
 )
-
-
-def _fmt_duration(seconds: float) -> str:
-    """Format seconds as ``Xm Ys``."""
-    m, s = divmod(int(seconds), 60)
-    if m:
-        return f"{m}m {s}s"
-    return f"{s}s"
 
 
 def build_task_started_card(

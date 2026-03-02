@@ -716,6 +716,9 @@ class TestSubmitTask:
         assert session.parent_subject == "[AGENT] Auth"
         assert task_id in spawned
 
+        deadline = datetime.fromisoformat(session.grace_deadline)
+        assert deadline <= datetime.now(timezone.utc)
+
         task_file = flow._submissions_dir / f"{task_id}.json"
         assert task_file.exists()
 
@@ -764,6 +767,8 @@ class TestScanSubmissions:
 
         assert 9001 in flow._sessions
         assert flow._sessions[9001].execution_mode == "prompt"
+        deadline = datetime.fromisoformat(flow._sessions[9001].grace_deadline)
+        assert deadline <= datetime.now(timezone.utc)
         assert 9001 in spawned
 
         done_file = sub_dir / "done" / "9001.json"
