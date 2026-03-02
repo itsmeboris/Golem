@@ -1,4 +1,4 @@
-# pylint: disable=too-few-public-methods
+# pylint: disable=too-few-public-methods,too-many-lines
 """Tests for golem.core.dashboard — dashboard helpers and route handlers."""
 
 import json
@@ -9,7 +9,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from golem.core.dashboard import (
-    FASTAPI_AVAILABLE,
     _FileCache,
     _aggregate_stats,
     _extract_assistant_events,
@@ -155,14 +154,14 @@ class TestParseTrace:
     def test_skips_blank_and_invalid_json(self, tmp_path):
         p = tmp_path / "trace.jsonl"
         p.write_text("\n  \n{bad json}\n", encoding="utf-8")
-        assert _parse_trace(p) == []
+        assert not _parse_trace(p)
 
     def test_non_dict_content_blocks_ignored(self, tmp_path):
         p = tmp_path / "trace.jsonl"
         ev = {"type": "assistant", "message": {"content": ["just a string"]}}
         p.write_text(json.dumps(ev) + "\n", encoding="utf-8")
         sections = _parse_trace(p)
-        assert sections == []
+        assert not sections
 
 
 # ---------------------------------------------------------------------------
@@ -232,13 +231,13 @@ class TestExtractAssistantEvents:
         events: list = []
         stats = {"tool_calls": 0, "errors": 0}
         _extract_assistant_events(ev, events, stats)
-        assert events == []
+        assert not events
 
     def test_empty_message(self):
         events: list = []
         stats = {"tool_calls": 0, "errors": 0}
         _extract_assistant_events({}, events, stats)
-        assert events == []
+        assert not events
 
 
 class TestExtractUserEvents:
@@ -289,14 +288,14 @@ class TestExtractUserEvents:
         events: list = []
         stats = {"tool_calls": 0, "errors": 0}
         _extract_user_events(ev, events, stats)
-        assert events == []
+        assert not events
 
     def test_skips_blocks_without_tool_use_id(self):
         ev = {"message": {"content": [{"type": "text", "text": "hi"}]}}
         events: list = []
         stats = {"tool_calls": 0, "errors": 0}
         _extract_user_events(ev, events, stats)
-        assert events == []
+        assert not events
 
 
 # ---------------------------------------------------------------------------
@@ -354,7 +353,7 @@ class TestParseTraceTerminal:
         p = tmp_path / "trace.jsonl"
         p.write_text("\n  \n{bad json}\n", encoding="utf-8")
         events, stats = _parse_trace_terminal(p)
-        assert events == []
+        assert not events
         assert stats["total_events"] == 0
 
 
@@ -420,7 +419,7 @@ class TestAggregateStats:
 
 class TestConfigToSnapshot:
     def test_none_config(self):
-        assert config_to_snapshot(None) == {}
+        assert not config_to_snapshot(None)
 
     def test_valid_config(self):
         golem_cfg = SimpleNamespace(enabled=True, model="opus")
@@ -439,7 +438,7 @@ class TestConfigToSnapshot:
 
     def test_broken_config(self):
         """Config that raises internally returns empty dict."""
-        assert config_to_snapshot(object()) == {}
+        assert not config_to_snapshot(object())
 
     def test_golem_flow_without_model(self):
         golem_cfg = SimpleNamespace(enabled=False, model="")
@@ -583,7 +582,7 @@ class TestFormatLiveSection:
             "active_tasks": [],
             "models_active": {},
         }
-        assert _format_live_section(snap) == []
+        assert not _format_live_section(snap)
 
     def test_active_tasks(self):
         snap = {
@@ -713,7 +712,7 @@ class TestMountDashboard:
         assert app.get.call_count >= 5  # pylint: disable=no-member
 
 
-class TestMountDashboardRoutes:
+class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
     """Test actual route handler logic by capturing the registered handlers."""
 
     @pytest.fixture()
