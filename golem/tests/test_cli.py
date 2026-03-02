@@ -237,6 +237,7 @@ class TestCmdRun:
             file="",
             dry=False,
             subject="",
+            cwd="",
             mcp=None,
         )
         result = cmd_run(args)
@@ -264,10 +265,85 @@ class TestCmdRun:
             file="",
             dry=True,
             subject="",
+            cwd="",
             mcp=None,
         )
         result = cmd_run(args)
         assert result == 0
+
+    @patch("golem.cli.run_issue", return_value=True)
+    @patch("golem.cli.load_config")
+    def test_cwd_passed_to_run_issue(self, mock_config, mock_run):
+        args = SimpleNamespace(
+            parent_id=99,
+            config=None,
+            prompt="",
+            file="",
+            dry=False,
+            subject="",
+            cwd="/my/workdir",
+            mcp=None,
+        )
+        result = cmd_run(args)
+        assert result == 0
+        mock_run.assert_called_once_with(
+            99,
+            mock_config.return_value,
+            dry=False,
+            subject_override="",
+            cwd_override="/my/workdir",
+            mcp_override=None,
+        )
+
+    @patch("golem.cli._submit_to_daemon", return_value={"task_id": 1})
+    @patch("golem.cli._ensure_daemon")
+    @patch("golem.cli.load_config")
+    def test_cwd_passed_to_daemon_via_prompt(
+        self, mock_config, mock_ensure, mock_submit
+    ):
+        mock_config.return_value.dashboard.port = 8080
+        mock_config.return_value.daemon = DaemonConfig()
+        args = SimpleNamespace(
+            parent_id=None,
+            config=None,
+            prompt="do stuff",
+            file="",
+            dry=False,
+            subject="",
+            cwd="/custom/dir",
+            mcp=None,
+        )
+        result = cmd_run(args)
+        assert result == 0
+        mock_submit.assert_called_once()
+        _, kwargs = mock_submit.call_args
+        assert kwargs["work_dir"] == "/custom/dir"
+
+    @patch("golem.cli._submit_to_daemon", return_value={"task_id": 2})
+    @patch("golem.cli._ensure_daemon")
+    @patch("golem.cli.load_config")
+    def test_cwd_passed_to_daemon_via_file(
+        self, mock_config, mock_ensure, mock_submit, tmp_path
+    ):
+        mock_config.return_value.dashboard.port = 8080
+        mock_config.return_value.daemon = DaemonConfig()
+        prompt_file = tmp_path / "task.md"
+        prompt_file.write_text("do file stuff")
+        args = SimpleNamespace(
+            parent_id=None,
+            config=None,
+            prompt="",
+            file=str(prompt_file),
+            dry=False,
+            subject="",
+            cwd="/from/file",
+            mcp=None,
+        )
+        result = cmd_run(args)
+        assert result == 0
+        mock_submit.assert_called_once()
+        _, kwargs = mock_submit.call_args
+        assert kwargs["work_dir"] == "/from/file"
 
 
 class TestCmdPoll:
@@ -355,6 +431,30 @@ class TestMainArgparse:
         with patch("sys.argv", ["golem", "poll"]):
             result = main()
         assert result == 0
+
+    @patch("golem.cli.cmd_run", return_value=0)
+    def test_run_cwd_long_flag(self, mock_run):
+        with patch("sys.argv", ["golem", "run", "42", "--cwd", "/tmp/work"]):
+            result = main()
+        assert result == 0
+        parsed_args = mock_run.call_args[0][0]
+        assert parsed_args.cwd == "/tmp/work"
+
+    @patch("golem.cli.cmd_run", return_value=0)
+    def test_run_cwd_short_flag(self, mock_run):
+        with patch("sys.argv", ["golem", "run", "42", "-C", "/tmp/work"]):
+            result = main()
+        assert result == 0
+        parsed_args = mock_run.call_args[0][0]
+        assert parsed_args.cwd == "/tmp/work"
+
+    @patch("golem.cli.cmd_run", return_value=0)
+    def test_run_cwd_default_empty(self, mock_run):
+        with patch("sys.argv", ["golem", "run", "42"]):
+            result = main()
+        assert result == 0
+        parsed_args = mock_run.call_args[0][0]
+        assert parsed_args.cwd == ""
 
     def test_verbose_flag(self):
         import logging

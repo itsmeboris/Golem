@@ -482,6 +482,7 @@ def cmd_run(args) -> int:
         config,
         dry=args.dry,
         subject_override=getattr(args, "subject", ""),
+        cwd_override=getattr(args, "cwd", ""),
         mcp_override=getattr(args, "mcp", None),
     )
     if args.dry:
@@ -501,10 +502,12 @@ def _cmd_run_prompt(args: argparse.Namespace, config: Config, prompt_text: str) 
     _ensure_daemon(args, config, port, daemon_cfg=daemon_cfg)
 
     subject = getattr(args, "subject", "") or ""
+    work_dir = getattr(args, "cwd", "") or ""
     result = _submit_to_daemon(
         prompt=prompt_text,
         subject=subject,
         port=port,
+        work_dir=work_dir,
         timeout=daemon_cfg.http_submit_timeout,
     )
 
@@ -848,6 +851,12 @@ def main() -> int:
     )
     run_p.add_argument("--dry", action="store_true", help="Preview without executing")
     run_p.add_argument("--subject", default="", help="Override issue subject")
+    run_p.add_argument(
+        "--cwd",
+        "-C",
+        default="",
+        help="Override working directory for this invocation",
+    )
     run_mcp = run_p.add_mutually_exclusive_group()
     run_mcp.add_argument(
         "--mcp",
