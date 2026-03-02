@@ -17,7 +17,7 @@ jobs:
       - run: pip install black pylint
       - run: black --check golem/
       - run: pip install -e .
-      - run: pylint --errors-only golem/ --ignore=tests
+      - run: pylint --errors-only golem/
 
   test:
     runs-on: ubuntu-latest

@@ -1,6 +1,5 @@
 """Base classes for all trigger types."""
 
-from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any
@@ -40,15 +39,3 @@ class TriggerEvent:
             timestamp=ts,
             source=data.pop("source", "unknown"),
         )
-
-
-class Trigger(ABC):
-    """Abstract base for all trigger types (CLI, polling, webhook)."""
-
-    @abstractmethod
-    async def start(self) -> None:
-        """Begin listening for / producing events."""
-
-    @abstractmethod
-    async def stop(self) -> None:
-        """Gracefully shut down the trigger."""

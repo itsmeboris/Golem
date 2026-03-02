@@ -321,6 +321,7 @@ def config_to_snapshot(config: Any) -> dict:
             "flow_models": flow_models,
         }
     except Exception:  # pylint: disable=broad-except
+        logger.debug("config_to_snapshot failed", exc_info=True)
         return {}
 
 

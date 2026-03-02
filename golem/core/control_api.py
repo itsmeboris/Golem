@@ -26,12 +26,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("golem.core.control_api")
 
-try:
-    from fastapi import APIRouter, HTTPException, Request
+from .triggers import FASTAPI_AVAILABLE
 
-    FASTAPI_AVAILABLE = True
-except ImportError:
-    FASTAPI_AVAILABLE = False
+if FASTAPI_AVAILABLE:
+    from fastapi import APIRouter, HTTPException, Request
+else:
     APIRouter = None  # type: ignore[assignment,misc]
     HTTPException = None  # type: ignore[assignment,misc]
     Request = None  # type: ignore[assignment,misc]
