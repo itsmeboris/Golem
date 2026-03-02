@@ -304,6 +304,7 @@ def run_validation(
         max_budget_usd=budget_usd,
         timeout_seconds=timeout_seconds,
         mcp_servers=[],
+        cwd=work_dir,
     )
 
     return _invoke_with_retry(prompt, cli_config, callback)

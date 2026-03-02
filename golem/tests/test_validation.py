@@ -360,10 +360,12 @@ class TestRunValidation:
             subject="test",
             description="desc",
             session_data={},
-            work_dir="/tmp",
+            work_dir="/work",
         )
         assert v.verdict == "PASS"
         assert v.cost_usd == 0.10
+        cli_config = mock_invoke.call_args[0][1]
+        assert cli_config.cwd == "/work"
 
     @patch("golem.validation.invoke_cli", side_effect=RuntimeError("boom"))
     @patch("golem.validation.get_git_diff", return_value="(no changes)")

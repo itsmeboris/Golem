@@ -299,7 +299,7 @@ class TestBuildCommitMessage:
 
     def test_body_contains_automated_by(self):
         msg = _build("Fix thing")
-        assert "Automated-By: golem" in msg
+        assert "Automated-By: Golem" in msg
 
     def test_agent_marker_stripped_case_insensitive(self):
         for marker in ("[AGENT]", "[agent]", "[Agent]"):

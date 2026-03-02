@@ -43,6 +43,18 @@ def _run_git(
     )
 
 
+def _clean_subject(raw: str) -> str:
+    """Extract a clean, single-line subject from raw prompt/issue text."""
+    line = raw.split("\n")[0].strip()
+    for marker in ("[AGENT]", "[agent]", "[Agent]"):
+        line = line.replace(marker, "")
+    line = line.strip()
+    line = re.sub(r"^#+\s*", "", line)
+    line = re.sub(r"`([^`]*)`", r"\1", line)
+    line = line.strip("*_ ")
+    return line.strip()
+
+
 def build_commit_message(
     issue_id: int,
     subject: str,
@@ -86,10 +98,7 @@ def build_commit_message(
             continue
         break
 
-    # Clean subject: strip [AGENT] tag
-    clean_subject = subject
-    for marker in ("[AGENT]", "[agent]", "[Agent]"):
-        clean_subject = clean_subject.replace(marker, "").strip()
+    clean_subject = _clean_subject(subject)
 
     first_line = f"[{main_tag}][{sub_tag}] {clean_subject}"
     if len(first_line) > 72:
@@ -100,7 +109,7 @@ def build_commit_message(
         "",
         (summary[:500] if summary else "Task completed by agent."),
         "",
-        "Automated-By: golem",
+        "Automated-By: Golem",
     ]
 
     return first_line + "\n\n" + "\n".join(body_parts)

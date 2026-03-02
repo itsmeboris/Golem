@@ -3,7 +3,35 @@
 import subprocess
 from unittest.mock import patch
 
-from golem.committer import CommitResult, _run_git, build_commit_message, commit_changes
+from golem.committer import (
+    CommitResult,
+    _clean_subject,
+    _run_git,
+    build_commit_message,
+    commit_changes,
+)
+
+
+class TestCleanSubject:
+    def test_strips_agent_tag(self):
+        assert _clean_subject("[AGENT] Fix the parser") == "Fix the parser"
+
+    def test_strips_markdown_header(self):
+        assert _clean_subject("## Add type hints to cli.py") == "Add type hints to cli.py"
+
+    def test_strips_combined(self):
+        raw = "[AGENT] ## Fix swallowed exceptions — add logging"
+        assert _clean_subject(raw) == "Fix swallowed exceptions — add logging"
+
+    def test_takes_first_line_only(self):
+        raw = "## Fix the bug\n\nThis is a long description\nwith many lines"
+        assert _clean_subject(raw) == "Fix the bug"
+
+    def test_strips_backticks_and_formatting(self):
+        assert _clean_subject("`some_func` needs fixing") == "some_func needs fixing"
+
+    def test_plain_subject_unchanged(self):
+        assert _clean_subject("Fix the parser") == "Fix the parser"
 
 
 class TestBuildCommitMessage:
@@ -18,7 +46,7 @@ class TestBuildCommitMessage:
         assert "Fix the parser" in msg
         assert "[AGENT]" not in msg
         assert "#123" in msg
-        assert "golem" in msg
+        assert "Golem" in msg
 
     def test_strips_agent_tag_case_variants(self):
         for tag in ("[AGENT]", "[agent]", "[Agent]"):
