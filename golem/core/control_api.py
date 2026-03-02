@@ -225,6 +225,26 @@ if FASTAPI_AVAILABLE:
             ) from None
         return {"ok": True, **result}
 
+    @health_router.post("/cancel/{task_id}")
+    async def cancel_task(task_id: int):
+        """Cancel a running task by ID.
+
+        Returns ``{"ok": true, "task_id": ..., "status": "cancelled"}``.
+        """
+        if _golem_flow is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Daemon not ready — GolemFlow not wired",
+            )
+        try:
+            result = _golem_flow.cancel_session(task_id)
+        except ValueError as exc:
+            msg = str(exc)
+            if "not found" in msg:
+                raise HTTPException(status_code=404, detail=msg) from exc
+            raise HTTPException(status_code=409, detail=msg) from exc
+        return {"ok": True, **result}
+
     @health_router.post("/submit/batch")
     async def submit_batch(request: Request):
         """Submit multiple tasks as a batch with optional dependencies.

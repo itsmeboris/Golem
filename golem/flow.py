@@ -677,6 +677,36 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             done_dir.mkdir(parents=True, exist_ok=True)
             shutil.move(str(task_file), str(done_dir / task_file.name))
 
+    # -- Cancel support --------------------------------------------------------
+
+    CANCELABLE_STATES = frozenset(
+        {
+            TaskSessionState.DETECTED,
+            TaskSessionState.RUNNING,
+            TaskSessionState.VALIDATING,
+            TaskSessionState.RETRYING,
+        }
+    )
+
+    def cancel_session(self, task_id: int) -> dict:
+        session = self._sessions.get(task_id)
+        if session is None:
+            raise ValueError(f"Task {task_id} not found")
+        if session.state not in self.CANCELABLE_STATES:
+            raise ValueError(
+                f"Task {task_id} is in terminal state '{session.state.value}'"
+            )
+        prev_state = session.state
+        session.state = TaskSessionState.FAILED
+        session.result_summary = "Cancelled by user"
+        running_task = self._session_tasks.get(task_id)
+        if running_task is not None:
+            running_task.cancel()
+        self._handle_state_transition(session, prev_state)
+        self._save_state()
+        logger.info("Cancelled session #%d (was %s)", task_id, prev_state.value)
+        return {"task_id": task_id, "status": "cancelled"}
+
     # -- Session factory ------------------------------------------------------
 
     def _create_session(self, issue_id: int, subject: str) -> TaskSession:

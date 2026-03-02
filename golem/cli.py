@@ -763,6 +763,28 @@ def cmd_stop(args) -> int:
     return 1
 
 
+def cmd_cancel(args) -> int:
+    """Handler for the 'cancel' subcommand — cancel a running task."""
+    config = load_config(getattr(args, "config", None))
+    port = config.dashboard.port if config.dashboard else DashboardConfig.port
+    task_id = args.task_id
+
+    url = f"http://127.0.0.1:{port}/api/cancel/{task_id}"
+    req = urllib.request.Request(url, data=b"", method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+            print(f"Task #{task_id} cancelled.")
+            return 0
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        print(f"Cancel failed ({exc.code}): {body}", file=sys.stderr)
+        return 1
+    except (urllib.error.URLError, OSError) as exc:
+        print(f"Cannot reach daemon: {exc}", file=sys.stderr)
+        return 1
+
+
 def cmd_status(args) -> int:
     """Handler for the 'status' subcommand — show recent run history."""
     from .core.dashboard import format_status_text
@@ -896,6 +918,11 @@ def main() -> int:
     daemon_p.add_argument("--pid-file", type=Path, help="PID file path")
     daemon_p.add_argument("--port", type=int, help="Dashboard port")
     daemon_p.set_defaults(func=cmd_daemon)
+
+    # cancel
+    cancel_p = sub.add_parser("cancel", help="Cancel a running task")
+    cancel_p.add_argument("task_id", type=int, help="Task ID to cancel")
+    cancel_p.set_defaults(func=cmd_cancel)
 
     # stop
     stop_p = sub.add_parser("stop", help="Stop agent daemon")
