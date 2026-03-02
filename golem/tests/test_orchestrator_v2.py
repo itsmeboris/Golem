@@ -433,6 +433,7 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
             "write_trace": patch(
                 "golem.orchestrator._write_trace", return_value="/trace"
             ),
+            "preflight": patch.object(TaskOrchestrator, "_preflight_check"),
         }
         return patches
 
@@ -444,13 +445,10 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
         profile.tool_provider.servers_for_subject.return_value = []
         orch = _make_orch(session, profile=profile)
 
-        with self._mock_deps()["resolve"], self._mock_deps()[
-            "invoke"
-        ], self._mock_deps()["run_val"], self._mock_deps()["commit"], self._mock_deps()[
+        deps = self._mock_deps()
+        with deps["resolve"], deps["invoke"], deps["run_val"], deps["commit"], deps[
             "write_prompt"
-        ], self._mock_deps()[
-            "write_trace"
-        ], patch.object(
+        ], deps["write_trace"], deps["preflight"], patch.object(
             orch, "_write_report"
         ), patch.object(
             orch, "_record_run"
@@ -460,7 +458,7 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
         assert session.state == TaskSessionState.COMPLETED
         assert session.commit_sha == "def456"
 
-    async def test_pass_with_worktree_merge(self):
+    async def test_pass_with_worktree_signals_merge_ready(self):
         session = TaskSession(parent_issue_id=42, parent_subject="Fix")
         profile = MagicMock()
         profile.task_source.get_task_description.return_value = "desc"
@@ -480,12 +478,10 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
         orch = _make_orch(session, profile=profile, task_config=tc)
 
         deps = self._mock_deps()
-        with deps["resolve"], deps["create_wt"] as m_create, deps[
-            "merge_wt"
-        ] as m_merge, deps["invoke"], deps["run_val"], deps["commit"], deps[
-            "write_prompt"
-        ], deps[
-            "write_trace"
+        with deps["resolve"], deps["create_wt"] as m_create, deps["invoke"], deps[
+            "run_val"
+        ], deps["commit"], deps["write_prompt"], deps["write_trace"], deps[
+            "preflight"
         ], patch.object(
             orch, "_write_report"
         ), patch.object(
@@ -494,11 +490,13 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
             await orch._run_agent_monolithic()
 
         assert session.state == TaskSessionState.COMPLETED
-        assert session.commit_sha == "abc123"
+        assert session.merge_ready is True
+        assert session.commit_sha == "def456"
         m_create.assert_called_once()
-        m_merge.assert_called_once()
 
-    async def test_worktree_creation_fails_fallback(self):
+    async def test_worktree_creation_fails_raises_infra_error(self):
+        from golem.errors import InfrastructureError
+
         session = TaskSession(parent_issue_id=42, parent_subject="Fix")
         profile = MagicMock()
         profile.task_source.get_task_description.return_value = "desc"
@@ -520,19 +518,8 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
         deps = self._mock_deps()
         with deps["resolve"], patch(
             "golem.orchestrator.create_worktree", side_effect=RuntimeError("no git")
-        ), deps["invoke"], deps["run_val"], deps["commit"], deps["write_prompt"], deps[
-            "write_trace"
-        ], patch(
-            "golem.orchestrator.cleanup_worktree"
-        ) as m_cleanup, patch.object(
-            orch, "_write_report"
-        ), patch.object(
-            orch, "_record_run"
-        ):
+        ), pytest.raises(InfrastructureError, match="Worktree creation failed"):
             await orch._run_agent_monolithic()
-
-        assert session.state == TaskSessionState.COMPLETED
-        m_cleanup.assert_not_called()
 
     async def test_work_dir_override(self):
         session = TaskSession(parent_issue_id=42, parent_subject="Fix")
@@ -545,7 +532,7 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
         deps = self._mock_deps()
         with deps["invoke"], deps["run_val"], deps["commit"], deps[
             "write_prompt"
-        ], deps["write_trace"], patch(
+        ], deps["write_trace"], deps["preflight"], patch(
             "golem.orchestrator.resolve_work_dir"
         ) as m_resolve, patch.object(
             orch, "_write_report"
@@ -571,7 +558,7 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
             confidence=0.5,
             summary="needs work",
         )
-        with deps["resolve"], deps["invoke"], patch(
+        with deps["resolve"], deps["invoke"], deps["preflight"], patch(
             "golem.orchestrator.run_validation", return_value=partial_verdict
         ), deps["commit"], deps["write_prompt"], deps["write_trace"], patch.object(
             orch, "_write_report"
@@ -596,7 +583,7 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
             confidence=0.3,
             summary="still bad",
         )
-        with deps["resolve"], deps["invoke"], patch(
+        with deps["resolve"], deps["invoke"], deps["preflight"], patch(
             "golem.orchestrator.run_validation", return_value=partial_verdict
         ), deps["write_prompt"], deps["write_trace"], patch.object(
             orch, "_write_report"
@@ -617,7 +604,7 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
 
         deps = self._mock_deps()
         fail_verdict = ValidationVerdict(verdict="FAIL", confidence=0.1, summary="bad")
-        with deps["resolve"], deps["invoke"], patch(
+        with deps["resolve"], deps["invoke"], deps["preflight"], patch(
             "golem.orchestrator.run_validation", return_value=fail_verdict
         ), deps["write_prompt"], deps["write_trace"], patch.object(
             orch, "_write_report"
@@ -637,7 +624,7 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
         orch = _make_orch(session, profile=profile)
 
         deps = self._mock_deps()
-        with deps["resolve"], patch(
+        with deps["resolve"], deps["preflight"], patch(
             "golem.orchestrator.invoke_cli_monitored", side_effect=RuntimeError("boom")
         ), deps["write_prompt"], deps["write_trace"], patch.object(
             orch, "_write_report"
@@ -670,7 +657,7 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
 
         with patch("golem.orchestrator.resolve_work_dir", return_value="/work"), patch(
             "golem.orchestrator.create_worktree", return_value="/wt"
-        ), patch(
+        ), patch.object(orch, "_preflight_check"), patch(
             "golem.orchestrator.invoke_cli_monitored", side_effect=RuntimeError("x")
         ), patch(
             "golem.orchestrator._write_prompt"
@@ -1294,3 +1281,157 @@ class TestFormatPrompt:
         profile.prompt_provider.format.return_value = "formatted"
         orch = _make_orch(profile=profile)
         assert orch._format_prompt("tpl.txt", x=1) == "formatted"
+
+
+class TestPreflightCheck:
+    def test_raises_on_missing_dir(self):
+        from golem.errors import InfrastructureError
+
+        orch = _make_orch()
+        with pytest.raises(InfrastructureError, match="does not exist"):
+            orch._preflight_check("/nonexistent/path/xyz")
+
+    def test_raises_on_not_git_repo(self, tmp_path):
+        from golem.errors import InfrastructureError
+
+        orch = _make_orch()
+        plain_dir = tmp_path / "not_git"
+        plain_dir.mkdir()
+        with pytest.raises(InfrastructureError, match="Not a git repo"):
+            orch._preflight_check(str(plain_dir))
+
+    def test_passes_with_git_dir(self, tmp_path):
+        orch = _make_orch()
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".claude").mkdir()
+        (repo / ".claude" / "settings.local.json").write_text("{}")
+        orch._preflight_check(str(repo))
+
+    def test_copies_claude_settings_if_missing(self, tmp_path, monkeypatch):
+        orch = _make_orch()
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+
+        src = tmp_path / "project" / ".claude"
+        src.mkdir(parents=True)
+        (src / "settings.local.json").write_text('{"key": "val"}')
+        monkeypatch.setattr("golem.orchestrator.PROJECT_ROOT", tmp_path / "project")
+
+        orch._preflight_check(str(repo))
+        assert (repo / ".claude" / "settings.local.json").exists()
+
+    def test_skips_copy_if_source_missing(self, tmp_path, monkeypatch):
+        orch = _make_orch()
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+
+        monkeypatch.setattr(
+            "golem.orchestrator.PROJECT_ROOT", tmp_path / "empty_project"
+        )
+
+        orch._preflight_check(str(repo))
+        assert not (repo / ".claude").exists()
+
+    def test_git_worktree_passes(self, tmp_path):
+        from golem.worktree_manager import _run_git
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _run_git(["init"], cwd=str(repo))
+        _run_git(["config", "user.email", "t@t.com"], cwd=str(repo))
+        _run_git(["config", "user.name", "T"], cwd=str(repo))
+        (repo / "f.txt").write_text("x")
+        _run_git(["add", "."], cwd=str(repo))
+        _run_git(["commit", "-m", "init"], cwd=str(repo))
+
+        wt_path = tmp_path / "wt"
+        _run_git(["worktree", "add", "-b", "test-br", str(wt_path)], cwd=str(repo))
+
+        orch = _make_orch()
+        (wt_path / ".claude").mkdir()
+        (wt_path / ".claude" / "settings.local.json").write_text("{}")
+        orch._preflight_check(str(wt_path))
+
+
+class TestInfraErrorReraised:
+    async def test_infra_error_from_preflight_propagates(self):
+        from golem.errors import InfrastructureError
+
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        profile = MagicMock()
+        profile.task_source.get_task_description.return_value = "desc"
+        profile.prompt_provider.format.return_value = "prompt"
+        profile.tool_provider.servers_for_subject.return_value = []
+        orch = _make_orch(session, profile=profile)
+
+        with patch("golem.orchestrator.resolve_work_dir", return_value="/work"), patch(
+            "golem.orchestrator.TaskOrchestrator._preflight_check",
+            side_effect=InfrastructureError("cwd gone"),
+        ):
+            with pytest.raises(InfrastructureError, match="cwd gone"):
+                await orch._run_agent_monolithic()
+
+    async def test_infra_error_inside_try_block_reraised(self):
+        from golem.errors import InfrastructureError
+
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        profile = MagicMock()
+        profile.task_source.get_task_description.return_value = "desc"
+        profile.prompt_provider.format.return_value = "prompt"
+        profile.tool_provider.servers_for_subject.return_value = []
+        orch = _make_orch(session, profile=profile)
+
+        with patch(
+            "golem.orchestrator.resolve_work_dir", return_value="/work"
+        ), patch.object(orch, "_preflight_check"), patch(
+            "golem.orchestrator.invoke_cli_monitored",
+            side_effect=InfrastructureError("event loop dead"),
+        ), patch(
+            "golem.orchestrator._write_prompt"
+        ), patch(
+            "golem.orchestrator._write_trace"
+        ), patch.object(
+            orch, "_write_report"
+        ), patch.object(
+            orch, "_record_run"
+        ):
+            with pytest.raises(InfrastructureError, match="event loop dead"):
+                await orch._run_agent_monolithic()
+
+
+class TestTaskSessionNewFields:
+    def test_round_trip_with_new_fields(self):
+        session = TaskSession(
+            parent_issue_id=42,
+            depends_on=[10, 20],
+            group_id="batch-1",
+            merge_ready=True,
+            worktree_path="/wt/42",
+            base_work_dir="/repo",
+            infra_retry_count=1,
+        )
+        d = session.to_dict()
+        assert d["depends_on"] == [10, 20]
+        assert d["group_id"] == "batch-1"
+        assert d["merge_ready"] is True
+
+        restored = TaskSession.from_dict(d)
+        assert restored.depends_on == [10, 20]
+        assert restored.group_id == "batch-1"
+        assert restored.merge_ready is True
+        assert restored.worktree_path == "/wt/42"
+        assert restored.base_work_dir == "/repo"
+        assert restored.infra_retry_count == 1
+
+    def test_from_dict_defaults_for_new_fields(self):
+        session = TaskSession.from_dict({"parent_issue_id": 1, "state": "detected"})
+        assert session.depends_on == []
+        assert session.group_id == ""
+        assert session.merge_ready is False
+        assert session.worktree_path == ""
+        assert session.base_work_dir == ""
+        assert session.infra_retry_count == 0

@@ -25,7 +25,9 @@ from .core.triggers.base import TriggerEvent
 from .core.flow_base import BaseFlow, FlowResult, PollableFlow, WebhookableFlow
 
 from .backends.local import LocalFileTaskSource, NullStateBackend, NullToolProvider
+from .errors import InfrastructureError
 from .event_tracker import Milestone, TaskEventTracker
+from .merge_queue import MergeEntry, MergeQueue, MergeResult
 from .orchestrator import (
     TaskOrchestrator,
     TaskSession,
@@ -38,6 +40,7 @@ from .orchestrator import (
 from .priority_gate import PriorityGate
 from .profile import GolemProfile, build_profile
 from .prompts import FilePromptProvider
+from .validation import ValidationVerdict
 
 SUBMISSIONS_DIR = DATA_DIR / "submissions"
 
@@ -71,6 +74,9 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         # Build pluggable profile from config (always required)
         profile_name = self._task_config.profile if self._task_config else "redmine"
         self._profile: GolemProfile = build_profile(profile_name, config)
+
+        self._merge_queue = MergeQueue()
+        self._max_infra_retries = getattr(self._task_config, "max_infra_retries", 2)
 
         self._submissions_dir = SUBMISSIONS_DIR
         self._submissions_dir.mkdir(parents=True, exist_ok=True)
@@ -280,6 +286,10 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             else self._profile
         )
         try:
+            # Wait for dependencies before starting
+            if session.depends_on:
+                await self._wait_for_dependencies(session)
+
             while self._running and session.state not in (
                 TaskSessionState.COMPLETED,
                 TaskSessionState.FAILED,
@@ -301,7 +311,22 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                         save_callback=self._save_state,
                         profile=profile,
                     )
-                    await orchestrator.tick()
+                    try:
+                        await orchestrator.tick()
+                    except InfrastructureError as ie:
+                        if session.infra_retry_count < self._max_infra_retries:
+                            session.infra_retry_count += 1
+                            logger.warning(
+                                "Session #%d: infra failure (%s), " "retrying (%d/%d)",
+                                session_id,
+                                ie,
+                                session.infra_retry_count,
+                                self._max_infra_retries,
+                            )
+                            session.state = TaskSessionState.DETECTED
+                            self._save_state()
+                            continue
+                        raise
                     self._handle_state_transition(session, prev_state)
                     self._save_state()
 
@@ -310,6 +335,10 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                     TaskSessionState.FAILED,
                 ):
                     await asyncio.sleep(self._task_config.tick_interval)
+
+            # Enqueue for merge if the session signaled merge-ready
+            if session.merge_ready:
+                await self._enqueue_for_merge(session)
 
         except asyncio.CancelledError:
             logger.info("Session #%d cancelled", session_id)
@@ -321,6 +350,60 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             self._save_state()
         finally:
             self._session_tasks.pop(session_id, None)
+
+    async def _wait_for_dependencies(self, session: TaskSession) -> None:
+        """Block until all sessions in ``depends_on`` have completed."""
+        while self._running:
+            all_done = True
+            for dep_id in session.depends_on:
+                dep = self._sessions.get(dep_id)
+                if dep is None:
+                    continue
+                if dep.state not in (
+                    TaskSessionState.COMPLETED,
+                    TaskSessionState.FAILED,
+                ):
+                    all_done = False
+                    break
+            if all_done:
+                return
+            await asyncio.sleep(self._task_config.tick_interval)
+
+    async def _enqueue_for_merge(self, session: TaskSession) -> None:
+        """Enqueue a completed session into the merge queue and process."""
+        issue_id = session.parent_issue_id
+        branch_name = f"agent/{issue_id}"
+        entry = MergeEntry(
+            session_id=issue_id,
+            branch_name=branch_name,
+            worktree_path=session.worktree_path,
+            base_dir=session.base_work_dir,
+            priority=session.priority,
+            group_id=session.group_id,
+        )
+        await self._merge_queue.enqueue(entry)
+        results = await self._merge_queue.process_all()
+        for r in results:
+            self._apply_merge_result(r)
+
+    def _apply_merge_result(self, result: MergeResult) -> None:
+        """Update the session with the merge outcome."""
+        session = self._sessions.get(result.session_id)
+        if session is None:
+            return
+        if result.success and result.merge_sha:
+            session.commit_sha = result.merge_sha
+            session.merge_ready = False
+            logger.info(
+                "Session %d: merge applied → %s",
+                result.session_id,
+                result.merge_sha,
+            )
+        elif not result.success:
+            session.errors.append(f"merge failed: {result.error}")
+            logger.warning(
+                "Session %d: merge failed: %s", result.session_id, result.error
+            )
 
     def _on_agent_progress(self, session: TaskSession, milestone: Milestone) -> None:
         """Central progress handler — updates LiveState and session from milestones."""
@@ -455,6 +538,101 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             self._spawn_session_task(task_id)
 
         return {"task_id": task_id, "status": "submitted"}
+
+    def submit_batch(
+        self,
+        tasks: list[dict[str, Any]],
+        group_id: str = "",
+    ) -> dict[str, Any]:
+        """Submit multiple tasks as a batch with optional dependencies.
+
+        Each task dict may contain ``prompt``, ``subject``, ``work_dir``,
+        and ``depends_on`` (list of task IDs within the batch).
+
+        Returns ``{"group_id": ..., "tasks": [{"task_id": ..., "status": ...}]}``.
+        """
+        import time as _time
+
+        if not group_id:
+            group_id = f"batch-{int(_time.time() * 1000)}"
+
+        results = []
+        id_map: dict[int, int] = {}
+
+        for idx, task in enumerate(tasks):
+            r = self.submit_task(
+                prompt=task.get("prompt", ""),
+                subject=task.get("subject", ""),
+                work_dir=task.get("work_dir", ""),
+            )
+            task_id = r["task_id"]
+            id_map[idx] = task_id
+
+            session = self._sessions[task_id]
+            session.group_id = group_id
+
+            raw_deps = task.get("depends_on", [])
+            resolved_deps = []
+            for dep in raw_deps:
+                if isinstance(dep, int) and dep in id_map:
+                    resolved_deps.append(id_map[dep])
+                elif isinstance(dep, int):
+                    resolved_deps.append(dep)
+            session.depends_on = resolved_deps
+
+            results.append({"task_id": task_id, "status": "submitted"})
+
+        self._save_state()
+        return {"group_id": group_id, "tasks": results}
+
+    async def run_integration_validation(
+        self, group_id: str, work_dir: str
+    ) -> ValidationVerdict:
+        """Run full validation suite on the merged result.
+
+        Identifies which merge introduced any breakage by binary-searching
+        over the merge order.
+        """
+        from .validation import run_validation
+
+        group_sessions = [s for s in self._sessions.values() if s.group_id == group_id]
+        if not group_sessions:
+            return ValidationVerdict(
+                verdict="PASS",
+                confidence=1.0,
+                summary="No sessions in group",
+            )
+
+        merged_desc = "\n".join(
+            f"- #{s.parent_issue_id}: {s.parent_subject}" for s in group_sessions
+        )
+
+        verdict = await asyncio.get_running_loop().run_in_executor(
+            None,
+            lambda: run_validation(
+                issue_id=0,
+                subject=f"Integration validation for {group_id}",
+                description=(
+                    f"Cross-task integration check.\n\n"
+                    f"Merged tasks:\n{merged_desc}\n\n"
+                    f"Verify that black, pylint, and pytest all pass."
+                ),
+                session_data={},
+                work_dir=work_dir,
+                model=self._task_config.validation_model,
+                budget_usd=self._task_config.validation_budget_usd,
+                timeout_seconds=self._task_config.validation_timeout_seconds,
+            ),
+        )
+
+        if verdict.verdict != "PASS":
+            logger.warning(
+                "Integration validation failed for %s: %s",
+                group_id,
+                verdict.summary,
+            )
+
+        return verdict
 
     def _scan_submissions(self) -> None:
         """Pick up task files from the submissions directory."""

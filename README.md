@@ -43,6 +43,10 @@ Most AI coding tools wait for you to invoke them. Golem runs the other way aroun
 
 **Pluggable everything** — The profile system decouples Golem from any specific tracker, notifier, or tool provider. Swap Redmine for GitHub Issues, Teams for Slack, or write your own backend — without touching core logic.
 
+**Resilient** — Infrastructure failures (e.g. worktree creation, filesystem issues) are retried automatically without consuming the task's retry budget. A structured error taxonomy distinguishes infra failures from task-level errors, so transient problems don't kill your session.
+
+**Batch orchestration** — Submit multiple tasks as a batch with explicit dependency ordering. Task B can declare it depends on Task A — Golem schedules them accordingly and runs post-merge integration validation on the whole group.
+
 **Budget guardrails** — Set per-task dollar limits and timeouts. A one-liner fix won't accidentally burn $50 in API calls.
 
 **Lightweight** — `pip install`, not a Docker image or cloud VM. Golem wraps Claude CLI directly, so you get Claude's full tool-use capabilities without reinventing sandboxing.
@@ -129,6 +133,7 @@ There are three ways to submit work to the daemon:
 |--------|-----|----------|
 | **CLI** | `golem run -p "..."` or `golem run -f plan.md` | Interactive use — auto-starts daemon if needed |
 | **HTTP API** | `POST /api/submit {"prompt": "..."}` | Programmatic use, external AI agents |
+| **Batch API** | `POST /api/submit/batch {"tasks": [...]}` | Multi-task batches with dependency ordering |
 | **File drop** | Write JSON to `data/submissions/` | Batch pipelines, cross-system integration |
 
 The daemon auto-starts when you use `golem run -p` or `golem run -f`. It probes `GET /api/health` to confirm readiness before submitting.
@@ -166,12 +171,13 @@ flowchart LR
     main --> wt2["worktree/task-102<br/>Claude Instance B"]
     main --> wt3["worktree/task-103<br/>Claude Instance C"]
 
-    wt1 -- "validated ✓" --> merge["merge back<br/>to main"]
-    wt2 -- "validated ✓" --> merge
-    wt3 -- "validated ✓" --> merge
+    wt1 -- "validated ✓" --> mq["Merge Queue"]
+    wt2 -- "validated ✓" --> mq
+    wt3 -- "validated ✓" --> mq
+    mq -- "sequential<br/>rebase + merge" --> main
 ```
 
-No locks, no conflicts between tasks. Each instance has full read-write access to its own copy. Validated work merges back cleanly.
+No locks, no conflicts between tasks. Each instance has full read-write access to its own copy. Validated work enters a sequential **merge queue** that rebases each branch onto the latest HEAD before merging, so every merge sees the freshest state. If a conflict arises, an optional reconciliation callback can resolve it automatically.
 
 ---
 
@@ -228,6 +234,8 @@ golem/
 ├── supervisor.py          # Task decomposition and synthesis
 ├── validation.py          # Validation agent (PASS/PARTIAL/FAIL)
 ├── committer.py           # Structured git commits
+├── errors.py              # Error taxonomy (Infrastructure/Task/Validation)
+├── merge_queue.py         # Sequential merge queue for cross-task coordination
 ├── event_tracker.py       # Stream event processing & milestones
 ├── poller.py              # Task detection from trackers
 ├── notifications.py       # Teams Adaptive Card builders
@@ -280,6 +288,7 @@ See [`config.yaml.example`](config.yaml.example) for the full annotated template
 | `auto_commit` | `true` | Git commit on PASS |
 | `use_worktrees` | `true` | Isolate tasks in separate git worktrees |
 | `max_active_sessions` | `3` | Concurrent tasks running in parallel |
+| `max_infra_retries` | `2` | Auto-retries for infrastructure failures (e.g. worktree creation) without consuming task retry budget |
 
 ### Environment Variables
 
@@ -342,6 +351,7 @@ The daemon exposes a REST API (served on the dashboard port, default `8081`).
 |----------|--------|------|-------------|
 | `/api/health` | GET | None | Readiness probe — returns `{"ok": true, "pid": ..., "uptime_seconds": ...}` |
 | `/api/submit` | POST | None | Submit a task — accepts `{"prompt": "..."}` or `{"file": "/path/to/file.md"}` with optional `subject` and `work_dir` |
+| `/api/submit/batch` | POST | None | Submit multiple tasks as a batch — accepts `{"tasks": [...], "group_id": "..."}` with per-task `depends_on` for ordering |
 | `/api/flow/status` | GET | None | Status of all configured flows |
 | `/api/flow/start` | POST | Admin | Start flows by name |
 | `/api/flow/stop` | POST | Admin | Stop flows by name |
@@ -358,6 +368,17 @@ curl -X POST http://localhost:8081/api/submit \
 curl -X POST http://localhost:8081/api/submit \
   -H "Content-Type: application/json" \
   -d '{"file": "/home/user/plan.md", "subject": "Refactor auth module"}'
+
+# Batch with dependencies — task B waits for task A to complete
+curl -X POST http://localhost:8081/api/submit/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "group_id": "refactor-v2",
+    "tasks": [
+      {"prompt": "Extract helper functions", "subject": "Task A"},
+      {"prompt": "Update callers to use new helpers", "subject": "Task B", "depends_on": [0]}
+    ]
+  }'
 ```
 
 ---

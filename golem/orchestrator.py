@@ -36,12 +36,13 @@ from .core.run_log import RunRecord, format_duration, record_run
 from .core.flow_base import _write_prompt, _write_trace
 
 from .committer import commit_changes
+from .errors import InfrastructureError
 from .event_tracker import Milestone, TaskEventTracker, TrackerState
 from .interfaces import TaskStatus
 from .profile import GolemProfile
 from .validation import ValidationVerdict, run_validation
 from .workdir import resolve_work_dir
-from .worktree_manager import cleanup_worktree, create_worktree, merge_and_cleanup
+from .worktree_manager import cleanup_worktree, create_worktree
 
 logger = logging.getLogger("golem.orchestrator")
 
@@ -128,6 +129,14 @@ class TaskSession:
     )  # [{"id": N, "subject": "..."}]
     # "decomposing" | "executing" | "summarizing" | "validating" | "committing"
     supervisor_phase: str = ""
+    # Cross-task coordination
+    depends_on: list[int] = field(default_factory=list)
+    group_id: str = ""
+    # Merge queue support — set by orchestrator, consumed by flow
+    merge_ready: bool = False
+    worktree_path: str = ""
+    base_work_dir: str = ""
+    infra_retry_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-safe dictionary."""
@@ -170,6 +179,12 @@ class TaskSession:
             active_subtask_id=data.get("active_subtask_id", 0),
             subtask_plan=data.get("subtask_plan", []),
             supervisor_phase=data.get("supervisor_phase", ""),
+            depends_on=data.get("depends_on", []),
+            group_id=data.get("group_id", ""),
+            merge_ready=data.get("merge_ready", False),
+            worktree_path=data.get("worktree_path", ""),
+            base_work_dir=data.get("base_work_dir", ""),
+            infra_retry_count=data.get("infra_retry_count", 0),
         )
 
 
@@ -311,11 +326,8 @@ class TaskOrchestrator:
         else:
             await self._run_agent_monolithic()
 
-    async def _run_agent_monolithic(self) -> None:  # pylint: disable=too-many-locals
-        """Single-agent 5-phase pipeline."""
-        issue_id = self.session.parent_issue_id
-        description = self._get_description(issue_id)
-
+    def _resolve_workdir(self, issue_id: int, description: str) -> tuple[str, str]:
+        """Return ``(work_dir, worktree_path)`` for a session."""
         if self._work_dir_override:
             base_work_dir = self._work_dir_override
         else:
@@ -326,21 +338,29 @@ class TaskOrchestrator:
                 default_work_dir=self.task_config.default_work_dir,
                 project_root=str(PROJECT_ROOT),
             )
-
-        # Set up isolated worktree if enabled
+        self.session.base_work_dir = base_work_dir
         work_dir = base_work_dir
         worktree_path = ""
         if self.task_config.use_worktrees:
             try:
                 worktree_path = create_worktree(base_work_dir, issue_id)
                 work_dir = worktree_path
+                self.session.worktree_path = worktree_path
                 logger.info("Session %s: using worktree at %s", issue_id, work_dir)
             except RuntimeError as wt_err:
-                logger.warning(
-                    "Session %s: worktree creation failed (%s), using shared dir",
-                    issue_id,
-                    wt_err,
-                )
+                raise InfrastructureError(
+                    f"Worktree creation failed: {wt_err}"
+                ) from wt_err
+        return work_dir, worktree_path
+
+    async def _run_agent_monolithic(self) -> None:  # pylint: disable=too-many-locals
+        """Single-agent 5-phase pipeline."""
+        issue_id = self.session.parent_issue_id
+        description = self._get_description(issue_id)
+        work_dir, worktree_path = self._resolve_workdir(issue_id, description)
+        base_work_dir = self.session.base_work_dir
+
+        self._preflight_check(work_dir)
 
         start = time.time()
         result: CLIResult | None = None
@@ -351,7 +371,6 @@ class TaskOrchestrator:
         prompt = ""
 
         try:
-            # ── Phase 1: Execute ──────────────────────────────────────
             prompt = self._format_prompt(
                 "run_task.txt",
                 issue_id=issue_id,
@@ -372,47 +391,32 @@ class TaskOrchestrator:
                     None, invoke_cli_monitored, prompt, cli_config, callback
                 )
             self._populate_session_from_tracker(tracker, result, time.time() - start)
-
-            # ── Phase 2: Persist traces ───────────────────────────────
             self._persist_traces(issue_id, prompt, result)
+            self._update_task(issue_id, status=TaskStatus.FIXED, progress=80)
 
-            # Agent work done — mark Fixed (pending validation).
-            self._update_task(
-                issue_id,
-                status=TaskStatus.FIXED,
-                progress=80,
-            )
-
-            # ── Phase 3: Validate ─────────────────────────────────────
             verdict = await self._run_validation(issue_id, work_dir)
 
-            # ── Phase 4: Retry or Escalate ────────────────────────────
-            if verdict.verdict == "PASS":
-                pass  # Continue to Phase 5
-            elif (
+            if (
                 verdict.verdict == "PARTIAL"
                 and self.session.retry_count < self.task_config.max_retries
             ):
                 await self._retry_agent(verdict, work_dir, mcp_servers)
-            else:
+            elif verdict.verdict != "PASS":
                 self._escalate(verdict)
-                return  # Session is FAILED, skip commit
+                return
 
-            # ── Phase 5: Commit + Complete ────────────────────────────
             self._commit_and_complete(issue_id, work_dir, verdict)
 
-            # Merge worktree back if applicable
             if worktree_path and self.session.commit_sha:
-                merge_sha = merge_and_cleanup(base_work_dir, issue_id, worktree_path)
-                if merge_sha:
-                    self.session.commit_sha = merge_sha
-                worktree_path = ""  # Mark as handled
+                self.session.merge_ready = True
+                worktree_path = ""
 
+        except InfrastructureError:
+            raise
         except Exception as exc:  # pylint: disable=broad-exception-caught
             self._handle_agent_failure(issue_id, exc, start, tracker, result, prompt)
 
         finally:
-            # Clean up worktree if not already handled
             if worktree_path:
                 cleanup_worktree(
                     base_work_dir,
@@ -421,6 +425,34 @@ class TaskOrchestrator:
                 )
             self._write_report()
             self._record_run()
+
+    def _preflight_check(self, work_dir: str) -> None:
+        """Validate environment before agent execution."""
+        path = Path(work_dir)
+        if not path.is_dir():
+            raise InfrastructureError(f"Work dir does not exist: {work_dir}")
+        git_dir = path / ".git"
+        if not git_dir.exists():
+            from .worktree_manager import _run_git
+
+            probe = _run_git(["rev-parse", "--is-inside-work-tree"], cwd=work_dir)
+            if probe.returncode != 0:
+                raise InfrastructureError(f"Not a git repo: {work_dir}")
+        settings = path / ".claude" / "settings.local.json"
+        if not settings.exists():
+            self._copy_claude_settings(work_dir)
+
+    @staticmethod
+    def _copy_claude_settings(work_dir: str) -> None:
+        """Copy .claude/settings.local.json into the work dir if available."""
+        import shutil
+
+        src = PROJECT_ROOT / ".claude" / "settings.local.json"
+        if src.exists():
+            dest = Path(work_dir) / ".claude"
+            dest.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(str(src), str(dest / "settings.local.json"))
+            logger.debug("Copied .claude/settings.local.json into %s", work_dir)
 
     # -- Pipeline helpers --------------------------------------------------------
 

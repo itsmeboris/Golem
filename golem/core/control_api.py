@@ -18,6 +18,8 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .triggers import FASTAPI_AVAILABLE
+
 if TYPE_CHECKING:
     from typing import Any
 
@@ -25,8 +27,6 @@ if TYPE_CHECKING:
     PollingTrigger = Any
 
 logger = logging.getLogger("golem.core.control_api")
-
-from .triggers import FASTAPI_AVAILABLE
 
 if FASTAPI_AVAILABLE:
     from fastapi import APIRouter, HTTPException, Request
@@ -207,6 +207,41 @@ if FASTAPI_AVAILABLE:
             subject=subject,
             work_dir=work_dir,
         )
+        return {"ok": True, **result}
+
+    @health_router.post("/submit/batch")
+    async def submit_batch(request: Request):
+        """Submit multiple tasks as a batch with optional dependencies.
+
+        Accepts JSON::
+
+            {
+                "tasks": [
+                    {"prompt": "...", "subject": "...", "depends_on": []},
+                    {"prompt": "...", "depends_on": [0]}
+                ],
+                "group_id": "optional-group-name"
+            }
+
+        ``depends_on`` entries are zero-based indices into the ``tasks`` array.
+        Returns ``{"ok": true, "group_id": ..., "tasks": [...]}``.
+        """
+        if _golem_flow is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Daemon not ready — GolemFlow not wired",
+            )
+
+        payload = await request.json()
+        tasks = payload.get("tasks")
+        if not tasks or not isinstance(tasks, list):
+            raise HTTPException(
+                status_code=400,
+                detail="'tasks' array is required",
+            )
+
+        group_id = payload.get("group_id", "")
+        result = _golem_flow.submit_batch(tasks, group_id=group_id)
         return {"ok": True, **result}
 
 else:  # pragma: no cover

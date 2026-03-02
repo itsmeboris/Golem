@@ -2,8 +2,7 @@
 """Tests for golem.core.control_api — flow control and task submission endpoints."""
 
 import time
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -351,6 +350,60 @@ class TestSubmitEndpoint:
         req = _make_request(json_data={"prompt": "Fix it"})
         with pytest.raises(Exception, match="not ready"):
             await submit_task(req)
+
+
+@pytest.mark.skipif(
+    not control_api.FASTAPI_AVAILABLE,
+    reason="FastAPI not installed",
+)
+class TestBatchSubmitEndpoint:
+    @pytest.mark.asyncio
+    async def test_submit_batch(self, _wire_deps):
+        from golem.core.control_api import submit_batch
+
+        tasks = [
+            {"prompt": "Task A", "subject": "A"},
+            {"prompt": "Task B", "depends_on": [0]},
+        ]
+        control_api._golem_flow.submit_batch = MagicMock(
+            return_value={
+                "group_id": "grp-1",
+                "tasks": [
+                    {"task_id": 1, "status": "submitted"},
+                    {"task_id": 2, "status": "submitted"},
+                ],
+            }
+        )
+        req = _make_request(json_data={"tasks": tasks, "group_id": "grp-1"})
+        result = await submit_batch(req)
+        assert result["ok"] is True
+        assert result["group_id"] == "grp-1"
+        assert len(result["tasks"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_submit_batch_no_tasks(self, _wire_deps):
+        from golem.core.control_api import submit_batch
+
+        req = _make_request(json_data={})
+        with pytest.raises(Exception, match="required"):
+            await submit_batch(req)
+
+    @pytest.mark.asyncio
+    async def test_submit_batch_empty_list(self, _wire_deps):
+        from golem.core.control_api import submit_batch
+
+        req = _make_request(json_data={"tasks": []})
+        with pytest.raises(Exception, match="required"):
+            await submit_batch(req)
+
+    @pytest.mark.asyncio
+    async def test_submit_batch_no_golem_flow(self, _wire_deps):
+        from golem.core.control_api import submit_batch
+
+        control_api._golem_flow = None
+        req = _make_request(json_data={"tasks": [{"prompt": "x"}]})
+        with pytest.raises(Exception, match="not ready"):
+            await submit_batch(req)
 
 
 # ---------------------------------------------------------------------------

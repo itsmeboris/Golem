@@ -262,6 +262,27 @@ def _unstash(base_dir: str, stashed: bool, issue_id: int) -> None:
         )
 
 
+def get_changed_files(
+    base_dir: str,
+    branch_name: str,
+    target_branch: str | None = None,
+) -> list[str]:
+    """Return files changed on *branch_name* relative to *target_branch*.
+
+    Uses ``git diff --name-only`` to list paths touched by the branch.
+    Returns an empty list if the diff command fails.
+    """
+    if target_branch is None:
+        target_branch = _current_branch(base_dir)
+    result = _run_git(
+        ["diff", "--name-only", f"{target_branch}...{branch_name}"],
+        cwd=base_dir,
+    )
+    if result.returncode != 0:
+        return []
+    return [f for f in result.stdout.strip().splitlines() if f]
+
+
 def cleanup_worktree(
     base_dir: str,
     worktree_path: str,

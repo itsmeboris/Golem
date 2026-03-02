@@ -75,6 +75,8 @@ class GolemFlowConfig(FlowConfig):
     profile: str = "redmine"
     profile_config: dict = field(default_factory=dict)
     prompts_dir: str = ""
+    # Infrastructure resilience
+    max_infra_retries: int = 2
 
 
 @dataclass
@@ -241,6 +243,7 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
         profile=data.get("profile", "redmine"),
         profile_config=data.get("profile_config", {}),
         prompts_dir=data.get("prompts_dir", ""),
+        max_infra_retries=data.get("max_infra_retries", 2),
     )
 
 

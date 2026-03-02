@@ -277,6 +277,63 @@ class TestFFFailFallsBackToRegularMerge:
         assert isinstance(sha, str)
 
 
+class TestGetChangedFiles:
+    def test_returns_changed_files(self, git_repo, tmp_path):
+        from golem.worktree_manager import get_changed_files
+
+        wt_root = str(tmp_path / "worktrees")
+        wt_path = create_worktree(str(git_repo), 900, worktree_root=wt_root)
+
+        (Path(wt_path) / "new_file.py").write_text("print('hi')")
+        _run_git(["add", "."], cwd=wt_path)
+        _run_git(["commit", "-m", "Add new file"], cwd=wt_path)
+
+        files = get_changed_files(str(git_repo), "agent/900")
+        assert "new_file.py" in files
+        cleanup_worktree(str(git_repo), wt_path)
+
+    def test_returns_empty_on_failure(self, monkeypatch):
+        from golem.worktree_manager import get_changed_files
+
+        def mock_run_git(args, cwd, timeout=30):
+            result = MagicMock()
+            if args[0] == "diff":
+                result.returncode = 1
+            else:
+                result.returncode = 0
+                result.stdout = "main"
+            result.stderr = ""
+            return result
+
+        monkeypatch.setattr("golem.worktree_manager._run_git", mock_run_git)
+        assert get_changed_files("/repo", "branch") == []
+
+    def test_explicit_target_branch(self, git_repo, tmp_path):
+        from golem.worktree_manager import get_changed_files
+
+        branch = _current_branch(str(git_repo))
+        wt_root = str(tmp_path / "worktrees")
+        wt_path = create_worktree(str(git_repo), 901, worktree_root=wt_root)
+
+        (Path(wt_path) / "target.py").write_text("x")
+        _run_git(["add", "."], cwd=wt_path)
+        _run_git(["commit", "-m", "target"], cwd=wt_path)
+
+        files = get_changed_files(str(git_repo), "agent/901", target_branch=branch)
+        assert "target.py" in files
+        cleanup_worktree(str(git_repo), wt_path)
+
+    def test_no_changes_returns_empty(self, git_repo, tmp_path):
+        from golem.worktree_manager import get_changed_files
+
+        wt_root = str(tmp_path / "worktrees")
+        wt_path = create_worktree(str(git_repo), 902, worktree_root=wt_root)
+
+        files = get_changed_files(str(git_repo), "agent/902")
+        assert files == []
+        cleanup_worktree(str(git_repo), wt_path)
+
+
 class TestNewConfigFields:
     def test_defaults(self):
         from golem.core.config import GolemFlowConfig
