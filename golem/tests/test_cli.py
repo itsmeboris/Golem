@@ -11,6 +11,7 @@ from golem.cli import (
     _print_cli_summary,
     _print_run_header,
     _save_cli_session,
+    _submit_to_daemon,
     cmd_run,
     cmd_poll,
     cmd_stop,
@@ -344,6 +345,84 @@ class TestCmdRun:
         mock_submit.assert_called_once()
         _, kwargs = mock_submit.call_args
         assert kwargs["work_dir"] == "/from/file"
+
+
+class TestSubmitToDaemonHeaders:
+    @patch("golem.cli.urllib.request.urlopen")
+    @patch("golem.cli.urllib.request.Request")
+    def test_sends_bearer_header_when_api_key_set(self, mock_req_cls, mock_urlopen):
+        mock_resp = MagicMock()
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_resp.read.return_value = b'{"ok": true, "task_id": 1}'
+        mock_urlopen.return_value = mock_resp
+
+        _submit_to_daemon(prompt="hello", port=8081, api_key="secret-key")
+
+        _, kwargs = mock_req_cls.call_args
+        headers = kwargs["headers"]
+        assert headers["Authorization"] == "Bearer secret-key"
+
+    @patch("golem.cli.urllib.request.urlopen")
+    @patch("golem.cli.urllib.request.Request")
+    def test_no_bearer_header_when_no_api_key(self, mock_req_cls, mock_urlopen):
+        mock_resp = MagicMock()
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_resp.read.return_value = b'{"ok": true, "task_id": 1}'
+        mock_urlopen.return_value = mock_resp
+
+        _submit_to_daemon(prompt="hello", port=8081, api_key="")
+
+        _, kwargs = mock_req_cls.call_args
+        headers = kwargs["headers"]
+        assert "Authorization" not in headers
+
+
+class TestSubmitToDaemonApiKey:
+    @patch("golem.cli._submit_to_daemon", return_value={"task_id": 7})
+    @patch("golem.cli._ensure_daemon")
+    @patch("golem.cli.load_config")
+    def test_api_key_passed_from_config(self, mock_config, mock_ensure, mock_submit):
+        mock_config.return_value.dashboard.port = 8081
+        mock_config.return_value.dashboard.api_key = "my-secret"
+        mock_config.return_value.daemon = DaemonConfig()
+        args = SimpleNamespace(
+            parent_id=None,
+            config=None,
+            prompt="do stuff",
+            file="",
+            dry=False,
+            subject="",
+            cwd="",
+            mcp=None,
+        )
+        result = cmd_run(args)
+        assert result == 0
+        _, kwargs = mock_submit.call_args
+        assert kwargs["api_key"] == "my-secret"
+
+    @patch("golem.cli._submit_to_daemon", return_value={"task_id": 8})
+    @patch("golem.cli._ensure_daemon")
+    @patch("golem.cli.load_config")
+    def test_empty_api_key_not_sent(self, mock_config, mock_ensure, mock_submit):
+        mock_config.return_value.dashboard.port = 8081
+        mock_config.return_value.dashboard.api_key = ""
+        mock_config.return_value.daemon = DaemonConfig()
+        args = SimpleNamespace(
+            parent_id=None,
+            config=None,
+            prompt="do stuff",
+            file="",
+            dry=False,
+            subject="",
+            cwd="",
+            mcp=None,
+        )
+        result = cmd_run(args)
+        assert result == 0
+        _, kwargs = mock_submit.call_args
+        assert kwargs["api_key"] == ""
 
 
 class TestCmdPoll:
