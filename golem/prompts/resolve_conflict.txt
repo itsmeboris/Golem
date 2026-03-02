@@ -23,7 +23,8 @@ Both sides of each conflict are shown.
    respecting any structural changes on master.
 4. Write the resolved file content (no conflict markers).
 5. Stage the resolved files with ``git add``.
-6. Run any available linters / formatters to verify correctness.
+6. Run ``black .`` to fix formatting, then ``pylint --errors-only golem/``
+   to verify correctness.
 
 ## Required Output
 

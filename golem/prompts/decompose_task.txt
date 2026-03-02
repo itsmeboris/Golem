@@ -7,6 +7,17 @@ A task has been created with ID #{parent_id} and subject:
 
 Your job is to break this task into 2-6 concrete, actionable subtasks.
 
+## Codebase Structure
+
+The ``golem`` Python package is laid out as:
+- ``golem/core/`` — infrastructure (config, CLI wrapper, dashboard, APIs, notifications)
+- ``golem/`` (top-level modules) — orchestrator, supervisor, flow, validation, merge, worktree, prompts
+- ``golem/tests/`` — mirrors source structure (``test_<module>.py``)
+- ``golem/prompts/`` — prompt template files loaded by ``prompts.py``
+
+Respect module boundaries when splitting subtasks. Group closely related changes
+in the same module into a single subtask rather than splitting them.
+
 Produce a JSON response with this structure:
 ```json
 {{

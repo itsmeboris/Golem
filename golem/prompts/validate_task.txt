@@ -30,6 +30,10 @@ successfully completed task #{issue_id}.
 2. **Quality**: Are the changes correct and reasonable for the task?
 3. **No Regressions**: Did the agent avoid breaking existing functionality?
 4. **Documentation**: Did the agent document its work appropriately?
+5. **Verification Evidence**: The agent should have run ``black --check .``,
+   ``pylint --errors-only golem/``, and ``pytest --cov=golem --cov-fail-under=100``.
+   Check the event log for evidence of these commands. If verification commands
+   are absent or failed, flag this in concerns and lower your confidence.
 
 ## Required Output
 
@@ -65,3 +69,4 @@ Evaluation notes:
 - If the agent encountered errors, weigh whether they were resolved or left unaddressed
 - An empty git diff is fine for investigation/documentation tasks
 - If the git diff is truncated, lower your confidence accordingly and note it in concerns
+- If no verification commands (black, pylint, pytest) appear in the event log for a code_change task, lower confidence by at least 0.15 and flag in concerns

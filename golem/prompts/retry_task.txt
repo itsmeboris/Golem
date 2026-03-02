@@ -21,12 +21,14 @@ Focus specifically on what the validator identified as missing or incorrect.
 ## Steps
 
 1. Review your previous work (check existing file state, etc.)
-2. Address each concern from the validator feedback
-3. Verify your fixes are correct
+2. Investigate each concern systematically — understand the root cause before fixing
+3. Address each concern from the validator feedback
+4. Verify your fixes: ``black --check .``, ``pylint --errors-only golem/``, ``pytest --cov=golem --cov-fail-under=100``
 
 ## Guidelines
 
 - **Work autonomously** — use all available tools
+- **Investigate before fixing** — understand why the concern was raised, don't just guess
 - **If blocked**, document the blocker clearly and stop
 - **Do NOT commit** code changes — leave files as uncommitted changes. The orchestrator handles commits after validation.
 - **Do NOT push** to any remote repository.
