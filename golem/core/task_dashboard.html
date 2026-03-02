@@ -36,6 +36,11 @@
 .task-card .tc-subject{font-size:0.78rem;color:var(--text-secondary);line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .task-card .tc-meta{display:flex;gap:0.75rem;margin-top:0.35rem;font-size:0.7rem;color:var(--text-muted)}
 .task-card .tc-meta span{display:flex;align-items:center;gap:0.2rem}
+.task-card .tc-group{
+  font-size:0.6rem;padding:0.05rem 0.35rem;border-radius:999px;
+  background:#1e1b4b;color:var(--purple);font-weight:600;letter-spacing:0.02em
+}
+.task-card .tc-deps{color:var(--yellow);font-size:0.7rem}
 
 /* ── State colors for cards ───────────────────────────────── */
 .task-card.state-completed{border-left-color:var(--green)}
@@ -279,10 +284,12 @@
         <div class="tab-bar" id="tab-bar">
           <button class="tab-btn active" data-tab="errors" onclick="activateTab('errors')">Errors</button>
           <button class="tab-btn" data-tab="tools" onclick="activateTab('tools')">Tools</button>
+          <button class="tab-btn" data-tab="coordination" onclick="activateTab('coordination')">Coordination</button>
           <button class="tab-btn" data-tab="raw" onclick="activateTab('raw')">Raw Session</button>
         </div>
         <div id="tab-errors" class="tab-content active"></div>
         <div id="tab-tools" class="tab-content"></div>
+        <div id="tab-coordination" class="tab-content"></div>
         <div id="tab-raw" class="tab-content"></div>
       </div>
     </div>
@@ -355,16 +362,23 @@ function renderSidebar() {
       : fmtAgo(s.created_at);
     const verdict = s.validation_verdict || '';
 
+    const groupId = s.group_id || '';
+    const deps = s.depends_on || [];
+    const mergeReady = s.merge_ready;
+
     return `<div class="task-card state-${state}${sel}" data-id="${id}" onclick="selectTask('${id}')">
       <div class="tc-top">
         <span class="tc-id">#${id}</span>
+        ${groupId ? `<span class="tc-group">${esc(groupId)}</span>` : ''}
         ${verdict ? `<span class="tc-badge" style="${verdictBadgeStyle(verdict)}">${esc(verdict)}</span>` : ''}
+        ${mergeReady ? `<span class="tc-badge" style="background:#172554;color:#60a5fa">merge</span>` : ''}
         <span class="tc-badge">${esc(state)}</span>
       </div>
       <div class="tc-subject">${subject}</div>
       <div class="tc-meta">
         ${cost ? `<span>${cost}</span>` : ''}
         ${dur ? `<span>${dur}</span>` : ''}
+        ${deps.length ? `<span class="tc-deps">\u26D3 ${deps.length} dep${deps.length > 1 ? 's' : ''}</span>` : ''}
         ${s.milestone_count ? `<span>${s.milestone_count} steps</span>` : ''}
         ${s.execution_mode ? `<span>${esc(s.execution_mode)}</span>` : ''}
       </div>
@@ -484,6 +498,9 @@ function renderHeader(id, s) {
   const mode = s.execution_mode || '';
   const sha = s.commit_sha || '';
 
+  const groupId = s.group_id || '';
+  const mergeReady = s.merge_ready;
+
   $('#task-header').innerHTML = `
     <button class="back-btn" onclick="deselectTask()">&larr; Dashboard</button>
     <div class="th-top">
@@ -491,6 +508,8 @@ function renderHeader(id, s) {
       ${mode ? `<span class="th-mode">${esc(mode)}</span>` : ''}
       <span class="th-badge" style="${stateBadgeStyle(state)}">${esc(state)}</span>
       ${sha ? `<span class="th-mode" title="${esc(sha)}">&#10003; ${esc(sha.slice(0, 7))}</span>` : ''}
+      ${groupId ? `<span class="th-mode" title="Batch group">\u2B21 ${esc(groupId)}</span>` : ''}
+      ${mergeReady ? `<span class="th-badge" style="background:#172554;color:#60a5fa">merge queued</span>` : ''}
     </div>
     <div class="th-subject">${subject}</div>`;
 }
@@ -519,8 +538,15 @@ function renderMetrics(s) {
     { label: 'Retries', value: s.retry_count || 0, cls: s.retry_count > 0 ? 'red' : '' },
     { label: 'Subtasks', value: (s.subtask_results || []).length, cls: '' },
   );
+  if (s.infra_retry_count > 0) {
+    cards.push({ label: 'Infra Retries', value: s.infra_retry_count, cls: 'red' });
+  }
   if (s.validation_cost_usd) {
     cards.push({ label: 'Validation Cost', value: fmtCost(s.validation_cost_usd), cls: '' });
+  }
+  const deps = s.depends_on || [];
+  if (deps.length) {
+    cards.push({ label: 'Dependencies', value: deps.map(d => '#' + d).join(', '), cls: '' });
   }
 
   $('#metrics-row').innerHTML = cards.map(c =>
@@ -938,6 +964,34 @@ function renderInfoTabs(s) {
     toolsHtml = '<div class="terminal-empty">No tools recorded.</div>';
   }
   $('#tab-tools').innerHTML = toolsHtml;
+
+  /* Coordination */
+  const coordRows = [];
+  if (s.group_id) coordRows.push(['Group', esc(s.group_id)]);
+  const depIds = s.depends_on || [];
+  if (depIds.length) {
+    const depLinks = depIds.map(d => {
+      const ds = _sessions[d];
+      const dState = ds ? ds.state : 'unknown';
+      const style = ds ? stateBadgeStyle(dState) : 'background:#1e293b;color:#94a3b8';
+      return `<a href="#/task/${d}" style="text-decoration:none"><span class="th-badge" style="${style};font-size:0.65rem;cursor:pointer">#${d} ${esc(dState)}</span></a>`;
+    });
+    coordRows.push(['Dependencies', depLinks.join(' ')]);
+  }
+  if (s.merge_ready) coordRows.push(['Merge Status', '<span style="color:var(--blue);font-weight:600">Queued for merge</span>']);
+  else if (s.commit_sha) coordRows.push(['Merge Status', 'Merged']);
+  if (s.worktree_path) coordRows.push(['Worktree', `<code>${esc(s.worktree_path)}</code>`]);
+  if (s.base_work_dir) coordRows.push(['Base Work Dir', `<code>${esc(s.base_work_dir)}</code>`]);
+  if (s.infra_retry_count > 0) coordRows.push(['Infra Retries', `<span style="color:var(--red);font-weight:600">${s.infra_retry_count}</span>`]);
+
+  if (coordRows.length) {
+    $('#tab-coordination').innerHTML = '<table style="width:100%;font-size:0.82rem;border-collapse:collapse">' +
+      coordRows.map(([k, v]) =>
+        `<tr><td style="padding:0.4rem 0.75rem;color:var(--text-muted);white-space:nowrap;vertical-align:top">${k}</td><td style="padding:0.4rem 0.75rem;color:var(--text-primary)">${v}</td></tr>`
+      ).join('') + '</table>';
+  } else {
+    $('#tab-coordination').innerHTML = '<div class="terminal-empty">No coordination data for this session.</div>';
+  }
 
   /* Raw */
   $('#tab-raw').innerHTML = `<pre>${esc(JSON.stringify(s, null, 2))}</pre>`;
