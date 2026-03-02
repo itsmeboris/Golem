@@ -18,6 +18,7 @@ from golem.cli import (
     poll_for_agent_issues,
     print_results,
 )
+from golem.core.config import DaemonConfig
 from golem.orchestrator import TaskSession, TaskSessionState
 
 
@@ -162,6 +163,21 @@ class TestPrintRunHeader:
         _print_run_header(1, "Task", profile, tc, "")
         out = capsys.readouterr().out
         assert "unlimited" in out
+
+    def test_fallback_from_daemon_config(self, capsys):
+        profile = MagicMock()
+        profile.name = "test"
+        profile.task_source.get_child_tasks.return_value = []
+        profile.tool_provider.servers_for_subject.return_value = []
+        daemon_cfg = DaemonConfig(
+            fallback_budget_usd=25.0,
+            fallback_task_timeout_seconds=900,
+        )
+
+        _print_run_header(1, "Task", profile, None, "", daemon_cfg=daemon_cfg)
+        out = capsys.readouterr().out
+        assert "$25.0" in out
+        assert "900s" in out
 
 
 class TestMakeEventHandler:

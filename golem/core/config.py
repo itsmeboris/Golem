@@ -90,6 +90,18 @@ class ClaudeConfig:
 
 
 @dataclass
+class DaemonConfig:
+    """Daemon startup and CLI-level timeout/fallback settings."""
+
+    health_check_timeout: int = 3
+    startup_max_iterations: int = 30
+    startup_poll_seconds: float = 0.5
+    http_submit_timeout: int = 10
+    fallback_budget_usd: float = 10.0
+    fallback_task_timeout_seconds: int = 1800
+
+
+@dataclass
 class DashboardConfig:
     """Standalone dashboard server settings."""
 
@@ -149,6 +161,7 @@ class Config:
 
     golem: GolemFlowConfig = field(default_factory=GolemFlowConfig)
     claude: ClaudeConfig = field(default_factory=ClaudeConfig)
+    daemon: DaemonConfig = field(default_factory=DaemonConfig)
     dashboard: DashboardConfig = field(default_factory=DashboardConfig)
     webhook: WebhookConfig = field(default_factory=WebhookConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
@@ -252,6 +265,17 @@ def _parse_claude_config(data: dict[str, Any]) -> ClaudeConfig:
     )
 
 
+def _parse_daemon_config(data: dict[str, Any]) -> DaemonConfig:
+    return DaemonConfig(
+        health_check_timeout=data.get("health_check_timeout", 3),
+        startup_max_iterations=data.get("startup_max_iterations", 30),
+        startup_poll_seconds=data.get("startup_poll_seconds", 0.5),
+        http_submit_timeout=data.get("http_submit_timeout", 10),
+        fallback_budget_usd=data.get("fallback_budget_usd", 10.0),
+        fallback_task_timeout_seconds=data.get("fallback_task_timeout_seconds", 1800),
+    )
+
+
 def _parse_dashboard_config(data: dict[str, Any]) -> DashboardConfig:
     return DashboardConfig(
         port=data.get("port", 8081),
@@ -343,6 +367,7 @@ def load_config(config_path: str | Path | None = None) -> Config:
     return Config(
         golem=_parse_golem_config(flows_data.get("golem", {})),
         claude=_parse_claude_config(raw_config.get("claude", {})),
+        daemon=_parse_daemon_config(raw_config.get("daemon", {})),
         dashboard=_parse_dashboard_config(raw_config.get("dashboard", {})),
         webhook=_parse_webhook_config(raw_config.get("webhook", {})),
         logging=_parse_logging_config(raw_config.get("logging", {})),

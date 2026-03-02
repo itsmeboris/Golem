@@ -5,6 +5,7 @@ from unittest.mock import patch
 from golem.core.config import (
     Config,
     ClaudeConfig,
+    DaemonConfig,
     GolemFlowConfig,
     FlowConfig,
     _expand_env_vars,
@@ -12,6 +13,7 @@ from golem.core.config import (
     _is_valid_model,
     _load_system_prompt,
     _parse_claude_config,
+    _parse_daemon_config,
     load_config,
     validate_config,
     validate_flow_config,
@@ -66,6 +68,35 @@ class TestParseClaudeConfig:
     def test_default_cli_type(self):
         config = _parse_claude_config({})
         assert config.cli_type == CLIType.AGENT
+
+
+class TestParseDaemonConfig:
+    def test_defaults(self):
+        config = _parse_daemon_config({})
+        assert config.health_check_timeout == 3
+        assert config.startup_max_iterations == 30
+        assert config.startup_poll_seconds == 0.5
+        assert config.http_submit_timeout == 10
+        assert config.fallback_budget_usd == 10.0
+        assert config.fallback_task_timeout_seconds == 1800
+
+    def test_custom_values(self):
+        config = _parse_daemon_config(
+            {
+                "health_check_timeout": 5,
+                "startup_max_iterations": 60,
+                "startup_poll_seconds": 1.0,
+                "http_submit_timeout": 30,
+                "fallback_budget_usd": 20.0,
+                "fallback_task_timeout_seconds": 3600,
+            }
+        )
+        assert config.health_check_timeout == 5
+        assert config.startup_max_iterations == 60
+        assert config.startup_poll_seconds == 1.0
+        assert config.http_submit_timeout == 30
+        assert config.fallback_budget_usd == 20.0
+        assert config.fallback_task_timeout_seconds == 3600
 
 
 class TestFindConfigPath:
@@ -131,6 +162,9 @@ flows:
 claude:
   model: opus
   timeout_seconds: 600
+daemon:
+  health_check_timeout: 5
+  http_submit_timeout: 20
 dashboard:
   port: 9090
 webhook:
@@ -149,6 +183,8 @@ teams:
         config = load_config(config_file)
         assert config.golem.projects == ["test-project"]
         assert config.claude.model == "opus"
+        assert config.daemon.health_check_timeout == 5
+        assert config.daemon.http_submit_timeout == 20
         assert config.dashboard.port == 9090
 
 
