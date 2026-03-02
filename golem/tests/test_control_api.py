@@ -580,6 +580,50 @@ class TestBatchSubmitEndpoint:
 
 
 # ---------------------------------------------------------------------------
+# GET /api/sessions/{task_id}
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(
+    not control_api.FASTAPI_AVAILABLE,
+    reason="FastAPI not installed",
+)
+class TestGetSessionEndpoint:
+    @pytest.mark.asyncio
+    async def test_session_found(self, _wire_deps):
+        from golem.core.control_api import get_session
+
+        session = MagicMock()
+        session.to_dict.return_value = {
+            "parent_issue_id": 42,
+            "state": "running",
+            "total_cost_usd": 1.23,
+            "validation_cost_usd": 0.45,
+        }
+        control_api._golem_flow._sessions = {42: session}
+        result = await get_session(42)
+        assert result["ok"] is True
+        assert result["session"]["parent_issue_id"] == 42
+        assert result["session"]["total_cost_usd"] == 1.23
+
+    @pytest.mark.asyncio
+    async def test_session_not_found(self, _wire_deps):
+        from golem.core.control_api import get_session
+
+        control_api._golem_flow._sessions = {}
+        with pytest.raises(Exception, match="No session found"):
+            await get_session(999)
+
+    @pytest.mark.asyncio
+    async def test_session_no_golem_flow(self, _wire_deps):
+        from golem.core.control_api import get_session
+
+        control_api._golem_flow = None
+        with pytest.raises(Exception, match="not ready"):
+            await get_session(1)
+
+
+# ---------------------------------------------------------------------------
 # No-FastAPI fallback
 # ---------------------------------------------------------------------------
 

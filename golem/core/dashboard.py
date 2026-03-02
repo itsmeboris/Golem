@@ -326,6 +326,43 @@ def config_to_snapshot(config: Any) -> dict:
 
 
 _SESSIONS_FILE = DATA_DIR / "state" / "golem_sessions.json"
+
+
+def _session_cost_stats(sessions: dict) -> dict[str, float]:
+    """Compute cost statistics from session data."""
+    items = list(sessions.values()) if isinstance(sessions, dict) else []
+    if not items:
+        return {
+            "session_total_cost_usd": 0.0,
+            "session_avg_cost_usd": 0.0,
+            "session_max_cost_usd": 0.0,
+            "budget_utilization": 0.0,
+        }
+
+    costs = []
+    budgets = []
+    completed_costs = []
+    for s in items:
+        task_cost = s.get("total_cost_usd", 0.0) + s.get("validation_cost_usd", 0.0)
+        costs.append(task_cost)
+        budgets.append(s.get("budget_usd", 0.0))
+        if s.get("state") == "completed":
+            completed_costs.append(task_cost)
+
+    total_cost = sum(costs)
+    max_cost = max(costs) if costs else 0.0
+    avg_cost = sum(completed_costs) / len(completed_costs) if completed_costs else 0.0
+    utilizations = [(c / b * 100) if b > 0 else 0.0 for c, b in zip(costs, budgets)]
+    avg_utilization = sum(utilizations) / len(utilizations) if utilizations else 0.0
+
+    return {
+        "session_total_cost_usd": round(total_cost, 4),
+        "session_avg_cost_usd": round(avg_cost, 4),
+        "session_max_cost_usd": round(max_cost, 4),
+        "budget_utilization": round(avg_utilization, 2),
+    }
+
+
 _LOG_DIR = DATA_DIR / "logs"
 
 
@@ -397,6 +434,8 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
         runs = await asyncio.to_thread(read_runs, limit=10_000, since=since)
         stats = _aggregate_stats(runs)
         stats["since_hours"] = since_hours
+        sessions_data = await asyncio.to_thread(_read_sessions)
+        stats.update(_session_cost_stats(sessions_data.get("sessions", {})))
         return JSONResponse(content=stats)
 
     @app.get("/api/live")

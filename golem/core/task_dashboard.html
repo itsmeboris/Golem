@@ -357,6 +357,7 @@ function renderSidebar() {
     const state = s.state || 'detected';
     const subject = esc(truncText((s.parent_subject || '').replace(/^\[AGENT\]\s*/, ''), 80));
     const cost = s.total_cost_usd ? fmtCost(s.total_cost_usd) : '';
+    const valCost = s.validation_cost_usd ? fmtCost(s.validation_cost_usd) : '';
     const dur = s.duration_seconds ? fmtDuration(s.duration_seconds)
       : (state === 'detected' && s.grace_deadline) ? fmtCountdown(s.grace_deadline)
       : fmtAgo(s.created_at);
@@ -377,6 +378,7 @@ function renderSidebar() {
       <div class="tc-subject">${subject}</div>
       <div class="tc-meta">
         ${cost ? `<span>${cost}</span>` : ''}
+        ${valCost ? `<span>val ${valCost}</span>` : ''}
         ${dur ? `<span>${dur}</span>` : ''}
         ${deps.length ? `<span class="tc-deps">\u26D3 ${deps.length} dep${deps.length > 1 ? 's' : ''}</span>` : ''}
         ${s.milestone_count ? `<span>${s.milestone_count} steps</span>` : ''}
@@ -447,20 +449,32 @@ function renderOverview() {
   /* Compute aggregate stats */
   let totalTasks = entries.length;
   let totalCost = 0;
+  let totalValCost = 0;
   let totalDuration = 0;
   let durationCount = 0;
+  let maxCost = 0;
+  let completedCostSum = 0;
+  let completedCount = 0;
   const byState = {};
 
   for (const [id, s] of entries) {
     const state = s.state || 'detected';
     byState[state] = (byState[state] || 0) + 1;
-    if (s.total_cost_usd) totalCost += s.total_cost_usd;
+    const taskCost = (s.total_cost_usd || 0) + (s.validation_cost_usd || 0);
+    totalCost += s.total_cost_usd || 0;
+    totalValCost += s.validation_cost_usd || 0;
+    if (taskCost > maxCost) maxCost = taskCost;
+    if (state === 'completed') {
+      completedCostSum += taskCost;
+      completedCount++;
+    }
     if (s.duration_seconds) {
       totalDuration += s.duration_seconds;
       durationCount++;
     }
   }
 
+  const avgCost = completedCount > 0 ? completedCostSum / completedCount : 0;
   const avgDuration = durationCount > 0 ? totalDuration / durationCount : 0;
   const completed = byState['completed'] || 0;
   const failed = byState['failed'] || 0;
@@ -477,7 +491,10 @@ function renderOverview() {
     ${validating ? `<div class="stat-card"><div class="sc-label">Validating</div><div class="sc-value">${validating}</div></div>` : ''}
     ${detected ? `<div class="stat-card"><div class="sc-label">Detected</div><div class="sc-value">${detected}</div></div>` : ''}
     ${retrying ? `<div class="stat-card"><div class="sc-label">Retrying</div><div class="sc-value">${retrying}</div></div>` : ''}
-    <div class="stat-card"><div class="sc-label">Total Cost</div><div class="sc-value">${fmtCost(totalCost)}</div></div>
+    <div class="stat-card"><div class="sc-label">Total Spend</div><div class="sc-value">${fmtCost(totalCost + totalValCost)}</div></div>
+    <div class="stat-card"><div class="sc-label">Val. Cost</div><div class="sc-value">${fmtCost(totalValCost)}</div></div>
+    <div class="stat-card"><div class="sc-label">Avg Cost</div><div class="sc-value">${fmtCost(avgCost)}</div></div>
+    <div class="stat-card"><div class="sc-label">Max Cost</div><div class="sc-value">${fmtCost(maxCost)}</div></div>
     <div class="stat-card"><div class="sc-label">Avg Duration</div><div class="sc-value">${fmtDuration(avgDuration)}</div></div>`;
 }
 
