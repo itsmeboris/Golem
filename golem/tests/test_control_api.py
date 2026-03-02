@@ -1,6 +1,7 @@
 # pylint: disable=too-few-public-methods
 """Tests for golem.core.control_api — flow control and task submission endpoints."""
 
+import json
 import time
 from unittest.mock import AsyncMock, MagicMock
 
@@ -351,6 +352,35 @@ class TestSubmitEndpoint:
         with pytest.raises(Exception, match="not ready"):
             await submit_task(req)
 
+    @pytest.mark.asyncio
+    async def test_submit_malformed_json(self, _wire_deps):
+        from golem.core.control_api import submit_task
+
+        req = AsyncMock()
+        req.json = AsyncMock(side_effect=json.JSONDecodeError("bad", "", 0))
+        with pytest.raises(Exception, match="Invalid JSON"):
+            await submit_task(req)
+
+    @pytest.mark.asyncio
+    async def test_submit_value_error_json(self, _wire_deps):
+        from golem.core.control_api import submit_task
+
+        req = AsyncMock()
+        req.json = AsyncMock(side_effect=ValueError("not json"))
+        with pytest.raises(Exception, match="Invalid JSON"):
+            await submit_task(req)
+
+    @pytest.mark.asyncio
+    async def test_submit_internal_error(self, _wire_deps):
+        from golem.core.control_api import submit_task
+
+        control_api._golem_flow.submit_task = MagicMock(
+            side_effect=RuntimeError("boom")
+        )
+        req = _make_request(json_data={"prompt": "Do it"})
+        with pytest.raises(Exception, match="Internal error"):
+            await submit_task(req)
+
 
 @pytest.mark.skipif(
     not control_api.FASTAPI_AVAILABLE,
@@ -404,6 +434,149 @@ class TestBatchSubmitEndpoint:
         req = _make_request(json_data={"tasks": [{"prompt": "x"}]})
         with pytest.raises(Exception, match="not ready"):
             await submit_batch(req)
+
+    @pytest.mark.asyncio
+    async def test_submit_batch_malformed_json(self, _wire_deps):
+        from golem.core.control_api import submit_batch
+
+        req = AsyncMock()
+        req.json = AsyncMock(side_effect=json.JSONDecodeError("bad", "", 0))
+        with pytest.raises(Exception, match="Invalid JSON"):
+            await submit_batch(req)
+
+    @pytest.mark.asyncio
+    async def test_submit_batch_value_error_json(self, _wire_deps):
+        from golem.core.control_api import submit_batch
+
+        req = AsyncMock()
+        req.json = AsyncMock(side_effect=ValueError("not json"))
+        with pytest.raises(Exception, match="Invalid JSON"):
+            await submit_batch(req)
+
+    @pytest.mark.asyncio
+    async def test_submit_batch_missing_prompt(self, _wire_deps):
+        from golem.core.control_api import submit_batch
+
+        req = _make_request(json_data={"tasks": [{"subject": "no prompt"}]})
+        with pytest.raises(Exception, match="index 0.*missing.*prompt"):
+            await submit_batch(req)
+
+    @pytest.mark.asyncio
+    async def test_submit_batch_empty_prompt(self, _wire_deps):
+        from golem.core.control_api import submit_batch
+
+        req = _make_request(json_data={"tasks": [{"prompt": "  "}]})
+        with pytest.raises(Exception, match="index 0.*missing.*prompt"):
+            await submit_batch(req)
+
+    @pytest.mark.asyncio
+    async def test_submit_batch_non_string_prompt(self, _wire_deps):
+        from golem.core.control_api import submit_batch
+
+        req = _make_request(json_data={"tasks": [{"prompt": 123}]})
+        with pytest.raises(Exception, match="index 0.*missing.*prompt"):
+            await submit_batch(req)
+
+    @pytest.mark.asyncio
+    async def test_submit_batch_non_dict_task(self, _wire_deps):
+        from golem.core.control_api import submit_batch
+
+        req = _make_request(json_data={"tasks": ["not a dict"]})
+        with pytest.raises(Exception, match="index 0.*missing.*prompt"):
+            await submit_batch(req)
+
+    @pytest.mark.asyncio
+    async def test_submit_batch_depends_on_forward_ref(self, _wire_deps):
+        from golem.core.control_api import submit_batch
+
+        tasks = [
+            {"prompt": "A", "depends_on": [1]},
+            {"prompt": "B"},
+        ]
+        req = _make_request(json_data={"tasks": tasks})
+        with pytest.raises(Exception, match="index 0.*invalid depends_on.*1"):
+            await submit_batch(req)
+
+    @pytest.mark.asyncio
+    async def test_submit_batch_depends_on_self(self, _wire_deps):
+        from golem.core.control_api import submit_batch
+
+        tasks = [
+            {"prompt": "A"},
+            {"prompt": "B", "depends_on": [1]},
+        ]
+        req = _make_request(json_data={"tasks": tasks})
+        with pytest.raises(Exception, match="index 1.*invalid depends_on.*1"):
+            await submit_batch(req)
+
+    @pytest.mark.asyncio
+    async def test_submit_batch_depends_on_negative(self, _wire_deps):
+        from golem.core.control_api import submit_batch
+
+        tasks = [{"prompt": "A", "depends_on": [-1]}]
+        req = _make_request(json_data={"tasks": tasks})
+        with pytest.raises(Exception, match="index 0.*invalid depends_on.*-1"):
+            await submit_batch(req)
+
+    @pytest.mark.asyncio
+    async def test_submit_batch_depends_on_non_int(self, _wire_deps):
+        from golem.core.control_api import submit_batch
+
+        tasks = [
+            {"prompt": "A"},
+            {"prompt": "B", "depends_on": ["zero"]},
+        ]
+        req = _make_request(json_data={"tasks": tasks})
+        with pytest.raises(Exception, match="index 1.*invalid depends_on.*zero"):
+            await submit_batch(req)
+
+    @pytest.mark.asyncio
+    async def test_submit_batch_depends_on_out_of_range(self, _wire_deps):
+        from golem.core.control_api import submit_batch
+
+        tasks = [
+            {"prompt": "A"},
+            {"prompt": "B", "depends_on": [99]},
+        ]
+        req = _make_request(json_data={"tasks": tasks})
+        with pytest.raises(Exception, match="index 1.*invalid depends_on.*99"):
+            await submit_batch(req)
+
+    @pytest.mark.asyncio
+    async def test_submit_batch_internal_error(self, _wire_deps):
+        from golem.core.control_api import submit_batch
+
+        control_api._golem_flow.submit_batch = MagicMock(
+            side_effect=RuntimeError("kaboom")
+        )
+        tasks = [{"prompt": "A"}]
+        req = _make_request(json_data={"tasks": tasks})
+        with pytest.raises(Exception, match="Internal error"):
+            await submit_batch(req)
+
+    @pytest.mark.asyncio
+    async def test_submit_batch_valid_depends_on(self, _wire_deps):
+        from golem.core.control_api import submit_batch
+
+        tasks = [
+            {"prompt": "A"},
+            {"prompt": "B", "depends_on": [0]},
+            {"prompt": "C", "depends_on": [0, 1]},
+        ]
+        control_api._golem_flow.submit_batch = MagicMock(
+            return_value={
+                "group_id": "g",
+                "tasks": [
+                    {"task_id": 1, "status": "submitted"},
+                    {"task_id": 2, "status": "submitted"},
+                    {"task_id": 3, "status": "submitted"},
+                ],
+            }
+        )
+        req = _make_request(json_data={"tasks": tasks})
+        result = await submit_batch(req)
+        assert result["ok"] is True
+        assert len(result["tasks"]) == 3
 
 
 # ---------------------------------------------------------------------------

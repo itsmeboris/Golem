@@ -12,9 +12,11 @@ Runtime dependencies are injected once via :func:`wire_control_api`.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
+import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -181,7 +183,14 @@ if FASTAPI_AVAILABLE:
                 detail="Daemon not ready — GolemFlow not wired",
             )
 
-        payload = await request.json()
+        try:
+            payload = await request.json()
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid JSON: {exc}",
+            ) from exc
+
         prompt = payload.get("prompt", "")
         file_path = payload.get("file", "")
 
@@ -202,11 +211,18 @@ if FASTAPI_AVAILABLE:
 
         subject = payload.get("subject", "")
         work_dir = payload.get("work_dir", "")
-        result = _golem_flow.submit_task(
-            prompt=prompt,
-            subject=subject,
-            work_dir=work_dir,
-        )
+        try:
+            result = _golem_flow.submit_task(
+                prompt=prompt,
+                subject=subject,
+                work_dir=work_dir,
+            )
+        except Exception:
+            logger.error("submit_task failed:\n%s", traceback.format_exc())
+            raise HTTPException(
+                status_code=500,
+                detail=f"Internal error: {traceback.format_exc()}",
+            ) from None
         return {"ok": True, **result}
 
     @health_router.post("/submit/batch")
@@ -232,7 +248,14 @@ if FASTAPI_AVAILABLE:
                 detail="Daemon not ready — GolemFlow not wired",
             )
 
-        payload = await request.json()
+        try:
+            payload = await request.json()
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid JSON: {exc}",
+            ) from exc
+
         tasks = payload.get("tasks")
         if not tasks or not isinstance(tasks, list):
             raise HTTPException(
@@ -240,8 +263,32 @@ if FASTAPI_AVAILABLE:
                 detail="'tasks' array is required",
             )
 
+        for i, task in enumerate(tasks):
+            prompt = task.get("prompt") if isinstance(task, dict) else None
+            if not isinstance(prompt, str) or not prompt.strip():
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Task at index {i} is missing a non-empty 'prompt' string",
+                )
+            for dep in task.get("depends_on", []):
+                if not isinstance(dep, int) or dep < 0 or dep >= i:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            f"Task at index {i} has invalid depends_on value {dep!r}: "
+                            f"must be an int in range [0, {i})"
+                        ),
+                    )
+
         group_id = payload.get("group_id", "")
-        result = _golem_flow.submit_batch(tasks, group_id=group_id)
+        try:
+            result = _golem_flow.submit_batch(tasks, group_id=group_id)
+        except Exception:
+            logger.error("submit_batch failed:\n%s", traceback.format_exc())
+            raise HTTPException(
+                status_code=500,
+                detail=f"Internal error: {traceback.format_exc()}",
+            ) from None
         return {"ok": True, **result}
 
 else:  # pragma: no cover
