@@ -36,6 +36,7 @@ from .core.run_log import RunRecord, format_duration, record_run
 from .core.flow_base import _write_prompt, _write_trace
 
 from .committer import commit_changes
+from .core.log_context import SessionLogAdapter
 from .errors import InfrastructureError
 from .event_tracker import Milestone, TaskEventTracker, TrackerState
 from .interfaces import TaskStatus
@@ -224,6 +225,11 @@ class TaskOrchestrator:
         self._work_dir_override = work_dir_override
         self._last_checkpoint_time: float = 0.0
         self._checkpoint_interval: float = 10.0  # seconds between disk writes
+        self._slog = SessionLogAdapter(
+            logger,
+            session_id=session.parent_issue_id,
+            subject=session.parent_subject,
+        )
 
     # -- Profile-based helpers ------------------------------------------------
 
@@ -297,9 +303,8 @@ class TaskOrchestrator:
             return  # Still in grace period
 
         # Transition to RUNNING and spawn agent
-        logger.info(
-            "Session %s: grace period elapsed, spawning agent",
-            self.session.parent_issue_id,
+        self._slog.info(
+            "Grace period elapsed, spawning agent",
         )
         self.session.state = TaskSessionState.RUNNING
         self.session.updated_at = _now_iso()
@@ -346,7 +351,7 @@ class TaskOrchestrator:
                 worktree_path = create_worktree(base_work_dir, issue_id)
                 work_dir = worktree_path
                 self.session.worktree_path = worktree_path
-                logger.info("Session %s: using worktree at %s", issue_id, work_dir)
+                self._slog.info("Using worktree at %s", work_dir)
             except RuntimeError as wt_err:
                 raise InfrastructureError(
                     f"Worktree creation failed: {wt_err}"
@@ -493,9 +498,8 @@ class TaskOrchestrator:
         )
         self._apply_verdict(verdict)
 
-        logger.info(
-            "Session %s: validation verdict=%s confidence=%.2f",
-            issue_id,
+        self._slog.info(
+            "Validation verdict=%s confidence=%.2f",
             verdict.verdict,
             verdict.confidence,
         )
@@ -523,9 +527,9 @@ class TaskOrchestrator:
             )
             if cr.committed:
                 self.session.commit_sha = cr.sha
-                logger.info("Session %s: committed %s", issue_id, cr.sha)
+                self._slog.info("Committed %s", cr.sha)
             elif cr.error:
-                logger.warning("Session %s: commit failed: %s", issue_id, cr.error)
+                self._slog.warning("Commit failed: %s", cr.error)
                 self.session.state = TaskSessionState.FAILED
                 self.session.errors.append(f"commit failed: {cr.error}")
                 self._update_task(
@@ -560,9 +564,8 @@ class TaskOrchestrator:
                 f"validation={self.session.validation_verdict}{extras})"
             ),
         )
-        logger.info(
-            "Session %s: completed ($%.2f, %.0fs, verdict=%s)",
-            issue_id,
+        self._slog.info(
+            "Completed ($%.2f, %.0fs, verdict=%s)",
             self.session.total_cost_usd,
             self.session.duration_seconds,
             self.session.validation_verdict,
@@ -587,7 +590,7 @@ class TaskOrchestrator:
             issue_id,
             comment=f"Agent failed after {format_duration(elapsed)}: {exc}",
         )
-        logger.error("Session %s: agent failed after %.0fs: %s", issue_id, elapsed, exc)
+        self._slog.error("Agent failed after %.0fs: %s", elapsed, exc)
 
     def _apply_verdict(self, verdict: ValidationVerdict) -> None:
         """Store a validation verdict into the session."""
@@ -610,9 +613,7 @@ class TaskOrchestrator:
         self.session.retry_count += 1
         self.session.updated_at = _now_iso()
 
-        logger.info(
-            "Session %s: retrying (attempt %d)", issue_id, self.session.retry_count
-        )
+        self._slog.info("Retrying (attempt %d)", self.session.retry_count)
 
         concerns_text = (
             "\n".join(f"- {c}" for c in verdict.concerns) or "- (none specified)"
@@ -696,9 +697,8 @@ class TaskOrchestrator:
         )
         self._apply_verdict(retry_verdict)
 
-        logger.info(
-            "Session %s: retry validation verdict=%s",
-            issue_id,
+        self._slog.info(
+            "Retry validation verdict=%s",
             retry_verdict.verdict,
         )
 
@@ -729,9 +729,8 @@ class TaskOrchestrator:
             comment=notes,
         )
 
-        logger.warning(
-            "Session %s: escalated (verdict=%s, retries=%d)",
-            issue_id,
+        self._slog.warning(
+            "Escalated (verdict=%s, retries=%d)",
             verdict.verdict,
             self.session.retry_count,
         )
@@ -805,7 +804,7 @@ class TaskOrchestrator:
             writer.append_index(row, header=header)
 
         except Exception as exc:  # pylint: disable=broad-exception-caught
-            logger.warning("Failed to write report for #%d: %s", issue_id, exc)
+            self._slog.warning("Failed to write report: %s", exc)
 
     def _record_run(self) -> None:
         """Append a RunRecord to runs.jsonl."""
@@ -833,7 +832,7 @@ class TaskOrchestrator:
             )
             record_run(record)
         except Exception as exc:  # pylint: disable=broad-exception-caught
-            logger.warning("Failed to record run for #%d: %s", issue_id, exc)
+            self._slog.warning("Failed to record run: %s", exc)
 
     def _on_milestone(self, milestone: Milestone, tracker_state: TrackerState) -> None:
         """Called for each milestone — updates session and notifies flow layer."""
@@ -877,7 +876,7 @@ class TaskOrchestrator:
                 try:
                     self._save_callback()
                 except Exception:  # pylint: disable=broad-exception-caught
-                    logger.debug("Checkpoint save failed", exc_info=True)
+                    self._slog.debug("Checkpoint save failed", exc_info=True)
 
     def _populate_session_from_tracker(
         self,
