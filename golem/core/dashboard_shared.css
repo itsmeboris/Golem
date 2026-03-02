@@ -86,7 +86,7 @@ body{font-family:var(--font-sans);background:var(--bg-base);color:var(--text-pri
   padding:0.7rem 0.85rem
 }
 .metric-card .mc-label{font-size:0.65rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:0.1rem}
-.metric-card .mc-value{font-size:1.15rem;font-weight:700;color:var(--text-primary)}
+.metric-card .mc-value{font-size:1.15rem;font-weight:700;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;word-break:break-all}
 .metric-card .mc-value.green{color:var(--green)}
 .metric-card .mc-value.red{color:var(--red)}
 .metric-card .mc-value.blue{color:var(--blue)}

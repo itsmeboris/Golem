@@ -197,6 +197,59 @@ class TestDependencyWaiting:
         await flow._run_session(102)
         assert session.state == TaskSessionState.COMPLETED
 
+    async def test_dep_failed_raises(self, monkeypatch, tmp_path):
+        from golem.errors import TaskExecutionError
+
+        flow = _make_flow(monkeypatch, tmp_path, tick_interval=0)
+        flow._running = True
+
+        dep_session = TaskSession(
+            parent_issue_id=150,
+            parent_subject="broken dep",
+            state=TaskSessionState.FAILED,
+        )
+        flow._sessions[150] = dep_session
+
+        session = TaskSession(
+            parent_issue_id=151,
+            parent_subject="depends on broken",
+            depends_on=[150],
+        )
+
+        import pytest as _pt
+
+        with _pt.raises(TaskExecutionError, match="Dependency #150"):
+            await flow._wait_for_dependencies(session)
+
+    async def test_dep_failed_session_transitions_to_failed(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path, tick_interval=0)
+        flow._running = True
+
+        dep_session = TaskSession(
+            parent_issue_id=160,
+            parent_subject="failing dep",
+            state=TaskSessionState.FAILED,
+        )
+        flow._sessions[160] = dep_session
+
+        session = TaskSession(
+            parent_issue_id=161,
+            parent_subject="blocked by failure",
+            state=TaskSessionState.DETECTED,
+            depends_on=[160],
+            grace_deadline=(
+                datetime.now(timezone.utc) - timedelta(seconds=10)
+            ).isoformat(),
+        )
+        flow._sessions[161] = session
+
+        mock_live = MagicMock()
+        monkeypatch.setattr("golem.flow.LiveState.get", lambda: mock_live)
+
+        await flow._run_session(161)
+        assert session.state == TaskSessionState.FAILED
+        assert any("Dependency #160" in e for e in session.errors)
+
     async def test_deps_not_done_waits(self, monkeypatch, tmp_path):
         flow = _make_flow(monkeypatch, tmp_path, tick_interval=0)
         flow._running = True
@@ -274,6 +327,7 @@ class TestApplyMergeResult:
     def test_failure(self, monkeypatch, tmp_path):
         flow = _make_flow(monkeypatch, tmp_path)
         session = TaskSession(parent_issue_id=401, parent_subject="m")
+        session.merge_ready = True
         flow._sessions[401] = session
 
         from golem.merge_queue import MergeResult
@@ -282,6 +336,7 @@ class TestApplyMergeResult:
             MergeResult(session_id=401, success=False, error="conflict")
         )
         assert "merge failed: conflict" in session.errors
+        assert session.merge_ready is False
 
     def test_unknown_session(self, monkeypatch, tmp_path):
         flow = _make_flow(monkeypatch, tmp_path)
@@ -357,6 +412,38 @@ class TestSubmitBatch:
 
         result = flow.submit_batch([{"prompt": "solo"}])
         assert result["group_id"].startswith("batch-")
+
+    def test_creates_batch_with_key_deps(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path)
+        monkeypatch.setattr(flow, "_spawn_session_task", lambda sid: None)
+
+        tasks = [
+            {"prompt": "task A", "subject": "A", "key": "task-a"},
+            {"prompt": "task B", "subject": "B", "depends_on": ["task-a"]},
+        ]
+        result = flow.submit_batch(tasks, group_id="grp-key")
+
+        t0_id = result["tasks"][0]["task_id"]
+        t1_id = result["tasks"][1]["task_id"]
+
+        assert flow._sessions[t1_id].depends_on == [t0_id]
+
+    def test_mixed_key_and_index_deps(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path)
+        monkeypatch.setattr(flow, "_spawn_session_task", lambda sid: None)
+
+        tasks = [
+            {"prompt": "task A", "subject": "A", "key": "first"},
+            {"prompt": "task B", "subject": "B"},
+            {"prompt": "task C", "subject": "C", "depends_on": ["first", 1]},
+        ]
+        result = flow.submit_batch(tasks, group_id="grp-mix")
+
+        t0_id = result["tasks"][0]["task_id"]
+        t1_id = result["tasks"][1]["task_id"]
+        t2_id = result["tasks"][2]["task_id"]
+
+        assert flow._sessions[t2_id].depends_on == [t0_id, t1_id]
 
     def test_external_dep_id(self, monkeypatch, tmp_path):
         flow = _make_flow(monkeypatch, tmp_path)

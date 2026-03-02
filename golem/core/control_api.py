@@ -306,6 +306,7 @@ if FASTAPI_AVAILABLE:
                 detail="'tasks' array is required",
             )
 
+        known_keys: set[str] = set()
         for i, task in enumerate(tasks):
             prompt = task.get("prompt") if isinstance(task, dict) else None
             if not isinstance(prompt, str) or not prompt.strip():
@@ -313,13 +314,25 @@ if FASTAPI_AVAILABLE:
                     status_code=400,
                     detail=f"Task at index {i} is missing a non-empty 'prompt' string",
                 )
+            task_key = task.get("key", "") if isinstance(task, dict) else ""
+            if task_key:
+                known_keys.add(task_key)
             for dep in task.get("depends_on", []):
-                if not isinstance(dep, int) or dep < 0 or dep >= i:
+                if isinstance(dep, str):
+                    if dep not in known_keys:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=(
+                                f"Task at index {i} has unknown depends_on key {dep!r}: "
+                                f"must reference a \'key\' declared by a preceding task"
+                            ),
+                        )
+                elif not isinstance(dep, int) or dep < 0 or dep >= i:
                     raise HTTPException(
                         status_code=400,
                         detail=(
                             f"Task at index {i} has invalid depends_on value {dep!r}: "
-                            f"must be an int in range [0, {i})"
+                            f"must be an int in range [0, {i}) or a string key"
                         ),
                     )
 

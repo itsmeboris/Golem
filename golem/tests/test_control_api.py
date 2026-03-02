@@ -564,15 +564,27 @@ class TestBatchSubmitEndpoint:
             await submit_batch(req)
 
     @pytest.mark.asyncio
-    async def test_submit_batch_depends_on_non_int(self, _wire_deps):
+    async def test_submit_batch_depends_on_unknown_key(self, _wire_deps):
         from golem.core.control_api import submit_batch
 
         tasks = [
             {"prompt": "A"},
-            {"prompt": "B", "depends_on": ["zero"]},
+            {"prompt": "B", "depends_on": ["nonexistent"]},
         ]
         req = _make_request(json_data={"tasks": tasks})
-        with pytest.raises(Exception, match="index 1.*invalid depends_on.*zero"):
+        with pytest.raises(Exception, match="index 1.*unknown depends_on key.*nonexistent"):
+            await submit_batch(req)
+
+    @pytest.mark.asyncio
+    async def test_submit_batch_depends_on_non_int_non_str(self, _wire_deps):
+        from golem.core.control_api import submit_batch
+
+        tasks = [
+            {"prompt": "A"},
+            {"prompt": "B", "depends_on": [1.5]},
+        ]
+        req = _make_request(json_data={"tasks": tasks})
+        with pytest.raises(Exception, match="index 1.*invalid depends_on"):
             await submit_batch(req)
 
     @pytest.mark.asyncio
@@ -607,6 +619,30 @@ class TestBatchSubmitEndpoint:
             {"prompt": "A"},
             {"prompt": "B", "depends_on": [0]},
             {"prompt": "C", "depends_on": [0, 1]},
+        ]
+        control_api._golem_flow.submit_batch = MagicMock(
+            return_value={
+                "group_id": "g",
+                "tasks": [
+                    {"task_id": 1, "status": "submitted"},
+                    {"task_id": 2, "status": "submitted"},
+                    {"task_id": 3, "status": "submitted"},
+                ],
+            }
+        )
+        req = _make_request(json_data={"tasks": tasks})
+        result = await submit_batch(req)
+        assert result["ok"] is True
+        assert len(result["tasks"]) == 3
+
+    @pytest.mark.asyncio
+    async def test_submit_batch_valid_key_depends_on(self, _wire_deps):
+        from golem.core.control_api import submit_batch
+
+        tasks = [
+            {"prompt": "A", "key": "setup"},
+            {"prompt": "B", "depends_on": ["setup"]},
+            {"prompt": "C", "depends_on": ["setup", 1]},
         ]
         control_api._golem_flow.submit_batch = MagicMock(
             return_value={

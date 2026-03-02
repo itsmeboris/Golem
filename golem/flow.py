@@ -25,7 +25,7 @@ from .core.triggers.base import TriggerEvent
 from .core.flow_base import BaseFlow, FlowResult, PollableFlow, WebhookableFlow
 
 from .backends.local import LocalFileTaskSource, NullStateBackend, NullToolProvider
-from .errors import InfrastructureError
+from .errors import InfrastructureError, TaskExecutionError
 from .event_tracker import Milestone, TaskEventTracker
 from .merge_queue import MergeEntry, MergeQueue, MergeResult
 from .orchestrator import (
@@ -317,7 +317,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                         if session.infra_retry_count < self._max_infra_retries:
                             session.infra_retry_count += 1
                             logger.warning(
-                                "Session #%d: infra failure (%s), " "retrying (%d/%d)",
+                                "Session #%d: infra failure (%s), retrying (%d/%d)",
                                 session_id,
                                 ie,
                                 session.infra_retry_count,
@@ -342,6 +342,12 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
 
         except asyncio.CancelledError:
             logger.info("Session #%d cancelled", session_id)
+        except TaskExecutionError as te:
+            logger.warning("Session #%d skipped: %s", session_id, te)
+            session.state = TaskSessionState.FAILED
+            session.errors.append(str(te))
+            self._handle_state_transition(session, TaskSessionState.DETECTED)
+            self._save_state()
         except Exception:  # pylint: disable=broad-exception-caught
             logger.exception("Session #%d crashed unexpectedly", session_id)
             session.state = TaskSessionState.FAILED
@@ -352,17 +358,22 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             self._session_tasks.pop(session_id, None)
 
     async def _wait_for_dependencies(self, session: TaskSession) -> None:
-        """Block until all sessions in ``depends_on`` have completed."""
+        """Block until all sessions in ``depends_on`` have completed.
+
+        Raises :class:`TaskExecutionError` if any dependency failed,
+        preventing this session from running against an incomplete codebase.
+        """
         while self._running:
             all_done = True
             for dep_id in session.depends_on:
                 dep = self._sessions.get(dep_id)
                 if dep is None:
                     continue
-                if dep.state not in (
-                    TaskSessionState.COMPLETED,
-                    TaskSessionState.FAILED,
-                ):
+                if dep.state == TaskSessionState.FAILED:
+                    raise TaskExecutionError(
+                        f"Dependency #{dep_id} ({dep.parent_subject}) failed"
+                    )
+                if dep.state != TaskSessionState.COMPLETED:
                     all_done = False
                     break
             if all_done:
@@ -400,6 +411,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                 result.merge_sha,
             )
         elif not result.success:
+            session.merge_ready = False
             session.errors.append(f"merge failed: {result.error}")
             logger.warning(
                 "Session %d: merge failed: %s", result.session_id, result.error
@@ -547,7 +559,8 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         """Submit multiple tasks as a batch with optional dependencies.
 
         Each task dict may contain ``prompt``, ``subject``, ``work_dir``,
-        and ``depends_on`` (list of task IDs within the batch).
+        and ``depends_on``.  Dependencies can be **int** (0-based index)
+        or **str** (the ``key`` of a preceding task in the batch).
 
         Returns ``{"group_id": ..., "tasks": [{"task_id": ..., "status": ...}]}``.
         """
@@ -556,8 +569,8 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         if not group_id:
             group_id = f"batch-{int(_time.time() * 1000)}"
 
-        results = []
-        id_map: dict[int, int] = {}
+        results: list[dict[str, Any]] = []
+        dep_map: dict[int | str, int] = {}
 
         for idx, task in enumerate(tasks):
             r = self.submit_task(
@@ -566,19 +579,22 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                 work_dir=task.get("work_dir", ""),
             )
             task_id = r["task_id"]
-            id_map[idx] = task_id
+            dep_map[idx] = task_id
+            task_key = task.get("key", "")
+            if task_key:
+                dep_map[task_key] = task_id
 
             session = self._sessions[task_id]
             session.group_id = group_id
-
-            raw_deps = task.get("depends_on", [])
-            resolved_deps = []
-            for dep in raw_deps:
-                if isinstance(dep, int) and dep in id_map:
-                    resolved_deps.append(id_map[dep])
-                elif isinstance(dep, int):
-                    resolved_deps.append(dep)
-            session.depends_on = resolved_deps
+            session.depends_on = [
+                dep_map[d]
+                for d in task.get("depends_on", [])
+                if isinstance(d, (int, str)) and d in dep_map
+            ] + [
+                d
+                for d in task.get("depends_on", [])
+                if isinstance(d, int) and d not in dep_map
+            ]
 
             results.append({"task_id": task_id, "status": "submitted"})
 
