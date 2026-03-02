@@ -11,13 +11,9 @@ build/
 .mcp.env
 
 # Runtime data
-data/logs/
-data/runs/
-data/reports/
-data/state/
-data/traces/
-data/prompt_tasks/
-data/live_state.json
+config.yaml
+golem/data
+tasks/
 
 # Daemon
 *.pid
