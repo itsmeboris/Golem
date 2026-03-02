@@ -101,13 +101,15 @@ The daemon is the single execution engine. All task execution flows through it, 
 
 ```mermaid
 flowchart TB
-    cli["golem run -p / -f"] -- "HTTP POST /api/submit" --> daemon
-    api["External Tool / AI"] -- "HTTP POST /api/submit" --> daemon
+    cli["golem run -p / -f"] -- "POST /api/submit" --> daemon
+    api["External Tool / AI"] -- "POST /api/submit" --> daemon
+    batch["Batch Submit"] -- "POST /api/submit/batch" --> daemon
     drop["File Drop<br/>data/submissions/*.json"] --> daemon
     tracker["Issue Tracker<br/>(plugin)"] -. "poll" .-> daemon
 
     subgraph daemon ["Golem Daemon"]
-        flow["Flow Engine"] --> super["Supervisor"]
+        flow["Flow Engine"] --> preflight["Preflight Checks"]
+        preflight --> super["Supervisor"]
         super -- "decompose" --> plan["Subtask Plan"]
 
         plan --> claude1["Claude CLI<br/>Instance 1"]
@@ -117,17 +119,19 @@ flowchart TB
         claude1 --> val["Validation Agent"]
         claude2 --> val
         claude3 --> val
+
+        val -- PASS --> mq["Merge Queue"]
+        val -- PARTIAL --> retry["Retry"]
+        retry --> plan
     end
 
-    val -- PASS --> commit["Git Commit<br/>+ Notify Team"]
+    mq -- "rebase + merge" --> commit["Git Commit<br/>+ Notify Team"]
     val -- FAIL --> report["Report Failure<br/>+ Notify Team"]
-    val -- PARTIAL --> retry["Retry"]
-    retry --> plan
 ```
 
 ### Submitting Tasks
 
-There are three ways to submit work to the daemon:
+There are four ways to submit work to the daemon:
 
 | Method | How | Best for |
 |--------|-----|----------|
@@ -144,21 +148,25 @@ Each task follows a state machine with automatic transitions:
 
 ```mermaid
 flowchart LR
-    A(["Task Received"]) --> B["PLANNING"]
-    B --> C["RUNNING"]
+    A(["Task Received"]) --> B["DETECTED"]
+    B -- "deps met /<br/>grace elapsed" --> C["RUNNING"]
     C --> D["VALIDATING"]
-    D -- PASS --> E(["COMPLETED"])
-    D -- PARTIAL --> C
+    D -- PASS --> MQ["Merge Queue"]
+    MQ --> E(["COMPLETED"])
+    D -- PARTIAL --> R["RETRYING"]
+    R --> C
     D -- FAIL --> F(["FAILED"])
     C -- "timeout /<br/>budget" --> F
+    C -. "infra error" .-> C
 ```
 
 | State | What happens |
 |-------|-------------|
-| **PLANNING** | Supervisor decomposes the task into subtasks |
-| **RUNNING** | Claude instances execute subtasks in isolated worktrees |
+| **DETECTED** | Task received; waits for dependency resolution and grace deadline |
+| **RUNNING** | Claude instances execute in isolated worktrees (infra failures auto-retry) |
 | **VALIDATING** | A separate validation agent reviews the work |
-| **COMPLETED** | Validated, committed, merged, and team notified |
+| **RETRYING** | Partial result — agent retries with validation feedback |
+| **COMPLETED** | Validated, merged via merge queue, and team notified |
 | **FAILED** | Budget exceeded, timeout hit, or validation failed after retries |
 
 ### Parallel Tasks & Git Worktrees
