@@ -22,6 +22,7 @@ from .core.cli_wrapper import CLIConfig, CLIType, invoke_cli_monitored
 from .core.config import PROJECT_ROOT, GolemFlowConfig
 from .core.json_extract import extract_json
 from .core.flow_base import _write_prompt, _write_trace
+from .core.log_context import SessionLogAdapter
 
 from .committer import commit_changes
 from .event_tracker import TaskEventTracker
@@ -67,6 +68,11 @@ class TaskSupervisor:
         self._work_dir_override = work_dir_override
         self._base_work_dir: str = ""
         self._worktree_path: str = ""
+        self._slog = SessionLogAdapter(
+            logger,
+            session_id=session.parent_issue_id,
+            subject=session.parent_subject,
+        )
 
     # -- Profile-based helpers -------------------------------------------------
 
@@ -149,11 +155,10 @@ class TaskSupervisor:
             try:
                 self._worktree_path = create_worktree(self._base_work_dir, issue_id)
                 work_dir = self._worktree_path
-                logger.info("Session %s: using worktree at %s", issue_id, work_dir)
+                self._slog.info("Using worktree at %s", work_dir)
             except RuntimeError as wt_err:
-                logger.warning(
-                    "Session %s: worktree creation failed (%s), using shared dir",
-                    issue_id,
+                self._slog.warning(
+                    "Worktree creation failed (%s), using shared dir",
                     wt_err,
                 )
 
@@ -164,9 +169,8 @@ class TaskSupervisor:
             self._emit_supervisor_event("Fetching child issues...")
             children = self._get_child_tasks(issue_id)
             children.sort(key=lambda c: c["id"])  # Execute in creation order
-            logger.info(
-                "Session %s: found %d existing child issues",
-                issue_id,
+            self._slog.info(
+                "Found %d existing child issues",
                 len(children),
             )
 
@@ -178,9 +182,8 @@ class TaskSupervisor:
                 )
                 children = await self._decompose(issue_id, work_dir)
                 if not children:
-                    logger.info(
-                        "Session %s: decompose returned no children, falling back to monolithic",
-                        issue_id,
+                    self._slog.info(
+                        "Decompose returned no children, falling back to monolithic",
                     )
                     await self._run_monolithic(issue_id, work_dir, start)
                     return
@@ -263,7 +266,7 @@ class TaskSupervisor:
                 issue_id,
                 comment=f"Golem supervisor failed: {exc}",
             )
-            logger.error("Session %s: supervisor failed: %s", issue_id, exc)
+            self._slog.error("Supervisor failed: %s", exc)
 
         finally:
             # Clean up worktree (merge handled in _commit_and_complete)
@@ -281,7 +284,7 @@ class TaskSupervisor:
 
     async def _decompose(self, issue_id: int, work_dir: str) -> list[dict[str, Any]]:
         """Spawn a decompose agent, parse JSON, create child tasks."""
-        logger.info("Session %s: decomposing into subtasks", issue_id)
+        self._slog.info("Decomposing into subtasks")
 
         description = self._get_description(issue_id)
         prompt = self._format_prompt(
@@ -322,7 +325,7 @@ class TaskSupervisor:
             return []
         parsed = extract_json(str(raw_output), require_key="subtasks")
         if not parsed or not isinstance(parsed.get("subtasks"), list):
-            logger.warning("Session %s: decompose output has no subtasks", issue_id)
+            self._slog.warning("Decompose output has no subtasks")
             return []
         return parsed["subtasks"]
 
@@ -337,9 +340,8 @@ class TaskSupervisor:
             child_id = self._create_child(issue_id, subject, desc)
             if child_id:
                 children.append({"id": child_id, "subject": subject})
-                logger.info(
-                    "Session %s: created subtask #%s: %s",
-                    issue_id,
+                self._slog.info(
+                    "Created subtask #%s: %s",
                     child_id,
                     subject,
                 )
@@ -356,9 +358,8 @@ class TaskSupervisor:
         prior_results: list[SubtaskResult],
     ) -> SubtaskResult:
         """Spawn a worker agent for one subtask, optionally validate + retry."""
-        logger.info(
-            "Session %s: executing subtask #%s: %s",
-            parent_id,
+        self._slog.info(
+            "Executing subtask #%s: %s",
             child_id,
             child_subject,
         )
@@ -430,7 +431,7 @@ class TaskSupervisor:
 
         except Exception as exc:  # pylint: disable=broad-exception-caught
             elapsed = time.time() - start
-            logger.error("Session %s: subtask #%s failed: %s", parent_id, child_id, exc)
+            self._slog.error("Subtask #%s failed: %s", child_id, exc)
             self._update_task(child_id, comment=f"Subtask failed: {exc}")
             return SubtaskResult(
                 issue_id=child_id,
@@ -636,7 +637,7 @@ class TaskSupervisor:
         work_dir: str,
     ) -> None:
         """Spawn a summarize agent to post a closing comment on the parent."""
-        logger.info("Session %s: generating summary", issue_id)
+        self._slog.info("Generating summary")
 
         subtask_lines = []
         for r in results:
@@ -695,9 +696,8 @@ class TaskSupervisor:
         self.session.validation_cost_usd += verdict.cost_usd
         self.session.total_cost_usd += verdict.cost_usd
 
-        logger.info(
-            "Session %s: overall validation verdict=%s confidence=%.2f",
-            issue_id,
+        self._slog.info(
+            "Overall validation verdict=%s confidence=%.2f",
             verdict.verdict,
             verdict.confidence,
         )
@@ -718,9 +718,9 @@ class TaskSupervisor:
             )
             if cr.committed:
                 self.session.commit_sha = cr.sha
-                logger.info("Session %s: committed %s", issue_id, cr.sha)
+                self._slog.info("Committed %s", cr.sha)
             elif cr.error:
-                logger.warning("Session %s: commit failed: %s", issue_id, cr.error)
+                self._slog.warning("Commit failed: %s", cr.error)
                 # Commit failed — escalate to human instead of silently closing.
                 # The worktree branch is preserved by the finally block (FAILED state).
                 self.session.state = TaskSessionState.FAILED
@@ -747,7 +747,7 @@ class TaskSupervisor:
                 if merge_sha:
                     self.session.commit_sha = merge_sha
                     self._emit_supervisor_event(f"Merged worktree branch → {merge_sha}")
-                    logger.info("Session %s: merged to base → %s", issue_id, merge_sha)
+                    self._slog.info("Merged to base → %s", merge_sha)
                     # Mark worktree as handled so finally block skips cleanup
                     self._worktree_path = ""
                 else:
@@ -801,9 +801,8 @@ class TaskSupervisor:
                 f"Validation: {self.session.validation_verdict}{extras}"
             ),
         )
-        logger.info(
-            "Session %s: completed (supervisor, %d/%d subtasks, $%.2f)",
-            issue_id,
+        self._slog.info(
+            "Completed (supervisor, %d/%d subtasks, $%.2f)",
             completed_count,
             total_count,
             self.session.total_cost_usd,
@@ -878,9 +877,8 @@ class TaskSupervisor:
                 f"Retries: {self.session.retry_count}"
             ),
         )
-        logger.warning(
-            "Session %s: escalated (supervisor, verdict=%s)",
-            issue_id,
+        self._slog.warning(
+            "Escalated (supervisor, verdict=%s)",
             verdict.verdict,
         )
 
@@ -891,7 +889,7 @@ class TaskSupervisor:
     ) -> None:
         """Fallback to single-agent run_task.txt when decompose fails."""
         self.session.execution_mode = "monolithic"
-        logger.info("Session %s: running in monolithic fallback mode", issue_id)
+        self._slog.info("Running in monolithic fallback mode")
 
         description = self._get_description(issue_id)
         prompt = self._format_prompt(
@@ -984,11 +982,7 @@ class TaskSupervisor:
             try:
                 self._save_callback()
             except Exception as exc:  # pylint: disable=broad-exception-caught
-                logger.warning(
-                    "Session %s: checkpoint failed: %s",
-                    self.session.parent_issue_id,
-                    exc,
-                )
+                self._slog.warning("Checkpoint failed: %s", exc)
 
     @staticmethod
     def _persist_trace(event_id: str, prompt: str, result) -> None:
