@@ -16,6 +16,10 @@ from golem.validation import (
 )
 
 
+def _noop_callback(_event: object) -> None:
+    pass
+
+
 class TestValidationVerdict:
     def test_defaults(self):
         v = ValidationVerdict()
@@ -393,3 +397,37 @@ class TestRunValidation:
             work_dir="/tmp",
         )
         assert v.verdict == "PASS"
+
+    @patch("golem.validation.invoke_cli_monitored")
+    @patch("golem.validation.invoke_cli")
+    @patch("golem.validation.get_git_diff", return_value="(no changes)")
+    def test_callback_uses_monitored(self, _, mock_quiet, mock_monitored):
+        mock_monitored.return_value = SimpleNamespace(
+            output={"result": {"verdict": "PASS", "confidence": 0.9}},
+            cost_usd=0.08,
+        )
+        v = run_validation(
+            issue_id=1,
+            subject="test",
+            description="desc",
+            session_data={},
+            work_dir="/tmp",
+            callback=_noop_callback,
+        )
+        assert v.verdict == "PASS"
+        mock_monitored.assert_called_once()
+        mock_quiet.assert_not_called()
+
+    @patch("golem.validation.invoke_cli_monitored", side_effect=RuntimeError("boom"))
+    @patch("golem.validation.get_git_diff", return_value="(no changes)")
+    def test_callback_retries_with_monitored(self, _, mock_monitored):
+        v = run_validation(
+            issue_id=1,
+            subject="test",
+            description="desc",
+            session_data={},
+            work_dir="/tmp",
+            callback=_noop_callback,
+        )
+        assert v.verdict == "FAIL"
+        assert mock_monitored.call_count == 2

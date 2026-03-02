@@ -20,7 +20,13 @@ import subprocess
 from dataclasses import dataclass, field
 from typing import Any
 
-from .core.cli_wrapper import CLIConfig, CLIType, invoke_cli
+from .core.cli_wrapper import (
+    CLIConfig,
+    CLIType,
+    ProgressCallback,
+    invoke_cli,
+    invoke_cli_monitored,
+)
 from .core.json_extract import extract_json
 
 from .prompts import format_prompt
@@ -262,6 +268,7 @@ def run_validation(
     model: str = "opu",
     budget_usd: float = 0.50,
     timeout_seconds: int = 120,
+    callback: ProgressCallback | None = None,
 ) -> ValidationVerdict:
     """Run the validation agent and return a structured verdict.
 
@@ -284,6 +291,8 @@ def run_validation(
         Max spend for the validation call.
     timeout_seconds
         Subprocess timeout.
+    callback
+        Optional stream-json event callback for real-time dashboard output.
     """
     prompt = _build_validation_prompt(
         issue_id, subject, description, session_data, work_dir
@@ -294,33 +303,51 @@ def run_validation(
         model=model,
         max_budget_usd=budget_usd,
         timeout_seconds=timeout_seconds,
-        mcp_servers=[],  # No MCP — validation is read-only analysis
+        mcp_servers=[],
     )
 
-    max_attempts = 2
+    return _invoke_with_retry(prompt, cli_config, callback)
+
+
+_MAX_VALIDATION_ATTEMPTS = 2
+
+
+def _invoke_with_retry(
+    prompt: str,
+    cli_config: CLIConfig,
+    callback: ProgressCallback | None,
+) -> ValidationVerdict:
     last_exc: Exception | None = None
-    for attempt in range(max_attempts):
+    for attempt in range(_MAX_VALIDATION_ATTEMPTS):
         try:
-            result = invoke_cli(prompt, cli_config)
+            if callback:
+                result = invoke_cli_monitored(prompt, cli_config, callback)
+            else:
+                result = invoke_cli(prompt, cli_config)
             return _parse_validation_output(result)
         except Exception as exc:  # pylint: disable=broad-exception-caught
             last_exc = exc
-            if attempt < max_attempts - 1:
+            if attempt < _MAX_VALIDATION_ATTEMPTS - 1:
                 logger.warning(
                     "Validation agent failed (attempt %d/%d), retrying: %s",
                     attempt + 1,
-                    max_attempts,
+                    _MAX_VALIDATION_ATTEMPTS,
                     exc,
                 )
             else:
                 logger.error(
-                    "Validation agent failed after %d attempts: %s", max_attempts, exc
+                    "Validation agent failed after %d attempts: %s",
+                    _MAX_VALIDATION_ATTEMPTS,
+                    exc,
                 )
 
     return ValidationVerdict(
         verdict="FAIL",
         confidence=0.0,
-        summary=f"Validation agent error after {max_attempts} attempts: {last_exc}",
+        summary=(
+            f"Validation agent error after "
+            f"{_MAX_VALIDATION_ATTEMPTS} attempts: {last_exc}"
+        ),
         concerns=["Validation agent itself failed (transient error)"],
         task_type="other",
         cost_usd=0.0,

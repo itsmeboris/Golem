@@ -62,7 +62,7 @@ class TaskSupervisor:
         self._on_milestone = on_milestone
         self._work_dir_lock = work_dir_lock or asyncio.Lock()
         self._save_callback = save_callback
-        self.profile = profile
+        self.profile: GolemProfile = profile  # type: ignore[assignment]
         self._event_callback = event_callback
         self._work_dir_override = work_dir_override
         self._base_work_dir: str = ""
@@ -557,6 +557,12 @@ class TaskSupervisor:
         """Run per-subtask validation using the shared validation pipeline."""
         from functools import partial
 
+        tracker = TaskEventTracker(
+            session_id=child_id,
+            on_milestone=self._on_milestone,
+        )
+        callback = self._chain_event_callback(tracker.handle_event)
+
         description = self._get_description(child_id)
         session_data = self.session.to_dict()
 
@@ -572,6 +578,7 @@ class TaskSupervisor:
                 model=self.task_config.validation_model,
                 budget_usd=self.task_config.validation_budget_usd,
                 timeout_seconds=self.task_config.validation_timeout_seconds,
+                callback=callback,
             ),
         )
 

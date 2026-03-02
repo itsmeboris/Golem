@@ -33,9 +33,11 @@ pyrightconfig.json
 *.swo
 *~
 
-# Coverage
+# Testing
 .coverage
 htmlcov/
+.pytest_cache/
+pytest-of-*/
 
 # OS
 .DS_Store

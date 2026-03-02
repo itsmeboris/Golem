@@ -740,9 +740,7 @@ class TestRunValidation:
             summary="good",
             cost_usd=0.1,
         )
-        with patch.object(
-            orch, "_run_validation_in_executor", return_value=verdict
-        ):
+        with patch.object(orch, "_run_validation_in_executor", return_value=verdict):
             result = await orch._run_validation(42, "/work")
 
         assert result.verdict == "PASS"

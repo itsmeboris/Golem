@@ -214,6 +214,7 @@ def _clean_env(env: dict[str, str] | None = None) -> dict[str, str]:
     for key in list(base):
         if key == "CLAUDECODE" or key.startswith("CLAUDE_CODE_"):
             del base[key]
+    base.pop("AGENT_WORKTREE", None)
     return base
 
 
@@ -512,24 +513,23 @@ def _get_subprocess_env(config: CLIConfig):
             config.cwd and Path(config.cwd).resolve() == _PROJECT_ROOT.resolve()
         )
         if config.cwd and not cwd_is_project_root:
-            # Explicit CWD (e.g. worktree) — use as-is.
             cwd = config.cwd
-            cwd_cleanup: Callable[[], None] = lambda: None
-        else:
-            # No CWD or CWD is the project root — use a temp dir so
-            # _prepare_work_dir runs its settings sanitization.
-            # Running directly in the project root would skip
-            # _prepare_work_dir (which checks for CWD == _PROJECT_ROOT),
-            # leaving restrictive interactive-mode permissions in
-            # .claude/settings.json that block Bash for child agents.
-            cwd = tempfile.mkdtemp(prefix="flow_sandbox_")
-            _cwd = cwd  # capture for closure
 
-            def cwd_cleanup():
+            def cwd_cleanup() -> None:
+                pass
+
+        else:
+            cwd = tempfile.mkdtemp(prefix="flow_sandbox_")
+            _cwd = cwd
+
+            def cwd_cleanup() -> None:  # type: ignore[no-redef]
                 shutil.rmtree(_cwd, ignore_errors=True)
 
         workdir_cleanup = _prepare_work_dir(cwd, config.mcp_servers)
         env = _clean_env()
+        # Ensure AGENT_WORKTREE is fully controlled by this function
+        # rather than inherited from the parent process environment.
+        env.pop("AGENT_WORKTREE", None)
         # Skip heavy pre-commit tests in agent worktrees — the supervisor
         # runs its own validation pass before committing.
         if config.cwd and not cwd_is_project_root:
@@ -724,6 +724,7 @@ def _invoke_cli_quiet(prompt: str, config: CLIConfig) -> CLIResult:
             _untrack_proc(proc.pid)
         cleanup()
 
+    assert proc is not None
     if proc.returncode != 0:
         raise CLIError(
             f"CLI failed with exit code {proc.returncode}",
@@ -866,6 +867,7 @@ def invoke_cli_raw(prompt: str, config: CLIConfig) -> str:
             _untrack_proc(proc.pid)
         cleanup()
 
+    assert proc is not None
     if proc.returncode != 0:
         raise CLIError(
             f"CLI failed: {stderr}",

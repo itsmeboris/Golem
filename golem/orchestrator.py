@@ -204,7 +204,7 @@ class TaskOrchestrator:
         self._on_progress = on_progress
         self._work_dir_lock = work_dir_lock or asyncio.Lock()
         self._save_callback = save_callback
-        self.profile = profile
+        self.profile: GolemProfile = profile  # type: ignore[assignment]
         self._event_callback = event_callback
         self._work_dir_override = work_dir_override
         self._last_checkpoint_time: float = 0.0
@@ -441,6 +441,12 @@ class TaskOrchestrator:
         self.session.state = TaskSessionState.VALIDATING
         self.session.updated_at = _now_iso()
 
+        tracker = TaskEventTracker(
+            session_id=issue_id,
+            on_milestone=self._on_milestone,
+        )
+        callback = self._chain_event_callback(tracker.handle_event)
+
         description = self._get_description(issue_id)
         verdict = await self._run_validation_in_executor(
             issue_id=issue_id,
@@ -451,6 +457,7 @@ class TaskOrchestrator:
             model=self.task_config.validation_model,
             budget_usd=self.task_config.validation_budget_usd,
             timeout_seconds=self.task_config.validation_timeout_seconds,
+            callback=callback,
         )
         self._apply_verdict(verdict)
 
@@ -635,6 +642,12 @@ class TaskOrchestrator:
         self.session.state = TaskSessionState.VALIDATING
         self.session.updated_at = _now_iso()
 
+        retry_val_tracker = TaskEventTracker(
+            session_id=issue_id,
+            on_milestone=self._on_milestone,
+        )
+        retry_val_callback = self._chain_event_callback(retry_val_tracker.handle_event)
+
         description = self._get_description(issue_id)
         session_data = self.session.to_dict()
 
@@ -647,6 +660,7 @@ class TaskOrchestrator:
             model=self.task_config.validation_model,
             budget_usd=self.task_config.validation_budget_usd,
             timeout_seconds=self.task_config.validation_timeout_seconds,
+            callback=retry_val_callback,
         )
         self._apply_verdict(retry_verdict)
 
@@ -692,8 +706,8 @@ class TaskOrchestrator:
 
     def _write_report(self) -> None:
         """Write a Markdown detail report and append to the index."""
+        issue_id = self.session.parent_issue_id
         try:
-            issue_id = self.session.parent_issue_id
             writer = ReportWriter(_REPORT_DIR, _REPORT_INDEX)
 
             tools_str = ", ".join(self.session.tools_called) or "none"
@@ -763,8 +777,8 @@ class TaskOrchestrator:
 
     def _record_run(self) -> None:
         """Append a RunRecord to runs.jsonl."""
+        issue_id = self.session.parent_issue_id
         try:
-            issue_id = self.session.parent_issue_id
             record = RunRecord(
                 event_id=f"golem-{issue_id}",
                 flow="golem",
