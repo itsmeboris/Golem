@@ -28,7 +28,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .core.config import DATA_DIR, DashboardConfig, load_config
+from .core.config import DATA_DIR, DaemonConfig, DashboardConfig, load_config
 from .core.defaults import _now_iso
 from .core.daemon_utils import (
     daemonize,
@@ -116,8 +116,10 @@ def _print_cli_summary(session):
             print(f"    - {err[:120]}")
 
 
-def _print_run_header(parent_id, subject, profile, tc, cwd_override):
+def _print_run_header(parent_id, subject, profile, tc, cwd_override, daemon_cfg=None):
     """Print task info banner at the start of a CLI run."""
+    if daemon_cfg is None:
+        daemon_cfg = DaemonConfig()
     print(f"\n{'='*60}")
     print(f"  GOLEM: #{parent_id}")
     print(f"{'='*60}")
@@ -134,8 +136,10 @@ def _print_run_header(parent_id, subject, profile, tc, cwd_override):
 
     mcp_servers = profile.tool_provider.servers_for_subject(subject)
     model = tc.task_model if tc else "sonnet"
-    budget = tc.budget_per_task_usd if tc else 10.0
-    timeout = tc.task_timeout_seconds if tc else 1800
+    budget = tc.budget_per_task_usd if tc else daemon_cfg.fallback_budget_usd
+    timeout = (
+        tc.task_timeout_seconds if tc else daemon_cfg.fallback_task_timeout_seconds
+    )
 
     print(f"  Profile: {profile.name}")
     print(f"  Model: {model}")
@@ -225,10 +229,11 @@ def run_issue(  # pylint: disable=too-many-arguments,too-many-locals
 
             profile.tool_provider = NullToolProvider()
     tc = config.get_flow_config("golem")
+    daemon_cfg = config.daemon
     subject = subject_override or profile.task_source.get_task_subject(parent_id)
 
-    _print_run_header(parent_id, subject, profile, tc, cwd_override)
-    budget = tc.budget_per_task_usd if tc else 10.0
+    _print_run_header(parent_id, subject, profile, tc, cwd_override, daemon_cfg)
+    budget = tc.budget_per_task_usd if tc else daemon_cfg.fallback_budget_usd
 
     if dry:
         print("\n  [DRY RUN] — would execute. Remove --dry to run.")
@@ -468,13 +473,15 @@ def _cmd_run_prompt(args, config, prompt_text):
     validation, commit, and merge-back.
     """
     port = config.dashboard.port if config.dashboard else DashboardConfig.port
-    _ensure_daemon(args, config, port)
+    daemon_cfg = config.daemon
+    _ensure_daemon(args, config, port, daemon_cfg=daemon_cfg)
 
     subject = getattr(args, "subject", "") or ""
     result = _submit_to_daemon(
         prompt=prompt_text,
         subject=subject,
         port=port,
+        timeout=daemon_cfg.http_submit_timeout,
     )
 
     if not result:
@@ -504,20 +511,23 @@ def _cmd_run_file(args, config, file_path):
 # ---------------------------------------------------------------------------
 
 
-def _daemon_health(port: int) -> bool:
+def _daemon_health(port: int, timeout: int = 3) -> bool:
     """Probe the daemon health endpoint.  Returns True if healthy."""
     try:
         url = f"http://127.0.0.1:{port}/api/health"
         req = urllib.request.Request(url, method="GET")
-        with urllib.request.urlopen(req, timeout=3) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.status == 200
     except (urllib.error.URLError, OSError):
         return False
 
 
-def _ensure_daemon(args, config, port: int) -> None:
+def _ensure_daemon(args, config, port: int, daemon_cfg=None) -> None:
     """Make sure the daemon is running; start it in background if not."""
-    if _daemon_health(port):
+    if daemon_cfg is None:
+        daemon_cfg = DaemonConfig()
+    hc_timeout = daemon_cfg.health_check_timeout
+    if _daemon_health(port, timeout=hc_timeout):
         return
 
     pid = read_pid(DEFAULT_PID_FILE)
@@ -527,7 +537,7 @@ def _ensure_daemon(args, config, port: int) -> None:
         except OSError:
             remove_pid(DEFAULT_PID_FILE)
 
-    if not _daemon_health(port):
+    if not _daemon_health(port, timeout=hc_timeout):
         print("  Starting daemon in background...")
         import subprocess as _sp
 
@@ -550,9 +560,9 @@ def _ensure_daemon(args, config, port: int) -> None:
                 start_new_session=True,
             )
 
-        for _ in range(30):
-            time.sleep(0.5)
-            if _daemon_health(port):
+        for _ in range(daemon_cfg.startup_max_iterations):
+            time.sleep(daemon_cfg.startup_poll_seconds)
+            if _daemon_health(port, timeout=hc_timeout):
                 print(f"  Daemon started (log: {bg_log})")
                 return
 
@@ -569,6 +579,7 @@ def _submit_to_daemon(
     subject: str = "",
     file_path: str = "",
     work_dir: str = "",
+    timeout: int = 10,
 ) -> dict | None:
     """POST a task to the daemon's /api/submit endpoint."""
     payload: dict[str, Any] = {}
@@ -587,7 +598,7 @@ def _submit_to_daemon(
         url, data=data, headers={"Content-Type": "application/json"}, method="POST"
     )
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")

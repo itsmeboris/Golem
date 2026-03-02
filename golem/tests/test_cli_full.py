@@ -645,7 +645,7 @@ class TestEnsureDaemon:
         args = SimpleNamespace(config=None)
         config = MagicMock()
         _ensure_daemon(args, config, 8082)
-        mock_health.assert_called_once_with(8082)
+        mock_health.assert_called_once_with(8082, timeout=3)
 
     @patch("golem.cli._daemon_health", side_effect=[False, False, True])
     @patch("golem.cli.read_pid", return_value=None)

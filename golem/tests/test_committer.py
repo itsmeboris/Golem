@@ -17,7 +17,9 @@ class TestCleanSubject:
         assert _clean_subject("[AGENT] Fix the parser") == "Fix the parser"
 
     def test_strips_markdown_header(self):
-        assert _clean_subject("## Add type hints to cli.py") == "Add type hints to cli.py"
+        assert (
+            _clean_subject("## Add type hints to cli.py") == "Add type hints to cli.py"
+        )
 
     def test_strips_combined(self):
         raw = "[AGENT] ## Fix swallowed exceptions — add logging"
