@@ -12,6 +12,7 @@ from golem.core.control_api import (
     _maybe_start_tick,
     _maybe_stop_tick,
     _require_admin,
+    _require_api_key,
     _require_polling,
     wire_control_api,
 )
@@ -31,11 +32,13 @@ class TestWireControlApi:
             polling_trigger=pt,
             dispatcher=disp,
             admin_token="secret",
+            api_key="my-api-key",
             golem_flow=gf,
         )
         assert control_api._polling_trigger is pt
         assert control_api._dispatcher is disp
         assert control_api._admin_token == "secret"
+        assert control_api._api_key == "my-api-key"
         assert control_api._golem_flow is gf
 
     def test_resets_start_time(self):
@@ -157,6 +160,45 @@ class TestRequireAdmin:
             _require_admin(req)
 
 
+class TestRequireApiKey:
+    def test_no_key_configured_allows_all(self):
+        control_api._api_key = ""
+        req = MagicMock()
+        req.headers = {}
+        req.query_params = {}
+        _require_api_key(req)
+
+    def test_bearer_token_valid(self):
+        control_api._api_key = "s3cret"
+        req = MagicMock()
+        req.headers = {"authorization": "Bearer s3cret"}
+        req.query_params = {}
+        _require_api_key(req)
+
+    def test_query_param_token_valid(self):
+        control_api._api_key = "s3cret"
+        req = MagicMock()
+        req.headers = {}
+        req.query_params = {"token": "s3cret"}
+        _require_api_key(req)
+
+    def test_wrong_key_rejected(self):
+        control_api._api_key = "s3cret"
+        req = MagicMock()
+        req.headers = {"authorization": "Bearer wrong"}
+        req.query_params = {}
+        with pytest.raises(Exception, match="Invalid or missing API key"):
+            _require_api_key(req)
+
+    def test_missing_key_rejected(self):
+        control_api._api_key = "s3cret"
+        req = MagicMock()
+        req.headers = {}
+        req.query_params = {}
+        with pytest.raises(Exception, match="Invalid or missing API key"):
+            _require_api_key(req)
+
+
 # ---------------------------------------------------------------------------
 # Router endpoints (when FASTAPI_AVAILABLE is True)
 # ---------------------------------------------------------------------------
@@ -184,10 +226,13 @@ def _wire_deps():
     wire_control_api()
 
 
-def _make_request(headers=None, query_params=None, json_data=None):
+_SENTINEL = object()
+
+
+def _make_request(headers=_SENTINEL, query_params=None, json_data=None):
     """Build a mock Request with the given attributes."""
     req = AsyncMock()
-    req.headers = headers or {"authorization": "Bearer tok"}
+    req.headers = {"authorization": "Bearer tok"} if headers is _SENTINEL else headers
     req.query_params = query_params or {}
     req.json = AsyncMock(return_value=json_data or {})
     return req
@@ -621,6 +666,143 @@ class TestGetSessionEndpoint:
         control_api._golem_flow = None
         with pytest.raises(Exception, match="not ready"):
             await get_session(1)
+
+
+# ---------------------------------------------------------------------------
+# API key auth on submit endpoints
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def _wire_deps_with_api_key():
+    """Set up module state with an API key configured."""
+    gf = MagicMock()
+    gf.submit_task = MagicMock(return_value={"task_id": 99, "status": "submitted"})
+    gf.submit_batch = MagicMock(
+        return_value={
+            "group_id": "g",
+            "tasks": [{"task_id": 99, "status": "submitted"}],
+        }
+    )
+    wire_control_api(golem_flow=gf, api_key="test-key")
+    yield
+    wire_control_api()
+
+
+@pytest.mark.skipif(
+    not control_api.FASTAPI_AVAILABLE,
+    reason="FastAPI not installed",
+)
+class TestSubmitApiKeyAuth:
+    @pytest.mark.asyncio
+    async def test_submit_rejects_missing_key(self, _wire_deps_with_api_key):
+        from golem.core.control_api import submit_task
+
+        req = _make_request(
+            headers={},
+            json_data={"prompt": "hello"},
+        )
+        req.query_params = {}
+        with pytest.raises(Exception, match="Invalid or missing API key"):
+            await submit_task(req)
+
+    @pytest.mark.asyncio
+    async def test_submit_rejects_wrong_key(self, _wire_deps_with_api_key):
+        from golem.core.control_api import submit_task
+
+        req = _make_request(
+            headers={"authorization": "Bearer wrong-key"},
+            json_data={"prompt": "hello"},
+        )
+        with pytest.raises(Exception, match="Invalid or missing API key"):
+            await submit_task(req)
+
+    @pytest.mark.asyncio
+    async def test_submit_accepts_valid_bearer(self, _wire_deps_with_api_key):
+        from golem.core.control_api import submit_task
+
+        req = _make_request(
+            headers={"authorization": "Bearer test-key"},
+            json_data={"prompt": "hello"},
+        )
+        result = await submit_task(req)
+        assert result["ok"] is True
+
+    @pytest.mark.asyncio
+    async def test_submit_accepts_valid_query_param(self, _wire_deps_with_api_key):
+        from golem.core.control_api import submit_task
+
+        req = _make_request(
+            headers={},
+            json_data={"prompt": "hello"},
+        )
+        req.query_params = {"token": "test-key"}
+        result = await submit_task(req)
+        assert result["ok"] is True
+
+    @pytest.mark.asyncio
+    async def test_batch_rejects_missing_key(self, _wire_deps_with_api_key):
+        from golem.core.control_api import submit_batch
+
+        req = _make_request(
+            headers={},
+            json_data={"tasks": [{"prompt": "A"}]},
+        )
+        req.query_params = {}
+        with pytest.raises(Exception, match="Invalid or missing API key"):
+            await submit_batch(req)
+
+    @pytest.mark.asyncio
+    async def test_batch_rejects_wrong_key(self, _wire_deps_with_api_key):
+        from golem.core.control_api import submit_batch
+
+        req = _make_request(
+            headers={"authorization": "Bearer wrong-key"},
+            json_data={"tasks": [{"prompt": "A"}]},
+        )
+        with pytest.raises(Exception, match="Invalid or missing API key"):
+            await submit_batch(req)
+
+    @pytest.mark.asyncio
+    async def test_batch_accepts_valid_bearer(self, _wire_deps_with_api_key):
+        from golem.core.control_api import submit_batch
+
+        req = _make_request(
+            headers={"authorization": "Bearer test-key"},
+            json_data={"tasks": [{"prompt": "A"}]},
+        )
+        result = await submit_batch(req)
+        assert result["ok"] is True
+
+
+@pytest.mark.skipif(
+    not control_api.FASTAPI_AVAILABLE,
+    reason="FastAPI not installed",
+)
+class TestSubmitNoApiKey:
+    @pytest.mark.asyncio
+    async def test_submit_open_when_no_key(self, _wire_deps):
+        from golem.core.control_api import submit_task
+
+        req = _make_request(headers={}, json_data={"prompt": "hello"})
+        req.query_params = {}
+        result = await submit_task(req)
+        assert result["ok"] is True
+
+    @pytest.mark.asyncio
+    async def test_batch_open_when_no_key(self, _wire_deps):
+        from golem.core.control_api import submit_batch
+
+        control_api._golem_flow.submit_batch = MagicMock(
+            return_value={
+                "group_id": "g",
+                "tasks": [{"task_id": 1, "status": "submitted"}],
+            }
+        )
+        req = _make_request(headers={}, json_data={"tasks": [{"prompt": "A"}]})
+        req.query_params = {}
+        result = await submit_batch(req)
+        assert result["ok"] is True
 
 
 # ---------------------------------------------------------------------------

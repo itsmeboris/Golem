@@ -62,6 +62,7 @@ claude:
 dashboard:
   port: 8081
   # admin_token: ${DASHBOARD_ADMIN_TOKEN}
+  # api_key: ${GOLEM_API_KEY}           # protects /api/submit endpoints; empty = open
 
 # Notifications (enable one or neither; Slack takes priority if both enabled)
 # Slack (Block Kit messages via incoming webhook)

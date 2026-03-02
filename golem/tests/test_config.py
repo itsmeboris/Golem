@@ -186,6 +186,39 @@ teams:
         assert config.daemon.health_check_timeout == 5
         assert config.daemon.http_submit_timeout == 20
         assert config.dashboard.port == 9090
+        assert config.dashboard.api_key == ""
+
+    def test_dashboard_api_key_parsed(self, tmp_path, monkeypatch):
+        config_content = """\
+flows:
+  golem:
+    projects:
+      - proj
+dashboard:
+  port: 8081
+  api_key: my-key
+"""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(config_content, encoding="utf-8")
+        monkeypatch.setattr("golem.core.config.load_dotenv", lambda p: None)
+        config = load_config(config_file)
+        assert config.dashboard.api_key == "my-key"
+
+    def test_dashboard_api_key_env_expansion(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("GOLEM_API_KEY", "from-env")
+        config_content = """\
+flows:
+  golem:
+    projects:
+      - proj
+dashboard:
+  api_key: ${GOLEM_API_KEY}
+"""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(config_content, encoding="utf-8")
+        monkeypatch.setattr("golem.core.config.load_dotenv", lambda p: None)
+        config = load_config(config_file)
+        assert config.dashboard.api_key == "from-env"
 
 
 class TestIsValidModel:

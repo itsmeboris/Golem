@@ -109,6 +109,7 @@ class DashboardConfig:
 
     port: int = 8081
     admin_token: str = ""  # empty = admin features disabled
+    api_key: str = ""  # empty = submit endpoints open (no auth)
 
 
 @dataclass
@@ -283,6 +284,7 @@ def _parse_dashboard_config(data: dict[str, Any]) -> DashboardConfig:
     return DashboardConfig(
         port=data.get("port", 8081),
         admin_token=data.get("admin_token", ""),
+        api_key=data.get("api_key", ""),
     )
 
 

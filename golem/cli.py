@@ -426,7 +426,7 @@ async def run_daemon(args, config) -> int:
         print("Golem is not enabled in config", file=sys.stderr)
         return 1
 
-    wire_control_api(golem_flow=flow)
+    wire_control_api(golem_flow=flow, api_key=config.dashboard.api_key)
 
     # Start dashboard
     from .core.dashboard import config_to_snapshot
@@ -509,6 +509,7 @@ def _cmd_run_prompt(args: argparse.Namespace, config: Config, prompt_text: str) 
         port=port,
         work_dir=work_dir,
         timeout=daemon_cfg.http_submit_timeout,
+        api_key=config.dashboard.api_key,
     )
 
     if not result:
@@ -607,6 +608,7 @@ def _submit_to_daemon(
     file_path: str = "",
     work_dir: str = "",
     timeout: int = 10,
+    api_key: str = "",
 ) -> dict | None:
     """POST a task to the daemon's /api/submit endpoint."""
     payload: dict[str, Any] = {}
@@ -621,9 +623,10 @@ def _submit_to_daemon(
 
     url = f"http://127.0.0.1:{port}/api/submit"
     data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        url, data=data, headers={"Content-Type": "application/json"}, method="POST"
-    )
+    headers: dict[str, str] = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))

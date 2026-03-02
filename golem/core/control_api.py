@@ -41,6 +41,7 @@ else:  # pragma: no cover
 _polling_trigger: "PollingTrigger | None" = None
 _dispatcher: "Dispatcher | None" = None
 _admin_token: str = ""
+_api_key: str = ""
 _golem_flow: "Any | None" = None
 _start_time: float = time.time()
 
@@ -49,13 +50,15 @@ def wire_control_api(
     polling_trigger: "PollingTrigger | None" = None,
     dispatcher: "Dispatcher | None" = None,
     admin_token: str = "",
+    api_key: str = "",
     golem_flow: "Any | None" = None,
 ) -> None:
     """Inject runtime dependencies.  Called once at daemon startup."""
-    global _polling_trigger, _dispatcher, _admin_token, _golem_flow, _start_time
+    global _polling_trigger, _dispatcher, _admin_token, _api_key, _golem_flow, _start_time
     _polling_trigger = polling_trigger
     _dispatcher = dispatcher
     _admin_token = admin_token
+    _api_key = api_key
     _golem_flow = golem_flow
     _start_time = time.time()
 
@@ -106,6 +109,24 @@ def _require_admin(request: "Request"):
         token = request.query_params.get("token", "")
     if not token or token != _admin_token:
         raise HTTPException(status_code=401, detail="Invalid admin token")
+
+
+def _require_api_key(request: "Request"):
+    """Raise 401 if an API key is configured and the request lacks it.
+
+    Accepts ``Authorization: Bearer <key>`` header or ``?token=<key>`` query param.
+    When no API key is configured, all requests are allowed (backward compatible).
+    """
+    if not _api_key:
+        return
+    token = ""
+    auth = request.headers.get("authorization", "")
+    if auth.startswith("Bearer "):
+        token = auth[7:]
+    if not token:
+        token = request.query_params.get("token", "")
+    if not token or token != _api_key:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
 if FASTAPI_AVAILABLE:
@@ -177,6 +198,7 @@ if FASTAPI_AVAILABLE:
 
         Returns ``{"ok": true, "task_id": ..., "status": "submitted"}``.
         """
+        _require_api_key(request)
         if _golem_flow is None:
             raise HTTPException(
                 status_code=503,
@@ -262,6 +284,7 @@ if FASTAPI_AVAILABLE:
         ``depends_on`` entries are zero-based indices into the ``tasks`` array.
         Returns ``{"ok": true, "group_id": ..., "tasks": [...]}``.
         """
+        _require_api_key(request)
         if _golem_flow is None:
             raise HTTPException(
                 status_code=503,
