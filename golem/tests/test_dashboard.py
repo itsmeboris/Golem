@@ -702,7 +702,7 @@ class TestMountDashboard:
         app = MagicMock()
         with patch("golem.core.dashboard.FASTAPI_AVAILABLE", False):
             mount_dashboard(app)
-        app.get.assert_not_called()
+        app.get.assert_not_called()  # pylint: disable=no-member
 
     def test_registers_routes(self):
         """When FastAPI is available, routes are registered on the app."""
@@ -710,8 +710,7 @@ class TestMountDashboard:
         with patch("golem.core.dashboard.FASTAPI_AVAILABLE", True):
             with patch("golem.core.dashboard.Query"):
                 mount_dashboard(app, config_snapshot={"model": "opus"})
-        # Verify multiple @app.get() decorators were called
-        assert app.get.call_count >= 5
+        assert app.get.call_count >= 5  # pylint: disable=no-member
 
 
 class TestMountDashboardRoutes:
