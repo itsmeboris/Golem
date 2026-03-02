@@ -21,6 +21,7 @@ from golem.core.dashboard import (
     _read_log_tail,
     _read_sessions,
     _resolve_paths,
+    _session_cost_stats,
     _term_ev,
     config_to_snapshot,
     format_status_text,
@@ -413,6 +414,75 @@ class TestAggregateStats:
 
 
 # ---------------------------------------------------------------------------
+# _session_cost_stats
+# ---------------------------------------------------------------------------
+
+
+class TestSessionCostStats:
+    def test_empty(self):
+        s = _session_cost_stats({})
+        assert s["session_total_cost_usd"] == 0.0
+        assert s["session_avg_cost_usd"] == 0.0
+        assert s["session_max_cost_usd"] == 0.0
+        assert s["budget_utilization"] == 0.0
+
+    def test_non_dict_input(self):
+        s = _session_cost_stats(None)
+        assert s["session_total_cost_usd"] == 0.0
+
+    def test_with_sessions(self):
+        sessions = {
+            "1": {
+                "state": "completed",
+                "total_cost_usd": 2.0,
+                "validation_cost_usd": 0.5,
+                "budget_usd": 10.0,
+            },
+            "2": {
+                "state": "completed",
+                "total_cost_usd": 3.0,
+                "validation_cost_usd": 1.0,
+                "budget_usd": 10.0,
+            },
+            "3": {
+                "state": "running",
+                "total_cost_usd": 1.0,
+                "validation_cost_usd": 0.0,
+                "budget_usd": 10.0,
+            },
+        }
+        s = _session_cost_stats(sessions)
+        assert s["session_total_cost_usd"] == 7.5
+        assert s["session_avg_cost_usd"] == 3.25
+        assert s["session_max_cost_usd"] == 4.0
+        assert s["budget_utilization"] > 0
+
+    def test_zero_budget(self):
+        sessions = {
+            "1": {
+                "state": "completed",
+                "total_cost_usd": 1.0,
+                "validation_cost_usd": 0.0,
+                "budget_usd": 0.0,
+            },
+        }
+        s = _session_cost_stats(sessions)
+        assert s["budget_utilization"] == 0.0
+
+    def test_no_completed_sessions(self):
+        sessions = {
+            "1": {
+                "state": "running",
+                "total_cost_usd": 1.0,
+                "validation_cost_usd": 0.0,
+                "budget_usd": 10.0,
+            },
+        }
+        s = _session_cost_stats(sessions)
+        assert s["session_avg_cost_usd"] == 0.0
+
+
+# ---------------------------------------------------------------------------
 # config_to_snapshot
 # ---------------------------------------------------------------------------
 
@@ -762,9 +832,40 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
     @pytest.mark.asyncio
     async def test_api_stats(self, handlers):
         with patch("golem.core.dashboard.read_runs", return_value=[]):
-            resp = await handlers["/api/stats"](since_hours=24)
+            with patch(
+                "golem.core.dashboard._read_sessions",
+                return_value={"sessions": {}},
+            ):
+                resp = await handlers["/api/stats"](since_hours=24)
         body = json.loads(resp.body)
         assert body["total_runs"] == 0
+        assert "session_total_cost_usd" in body
+        assert "session_avg_cost_usd" in body
+        assert "session_max_cost_usd" in body
+        assert "budget_utilization" in body
+
+    @pytest.mark.asyncio
+    async def test_api_stats_with_session_costs(self, handlers):
+        sessions = {
+            "sessions": {
+                "1": {
+                    "state": "completed",
+                    "total_cost_usd": 2.0,
+                    "validation_cost_usd": 0.5,
+                    "budget_usd": 10.0,
+                },
+            }
+        }
+        with patch("golem.core.dashboard.read_runs", return_value=[]):
+            with patch(
+                "golem.core.dashboard._read_sessions",
+                return_value=sessions,
+            ):
+                resp = await handlers["/api/stats"](since_hours=24)
+        body = json.loads(resp.body)
+        assert body["session_total_cost_usd"] == 2.5
+        assert body["session_avg_cost_usd"] == 2.5
+        assert body["session_max_cost_usd"] == 2.5
 
     @pytest.mark.asyncio
     async def test_api_live_with_file(self):

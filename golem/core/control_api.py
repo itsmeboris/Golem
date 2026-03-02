@@ -291,6 +291,23 @@ if FASTAPI_AVAILABLE:
             ) from None
         return {"ok": True, **result}
 
+    @health_router.get("/sessions/{task_id}")
+    async def get_session(task_id: int):
+        """Return full session dict for a single task by parent_issue_id."""
+        if _golem_flow is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Daemon not ready — GolemFlow not wired",
+            )
+        sessions = getattr(_golem_flow, "_sessions", {})
+        session = sessions.get(task_id)
+        if session is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No session found for task_id={task_id}",
+            )
+        return {"ok": True, "session": session.to_dict()}
+
 else:  # pragma: no cover
     # Provide a no-op router when FastAPI is not installed.
     control_router = None  # type: ignore[assignment]
