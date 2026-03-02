@@ -77,6 +77,9 @@ class GolemFlowConfig(FlowConfig):
     prompts_dir: str = ""
     # Infrastructure resilience
     max_infra_retries: int = 2
+    # Merge review (agent-assisted reconciliation / conflict resolution)
+    merge_review_budget_usd: float = 1.0
+    merge_review_timeout: int = 120
 
 
 @dataclass
@@ -245,6 +248,8 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
         profile_config=data.get("profile_config", {}),
         prompts_dir=data.get("prompts_dir", ""),
         max_infra_retries=data.get("max_infra_retries", 2),
+        merge_review_budget_usd=data.get("merge_review_budget_usd", 1.0),
+        merge_review_timeout=data.get("merge_review_timeout", 120),
     )
 
 

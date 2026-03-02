@@ -7,14 +7,19 @@ from unittest.mock import MagicMock
 import pytest
 
 from golem.worktree_manager import (
+    MissingAddition,
     _cleanup_worktree_impl,
     _current_branch,
+    _extract_added_lines,
     _run_git,
     _stash_if_dirty,
+    _TRIVIAL_LINE,
     _unstash,
     cleanup_worktree,
     create_worktree,
+    get_agent_diff,
     merge_and_cleanup,
+    verify_merge_integrity,
 )
 
 
@@ -334,6 +339,157 @@ class TestGetChangedFiles:
         cleanup_worktree(str(git_repo), wt_path)
 
 
+class TestMissingAdditionDefaults:
+    def test_defaults(self):
+        m = MissingAddition(file="a.py")
+        assert not m.expected_lines
+        assert m.description == ""
+
+
+class TestTrivialLineRegex:
+    def test_blank_lines(self):
+        assert _TRIVIAL_LINE.match("")
+        assert _TRIVIAL_LINE.match("   ")
+        assert _TRIVIAL_LINE.match("\t")
+
+    def test_comments(self):
+        assert _TRIVIAL_LINE.match("# a comment")
+        assert _TRIVIAL_LINE.match("  # indented")
+
+    def test_trivial_imports(self):
+        assert _TRIVIAL_LINE.match("import os")
+        assert _TRIVIAL_LINE.match("from sys import argv")
+        assert _TRIVIAL_LINE.match("import json")
+
+    def test_pass(self):
+        assert _TRIVIAL_LINE.match("    pass")
+        assert _TRIVIAL_LINE.match("pass")
+
+    def test_non_trivial(self):
+        assert not _TRIVIAL_LINE.match("def hello():")
+        assert not _TRIVIAL_LINE.match('x = "value"')
+        assert not _TRIVIAL_LINE.match("import custom_module")
+
+
+class TestExtractAddedLines:
+    def test_basic_diff(self):
+        diff = (
+            "diff --git a/foo.py b/foo.py\n"
+            + "--- a/foo.py\n"
+            + "+++ b/foo.py\n"
+            + "@@ -1 +1,3 @@\n"
+            + " existing\n"
+            + "+def hello():\n"
+            + '+    return "world"\n'
+        )
+        result = _extract_added_lines(diff)
+        assert "foo.py" in result
+        assert "def hello():" in result["foo.py"]
+        assert '    return "world"' in result["foo.py"]
+
+    def test_filters_trivial_lines(self):
+        diff = (
+            "+++ b/bar.py\n"
+            + "+import os\n"
+            + "+\n"
+            + "+# just a comment\n"
+            + "+def real_code():\n"
+            + "+    pass\n"
+        )
+        result = _extract_added_lines(diff)
+        assert "bar.py" in result
+        assert result["bar.py"] == ["def real_code():"]
+
+    def test_ignores_lines_before_file_header(self):
+        diff = "+orphan line without file header\n"
+        result = _extract_added_lines(diff)
+        assert not result
+
+    def test_multiple_files(self):
+        diff = "+++ b/a.py\n+code_a\n+++ b/b.py\n+code_b\n"
+        result = _extract_added_lines(diff)
+        assert "a.py" in result
+        assert "b.py" in result
+
+    def test_empty_diff(self):
+        assert not _extract_added_lines("")
+
+
+class TestGetAgentDiff:
+    def test_returns_diff(self, git_repo, tmp_path):
+        wt_root = str(tmp_path / "worktrees")
+        wt_path = create_worktree(str(git_repo), 950, worktree_root=wt_root)
+
+        (Path(wt_path) / "agent_file.py").write_text("agent code")
+        _run_git(["add", "."], cwd=wt_path)
+        _run_git(["commit", "-m", "Agent work"], cwd=wt_path)
+
+        diff = get_agent_diff(str(git_repo), "agent/950")
+        assert "agent_file.py" in diff
+        assert "agent code" in diff
+        cleanup_worktree(str(git_repo), wt_path)
+
+    def test_returns_empty_on_failure(self, monkeypatch):
+        def mock_run_git(args, cwd, timeout=30):
+            result = MagicMock()
+            if args[0] == "diff":
+                result.returncode = 1
+                result.stdout = ""
+            else:
+                result.returncode = 0
+                result.stdout = "main"
+            result.stderr = ""
+            return result
+
+        monkeypatch.setattr("golem.worktree_manager._run_git", mock_run_git)
+        assert get_agent_diff("/repo", "branch") == ""
+
+    def test_no_changes(self, git_repo, tmp_path):
+        wt_root = str(tmp_path / "worktrees")
+        wt_path = create_worktree(str(git_repo), 951, worktree_root=wt_root)
+        diff = get_agent_diff(str(git_repo), "agent/951")
+        assert diff == ""
+        cleanup_worktree(str(git_repo), wt_path)
+
+
+class TestVerifyMergeIntegrity:
+    def test_no_diff_returns_empty(self):
+        assert not verify_merge_integrity("/base", "", ["a.py"])
+
+    def test_all_present(self, tmp_path):
+        (tmp_path / "foo.py").write_text('def hello():\n    return "world"\n')
+        diff = '+++ b/foo.py\n+def hello():\n+    return "world"\n'
+        result = verify_merge_integrity(str(tmp_path), diff, ["foo.py"])
+        assert not result
+
+    def test_missing_lines_detected(self, tmp_path):
+        (tmp_path / "foo.py").write_text("only original content\n")
+        diff = '+++ b/foo.py\n+def hello():\n+    return "world"\n'
+        result = verify_merge_integrity(str(tmp_path), diff, ["foo.py"])
+        assert len(result) == 1
+        assert result[0].file == "foo.py"
+        assert "def hello():" in result[0].expected_lines
+
+    def test_file_not_in_changed_files_skipped(self, tmp_path):
+        diff = "+++ b/other.py\n+new code\n"
+        result = verify_merge_integrity(str(tmp_path), diff, ["foo.py"])
+        assert not result
+
+    def test_file_deleted_after_merge(self, tmp_path):
+        diff = "+++ b/gone.py\n+def gone():\n"
+        result = verify_merge_integrity(str(tmp_path), diff, ["gone.py"])
+        assert len(result) == 1
+        assert "does not exist" in result[0].description
+
+    def test_partial_missing(self, tmp_path):
+        (tmp_path / "p.py").write_text("def kept():\n    pass\n")
+        diff = "+++ b/p.py\n+def kept():\n+def lost():\n"
+        result = verify_merge_integrity(str(tmp_path), diff, ["p.py"])
+        assert len(result) == 1
+        assert "def lost():" in result[0].expected_lines
+        assert "def kept():" not in result[0].expected_lines
+
+
 class TestNewConfigFields:
     def test_defaults(self):
         from golem.core.config import GolemFlowConfig
@@ -352,3 +508,23 @@ class TestNewConfigFields:
         config = _parse_golem_config(data)
         assert config.use_worktrees is False
         assert config.skip_subtask_validation is False
+
+
+class TestMergeReviewConfigFields:
+    def test_defaults(self):
+        from golem.core.config import GolemFlowConfig
+
+        config = GolemFlowConfig()
+        assert config.merge_review_budget_usd == 1.0
+        assert config.merge_review_timeout == 120
+
+    def test_parse_from_yaml(self):
+        from golem.core.config import _parse_golem_config
+
+        data = {
+            "merge_review_budget_usd": 2.5,
+            "merge_review_timeout": 300,
+        }
+        config = _parse_golem_config(data)
+        assert config.merge_review_budget_usd == 2.5
+        assert config.merge_review_timeout == 300

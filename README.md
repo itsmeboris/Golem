@@ -125,7 +125,11 @@ flowchart TB
         retry --> plan
     end
 
-    mq -- "rebase + merge" --> commit["Git Commit<br/>+ Notify Team"]
+    mq -- "rebase + merge" --> verify["Integrity Check"]
+    verify -- "clean" --> commit["Git Commit<br/>+ Notify Team"]
+    verify -- "lost additions" --> reconcile["Reconciliation Agent"]
+    reconcile -- "fixed + validated" --> commit
+    reconcile -- "failed" --> report
     val -- FAIL --> report["Report Failure<br/>+ Notify Team"]
 ```
 
@@ -185,7 +189,9 @@ flowchart LR
     mq -- "sequential<br/>rebase + merge" --> main
 ```
 
-No locks, no conflicts between tasks. Each instance has full read-write access to its own copy. Validated work enters a sequential **merge queue** that rebases each branch onto the latest HEAD before merging, so every merge sees the freshest state. If a conflict arises, an optional reconciliation callback can resolve it automatically.
+No locks, no conflicts between tasks. Each instance has full read-write access to its own copy. Validated work enters a sequential **merge queue** that rebases each branch onto the latest HEAD before merging, so every merge sees the freshest state.
+
+After each merge, a **post-merge integrity check** compares the agent's original diff against the merged result. If git silently dropped additions during rebase (e.g. master overwrote a file), a reconciliation agent re-applies the lost changes and validation re-runs before accepting the result. Traditional merge conflicts are handled similarly — a conflict-resolution agent reads both sides and produces a clean merge, subject to validation.
 
 ---
 
@@ -244,6 +250,7 @@ golem/
 ├── committer.py           # Structured git commits
 ├── errors.py              # Error taxonomy (Infrastructure/Task/Validation)
 ├── merge_queue.py         # Sequential merge queue for cross-task coordination
+├── merge_review.py        # Agent-assisted merge reconciliation & conflict resolution
 ├── event_tracker.py       # Stream event processing & milestones
 ├── poller.py              # Task detection from trackers
 ├── notifications.py       # Teams Adaptive Card builders
@@ -297,6 +304,8 @@ See [`config.yaml.example`](config.yaml.example) for the full annotated template
 | `use_worktrees` | `true` | Isolate tasks in separate git worktrees |
 | `max_active_sessions` | `3` | Concurrent tasks running in parallel |
 | `max_infra_retries` | `2` | Auto-retries for infrastructure failures (e.g. worktree creation) without consuming task retry budget |
+| `merge_review_budget_usd` | `1.0` | Budget for merge reconciliation / conflict resolution agents |
+| `merge_review_timeout` | `120` | Timeout (seconds) for merge review agent invocations |
 
 ### Environment Variables
 

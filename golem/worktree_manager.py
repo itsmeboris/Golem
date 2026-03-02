@@ -19,7 +19,9 @@ Key exports:
 
 import logging
 import os
+import re
 import subprocess
+from dataclasses import dataclass, field
 from pathlib import Path
 
 logger = logging.getLogger("golem.worktree_manager")
@@ -281,6 +283,99 @@ def get_changed_files(
     if result.returncode != 0:
         return []
     return [f for f in result.stdout.strip().splitlines() if f]
+
+
+@dataclass
+class MissingAddition:
+    file: str
+    expected_lines: list[str] = field(default_factory=list)
+    description: str = ""
+
+
+_TRIVIAL_LINE = re.compile(
+    r"^\s*$"
+    r"|^\s*#"
+    r"|^\s*import\s+(os|sys|re|json|logging|typing|pathlib|collections)\b"
+    r"|^\s*from\s+(os|sys|re|json|logging|typing|pathlib|collections)\b"
+    r"|^\s*pass\s*$"
+)
+
+
+def get_agent_diff(base_dir: str, branch_name: str) -> str:
+    """Capture ``git diff target..branch`` before merge.
+
+    Returns the raw unified diff string (empty on failure).
+    """
+    target = _current_branch(base_dir)
+    result = _run_git(["diff", f"{target}..{branch_name}"], cwd=base_dir)
+    if result.returncode != 0:
+        return ""
+    return result.stdout
+
+
+def _extract_added_lines(diff_text: str) -> dict[str, list[str]]:
+    """Parse a unified diff and return ``{filepath: [added lines]}``."""
+    file_adds: dict[str, list[str]] = {}
+    current_file: str | None = None
+    for line in diff_text.splitlines():
+        if line.startswith("+++ b/"):
+            current_file = line[6:]
+        elif line.startswith("+") and not line.startswith("+++"):
+            if current_file is None:
+                continue
+            content = line[1:]
+            if _TRIVIAL_LINE.match(content):
+                continue
+            file_adds.setdefault(current_file, []).append(content)
+    return file_adds
+
+
+def verify_merge_integrity(
+    base_dir: str,
+    agent_diff: str,
+    changed_files: list[str],
+) -> list[MissingAddition]:
+    """Check that key additions from the agent diff survive the merge.
+
+    Compares added lines from *agent_diff* against the post-merge content
+    of each file on disk.  Returns a list of ``MissingAddition`` for any
+    file where non-trivial added lines are missing.
+    """
+    if not agent_diff:
+        return []
+
+    added_by_file = _extract_added_lines(agent_diff)
+    missing: list[MissingAddition] = []
+
+    for filepath, expected_lines in added_by_file.items():
+        if filepath not in changed_files:
+            continue
+        full_path = Path(base_dir) / filepath
+        if not full_path.exists():
+            missing.append(
+                MissingAddition(
+                    file=filepath,
+                    expected_lines=expected_lines,
+                    description=f"File {filepath} does not exist after merge",
+                )
+            )
+            continue
+
+        file_content = full_path.read_text(encoding="utf-8", errors="replace")
+        lost = [ln for ln in expected_lines if ln not in file_content]
+        if lost:
+            missing.append(
+                MissingAddition(
+                    file=filepath,
+                    expected_lines=lost,
+                    description=(
+                        f"{len(lost)}/{len(expected_lines)} added lines"
+                        f" missing from {filepath}"
+                    ),
+                )
+            )
+
+    return missing
 
 
 def cleanup_worktree(

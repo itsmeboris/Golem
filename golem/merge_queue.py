@@ -12,7 +12,14 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Callable
 
-from .worktree_manager import cleanup_worktree, get_changed_files, merge_and_cleanup
+from .worktree_manager import (
+    cleanup_worktree,
+    get_agent_diff,
+    get_changed_files,
+    merge_and_cleanup,
+    verify_merge_integrity,
+)
+from .merge_review import ReconciliationResult
 
 logger = logging.getLogger("golem.merge_queue")
 
@@ -38,6 +45,7 @@ class MergeResult:
 
 
 OnConflict = Callable[["MergeEntry", list[str]], bool] | None
+OnReconcile = Callable[["MergeEntry", str, list], ReconciliationResult] | None
 
 
 class MergeQueue:
@@ -47,10 +55,15 @@ class MergeQueue:
     sequentially.  Each merge rebases onto the current HEAD first.
     """
 
-    def __init__(self, on_conflict: OnConflict = None):
+    def __init__(
+        self,
+        on_conflict: OnConflict = None,
+        on_reconcile: OnReconcile = None,
+    ):
         self._queue: list[MergeEntry] = []
         self._lock = asyncio.Lock()
         self._on_conflict = on_conflict
+        self._on_reconcile = on_reconcile
         self._results: list[MergeResult] = []
 
     @property
@@ -106,10 +119,36 @@ class MergeQueue:
 
     async def _merge_one(self, entry: MergeEntry) -> MergeResult:
         try:
+            agent_diff = get_agent_diff(entry.base_dir, entry.branch_name)
+
             sha = merge_and_cleanup(
                 entry.base_dir, entry.session_id, entry.worktree_path
             )
             if sha:
+                missing = verify_merge_integrity(
+                    entry.base_dir, agent_diff, entry.changed_files
+                )
+                if missing and self._on_reconcile:
+                    logger.warning(
+                        "Session %d: %d file(s) lost additions after merge",
+                        entry.session_id,
+                        len(missing),
+                    )
+                    recon = self._on_reconcile(entry, agent_diff, missing)
+                    if not recon.resolved:
+                        logger.warning(
+                            "Session %d: reconciliation failed — %s",
+                            entry.session_id,
+                            recon.explanation,
+                        )
+                        return MergeResult(
+                            session_id=entry.session_id,
+                            success=False,
+                            merge_sha=sha,
+                            error=f"reconciliation failed: {recon.explanation}",
+                            conflict_files=[m.file for m in missing],
+                        )
+
                 logger.info(
                     "Session %d: merged successfully → %s",
                     entry.session_id,

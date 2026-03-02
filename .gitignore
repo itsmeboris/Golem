@@ -22,8 +22,8 @@ tasks/
 .claude/
 .cursor/
 .mcp.json
-.vscode/
-.idea/
+.vscode
+.idea
 pyrightconfig.json
 *.swp
 *.swo
@@ -42,3 +42,19 @@ Thumbs.db
 
 # Agent
 AGENTS.md
+
+# Claude CLI sandbox artifacts
+.bash_profile
+.bashrc
+.gitconfig
+.gitmodules
+.profile
+.ripgreprc
+.zprofile
+.zshrc
+HEAD
+/config
+/hooks
+/objects
+/refs
+.playwright-mcp/

@@ -33,6 +33,12 @@ from .errors import (
 )
 from .event_tracker import Milestone, TaskEventTracker
 from .merge_queue import MergeEntry, MergeQueue, MergeResult
+from .merge_review import (
+    ReconciliationResult,
+    run_conflict_resolution,
+    run_merge_reconciliation,
+)
+from .worktree_manager import MissingAddition
 from .orchestrator import (
     TaskOrchestrator,
     TaskSession,
@@ -80,7 +86,10 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         profile_name = self._task_config.profile if self._task_config else "redmine"
         self._profile: GolemProfile = build_profile(profile_name, config)
 
-        self._merge_queue = MergeQueue()
+        self._merge_queue = MergeQueue(
+            on_conflict=self._handle_merge_conflict,
+            on_reconcile=self._handle_merge_reconciliation,
+        )
         self._max_infra_retries = getattr(self._task_config, "max_infra_retries", 2)
 
         self._submissions_dir = SUBMISSIONS_DIR
@@ -420,6 +429,88 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             logger.warning(
                 "Session %d: merge failed: %s", result.session_id, result.error
             )
+
+    def _handle_merge_conflict(
+        self, entry: MergeEntry, conflict_files: list[str]
+    ) -> bool:
+        result = run_conflict_resolution(
+            entry.base_dir,
+            conflict_files,
+            budget_usd=self._task_config.merge_review_budget_usd,
+            timeout_seconds=self._task_config.merge_review_timeout,
+        )
+        if not result.resolved:
+            return False
+
+        from .validation import run_validation
+
+        verdict = run_validation(
+            issue_id=entry.session_id,
+            subject=f"Post-conflict validation for session {entry.session_id}",
+            description="Verify conflict resolution did not break anything.",
+            session_data={},
+            work_dir=entry.base_dir,
+            model=self._task_config.validation_model,
+            budget_usd=self._task_config.validation_budget_usd,
+            timeout_seconds=self._task_config.validation_timeout_seconds,
+        )
+        if verdict.verdict != "PASS":
+            logger.warning(
+                "Session %d: validation failed after conflict resolution — %s",
+                entry.session_id,
+                verdict.summary,
+            )
+            return False
+        return True
+
+    def _handle_merge_reconciliation(
+        self,
+        entry: MergeEntry,
+        agent_diff: str,
+        missing: list[MissingAddition],
+    ) -> ReconciliationResult:
+        result = run_merge_reconciliation(
+            entry.base_dir,
+            agent_diff,
+            missing,
+            budget_usd=self._task_config.merge_review_budget_usd,
+            timeout_seconds=self._task_config.merge_review_timeout,
+        )
+        if not result.resolved:
+            return result
+
+        from .validation import run_validation
+
+        verdict = run_validation(
+            issue_id=entry.session_id,
+            subject=f"Post-reconciliation validation for session {entry.session_id}",
+            description="Verify reconciliation fixup did not break anything.",
+            session_data={},
+            work_dir=entry.base_dir,
+            model=self._task_config.validation_model,
+            budget_usd=self._task_config.validation_budget_usd,
+            timeout_seconds=self._task_config.validation_timeout_seconds,
+        )
+        if verdict.verdict != "PASS":
+            logger.warning(
+                "Session %d: validation failed after reconciliation — reverting",
+                entry.session_id,
+            )
+            import subprocess
+
+            subprocess.run(
+                ["git", "revert", "--no-edit", "HEAD"],
+                cwd=entry.base_dir,
+                capture_output=True,
+                timeout=30,
+                check=False,
+            )
+            return ReconciliationResult(
+                resolved=False,
+                explanation=f"validation failed after reconciliation: {verdict.summary}",
+            )
+
+        return result
 
     def _on_agent_progress(self, session: TaskSession, milestone: Milestone) -> None:
         """Central progress handler — updates LiveState and session from milestones."""
