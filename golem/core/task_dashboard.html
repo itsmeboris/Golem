@@ -21,21 +21,26 @@
 
 /* ── Task Card ────────────────────────────────────────────── */
 .task-card{
-  padding:0.75rem 0.85rem;margin-bottom:0.35rem;border-radius:var(--radius);
+  padding:0.65rem 0.85rem;margin-bottom:0.25rem;border-radius:var(--radius);
   cursor:pointer;transition:all 0.15s;border-left:3px solid transparent;
-  background:transparent
+  background:transparent;position:relative
 }
 .task-card:hover{background:var(--bg-elevated)}
-.task-card.selected{background:var(--bg-hover);border-left-color:var(--blue)}
-.task-card .tc-top{display:flex;align-items:center;gap:0.35rem;margin-bottom:0.25rem;flex-wrap:wrap;min-height:1rem}
-.task-card .tc-id{font-size:0.8rem;font-weight:700;color:var(--text-secondary);flex:1}
+.task-card.selected{background:var(--bg-hover)}
+.task-card .tc-top{display:flex;align-items:center;gap:0.35rem;margin-bottom:0.15rem;min-height:1rem}
+.task-card .tc-id{font-size:0.72rem;font-weight:600;color:var(--text-muted);flex-shrink:0}
 .task-card .tc-badge{
-  font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;
-  padding:0.1rem 0.4rem;border-radius:999px;white-space:nowrap;margin-left:0
+  font-size:0.58rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;
+  padding:0.1rem 0.35rem;border-radius:999px;white-space:nowrap;margin-left:auto
 }
 .task-card .tc-state{display:none}
-.task-card .tc-subject{font-size:0.78rem;color:var(--text-secondary);line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.task-card .tc-meta{display:flex;gap:0.75rem;margin-top:0.35rem;font-size:0.7rem;color:var(--text-muted);flex-wrap:wrap}
+.task-card .tc-subject{
+  font-size:0.82rem;font-weight:500;color:var(--text-secondary);line-height:1.35;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis
+}
+.task-card:hover .tc-subject{color:var(--text-primary)}
+.task-card.selected .tc-subject{color:var(--text-primary);font-weight:600}
+.task-card .tc-meta{display:flex;gap:0.6rem;margin-top:0.3rem;font-size:0.68rem;color:var(--text-muted);flex-wrap:wrap}
 .task-card .tc-meta span{display:flex;align-items:center;gap:0.2rem}
 .task-card .tc-group{
   font-size:0.6rem;color:var(--text-muted);opacity:0.8;
@@ -43,11 +48,12 @@
   padding:0;font-weight:normal;background:transparent;
   border-radius:0;color:inherit;
 }
-.task-card .tc-deps{color:var(--yellow);font-size:0.7rem}
+.task-card .tc-deps{color:var(--yellow);font-size:0.68rem}
+.task-card .tc-merge-dot{width:6px;height:6px;border-radius:50%;display:inline-block;flex-shrink:0}
+.filter-count{font-size:0.7rem;color:var(--text-muted);padding:0.3rem 0.85rem 0.1rem;letter-spacing:0.02em}
 
 /* ── State colors for cards ───────────────────────────────── */
 .task-card.state-completed{border-left-color:var(--green)}
-.task-card.state-completed .tc-badge{background:#064e3b;color:var(--green)}
 .task-card.state-failed{border-left-color:var(--red)}
 .task-card.state-failed .tc-badge{background:#450a0a;color:var(--red)}
 .task-card.state-running{border-left-color:var(--blue)}
@@ -58,7 +64,7 @@
 .task-card.state-detected .tc-badge{background:#422006;color:var(--yellow)}
 .task-card.state-retrying{border-left-color:var(--orange)}
 .task-card.state-retrying .tc-badge{background:#431407;color:var(--orange)}
-.task-card.selected .tc-subject,.task-card.selected .tc-id{color:var(--text-primary)}
+.task-card.selected .tc-id{color:var(--text-secondary)}
 
 /* ── Overview Stats ───────────────────────────────────────── */
 .overview-state{padding:1.5rem 2rem 3rem;max-width:1100px}
@@ -187,6 +193,7 @@
 .term-text{flex:1;word-break:break-word}
 .term-tool{color:var(--yellow);font-size:0.72rem;min-width:0;max-width:15rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0}
 
+.term-ts{font-size:0.6rem;color:var(--text-muted);opacity:0.5;margin-left:auto;flex-shrink:0;white-space:nowrap}
 .term-line.tool-call{color:var(--cyan)}
 .term-line.tool-result{color:var(--text-muted)}
 .term-line.tool-result .term-text{color:var(--green-dim);opacity:0.6;font-size:0.73rem}
@@ -240,6 +247,7 @@
         <option value="detected">Detected</option>
       </select>
     </div>
+    <div class="filter-count hidden" id="filter-count"></div>
     <div class="task-list" id="task-list">
       <div class="skeleton skeleton-card"></div>
       <div class="skeleton skeleton-card"></div>
@@ -273,8 +281,8 @@
         <div class="terminal-header">
           <h3>Output</h3>
           <div class="terminal-controls">
-            <button id="btn-thinking" onclick="toggleThinking()">Show thinking</button>
-            <button id="btn-text" class="active" onclick="toggleText()">Hide text</button>
+            <button id="btn-thinking" onclick="toggleThinking()">Reasoning</button>
+            <button id="btn-text" class="active" onclick="toggleText()">Agent text</button>
           </div>
         </div>
         <div class="terminal" id="terminal"></div>
@@ -301,6 +309,15 @@
 
 <script src="/dashboard/shared.js"></script>
 <script>
+/* ── Helpers ───────────────────────────────────────────────── */
+function fmtTermTs(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleTimeString(undefined, {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  } catch(e) { return ''; }
+}
+
 /* ── State ─────────────────────────────────────────────────── */
 let _sessions = {};
 let _selectedId = null;
@@ -354,28 +371,42 @@ function renderSidebar() {
     `${activeCount} active / ${totalCount} total` +
     `<span class="sidebar-live"><span class="live-dot ${liveDot}"></span>${_liveSnap.active_count || 0} running</span>`;
 
+  /* Result count */
+  const countEl = document.getElementById('filter-count');
+  if (countEl) {
+    if (search || stateFilter) {
+      countEl.textContent = `Showing ${filtered.length} of ${entries.length}`;
+      countEl.classList.remove('hidden');
+    } else {
+      countEl.classList.add('hidden');
+    }
+  }
+
+  if (filtered.length === 0 && (search || stateFilter)) {
+    list.innerHTML = '<div class="sidebar-empty">No tasks match your filter.</div>';
+    return;
+  }
+
   /* Render cards */
   list.innerHTML = filtered.map(([id, s]) => {
     const sel = id === _selectedId ? ' selected' : '';
     const state = s.state || 'detected';
-    const subject = esc(truncText((s.parent_subject || '').replace(/^\[AGENT\]\s*/, ''), 80));
+    const rawSubject = (s.parent_subject || '').replace(/^\[AGENT\]\s*/, '');
+    const subject = esc(truncText(rawSubject, 90));
+    const fullSubject = esc(rawSubject);
     const cost = s.total_cost_usd ? fmtCost(s.total_cost_usd) : '';
-    const valCost = s.validation_cost_usd ? fmtCost(s.validation_cost_usd) : '';
     const dur = s.duration_seconds ? fmtDuration(s.duration_seconds)
       : (state === 'detected' && s.grace_deadline) ? fmtCountdown(s.grace_deadline)
       : fmtAgo(s.created_at);
-    const verdict = s.validation_verdict || '';
 
-    const groupId = s.group_id || '';
     const deps = s.depends_on || [];
-    const mergeReady = s.merge_ready;
     const mergeFailed = hasMergeError(s);
 
-    let mergeBadge = '';
+    let statusIndicator = '';
     if (mergeFailed) {
-      mergeBadge = '<span class="tc-badge" style="background:#450a0a;color:#f87171">merge failed</span>';
-    } else if (mergeReady) {
-      mergeBadge = '<span class="tc-badge" style="background:#172554;color:#60a5fa">merge</span>';
+      statusIndicator = '<span class="tc-badge" style="background:#450a0a;color:#f87171">merge fail</span>';
+    } else if (['running','validating','detected','retrying'].includes(state)) {
+      statusIndicator = `<span class="tc-badge">${esc(state)}</span>`;
     }
 
     let depHtml = '';
@@ -383,23 +414,19 @@ function renderSidebar() {
       const allDone = deps.every(d => { const ds = _sessions[d]; return ds && ds.state === 'completed'; });
       const anyFailed = deps.some(d => { const ds = _sessions[d]; return ds && ds.state === 'failed'; });
       const depColor = anyFailed ? 'var(--red)' : allDone ? 'var(--green)' : 'var(--yellow)';
-      const depLabel = anyFailed ? 'blocked' : allDone ? 'ready' : 'waiting';
-      depHtml = `<span class="tc-deps" style="color:${depColor}">\u26D3 ${deps.length} dep \u2022 ${depLabel}</span>`;
+      depHtml = `<span class="tc-deps" style="color:${depColor}">\u26D3 ${deps.length}</span>`;
     }
 
-    return `<div class="task-card state-${state}${sel}" data-id="${id}" onclick="selectTask('${id}')">
+    return `<div class="task-card state-${state}${sel}" data-id="${id}" onclick="selectTask('${id}')" title="${fullSubject}">
       <div class="tc-top">
         <span class="tc-id">#${id}</span>
-        ${verdict && !mergeFailed ? `<span class="tc-badge" style="${verdictBadgeStyle(verdict)}">${esc(verdict)}</span>` : ''}
-        ${mergeBadge}
+        ${statusIndicator}
       </div>
       <div class="tc-subject">${subject}</div>
       <div class="tc-meta">
         ${cost ? `<span>${cost}</span>` : ''}
-        ${valCost ? `<span>val ${valCost}</span>` : ''}
         ${dur ? `<span>${dur}</span>` : ''}
         ${depHtml}
-        ${groupId ? `<span class="tc-group" title="${esc(groupId)}">\u2B21 ${esc(groupId)}</span>` : ''}
         ${s.milestone_count ? `<span>${s.milestone_count} steps</span>` : ''}
       </div>
     </div>`;
@@ -514,7 +541,7 @@ function renderOverview() {
     ${detected ? `<div class="stat-card"><div class="sc-label">Detected</div><div class="sc-value">${detected}</div></div>` : ''}
     ${retrying ? `<div class="stat-card"><div class="sc-label">Retrying</div><div class="sc-value">${retrying}</div></div>` : ''}
     <div class="stat-card"><div class="sc-label">Total Spend</div><div class="sc-value">${fmtCost(totalCost + totalValCost)}</div></div>
-    <div class="stat-card"><div class="sc-label">Val. Cost</div><div class="sc-value">${fmtCost(totalValCost)}</div></div>
+    <div class="stat-card"><div class="sc-label">Validation Cost</div><div class="sc-value">${fmtCost(totalValCost)}</div></div>
     <div class="stat-card"><div class="sc-label">Avg Cost</div><div class="sc-value">${fmtCost(avgCost)}</div></div>
     <div class="stat-card"><div class="sc-label">Max Cost</div><div class="sc-value">${fmtCost(maxCost)}</div></div>
     <div class="stat-card"><div class="sc-label">Avg Duration</div><div class="sc-value">${fmtDuration(avgDuration)}</div></div>`;
@@ -841,10 +868,11 @@ function renderTermLine(ev) {
       display = text || kind;
   }
 
+  const ts = ev.timestamp ? `<span class="term-ts">${fmtTermTs(ev.timestamp)}</span>` : '';
   return `<div class="term-line ${cls}">` +
     `<span class="term-icon">${icon}</span>` +
-    (toolName && kind === 'tool_call' ? '' : '') +
     `<span class="term-text">${esc(display)}</span>` +
+    ts +
     `</div>`;
 }
 
@@ -949,9 +977,7 @@ function loadOlderParentEvents(btn) {
 function toggleThinking() {
   _showThinking = !_showThinking;
   const btn = $('#btn-thinking');
-  btn.textContent = _showThinking ? 'Hide thinking' : 'Show thinking';
   btn.classList.toggle('active', _showThinking);
-  /* Re-render current view */
   if (_selectedId && _sessions[_selectedId]) {
     renderEventLog(_sessions[_selectedId]);
     renderPipeline(_selectedId, _sessions[_selectedId]);
@@ -961,9 +987,7 @@ function toggleThinking() {
 function toggleText() {
   _showText = !_showText;
   const btn = $('#btn-text');
-  btn.textContent = _showText ? 'Hide text' : 'Show text';
   btn.classList.toggle('active', _showText);
-  /* Re-render current view */
   if (_selectedId && _sessions[_selectedId]) {
     renderEventLog(_sessions[_selectedId]);
     renderPipeline(_selectedId, _sessions[_selectedId]);
@@ -1004,14 +1028,28 @@ function renderInfoTabs(s) {
     ? errors.map(e => `<div class="error-item">${esc(e)}</div>`).join('')
     : '<div class="terminal-empty">No errors recorded.</div>';
 
-  /* Tools */
+  /* Tools — count occurrences from event_log */
   const tools = s.tools_called || [];
   const mcpTools = s.mcp_tools_called || [];
   let toolsHtml = '';
   if (tools.length || mcpTools.length) {
-    toolsHtml = '<div style="margin-bottom:0.5rem">';
-    toolsHtml += tools.map(t => `<span class="tool-chip">${esc(t)}</span>`).join('');
-    toolsHtml += mcpTools.map(t => `<span class="tool-chip mcp">${esc(t)}</span>`).join('');
+    const toolCounts = {};
+    for (const ev of (s.event_log || [])) {
+      if ((ev.kind || ev.type) === 'tool_call') {
+        const name = ev.tool_name || ev.summary || '';
+        if (name) toolCounts[name] = (toolCounts[name] || 0) + 1;
+      }
+    }
+    toolsHtml = `<div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.5rem">${tools.length + mcpTools.length} tools used, ${Object.values(toolCounts).reduce((a,b)=>a+b,0) || '?'} total calls</div>`;
+    toolsHtml += '<div style="margin-bottom:0.5rem">';
+    toolsHtml += tools.map(t => {
+      const cnt = toolCounts[t];
+      return `<span class="tool-chip">${esc(t)}${cnt ? ' <small style="opacity:0.6">\u00D7'+cnt+'</small>' : ''}</span>`;
+    }).join('');
+    toolsHtml += mcpTools.map(t => {
+      const cnt = toolCounts[t];
+      return `<span class="tool-chip mcp">${esc(t)}${cnt ? ' <small style="opacity:0.6">\u00D7'+cnt+'</small>' : ''}</span>`;
+    }).join('');
     toolsHtml += '</div>';
   } else {
     toolsHtml = '<div class="terminal-empty">No tools recorded.</div>';
@@ -1046,8 +1084,9 @@ function renderInfoTabs(s) {
     $('#tab-coordination').innerHTML = '<div class="terminal-empty">No coordination data for this session.</div>';
   }
 
-  /* Raw */
-  $('#tab-raw').innerHTML = `<pre>${esc(JSON.stringify(s, null, 2))}</pre>`;
+  /* Raw — syntax-highlighted JSON */
+  const rawJson = esc(JSON.stringify(s, null, 2));
+  $('#tab-raw').innerHTML = `<pre class="json">${highlightJson(rawJson)}</pre>`;
 }
 
 /* ── Config Bar ────────────────────────────────────────────── */

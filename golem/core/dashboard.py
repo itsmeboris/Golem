@@ -328,41 +328,6 @@ def config_to_snapshot(config: Any) -> dict:
 _SESSIONS_FILE = DATA_DIR / "state" / "golem_sessions.json"
 
 
-def _session_cost_stats(sessions: dict) -> dict[str, float]:
-    """Compute cost statistics from session data."""
-    items = list(sessions.values()) if isinstance(sessions, dict) else []
-    if not items:
-        return {
-            "session_total_cost_usd": 0.0,
-            "session_avg_cost_usd": 0.0,
-            "session_max_cost_usd": 0.0,
-            "budget_utilization": 0.0,
-        }
-
-    costs = []
-    budgets = []
-    completed_costs = []
-    for s in items:
-        task_cost = s.get("total_cost_usd", 0.0) + s.get("validation_cost_usd", 0.0)
-        costs.append(task_cost)
-        budgets.append(s.get("budget_usd", 0.0))
-        if s.get("state") == "completed":
-            completed_costs.append(task_cost)
-
-    total_cost = sum(costs)
-    max_cost = max(costs) if costs else 0.0
-    avg_cost = sum(completed_costs) / len(completed_costs) if completed_costs else 0.0
-    utilizations = [(c / b * 100) if b > 0 else 0.0 for c, b in zip(costs, budgets)]
-    avg_utilization = sum(utilizations) / len(utilizations) if utilizations else 0.0
-
-    return {
-        "session_total_cost_usd": round(total_cost, 4),
-        "session_avg_cost_usd": round(avg_cost, 4),
-        "session_max_cost_usd": round(max_cost, 4),
-        "budget_utilization": round(avg_utilization, 2),
-    }
-
-
 _LOG_DIR = DATA_DIR / "logs"
 
 
@@ -399,7 +364,7 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
     config_snapshot: dict | None = None,
     live_state_file: Path | None = None,
 ) -> None:
-    """Register /dashboard, /api/runs and /api/stats routes on *app*.
+    """Register /dashboard and API routes on *app*.
 
     *config_snapshot* is an optional dict with system configuration info
     to display in the dashboard header (model, flows, etc.).
@@ -413,30 +378,6 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
         return
 
     config_snapshot = config_snapshot or {}  # noqa: PLW0127
-
-    @app.get("/api/runs")
-    async def api_runs(
-        flow: str | None = Query(None),
-        limit: int = Query(100, ge=1, le=1000),
-        since_hours: int | None = Query(None, ge=1),
-    ) -> JSONResponse:
-        since = None
-        if since_hours:
-            since = datetime.now(timezone.utc) - timedelta(hours=since_hours)
-        runs = await asyncio.to_thread(read_runs, flow=flow, limit=limit, since=since)
-        return JSONResponse(content={"runs": runs, "count": len(runs)})
-
-    @app.get("/api/stats")
-    async def api_stats(
-        since_hours: int = Query(24, ge=1),
-    ) -> JSONResponse:
-        since = datetime.now(timezone.utc) - timedelta(hours=since_hours)
-        runs = await asyncio.to_thread(read_runs, limit=10_000, since=since)
-        stats = _aggregate_stats(runs)
-        stats["since_hours"] = since_hours
-        sessions_data = await asyncio.to_thread(_read_sessions)
-        stats.update(_session_cost_stats(sessions_data.get("sessions", {})))
-        return JSONResponse(content=stats)
 
     @app.get("/api/live")
     async def api_live() -> JSONResponse:
@@ -576,15 +517,11 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
 
     @app.get("/dashboard")
     async def dashboard() -> HTMLResponse:
-        return HTMLResponse(content=_dashboard_cache.read())
+        return HTMLResponse(content=_task_dashboard_cache.read())
 
     @app.get("/dashboard/admin")
     async def admin_page() -> HTMLResponse:
         return HTMLResponse(content=_admin_cache.read())
-
-    @app.get("/task-dashboard")
-    async def task_dashboard() -> HTMLResponse:
-        return HTMLResponse(content=_task_dashboard_cache.read())
 
 
 class _FileCache:
@@ -607,10 +544,8 @@ class _FileCache:
         return self._content
 
 
-# HTML + shared asset files auto-reload when modified (mtime-based caching).
-_dashboard_cache = _FileCache(Path(__file__).parent / "dashboard.html")
-_admin_cache = _FileCache(Path(__file__).parent / "admin.html")
 _task_dashboard_cache = _FileCache(Path(__file__).parent / "task_dashboard.html")
+_admin_cache = _FileCache(Path(__file__).parent / "admin.html")
 _shared_css_cache = _FileCache(Path(__file__).parent / "dashboard_shared.css")
 _shared_js_cache = _FileCache(Path(__file__).parent / "dashboard_shared.js")
 
