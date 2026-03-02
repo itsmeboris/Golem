@@ -4,7 +4,7 @@
 import asyncio
 import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -91,7 +91,7 @@ class TestCancelSessionFromCancelableStates:
     )
     def test_cancel_from_cancelable_state(self, monkeypatch, tmp_path, state):
         flow = _make_flow(monkeypatch, tmp_path)
-        monkeypatch.setattr("golem.flow.LiveState.get", lambda: MagicMock())
+        monkeypatch.setattr("golem.flow.LiveState.get", MagicMock)
 
         session = TaskSession(
             parent_issue_id=100,
