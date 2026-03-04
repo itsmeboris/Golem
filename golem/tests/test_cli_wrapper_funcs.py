@@ -98,6 +98,18 @@ class TestBuildClaudeCommand:
         assert "--append-system-prompt" in cmd
         assert "Be helpful" in cmd
 
+    def test_with_resume_session_id(self):
+        config = CLIConfig(cli_type=CLIType.CLAUDE, resume_session_id="sess-123")
+        cmd = _build_claude_command(config)
+        assert "--resume" in cmd
+        idx = cmd.index("--resume")
+        assert cmd[idx + 1] == "sess-123"
+
+    def test_without_resume_session_id(self):
+        config = CLIConfig(cli_type=CLIType.CLAUDE, resume_session_id="")
+        cmd = _build_claude_command(config)
+        assert "--resume" not in cmd
+
     def test_stream_json_verbose(self):
         config = CLIConfig(cli_type=CLIType.CLAUDE)
         cmd = _build_claude_command(config, "stream-json")

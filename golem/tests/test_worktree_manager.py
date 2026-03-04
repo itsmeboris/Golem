@@ -496,18 +496,18 @@ class TestNewConfigFields:
 
         config = GolemFlowConfig()
         assert config.use_worktrees is True
-        assert config.skip_subtask_validation is True
+        assert config.resume_on_partial is True
 
     def test_parse_from_yaml(self):
         from golem.core.config import _parse_golem_config
 
         data = {
             "use_worktrees": False,
-            "skip_subtask_validation": False,
+            "resume_on_partial": False,
         }
         config = _parse_golem_config(data)
         assert config.use_worktrees is False
-        assert config.skip_subtask_validation is False
+        assert config.resume_on_partial is False
 
 
 class TestMergeReviewConfigFields:

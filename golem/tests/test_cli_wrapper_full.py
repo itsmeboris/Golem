@@ -1349,6 +1349,22 @@ class TestInvokeCliMonitored:
 
         assert len(result.trace_events) == 1
 
+    def test_session_id_extracted_from_init_event(self):
+        lines = [
+            json.dumps({"type": "system", "subtype": "init", "session_id": "sess-xyz"})
+            + "\n",
+            json.dumps({"type": "result", "result": "ok", "cost_usd": 0.1}) + "\n",
+        ]
+        proc = self._make_streaming_proc(lines)
+
+        with patch("subprocess.Popen", return_value=proc), patch(
+            "golem.core.cli_wrapper._get_subprocess_env",
+            return_value=({}, "/tmp/sandbox", lambda: None),
+        ):
+            result = invoke_cli_monitored("test", CLIConfig())
+
+        assert result.session_id == "sess-xyz"
+
     def test_cleanup_called(self):
         cleanup = MagicMock()
         lines = [json.dumps({"type": "result", "cost_usd": 0.1}) + "\n"]

@@ -739,8 +739,8 @@ class TestNotifications:
 
 class TestPrompts:
     def test_load_prompt(self):
-        text = load_prompt("decompose_task.txt")
-        assert "subtasks" in text.lower()
+        text = load_prompt("orchestrate_task.txt")
+        assert "orchestrator" in text.lower()
 
     def test_load_run_task_prompt(self):
         text = load_prompt("run_task.txt")
@@ -758,18 +758,17 @@ class TestPrompts:
         )
         assert "#100" in text
 
-    def test_format_prompt_legacy(self):
+    def test_format_prompt_orchestrate(self):
         text = format_prompt(
-            "execute_subtask.txt",
-            parent_id=100,
-            parent_subject="Test",
-            subtask_id=200,
-            subtask_subject="Sub test",
-            sibling_status="all pending",
+            "orchestrate_task.txt",
+            issue_id=100,
+            parent_subject="Test task",
+            task_description="Do something",
+            work_dir="/tmp/test",
+            inner_retry_max=3,
         )
         assert "#100" in text
-        assert "#200" in text
-        assert "Sub test" in text
+        assert "Test task" in text
 
 
 # -- Flow -------------------------------------------------------------------

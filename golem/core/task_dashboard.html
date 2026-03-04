@@ -60,6 +60,7 @@
           <h3>Pipeline</h3>
           <div class="pv-controls">
             <button class="pv-toggle-btn active" id="btn-waterfall-view" onclick="setPipelineView('waterfall')">Waterfall</button>
+            <button class="pv-toggle-btn" id="btn-flow-view" onclick="setPipelineView('flow')">Flow</button>
             <button class="pv-toggle-btn" id="btn-log-view" onclick="setPipelineView('log')">Log</button>
             <button class="pv-toggle-btn" id="btn-thinking" onclick="toggleThinking()">Reasoning</button>
             <button class="pv-toggle-btn" id="btn-text" onclick="toggleText()">Agent text</button>
@@ -68,6 +69,10 @@
         <div id="waterfall-view">
           <div class="wf-table" id="wf-table"></div>
           <div class="wf-detail-panel hidden" id="wf-detail-panel"></div>
+        </div>
+        <div id="flow-view" class="hidden">
+          <div class="flow-graph-container" id="flow-graph-container"></div>
+          <div class="flow-detail-panel hidden" id="flow-detail-panel"></div>
         </div>
         <div id="log-view" class="hidden">
           <div class="accordion-view" id="accordion-view"></div>

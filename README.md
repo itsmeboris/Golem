@@ -109,20 +109,18 @@ flowchart TB
 
     subgraph daemon ["Golem Daemon"]
         flow["Flow Engine"] --> preflight["Preflight Checks"]
-        preflight --> super["Supervisor"]
-        super -- "decompose" --> plan["Subtask Plan"]
+        preflight --> orch["Orchestrator<br/>(single Claude session)"]
 
-        plan --> claude1["Claude CLI<br/>Instance 1"]
-        plan --> claude2["Claude CLI<br/>Instance 2"]
-        plan --> claude3["Claude CLI<br/>Instance N"]
+        orch -- "Agent tool" --> explorer["Explorer"]
+        orch -- "Agent tool" --> implementer["Implementer"]
+        orch -- "Agent tool" --> reviewer["Reviewer"]
+        orch -- "Agent tool" --> tester["Tester"]
 
-        claude1 --> val["Validation Agent"]
-        claude2 --> val
-        claude3 --> val
+        orch --> val["Validation Agent"]
 
         val -- PASS --> mq["Merge Queue"]
         val -- PARTIAL --> retry["Retry"]
-        retry --> plan
+        retry --> orch
     end
 
     mq -- "rebase + merge" --> verify["Integrity Check"]
@@ -152,6 +150,7 @@ Each task follows a state machine with automatic transitions:
 
 ```mermaid
 flowchart LR
+    D -- FAIL --> F(["FAILED"])
     A(["Task Received"]) --> B["DETECTED"]
     B -- "deps met /<br/>grace elapsed" --> C["RUNNING"]
     C --> D["VALIDATING"]
@@ -159,7 +158,6 @@ flowchart LR
     MQ --> E(["COMPLETED"])
     D -- PARTIAL --> R["RETRYING"]
     R --> C
-    D -- FAIL --> F(["FAILED"])
     C -- "timeout /<br/>budget" --> F
     C -. "infra error" .-> C
 ```
@@ -245,7 +243,7 @@ golem/
 ├── cli.py                 # CLI entry point (daemon auto-start, submit)
 ├── flow.py                # Tick-driven poll → detect → orchestrate loop
 ├── orchestrator.py        # State-machine session lifecycle
-├── supervisor.py          # Task decomposition and synthesis
+├── supervisor_v2_subagent.py  # Subagent orchestrator (Agent tool delegation)
 ├── validation.py          # Validation agent (PASS/PARTIAL/FAIL)
 ├── committer.py           # Structured git commits
 ├── errors.py              # Error taxonomy (Infrastructure/Task/Validation)
@@ -298,7 +296,10 @@ See [`config.yaml.example`](config.yaml.example) for the full annotated template
 | `profile` | `local` | Backend profile (`local`, `redmine`, or custom) |
 | `task_model` | `sonnet` | Claude model for execution |
 | `budget_per_task_usd` | `10.0` | Max spend per task (0 = unlimited) |
-| `supervisor_mode` | `true` | Decompose complex tasks into subtasks |
+| `supervisor_mode` | `true` | Enable subagent orchestration (Agent tool delegation) |
+| `orchestrate_model` | `""` | Model for orchestration (empty = use task_model) |
+| `orchestrate_budget_usd` | `15.0` | Budget for orchestration session |
+| `orchestrate_timeout_seconds` | `2400` | Timeout for orchestration session |
 | `max_retries` | `1` | Retries on PARTIAL validation verdict |
 | `auto_commit` | `true` | Git commit on PASS |
 | `use_worktrees` | `true` | Isolate tasks in separate git worktrees |

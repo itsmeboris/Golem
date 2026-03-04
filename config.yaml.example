@@ -37,12 +37,13 @@ flows:
     max_retries: 1                 # retry once on PARTIAL verdict
     auto_commit: true              # commit on PASS verdict
 
-    # Supervisor mode: decompose large tasks into subtasks
+    # Subagent orchestration: single Claude session with Agent tool delegation
     supervisor_mode: true
-    decompose_model: ""            # empty = use task_model
-    subtask_model: ""              # empty = use task_model
-    subtask_budget_usd: 5.0
-    summarize_model: haiku
+    orchestrate_model: ""              # empty = use task_model
+    orchestrate_budget_usd: 15.0
+    orchestrate_timeout_seconds: 2400
+    inner_retry_max: 3
+    resume_on_partial: true
 
     # Working directories
     use_worktrees: true            # git worktree isolation per task

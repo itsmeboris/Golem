@@ -12,7 +12,6 @@ function fmtTermTs(ts) {
 let _sessions = {};
 let _selectedId = null;
 let _traceCache = {};
-let _expandedSubtasks = new Set();
 let _showThinking = false;
 let _showText = true;
 let _prevFingerprints = {};
@@ -20,7 +19,7 @@ let _liveSnap = {};
 let _allTraceEvents = {};
 
 /* Pipeline view state */
-let _pipelineView = 'waterfall'; /* 'waterfall' | 'log' */
+let _pipelineView = 'waterfall'; /* 'waterfall' | 'flow' | 'log' */
 let _expandedStages = new Set();
 let _stageFingerprint = '';
 let _selectedStageId = null;
@@ -143,10 +142,10 @@ function verdictBadgeStyle(v) {
 /* ── Task selection & routing ──────────────────────────────── */
 function selectTask(id) {
   _selectedId = id;
-  _expandedSubtasks.clear();
   _expandedStages.clear();
   _stageFingerprint = '';
   _selectedStageId = null;
+  _flowSelectedStageId = null;
   location.hash = '/task/' + id;
 
   $$('.task-card').forEach(el => el.classList.toggle('selected', el.dataset.id === id));
@@ -159,10 +158,10 @@ function selectTask(id) {
 
 function deselectTask() {
   _selectedId = null;
-  _expandedSubtasks.clear();
   _expandedStages.clear();
   _stageFingerprint = '';
   _selectedStageId = null;
+  _flowSelectedStageId = null;
   history.pushState(null, '', location.pathname);
   $('#overview-state').classList.remove('hidden');
   $('#task-detail').classList.add('hidden');
@@ -177,9 +176,6 @@ function handleHash() {
   const id = m[1];
   if (_sessions[id]) selectTask(id);
   else _selectedId = id;
-
-  const sub = hash.match(/\/sub\/(\d+)/);
-  if (sub) _expandedSubtasks.add(parseInt(sub[1]));
 }
 
 /* ── Overview rendering ────────────────────────────────────── */
@@ -292,7 +288,6 @@ function renderMetrics(s) {
     { label: 'Duration', value: fmtDuration(s.duration_seconds), cls: '' },
     { label: 'Milestones', value: s.milestone_count || 0, cls: '' },
     { label: 'Retries', value: s.retry_count || 0, cls: s.retry_count > 0 ? 'red' : '' },
-    { label: 'Subtasks', value: (s.subtask_results || []).length, cls: '' },
   );
   if (s.infra_retry_count > 0) cards.push({ label: 'Infra Retries', value: s.infra_retry_count, cls: 'red' });
   if (s.validation_cost_usd) cards.push({ label: 'Validation Cost', value: fmtCost(s.validation_cost_usd), cls: '' });
@@ -315,14 +310,9 @@ function renderMetrics(s) {
 /* ── Phase Banner ──────────────────────────────────────────── */
 function renderPhaseBanner(s) {
   const container = $('#phase-banner-container');
-  if (s.execution_mode !== 'supervisor' || !s.state || s.state === 'detected') { container.innerHTML = ''; return; }
+  if (s.execution_mode !== 'subagent' || !s.state || s.state === 'detected') { container.innerHTML = ''; return; }
 
   const phase = s.supervisor_phase || '';
-  const plan = s.subtask_plan || [];
-  const done = (s.subtask_results || []).length;
-  const total = plan.length || '?';
-  const activeId = s.active_subtask_id || 0;
-  const activeName = activeId ? (plan.find(p => p.id === activeId) || {}).subject || `#${activeId}` : '';
 
   let icon, label, detail, cls;
   const isTerminal = ['completed', 'failed'].includes(s.state);
@@ -330,12 +320,10 @@ function renderPhaseBanner(s) {
   if (isTerminal) {
     icon = s.state === 'completed' ? '\u2713' : '\u2717';
     label = s.state === 'completed' ? 'Completed' : 'Failed';
-    detail = `${done}/${total} subtasks`; cls = 'done';
+    detail = ''; cls = 'done';
   } else {
     switch (phase) {
-      case 'decomposing': icon = '\u2699'; label = 'Decomposing\u2026'; detail = ''; cls = 'active'; break;
-      case 'executing': icon = '\u25B6'; label = `Subtask ${done + 1}/${total}`; detail = esc(activeName); cls = 'active'; break;
-      case 'summarizing': icon = '\u270E'; label = 'Summarizing\u2026'; detail = `${done}/${total} done`; cls = 'active'; break;
+      case 'orchestrating': icon = '\u2699'; label = 'Orchestrating\u2026'; detail = ''; cls = 'active'; break;
       case 'validating': icon = '\uD83D\uDD0D'; label = 'Validating\u2026'; detail = ''; cls = 'active'; break;
       case 'committing': icon = '\u2B06'; label = 'Committing\u2026'; detail = ''; cls = 'active'; break;
       default: icon = '\u23F3'; label = 'Working\u2026'; detail = ''; cls = 'active';
@@ -354,8 +342,8 @@ function renderPhaseBanner(s) {
    ═══════════════════════════════════════════════════════════════ */
 
 const STAGE_ICONS = {
-  task: '\uD83D\uDCCB', preflight: '\u2714', supervisor: '\u2699',
-  subtask: '\u25B6', execution: '\u25B6', validation: '\uD83D\uDD0D',
+  task: '\uD83D\uDCCB', preflight: '\u2714', orchestration: '\u2699',
+  execution: '\u25B6', validation: '\uD83D\uDD0D',
   merge: '\u2B06', commit: '\u2714', retry: '\u21BA', failure: '\u2717'
 };
 
@@ -363,8 +351,7 @@ const STAGE_ICONS = {
 function computeStages(s) {
   const stages = [];
   const state = s.state || 'detected';
-  const isSupervisor = s.execution_mode === 'supervisor';
-  const phase = s.supervisor_phase || '';
+  const isSubagent = s.execution_mode === 'subagent';
   const allEvents = s.event_log || [];
   const taskId = s.parent_issue_id || _selectedId;
 
@@ -376,28 +363,11 @@ function computeStages(s) {
 
   stages.push({ id: 'preflight', type: 'preflight', label: 'Preflight', state: 'completed', events: [] });
 
-  if (isSupervisor) {
-    const supState = phase === 'decomposing' ? 'running'
-      : ['executing','summarizing','validating','committing'].includes(phase) ? 'completed'
-      : state === 'failed' ? 'failed' : 'running';
-    stages.push({ id: 'supervisor', type: 'supervisor', label: 'Decompose', state: supState,
-      events: allEvents.filter(e => !e.subtask_id), meta: { phase, plan: s.subtask_plan } });
-
-    const plan = s.subtask_plan || [];
-    const results = s.subtask_results || [];
-    const resultMap = {};
-    for (const r of results) resultMap[r.issue_id] = r;
-    const subtaskEntries = plan.length ? plan : results.map(r => ({ id: r.issue_id, subject: r.subject }));
-
-    for (const entry of subtaskEntries) {
-      const result = resultMap[entry.id];
-      const isActive = entry.id === s.active_subtask_id;
-      const subState = result ? (result.status === 'failed' ? 'failed' : 'completed') : isActive ? 'running' : 'pending';
-      stages.push({ id: 'subtask-' + entry.id, type: 'subtask',
-        label: truncText(entry.subject || 'Subtask #' + entry.id, 30), state: subState,
-        events: allEvents.filter(e => e.subtask_id === entry.id),
-        meta: { subtaskId: entry.id, result, isActive, subject: entry.subject } });
-    }
+  if (isSubagent) {
+    const execState = ['completed','failed','validating','retrying'].includes(state) ? 'completed'
+      : state === 'running' ? 'running' : 'pending';
+    stages.push({ id: 'orchestration', type: 'orchestration', label: 'Orchestration', state: execState,
+      events: allEvents, meta: { milestones: s.milestone_count, cost: s.total_cost_usd } });
   } else {
     const execState = ['completed','failed','validating','retrying'].includes(state) ? 'completed'
       : state === 'running' ? 'running' : 'pending';
@@ -475,19 +445,24 @@ function renderPipelineView(id, s) {
   const stages = computeStages(s);
   const fp = (s.state || '') + '|' + (s.milestone_count || 0) + '|' +
     (s.total_cost_usd || 0) + '|' + ((s.event_log || []).length) + '|' +
-    (s.validation_verdict || '') + '|' + ((s.subtask_results || []).length) + '|' +
-    (s.supervisor_phase || '') + '|' + (s.active_subtask_id || 0) + '|' +
+    (s.validation_verdict || '') + '|' +
+    (s.supervisor_phase || '') + '|' +
     (s.retry_count || 0) + '|' + (s.commit_sha || '') + '|' + (s.merge_ready ? '1' : '0');
 
   if (fp === _stageFingerprint) return;
   _stageFingerprint = fp;
 
+  document.getElementById('waterfall-view').classList.add('hidden');
+  document.getElementById('flow-view').classList.add('hidden');
+  document.getElementById('log-view').classList.add('hidden');
+
   if (_pipelineView === 'waterfall') {
     document.getElementById('waterfall-view').classList.remove('hidden');
-    document.getElementById('log-view').classList.add('hidden');
     renderWaterfallTable(stages, s);
+  } else if (_pipelineView === 'flow') {
+    document.getElementById('flow-view').classList.remove('hidden');
+    renderFlowGraph(stages, s);
   } else {
-    document.getElementById('waterfall-view').classList.add('hidden');
     document.getElementById('log-view').classList.remove('hidden');
     renderAccordionView(stages, s);
   }
@@ -497,6 +472,7 @@ function setPipelineView(view) {
   _pipelineView = view;
   _stageFingerprint = '';
   document.getElementById('btn-waterfall-view').classList.toggle('active', view === 'waterfall');
+  document.getElementById('btn-flow-view').classList.toggle('active', view === 'flow');
   document.getElementById('btn-log-view').classList.toggle('active', view === 'log');
   if (_selectedId && _sessions[_selectedId]) renderPipelineView(_selectedId, _sessions[_selectedId]);
 }
@@ -564,7 +540,6 @@ function renderWaterfallTable(stages, session) {
   let html = `<div class="wf-header"><span>Stage</span><span>Status</span><span style="text-align:right">Duration</span></div>`;
 
   for (const st of stages) {
-    const isChild = st.type === 'subtask';
     const icon = STAGE_ICONS[st.type] || '\u25CF';
     const stateLabel = STATE_LABELS[st.state] || st.state;
     const selected = st.id === _selectedStageId ? ' selected' : '';
@@ -580,7 +555,7 @@ function renderWaterfallTable(stages, session) {
       else if (st.meta.result && st.meta.result.cost_usd) costText = fmtCost(st.meta.result.cost_usd);
     }
 
-    html += `<div class="wf-row${isChild ? ' wf-child' : ''}${selected}" data-stage-id="${st.id}" onclick="selectWaterfallStage('${st.id}')">
+    html += `<div class="wf-row${selected}" data-stage-id="${st.id}" onclick="selectWaterfallStage('${st.id}')">
       <div class="wf-name">
         <div class="wf-icon st-${st.state}">${icon}</div>
         <span>${esc(st.label)}</span>
@@ -668,20 +643,6 @@ function renderDetailSummary(st) {
     html += '</div>';
   }
 
-  if (st.type === 'subtask') {
-    const result = m.result;
-    if (result) {
-      html += '<div class="wf-detail-summary">';
-      if (result.verdict) html += `<span class="wf-verdict ${result.verdict}">${esc(result.verdict)}</span> `;
-      if (result.cost_usd) html += `<span style="font-size:0.78rem;color:var(--text-muted)">${fmtCost(result.cost_usd)}</span> `;
-      if (result.duration_seconds) html += `<span style="font-size:0.78rem;color:var(--text-muted)">${fmtDuration(result.duration_seconds)}</span>`;
-      if (result.summary) html += `<div style="margin-top:0.3rem">${esc(result.summary)}</div>`;
-      html += '</div>';
-    } else if (m.subject) {
-      html += `<div class="wf-detail-summary">${esc(m.subject)}</div>`;
-    }
-  }
-
   if (st.type === 'commit' && m.sha) {
     html += `<div class="wf-detail-summary" style="font-family:var(--font-mono);font-size:0.78rem;word-break:break-all">${esc(m.sha)}</div>`;
   }
@@ -708,9 +669,6 @@ function renderDetailEvents(st, session) {
       html += `<div class="wf-events-empty">${events.length - MAX} older events hidden</div>`;
     }
     html += rendered.map(renderWfEventRow).join('');
-  } else if (st.type === 'subtask' && st.meta && st.meta.subtaskId) {
-    html += '<div class="wf-events-empty">Loading trace...</div>';
-    loadSubtaskTraceForDetail(st.meta.subtaskId, st.id);
   } else {
     html += '<div class="wf-events-empty">No events recorded.</div>';
   }
@@ -751,9 +709,6 @@ function renderStageBody(st, s) {
     const rendered = events.length > MAX ? events.slice(-MAX) : events;
     if (events.length > MAX) html += `<div class="wf-events-empty">${events.length - MAX} older events hidden</div>`;
     html += rendered.map(renderWfEventRow).join('');
-  } else if (st.type === 'subtask' && st.meta && st.meta.subtaskId) {
-    html += '<div class="wf-events-empty">Loading trace...</div>';
-    loadSubtaskTraceForStage(st.meta.subtaskId, st.id);
   } else if (!html) {
     html += '<div class="wf-events-empty">No events recorded.</div>';
   }
@@ -761,60 +716,294 @@ function renderStageBody(st, s) {
   return html;
 }
 
-async function loadSubtaskTrace(subtaskId) {
-  const parentId = _selectedId;
-  if (!parentId) return null;
-  const cacheKey = parentId + '-' + subtaskId;
-  if (_traceCache[cacheKey]) return _traceCache[cacheKey];
-  try {
-    const res = await fetch('/api/subtask-trace/' + parentId + '/' + subtaskId);
-    if (!res.ok) return null;
-    const data = await res.json();
-    _traceCache[cacheKey] = data;
-    _allTraceEvents[cacheKey] = data.events;
-    return data;
-  } catch (e) { return null; }
+/* ═══════════════════════════════════════════════════════════════
+   FLOW GRAPH (DAG VISUALIZATION)
+   ═══════════════════════════════════════════════════════════════ */
+
+const FLOW_COLORS = {
+  completed: { fill: '#064e3b', stroke: '#34D399', text: '#34D399', glow: 'rgba(52,211,153,0.25)' },
+  running:   { fill: '#0c1a3d', stroke: '#60A5FA', text: '#60A5FA', glow: 'rgba(96,165,250,0.35)' },
+  failed:    { fill: '#2d0f0f', stroke: '#F87171', text: '#F87171', glow: 'rgba(248,113,113,0.25)' },
+  warning:   { fill: '#2d1a08', stroke: '#FBBF24', text: '#FBBF24', glow: 'rgba(251,191,36,0.25)' },
+  pending:   { fill: '#1a1a2e', stroke: '#4B5563', text: '#6B7280', glow: 'rgba(75,85,99,0.1)' },
+};
+
+const FLOW_NODE = { w: 156, h: 64, rx: 10 };
+const FLOW_GAP = { x: 56, y: 20 };
+
+function layoutFlowGraph(stages) {
+  /* Separate stages into columns:
+     col 0: task
+     col 1: preflight
+     col 2: orchestration/execution
+     col 3: validation
+     col 4: retry/merge
+     col 5: commit/failure
+  */
+  const colOrder = ['task', 'preflight', 'orchestration', 'execution', 'validation', 'retry', 'merge', 'commit', 'failure'];
+
+  /* Group stages by their column position */
+  const colMap = new Map();
+  for (const st of stages) {
+    const colIdx = colOrder.indexOf(st.type);
+    if (colIdx === -1) continue;
+    if (!colMap.has(colIdx)) colMap.set(colIdx, []);
+    colMap.get(colIdx).push(st);
+  }
+
+  /* Build final columns in order */
+  const sortedCols = [...colMap.keys()].sort((a, b) => a - b);
+
+  const nodes = [];
+  const edges = [];
+  let colX = 40;
+
+  const nodeMap = new Map(); /* stageId -> {x, y, w, h, stage} */
+
+  for (const colIdx of sortedCols) {
+    const colStages = colMap.get(colIdx);
+
+    for (let i = 0; i < colStages.length; i++) {
+      const st = colStages[i];
+      const y = 40 + i * (FLOW_NODE.h + FLOW_GAP.y);
+      nodeMap.set(st.id, { x: colX, y, w: FLOW_NODE.w, h: FLOW_NODE.h, stage: st });
+      nodes.push({ ...st, x: colX, y, w: FLOW_NODE.w, h: FLOW_NODE.h });
+    }
+    colX += FLOW_NODE.w + FLOW_GAP.x;
+  }
+
+  /* Build edges based on pipeline flow */
+  for (let i = 1; i < stages.length; i++) {
+    const st = stages[i];
+    const prev = stages[i - 1];
+    if (nodeMap.has(prev.id) && nodeMap.has(st.id)) {
+      edges.push({ from: prev.id, to: st.id, state: st.state });
+    }
+  }
+
+  /* Deduplicate edges */
+  const edgeSet = new Set();
+  const uniqueEdges = edges.filter(e => {
+    const key = e.from + '->' + e.to;
+    if (edgeSet.has(key)) return false;
+    edgeSet.add(key);
+    return true;
+  });
+
+  /* Center nodes vertically around the tallest column */
+  let maxH = 0;
+  const colNodes = new Map();
+  for (const n of nodes) {
+    if (!colNodes.has(n.x)) colNodes.set(n.x, []);
+    colNodes.get(n.x).push(n);
+  }
+  for (const [, col] of colNodes) {
+    const colH = col.length * (FLOW_NODE.h + FLOW_GAP.y) - FLOW_GAP.y;
+    if (colH > maxH) maxH = colH;
+  }
+  for (const [, col] of colNodes) {
+    const colH = col.length * (FLOW_NODE.h + FLOW_GAP.y) - FLOW_GAP.y;
+    const offset = (maxH - colH) / 2;
+    for (const n of col) {
+      n.y += offset;
+      const nm = nodeMap.get(n.id);
+      if (nm) nm.y = n.y;
+    }
+  }
+
+  const svgW = colX + 40;
+  const svgH = maxH + 120;
+
+  return { nodes, edges: uniqueEdges, nodeMap, svgW, svgH };
 }
 
-async function loadSubtaskTraceForStage(subtaskId, stageId) {
-  const parentId = _selectedId;
-  const data = await loadSubtaskTrace(subtaskId);
-  if (!data || _selectedId !== parentId || !_expandedStages.has(stageId)) return;
-  /* Find the accordion group body with the loading placeholder */
-  const group = document.querySelector(`.acc-group[data-stage="${stageId}"] .acc-group-body`);
-  if (!group) return;
-  const loadingEl = group.querySelector('.wf-events-empty');
-  if (!loadingEl) return;
-  const events = filterEvents(data.events || []);
-  if (events.length) {
-    const MAX = 200;
-    const rendered = events.length > MAX ? events.slice(-MAX) : events;
-    let evHtml = '';
-    if (events.length > MAX) evHtml += `<div class="wf-events-empty">${events.length - MAX} older events hidden</div>`;
-    evHtml += rendered.map(renderWfEventRow).join('');
-    loadingEl.outerHTML = evHtml;
-  } else {
-    loadingEl.outerHTML = '<div class="wf-events-empty">No trace events.</div>';
+function svgEdgePath(fromNode, toNode) {
+  const x1 = fromNode.x + fromNode.w;
+  const y1 = fromNode.y + fromNode.h / 2;
+  const x2 = toNode.x;
+  const y2 = toNode.y + toNode.h / 2;
+  const cp = Math.abs(x2 - x1) * 0.45;
+  return `M${x1},${y1} C${x1 + cp},${y1} ${x2 - cp},${y2} ${x2},${y2}`;
+}
+
+let _flowSelectedStageId = null;
+
+function renderFlowGraph(stages, session) {
+  const container = document.getElementById('flow-graph-container');
+  const layout = layoutFlowGraph(stages);
+  const { nodes, edges, nodeMap, svgW, svgH } = layout;
+  const timing = computeTimingInfo(stages, session);
+
+  /* Build SVG */
+  let svg = `<svg class="flow-svg" viewBox="0 0 ${svgW} ${svgH}" width="${svgW}" height="${svgH}" xmlns="http://www.w3.org/2000/svg">`;
+
+  /* Defs: filters, gradients, markers */
+  svg += `<defs>`;
+  for (const [state, colors] of Object.entries(FLOW_COLORS)) {
+    svg += `<filter id="glow-${state}" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feFlood flood-color="${colors.glow}" result="color"/>
+      <feComposite in="color" in2="blur" operator="in" result="shadow"/>
+      <feMerge><feMergeNode in="shadow"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>`;
+  }
+  /* Animated dash pattern for running edges */
+  svg += `<style>
+    @keyframes flow-dash { to { stroke-dashoffset: -20; } }
+    .flow-edge-running { animation: flow-dash 1s linear infinite; }
+    .flow-node-group { cursor: pointer; }
+    .flow-node-group:hover .flow-node-rect { filter: brightness(1.3); }
+    .flow-node-group.selected .flow-node-rect { stroke-width: 2.5; }
+    @keyframes flow-pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
+    .flow-running-indicator { animation: flow-pulse 2s ease-in-out infinite; }
+  </style>`;
+  svg += `</defs>`;
+
+  /* Render edges */
+  for (const edge of edges) {
+    const fromN = nodeMap.get(edge.from);
+    const toN = nodeMap.get(edge.to);
+    if (!fromN || !toN) continue;
+    const colors = FLOW_COLORS[edge.state] || FLOW_COLORS.pending;
+    const path = svgEdgePath(fromN, toN);
+    const isRunning = edge.state === 'running';
+    const dashAttrs = isRunning ? `stroke-dasharray="6 4" class="flow-edge-running"` : '';
+    const opacity = edge.state === 'pending' ? 0.3 : 0.5;
+    svg += `<path d="${path}" fill="none" stroke="${colors.stroke}" stroke-width="1.5" opacity="${opacity}" ${dashAttrs}/>`;
+    /* Glow layer for completed/running */
+    if (edge.state === 'completed' || edge.state === 'running') {
+      svg += `<path d="${path}" fill="none" stroke="${colors.stroke}" stroke-width="4" opacity="0.1" ${dashAttrs}/>`;
+    }
+  }
+
+  /* Render nodes */
+  for (const node of nodes) {
+    const colors = FLOW_COLORS[node.state] || FLOW_COLORS.pending;
+    const icon = STAGE_ICONS[node.type] || '\u25CF';
+    const isSelected = _flowSelectedStageId === node.id;
+    const selClass = isSelected ? ' selected' : '';
+    const t = timing.timingMap.get(node.id);
+    const durationText = t && t.duration > 0 ? fmtDuration(t.duration) : '';
+
+    let costText = '';
+    if (node.meta) {
+      if (node.meta.cost) costText = fmtCost(node.meta.cost);
+      else if (node.meta.result && node.meta.result.cost_usd) costText = fmtCost(node.meta.result.cost_usd);
+    }
+
+    svg += `<g class="flow-node-group${selClass}" data-stage-id="${node.id}" onclick="selectFlowNode('${node.id}')">`;
+
+    /* Node background */
+    svg += `<rect class="flow-node-rect" x="${node.x}" y="${node.y}" width="${node.w}" height="${node.h}"
+      rx="${FLOW_NODE.rx}" fill="${colors.fill}" stroke="${colors.stroke}" stroke-width="1.5"
+      filter="url(#glow-${node.state})"/>`;
+
+    /* Running pulse ring */
+    if (node.state === 'running') {
+      svg += `<rect class="flow-running-indicator" x="${node.x - 3}" y="${node.y - 3}"
+        width="${node.w + 6}" height="${node.h + 6}" rx="${FLOW_NODE.rx + 2}"
+        fill="none" stroke="${colors.stroke}" stroke-width="1" opacity="0.4"/>`;
+    }
+
+    /* Icon + label */
+    const textX = node.x + 12;
+    const labelY = node.y + (durationText || costText ? 22 : 28);
+    svg += `<text x="${textX}" y="${labelY}" fill="${colors.text}" font-size="11" font-weight="600" font-family="system-ui,sans-serif">`;
+    svg += `<tspan>${icon} </tspan>`;
+    /* Truncate label */
+    const maxChars = 14;
+    const label = node.label.length > maxChars ? node.label.slice(0, maxChars - 1) + '\u2026' : node.label;
+    svg += `${esc(label)}</text>`;
+
+    /* Status badge */
+    const stateLabel = STATE_LABELS[node.state] || node.state;
+    svg += `<text x="${node.x + node.w - 10}" y="${labelY}" fill="${colors.text}" font-size="9"
+      font-weight="500" text-anchor="end" opacity="0.8" font-family="system-ui,sans-serif">${stateLabel}</text>`;
+
+    /* Duration / cost sub-line */
+    if (durationText || costText) {
+      const subParts = [durationText, costText].filter(Boolean).join(' \u00B7 ');
+      svg += `<text x="${textX}" y="${node.y + 42}" fill="${colors.text}" font-size="9" opacity="0.55"
+        font-family="system-ui,sans-serif">${esc(subParts)}</text>`;
+    }
+
+    /* Progress bar for running stages */
+    if (node.state === 'running' && t && t.duration > 0) {
+      const barY = node.y + node.h - 6;
+      const barW = node.w - 20;
+      svg += `<rect x="${node.x + 10}" y="${barY}" width="${barW}" height="2" rx="1" fill="${colors.stroke}" opacity="0.15"/>`;
+      svg += `<rect x="${node.x + 10}" y="${barY}" width="${barW * 0.6}" height="2" rx="1" fill="${colors.stroke}" opacity="0.5">
+        <animate attributeName="width" from="0" to="${barW}" dur="3s" repeatCount="indefinite"/>
+      </rect>`;
+    }
+
+    svg += `</g>`;
+  }
+
+  svg += `</svg>`;
+  container.innerHTML = svg;
+
+  /* Show detail for selected node */
+  if (_flowSelectedStageId) {
+    const st = stages.find(s => s.id === _flowSelectedStageId);
+    if (st) renderFlowDetail(st, session);
+    else closeFlowDetail();
   }
 }
 
-async function loadSubtaskTraceForDetail(subtaskId, stageId) {
-  const parentId = _selectedId;
-  const data = await loadSubtaskTrace(subtaskId);
-  if (!data || _selectedId !== parentId || _selectedStageId !== stageId) return;
-  const body = document.getElementById('wf-detail-body');
-  if (!body) return;
-  const events = filterEvents(data.events || []);
-  if (events.length) {
+function selectFlowNode(stageId) {
+  if (_flowSelectedStageId === stageId) {
+    closeFlowDetail();
+    return;
+  }
+  _flowSelectedStageId = stageId;
+  _stageFingerprint = '';
+  if (_selectedId && _sessions[_selectedId]) renderPipelineView(_selectedId, _sessions[_selectedId]);
+  setTimeout(() => {
+    const panel = document.getElementById('flow-detail-panel');
+    if (panel && !panel.classList.contains('hidden')) {
+      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, 50);
+}
+
+function closeFlowDetail() {
+  _flowSelectedStageId = null;
+  document.getElementById('flow-detail-panel').classList.add('hidden');
+}
+
+function renderFlowDetail(st, session) {
+  const panel = document.getElementById('flow-detail-panel');
+  panel.classList.remove('hidden');
+
+  const icon = STAGE_ICONS[st.type] || '\u25CF';
+  const metaParts = [];
+  if (st.meta && st.meta.cost) metaParts.push(fmtCost(st.meta.cost));
+  if (st.meta && st.meta.result && st.meta.result.cost_usd) metaParts.push(fmtCost(st.meta.result.cost_usd));
+  if (st.meta && st.meta.result && st.meta.result.duration_seconds) metaParts.push(fmtDuration(st.meta.result.duration_seconds));
+
+  let html = `<div class="wf-detail-header">
+    <div class="wf-icon st-${st.state}" style="width:24px;height:24px;font-size:0.85rem">${icon}</div>
+    <span class="wf-dh-name">${esc(st.label)}</span>
+    <span class="wf-state st-${st.state}" style="font-size:0.78rem">${st.state}</span>
+    <div class="wf-dh-meta">${metaParts.map(m => `<span>${m}</span>`).join('')}</div>
+    <button class="wf-dh-close" onclick="closeFlowDetail()" title="Close">&times;</button>
+  </div>`;
+
+  html += renderDetailSummary(st);
+  html += '<div class="wf-detail-body" id="flow-detail-body">';
+  const events = filterEvents(st.events);
+  if (events.length > 0) {
     const MAX = 200;
     const rendered = events.length > MAX ? events.slice(-MAX) : events;
-    let evHtml = '';
-    if (events.length > MAX) evHtml += `<div class="wf-events-empty">${events.length - MAX} older events hidden</div>`;
-    evHtml += rendered.map(renderWfEventRow).join('');
-    body.innerHTML = evHtml;
+    if (events.length > MAX) html += `<div class="wf-events-empty">${events.length - MAX} older events hidden</div>`;
+    html += rendered.map(renderWfEventRow).join('');
   } else {
-    body.innerHTML = '<div class="wf-events-empty">No trace events.</div>';
+    html += '<div class="wf-events-empty">No events recorded.</div>';
   }
+  html += '</div>';
+
+  panel.innerHTML = html;
 }
 
 /* ── Accordion / Tree View ─────────────────────────────────── */
@@ -920,7 +1109,7 @@ async function fetchSessions() {
     if (_selectedId && _sessions[_selectedId]) {
       const s = _sessions[_selectedId];
       const fp = s.state + '|' + (s.milestone_count || 0) + '|' + (s.total_cost_usd || 0) + '|' +
-        ((s.event_log || []).length) + '|' + (s.validation_verdict || '') + '|' + ((s.subtask_results || []).length);
+        ((s.event_log || []).length) + '|' + (s.validation_verdict || '');
       if (s.state === 'detected' || _prevFingerprints[_selectedId] !== fp) {
         _prevFingerprints[_selectedId] = fp;
         renderTaskDetail(_selectedId, s);

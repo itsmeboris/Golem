@@ -13,7 +13,6 @@ from golem.committer import CommitResult
 from golem.core.cli_wrapper import CLIResult
 from golem.event_tracker import Milestone, TaskEventTracker, TrackerState
 from golem.orchestrator import (
-    SubtaskResult,
     TaskOrchestrator,
     TaskSession,
     TaskSessionState,
@@ -23,15 +22,6 @@ from golem.orchestrator import (
     save_sessions,
 )
 from golem.validation import ValidationVerdict
-
-
-class TestSubtaskResult:
-    def test_defaults(self):
-        r = SubtaskResult(issue_id=1, subject="task")
-        assert r.status == ""
-        assert r.verdict == ""
-        assert r.cost_usd == 0.0
-        assert r.retry_count == 0
 
 
 class TestTaskSessionSerialization:
@@ -382,8 +372,8 @@ class TestRunAgent:
         mock_sup_instance = MagicMock()
         mock_sup_instance.run = AsyncMock()
         mock_sup_cls = MagicMock(return_value=mock_sup_instance)
-        fake_module = MagicMock(TaskSupervisor=mock_sup_cls)
-        with patch.dict("sys.modules", {"golem.supervisor": fake_module}):
+        fake_module = MagicMock(SubagentSupervisor=mock_sup_cls)
+        with patch.dict("sys.modules", {"golem.supervisor_v2_subagent": fake_module}):
             await orch._run_agent()
         mock_sup_instance.run.assert_awaited_once()
 
@@ -1137,17 +1127,8 @@ class TestOnMilestone:
         assert len(session.event_log) == 1
         assert session.event_log[0]["kind"] == "tool_call"
 
-    def test_subtask_id_tagged(self):
-        session = TaskSession(parent_issue_id=1, active_subtask_id=99)
-        orch = _make_orch(session)
-        milestone = Milestone(kind="tool_call")
-        ts = TrackerState(milestone_count=1)
-        orch._on_milestone(milestone, ts)
-
-        assert session.event_log[0]["subtask_id"] == 99
-
-    def test_no_subtask_id(self):
-        session = TaskSession(parent_issue_id=1, active_subtask_id=0)
+    def test_no_subtask_id_in_events(self):
+        session = TaskSession(parent_issue_id=1)
         orch = _make_orch(session)
         milestone = Milestone(kind="tool_call")
         ts = TrackerState(milestone_count=1)

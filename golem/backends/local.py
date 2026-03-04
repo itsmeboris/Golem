@@ -74,9 +74,8 @@ class LocalFileTaskSource:
     def get_child_tasks(self, parent_id: int | str) -> list[dict[str, Any]]:
         """Return child tasks: embedded in parent file OR files with matching parent_id.
 
-        When the supervisor decomposes a task, ``create_child_task`` writes
-        child JSON files with a ``parent_id`` field.  This method finds those
-        files so the supervisor can iterate over them.
+        ``create_child_task`` writes child JSON files with a ``parent_id``
+        field.  This method finds those files.
         """
         # 1. Check embedded children in the parent file
         task = self._find_task(str(parent_id))

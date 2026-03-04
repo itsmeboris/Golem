@@ -57,20 +57,15 @@ class GolemFlowConfig(FlowConfig):
     retry_budget_usd: float = 5.0
     max_retries: int = 1
     auto_commit: bool = True
-    # Supervisor mode (per-subtask settings)
+    # Subagent orchestration mode
     supervisor_mode: bool = True
-    subtask_model: str = ""
-    subtask_budget_usd: float = 5.0
-    subtask_timeout_seconds: int = 900
-    decompose_model: str = ""
-    decompose_budget_usd: float = 1.0
-    summarize_model: str = "haiku"
-    summarize_budget_usd: float = 0.50
-    max_subtask_retries: int = 1
+    orchestrate_budget_usd: float = 15.0
+    orchestrate_timeout_seconds: int = 2400
+    orchestrate_model: str = ""  # empty = use task_model
+    inner_retry_max: int = 3  # circuit breaker for inner test-fix loops
+    resume_on_partial: bool = True  # use --resume instead of cold retry
     # Worktree isolation (prevents concurrent sessions from conflicting)
     use_worktrees: bool = True
-    # Skip per-subtask validation in supervisor mode (validate only at end)
-    skip_subtask_validation: bool = True
     # Profile system: selects which backends (task source, state, notifier, tools, prompts)
     profile: str = "redmine"
     profile_config: dict = field(default_factory=dict)
@@ -232,18 +227,14 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
         retry_budget_usd=data.get("retry_budget_usd", 5.0),
         max_retries=data.get("max_retries", 1),
         auto_commit=data.get("auto_commit", True),
-        # Supervisor mode
+        # Subagent orchestration
         supervisor_mode=data.get("supervisor_mode", True),
-        subtask_model=data.get("subtask_model", ""),
-        subtask_budget_usd=data.get("subtask_budget_usd", 5.0),
-        subtask_timeout_seconds=data.get("subtask_timeout_seconds", 900),
-        decompose_model=data.get("decompose_model", ""),
-        decompose_budget_usd=data.get("decompose_budget_usd", 1.0),
-        summarize_model=data.get("summarize_model", "haiku"),
-        summarize_budget_usd=data.get("summarize_budget_usd", 0.50),
-        max_subtask_retries=data.get("max_subtask_retries", 1),
+        orchestrate_budget_usd=data.get("orchestrate_budget_usd", 15.0),
+        orchestrate_timeout_seconds=data.get("orchestrate_timeout_seconds", 2400),
+        orchestrate_model=data.get("orchestrate_model", ""),
+        inner_retry_max=data.get("inner_retry_max", 3),
+        resume_on_partial=data.get("resume_on_partial", True),
         use_worktrees=data.get("use_worktrees", True),
-        skip_subtask_validation=data.get("skip_subtask_validation", True),
         profile=data.get("profile", "redmine"),
         profile_config=data.get("profile_config", {}),
         prompts_dir=data.get("prompts_dir", ""),

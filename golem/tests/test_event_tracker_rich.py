@@ -225,3 +225,26 @@ class TestFindContentBlocksMessagePath:
     def test_no_content_returns_empty(self):
         blocks = TaskEventTracker._find_content_blocks({"type": "unknown"})
         assert not blocks
+
+
+class TestSessionIdCapture:
+    def test_session_id_from_init_event(self):
+        tracker = TaskEventTracker(session_id=1)
+        event = {"type": "system", "subtype": "init", "session_id": "abc-123"}
+        tracker.handle_event(event)
+        assert tracker.state.session_id == "abc-123"
+
+    def test_session_id_only_first_init(self):
+        tracker = TaskEventTracker(session_id=1)
+        tracker.handle_event(
+            {"type": "system", "subtype": "init", "session_id": "first"}
+        )
+        tracker.handle_event(
+            {"type": "system", "subtype": "init", "session_id": "second"}
+        )
+        assert tracker.state.session_id == "first"
+
+    def test_no_session_id_in_event(self):
+        tracker = TaskEventTracker(session_id=1)
+        tracker.handle_event({"type": "system", "subtype": "init"})
+        assert tracker.state.session_id == ""

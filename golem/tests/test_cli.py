@@ -90,16 +90,17 @@ class TestPrintCliSummary:
         out = capsys.readouterr().out
         assert "abc123" in out
 
-    def test_supervisor_mode(self, capsys):
+    def test_subagent_mode(self, capsys):
         session = TaskSession(
             parent_issue_id=1,
             state=TaskSessionState.COMPLETED,
-            execution_mode="supervisor",
-            subtask_results=[{"status": "completed"}],
+            execution_mode="subagent",
+            supervisor_phase="committing",
         )
         _print_cli_summary(session)
         out = capsys.readouterr().out
-        assert "Subtasks: 1" in out
+        assert "subagent" in out
+        assert "committing" in out
 
     def test_with_concerns(self, capsys):
         session = TaskSession(

@@ -272,6 +272,34 @@
   font-size:0.82rem;color:var(--text-muted);padding:1rem;font-style:italic
 }
 
+/* ── Flow Graph ───────────────────────────────────────────── */
+.flow-graph-container{
+  width:100%;overflow-x:auto;overflow-y:auto;
+  border:1px solid var(--border);border-radius:var(--radius-lg);
+  background:var(--bg-surface);padding:0.75rem;
+  max-height:520px;position:relative;
+  /* Subtle grid background */
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(255,255,255,0.03) 1px, transparent 0);
+  background-size:24px 24px;
+  background-color:var(--bg-surface)
+}
+.flow-graph-container::-webkit-scrollbar{width:6px;height:6px}
+.flow-graph-container::-webkit-scrollbar-thumb{background:var(--border-active);border-radius:3px}
+.flow-graph-container::-webkit-scrollbar-corner{background:transparent}
+
+.flow-svg{display:block;min-width:100%}
+
+/* Flow detail panel reuses waterfall detail styles */
+.flow-detail-panel{
+  margin-top:0.75rem;border:1px solid var(--border);border-radius:var(--radius-lg);
+  background:var(--bg-surface);overflow:hidden;animation:wf-panel-open 0.15s ease-out
+}
+
+@media(max-width:700px){
+  .flow-graph-container{max-height:350px;padding:0.5rem}
+}
+
 /* ── Accordion View ───────────────────────────────────────── */
 .accordion-view{display:flex;flex-direction:column;gap:0.2rem}
 .acc-group{

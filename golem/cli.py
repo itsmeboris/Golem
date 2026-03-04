@@ -118,8 +118,8 @@ def _print_cli_summary(session: TaskSession) -> None:
                 print(f"    - {c}")
     if session.commit_sha:
         print(f"  Commit: {session.commit_sha}")
-    if session.execution_mode == "supervisor" and session.subtask_results:
-        print(f"  Subtasks: {len(session.subtask_results)}")
+    if session.execution_mode == "subagent" and session.supervisor_phase:
+        print(f"  Mode: subagent ({session.supervisor_phase})")
     if session.errors:
         print(f"  Errors: {len(session.errors)}")
         for err in session.errors[:3]:
@@ -776,7 +776,7 @@ def cmd_cancel(args) -> int:
     req = urllib.request.Request(url, data=b"", method="POST")
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
-            result = json.loads(resp.read().decode("utf-8"))
+            json.loads(resp.read().decode("utf-8"))
             print(f"Task #{task_id} cancelled.")
             return 0
     except urllib.error.HTTPError as exc:

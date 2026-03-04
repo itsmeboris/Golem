@@ -54,20 +54,6 @@ _REPORT_DIR = DATA_DIR / "reports" / "golem"
 _REPORT_INDEX = DATA_DIR / "reports" / "golem_report.md"
 
 
-@dataclass
-class SubtaskResult:
-    """Outcome of one subtask execution."""
-
-    issue_id: int
-    subject: str
-    status: str = ""  # completed | failed | blocked | skipped
-    verdict: str = ""  # PASS | PARTIAL | FAIL
-    cost_usd: float = 0.0
-    duration_seconds: float = 0.0
-    summary: str = ""
-    retry_count: int = 0
-
-
 class TaskSessionState(str, Enum):
     """Lifecycle states for a golem session (v2).
 
@@ -121,14 +107,9 @@ class TaskSession:
     commit_sha: str = ""
     trace_file: str = ""
     retry_trace_file: str = ""
-    # Supervisor mode
-    subtask_results: list[dict] = field(default_factory=list)
-    execution_mode: str = ""  # "supervisor" | "monolithic"
-    active_subtask_id: int = 0  # set by supervisor during subtask execution
-    subtask_plan: list[dict] = field(
-        default_factory=list
-    )  # [{"id": N, "subject": "..."}]
-    # "decomposing" | "executing" | "summarizing" | "validating" | "committing"
+    # Subagent orchestration
+    execution_mode: str = ""  # "subagent" | "monolithic" | "prompt"
+    # "orchestrating" | "validating" | "committing"
     supervisor_phase: str = ""
     # Cross-task coordination
     depends_on: list[int] = field(default_factory=list)
@@ -138,6 +119,7 @@ class TaskSession:
     worktree_path: str = ""
     base_work_dir: str = ""
     infra_retry_count: int = 0
+    cli_session_id: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-safe dictionary."""
@@ -175,10 +157,7 @@ class TaskSession:
             commit_sha=data.get("commit_sha", ""),
             trace_file=data.get("trace_file", ""),
             retry_trace_file=data.get("retry_trace_file", ""),
-            subtask_results=data.get("subtask_results", []),
             execution_mode=data.get("execution_mode", ""),
-            active_subtask_id=data.get("active_subtask_id", 0),
-            subtask_plan=data.get("subtask_plan", []),
             supervisor_phase=data.get("supervisor_phase", ""),
             depends_on=data.get("depends_on", []),
             group_id=data.get("group_id", ""),
@@ -186,6 +165,7 @@ class TaskSession:
             worktree_path=data.get("worktree_path", ""),
             base_work_dir=data.get("base_work_dir", ""),
             infra_retry_count=data.get("infra_retry_count", 0),
+            cli_session_id=data.get("cli_session_id", ""),
         )
 
 
@@ -312,11 +292,11 @@ class TaskOrchestrator:
         await self._run_agent()
 
     async def _run_agent(self) -> None:
-        """Dispatch to supervisor or monolithic pipeline based on config."""
+        """Dispatch to subagent orchestration or monolithic pipeline."""
         if self.task_config.supervisor_mode:
-            from .supervisor import TaskSupervisor  # pylint: disable=cyclic-import
+            from .supervisor_v2_subagent import SubagentSupervisor
 
-            sup = TaskSupervisor(
+            sup = SubagentSupervisor(
                 self.session,
                 self.config,
                 self.task_config,
@@ -853,9 +833,6 @@ class TaskOrchestrator:
             "timestamp": milestone.timestamp,
             "is_error": milestone.is_error,
         }
-        # Tag with active subtask ID if set (supervisor mode).
-        if self.session.active_subtask_id:
-            entry["subtask_id"] = self.session.active_subtask_id
         self.session.event_log.append(entry)
         if len(self.session.event_log) > 500:
             self.session.event_log = self.session.event_log[-500:]

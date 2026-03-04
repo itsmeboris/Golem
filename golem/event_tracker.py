@@ -39,6 +39,7 @@ class TrackerState:
     milestone_count: int = 0
     event_log: list[Milestone] = field(default_factory=list)
     finished: bool = False
+    session_id: str = ""
 
 
 # Callback signature: (milestone, tracker_state) -> None
@@ -134,6 +135,14 @@ class TaskEventTracker:
     def handle_event(self, event: dict) -> Milestone | None:
         """Process a single stream-json event, return a Milestone if one was produced."""
         etype = event.get("type", "")
+
+        # Capture session_id from the init event
+        if (
+            etype == "system"
+            and event.get("subtype") == "init"
+            and not self.state.session_id
+        ):
+            self.state.session_id = event.get("session_id", "")
 
         milestone: Milestone | None = None
 

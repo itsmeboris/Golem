@@ -14,7 +14,6 @@ from golem.core.dashboard import (
     _extract_assistant_events,
     _extract_numeric_id,
     _extract_user_events,
-    _find_subtask_trace,
     _format_live_section,
     _parse_trace,
     _parse_trace_terminal,
@@ -514,24 +513,6 @@ class TestReadLogTail:
 
 
 # ---------------------------------------------------------------------------
-# _find_subtask_trace
-# ---------------------------------------------------------------------------
-
-
-class TestFindSubtaskTrace:
-    def test_found(self, tmp_path):
-        d = tmp_path / "golem"
-        d.mkdir()
-        (d / "golem-10-sub2.jsonl").write_text("{}", encoding="utf-8")
-        with patch("golem.core.dashboard.TRACES_DIR", tmp_path):
-            assert _find_subtask_trace("10", "2") is not None
-
-    def test_not_found(self, tmp_path):
-        with patch("golem.core.dashboard.TRACES_DIR", tmp_path):
-            assert _find_subtask_trace("99", "1") is None
-
-
-# ---------------------------------------------------------------------------
 # _FileCache
 # ---------------------------------------------------------------------------
 
@@ -903,56 +884,6 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             return_value={"trace": None, "prompt": None, "report": None},
         ):
             resp = await handlers["/api/trace-terminal/{event_id:path}"]("golem-1")
-        assert resp.status_code == 404
-
-    @pytest.mark.asyncio
-    async def test_api_subtask_trace_from_file(self, handlers, tmp_path):
-        trace_path = tmp_path / "trace.jsonl"
-        trace_path.write_text(
-            json.dumps({"type": "result", "total_cost_usd": 0, "duration_ms": 0})
-            + "\n",
-            encoding="utf-8",
-        )
-        with patch("golem.core.dashboard._find_subtask_trace", return_value=trace_path):
-            resp = await handlers["/api/subtask-trace/{parent_id}/{subtask_id}"](
-                "10", "2"
-            )
-        body = json.loads(resp.body)
-        assert body["parent_id"] == "10"
-
-    @pytest.mark.asyncio
-    async def test_api_subtask_trace_from_session(self, handlers):
-        sessions_data = {
-            "sessions": {
-                "10": {
-                    "event_log": [
-                        {"subtask_id": 2, "type": "info"},
-                        {"subtask_id": 3, "type": "info"},
-                    ]
-                }
-            }
-        }
-        with patch("golem.core.dashboard._find_subtask_trace", return_value=None):
-            with patch(
-                "golem.core.dashboard._read_sessions", return_value=sessions_data
-            ):
-                resp = await handlers["/api/subtask-trace/{parent_id}/{subtask_id}"](
-                    "10", "2"
-                )
-        body = json.loads(resp.body)
-        assert body["source"] == "event_log"
-        assert len(body["events"]) == 1
-
-    @pytest.mark.asyncio
-    async def test_api_subtask_trace_not_found(self, handlers):
-        with patch("golem.core.dashboard._find_subtask_trace", return_value=None):
-            with patch(
-                "golem.core.dashboard._read_sessions",
-                return_value={"sessions": {}},
-            ):
-                resp = await handlers["/api/subtask-trace/{parent_id}/{subtask_id}"](
-                    "10", "2"
-                )
         assert resp.status_code == 404
 
     @pytest.mark.asyncio

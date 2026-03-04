@@ -498,11 +498,9 @@ class TestFilePromptProvider:
         prompts_dir = Path(__file__).parent.parent / "prompts"
         expected = [
             "run_task.txt",
-            "decompose_task.txt",
-            "execute_subtask.txt",
+            "orchestrate_task.txt",
             "retry_task.txt",
             "validate_task.txt",
-            "summarize_task.txt",
         ]
         for name in expected:
             assert (prompts_dir / name).exists(), f"Missing prompt: {name}"

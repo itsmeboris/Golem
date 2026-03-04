@@ -116,6 +116,7 @@ class CLIConfig:
     mcp_servers: list[str] = field(default_factory=list)
     system_prompt: str = ""
     cwd: str = ""  # Override working directory (empty = project root for Claude)
+    resume_session_id: str = ""  # --resume <session_id> for warm retries
 
 
 @dataclass
@@ -128,6 +129,7 @@ class CLIResult:
     input_tokens: int = 0
     output_tokens: int = 0
     trace_events: list[dict] = field(default_factory=list)
+    session_id: str = ""  # Claude session ID (from stream-json init event)
 
 
 class CLIError(Exception):
@@ -586,6 +588,8 @@ def _build_claude_command(config: CLIConfig, output_format: str = "json") -> lis
         cmd.extend(["--max-budget-usd", str(config.max_budget_usd)])
     if config.system_prompt:
         cmd.extend(["--append-system-prompt", config.system_prompt])
+    if config.resume_session_id:
+        cmd.extend(["--resume", config.resume_session_id])
     if output_format == "stream-json":
         cmd.append("--verbose")
     return cmd
@@ -971,7 +975,7 @@ def invoke_cli_monitored(
     )
 
     start = time.time()
-    collected: dict = {"output": {}, "metrics": {}, "traces": []}
+    collected: dict = {"output": {}, "metrics": {}, "traces": [], "session_id": ""}
 
     env, cwd, cleanup = _get_subprocess_env(config)
     try:
@@ -1003,6 +1007,14 @@ def invoke_cli_monitored(
                         continue
 
                     collected["traces"].append(event)
+
+                    # Extract session_id from the init event
+                    if (
+                        event.get("type") == "system"
+                        and event.get("subtype") == "init"
+                        and not collected["session_id"]
+                    ):
+                        collected["session_id"] = event.get("session_id", "")
 
                     if callback:
                         callback(event)
@@ -1041,4 +1053,5 @@ def invoke_cli_monitored(
         input_tokens=collected["metrics"].get("input_tokens", 0),
         output_tokens=collected["metrics"].get("output_tokens", 0),
         trace_events=collected["traces"],
+        session_id=collected["session_id"],
     )

@@ -353,12 +353,6 @@ def _read_log_tail(lines: int = 200) -> dict:
         return {"lines": [], "file": ""}
 
 
-def _find_subtask_trace(parent_id: str, subtask_id: str) -> Path | None:
-    """Locate the JSONL trace file for a specific subtask (not decompose)."""
-    p = TRACES_DIR / "golem" / f"golem-{parent_id}-sub{subtask_id}.jsonl"
-    return p if p.exists() else None
-
-
 def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
     app: Any,
     config_snapshot: dict | None = None,
@@ -459,49 +453,6 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
         events, stats = await asyncio.to_thread(_parse_trace_terminal, paths["trace"])
         return JSONResponse(
             content={"event_id": event_id, "events": events, "stats": stats}
-        )
-
-    @app.get("/api/subtask-trace/{parent_id}/{subtask_id}")
-    async def api_subtask_trace(parent_id: str, subtask_id: str) -> JSONResponse:
-        """Return trace for a subtask.
-
-        Prefers the JSONL trace file on disk.  Falls back to event_log
-        entries from the session so expanded / collapsed views stay
-        consistent while a subtask is still running.
-        """
-        trace_path = _find_subtask_trace(parent_id, subtask_id)
-        if trace_path:
-            events, stats = await asyncio.to_thread(_parse_trace_terminal, trace_path)
-            return JSONResponse(
-                content={
-                    "parent_id": parent_id,
-                    "subtask_id": subtask_id,
-                    "events": events,
-                    "stats": stats,
-                }
-            )
-        # Fallback: event_log entries tagged with this subtask_id
-        sessions_data = await asyncio.to_thread(_read_sessions)
-        session = sessions_data.get("sessions", {}).get(str(parent_id), {})
-        sid = int(subtask_id)
-        events = [e for e in session.get("event_log", []) if e.get("subtask_id") == sid]
-        if not events:
-            return JSONResponse(
-                status_code=404,
-                content={
-                    "error": "No trace available yet",
-                    "parent_id": parent_id,
-                    "subtask_id": subtask_id,
-                },
-            )
-        return JSONResponse(
-            content={
-                "parent_id": parent_id,
-                "subtask_id": subtask_id,
-                "events": events,
-                "stats": {},
-                "source": "event_log",
-            }
         )
 
     @app.get("/dashboard/shared.css")
