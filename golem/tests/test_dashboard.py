@@ -978,3 +978,15 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         with patch.object(_FileCache, "read", return_value="console.log(1)"):
             resp = await handlers["/dashboard/shared.js"]()
         assert resp.body is not None
+
+    @pytest.mark.asyncio
+    async def test_task_css(self, handlers):
+        with patch.object(_FileCache, "read", return_value=".wf-table { }"):
+            resp = await handlers["/dashboard/task.css"]()
+        assert resp.body is not None
+
+    @pytest.mark.asyncio
+    async def test_task_js(self, handlers):
+        with patch.object(_FileCache, "read", return_value="function render(){}"):
+            resp = await handlers["/dashboard/task.js"]()
+        assert resp.body is not None
