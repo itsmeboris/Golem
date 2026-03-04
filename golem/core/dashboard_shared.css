@@ -7,29 +7,29 @@
 /* ── Reset & Base ──────────────────────────────────────────── */
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg-base:#080c16;
-  --bg-surface:#0f172a;
-  --bg-elevated:#1e293b;
-  --bg-hover:#263354;
-  --bg-terminal:#020617;
-  --border:#1e293b;
-  --border-active:#334155;
-  --border-focus:#3b82f6;
-  --text-primary:#f1f5f9;
-  --text-secondary:#94a3b8;
-  --text-muted:#475569;
-  --cyan:#22d3ee;
-  --green:#4ade80;
+  --bg-base:#0B0F19;
+  --bg-surface:#111827;
+  --bg-elevated:#1F2937;
+  --bg-hover:#2D3748;
+  --bg-terminal:#060A12;
+  --border:#1F2937;
+  --border-active:#374151;
+  --border-focus:#4B83F0;
+  --text-primary:#E8ECF1;
+  --text-secondary:#9CA3AF;
+  --text-muted:#6B7280;
+  --text-dim:#4B5563;
+  --green:#34D399;
   --green-dim:#86efac;
-  --red:#f87171;
-  --yellow:#fbbf24;
-  --blue:#60a5fa;
+  --red:#F87171;
+  --yellow:#FBBF24;
+  --blue:#60A5FA;
   --purple:#a78bfa;
   --orange:#fb923c;
   --font-sans:system-ui,-apple-system,'Segoe UI',sans-serif;
   --font-mono:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace;
-  --radius:0.5rem;
-  --radius-lg:0.75rem;
+  --radius:6px;
+  --radius-lg:8px;
   /* Overridable per-dashboard */
   --sidebar-width:360px;
   --metrics-min:120px;

@@ -1291,12 +1291,23 @@ class TestPreflightCheck:
         with pytest.raises(InfrastructureError, match="does not exist"):
             orch._preflight_check("/nonexistent/path/xyz")
 
-    def test_raises_on_not_git_repo(self, tmp_path):
+    def test_raises_on_not_git_repo(self, tmp_path, monkeypatch):
         from golem.errors import InfrastructureError
 
         orch = _make_orch()
         plain_dir = tmp_path / "not_git"
         plain_dir.mkdir()
+
+        # Mock _run_git to simulate a directory outside any git repo
+        # (tmp_path may be inside the project worktree, so real git would succeed)
+        import subprocess
+
+        fake_result = subprocess.CompletedProcess(
+            args=[], returncode=128, stdout="", stderr="not a git repository"
+        )
+        monkeypatch.setattr(
+            "golem.worktree_manager._run_git", lambda *a, **kw: fake_result
+        )
         with pytest.raises(InfrastructureError, match="Not a git repo"):
             orch._preflight_check(str(plain_dir))
 
@@ -1429,7 +1440,7 @@ class TestTaskSessionNewFields:
 
     def test_from_dict_defaults_for_new_fields(self):
         session = TaskSession.from_dict({"parent_issue_id": 1, "state": "detected"})
-        assert session.depends_on == []
+        assert not session.depends_on
         assert session.group_id == ""
         assert session.merge_ready is False
         assert session.worktree_path == ""

@@ -1,0 +1,329 @@
+/* ── :root overrides for task dashboard ───────────────────── */
+:root{
+  --sidebar-width:340px;
+  --metrics-min:130px;
+  --tab-pre-max-h:400px;
+  --responsive-sidebar:280px;
+}
+
+/* ── Task List ────────────────────────────────────────────── */
+.task-list{flex:1;overflow-y:auto;padding:0.5rem}
+.task-list::-webkit-scrollbar{width:4px}
+.task-list::-webkit-scrollbar-thumb{background:var(--border-active);border-radius:2px}
+
+/* ── Task Card ────────────────────────────────────────────── */
+.task-card{
+  padding:0.65rem 0.85rem;margin-bottom:0.25rem;border-radius:var(--radius);
+  cursor:pointer;transition:all 0.15s;border-left:3px solid transparent;
+  background:transparent;position:relative
+}
+.task-card:hover{background:var(--bg-elevated)}
+.task-card.selected{background:var(--bg-hover)}
+.task-card .tc-top{display:flex;align-items:center;gap:0.35rem;margin-bottom:0.15rem;min-height:1rem}
+.task-card .tc-id{font-size:0.72rem;font-weight:600;color:var(--text-muted);flex-shrink:0}
+.task-card .tc-badge{
+  font-size:0.58rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;
+  padding:0.1rem 0.35rem;border-radius:999px;white-space:nowrap;margin-left:auto
+}
+.task-card .tc-state{display:none}
+.task-card .tc-subject{
+  font-size:0.82rem;font-weight:500;color:var(--text-secondary);line-height:1.35;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis
+}
+.task-card:hover .tc-subject{color:var(--text-primary)}
+.task-card.selected .tc-subject{color:var(--text-primary);font-weight:600}
+.task-card .tc-meta{display:flex;gap:0.6rem;margin-top:0.3rem;font-size:0.68rem;color:var(--text-muted);flex-wrap:wrap}
+.task-card .tc-meta span{display:flex;align-items:center;gap:0.2rem}
+.task-card .tc-group{
+  font-size:0.6rem;color:var(--text-muted);opacity:0.8;
+  max-width:6rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  padding:0;font-weight:normal;background:transparent;
+  border-radius:0;color:inherit;
+}
+.task-card .tc-deps{color:var(--yellow);font-size:0.68rem}
+.task-card .tc-merge-dot{width:6px;height:6px;border-radius:50%;display:inline-block;flex-shrink:0}
+.filter-count{font-size:0.7rem;color:var(--text-muted);padding:0.3rem 0.85rem 0.1rem;letter-spacing:0.02em}
+
+/* ── State colors for cards ───────────────────────────────── */
+.task-card.state-completed{border-left-color:var(--green)}
+.task-card.state-failed{border-left-color:var(--red)}
+.task-card.state-failed .tc-badge{background:#450a0a;color:var(--red)}
+.task-card.state-running{border-left-color:var(--blue)}
+.task-card.state-running .tc-badge{background:#172554;color:var(--blue)}
+.task-card.state-validating{border-left-color:var(--purple)}
+.task-card.state-validating .tc-badge{background:#1e1b4b;color:var(--purple)}
+.task-card.state-detected{border-left-color:var(--yellow)}
+.task-card.state-detected .tc-badge{background:#422006;color:var(--yellow)}
+.task-card.state-retrying{border-left-color:var(--orange)}
+.task-card.state-retrying .tc-badge{background:#431407;color:var(--orange)}
+.task-card.selected .tc-id{color:var(--text-secondary)}
+
+/* ── Overview Stats ───────────────────────────────────────── */
+.overview-state{padding:1.5rem 2rem 3rem;max-width:1100px}
+.overview-state h2{font-size:1.15rem;font-weight:600;margin-bottom:1rem;color:var(--text-primary)}
+.stat-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:0.6rem;margin-bottom:1.25rem}
+.stat-card{
+  background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:0.7rem 0.85rem
+}
+.stat-card .sc-label{font-size:0.65rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:0.1rem}
+.stat-card .sc-value{font-size:1.15rem;font-weight:700;color:var(--text-primary)}
+.stat-card .sc-value.green{color:var(--green)}
+.stat-card .sc-value.red{color:var(--red)}
+.stat-card .sc-value.blue{color:var(--blue)}
+
+/* ── Task Detail ──────────────────────────────────────────── */
+.task-detail{padding:1.5rem 2rem 3rem;max-width:1100px}
+
+/* Header */
+.task-header{margin-bottom:1.25rem}
+.task-header .th-top{display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;margin-bottom:0.35rem}
+.task-header .th-id{font-size:1.3rem;font-weight:800;color:var(--text-primary)}
+.task-header .th-badge{
+  font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;
+  padding:0.2rem 0.6rem;border-radius:999px
+}
+.task-header .th-mode{
+  font-size:0.65rem;padding:0.15rem 0.5rem;border-radius:var(--radius);
+  background:var(--bg-elevated);color:var(--text-secondary);border:1px solid var(--border)
+}
+.task-header .th-subject{font-size:0.95rem;color:var(--text-secondary);line-height:1.4}
+
+/* ── Phase Banner ─────────────────────────────────────────── */
+.phase-banner{
+  display:flex;align-items:center;gap:0.6rem;padding:0.55rem 0.85rem;margin-bottom:1rem;
+  border-radius:var(--radius);background:var(--bg-surface);border:1px solid var(--border);
+  font-size:0.78rem;color:var(--text-secondary)
+}
+.phase-banner .phase-icon{font-size:1rem;flex-shrink:0}
+.phase-banner .phase-label{font-weight:600;color:var(--text-primary)}
+.phase-banner .phase-detail{color:var(--text-muted);margin-left:auto;font-size:0.72rem}
+.phase-banner.active{border-color:var(--blue);background:#0c1629}
+.phase-banner.done{border-color:var(--green);opacity:0.7}
+
+/* ── Pipeline View ────────────────────────────────────────── */
+.pipeline-view{margin-bottom:1.5rem}
+.pv-toolbar{
+  display:flex;align-items:center;justify-content:space-between;margin-bottom:0.65rem
+}
+.pv-toolbar h3{
+  font-size:0.82rem;font-weight:700;color:var(--text-muted);
+  text-transform:uppercase;letter-spacing:0.08em
+}
+.pv-controls{display:flex;gap:0.25rem}
+.pv-toggle-btn{
+  background:transparent;color:var(--text-muted);
+  border:1px solid transparent;padding:0.25rem 0.65rem;
+  border-radius:999px;font-size:0.7rem;cursor:pointer;transition:all 0.15s;
+  font-weight:500
+}
+.pv-toggle-btn:hover{color:var(--text-primary);background:var(--bg-elevated)}
+.pv-toggle-btn.active{
+  background:#172554;color:var(--blue);border-color:#1E3A6E
+}
+
+/* ── Waterfall Table ──────────────────────────────────────── */
+.wf-table{
+  width:100%;border:1px solid var(--border);border-radius:var(--radius-lg);
+  overflow:hidden;background:var(--bg-surface)
+}
+.wf-header{
+  display:grid;grid-template-columns:minmax(200px,1.2fr) 80px 1fr;
+  padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);
+  font-size:0.7rem;font-weight:600;text-transform:uppercase;
+  letter-spacing:0.06em;color:var(--text-muted);background:var(--bg-elevated)
+}
+.wf-header span:last-child{text-align:right}
+.wf-row{
+  display:grid;grid-template-columns:minmax(200px,1.2fr) 80px 1fr;
+  align-items:center;padding:0.45rem 0.75rem;
+  border-bottom:1px solid var(--border);cursor:pointer;
+  transition:background 0.1s;min-height:40px
+}
+.wf-row:last-child{border-bottom:none}
+.wf-row:hover{background:var(--bg-hover)}
+.wf-row.selected{background:var(--bg-hover);border-left:3px solid var(--blue)}
+.wf-row.wf-child{padding-left:2.5rem}
+.wf-row.wf-child .wf-name{font-size:0.8rem;color:var(--text-secondary)}
+.wf-row.wf-child .wf-name::before{
+  content:'';display:inline-block;width:12px;height:1px;
+  background:var(--border-active);flex-shrink:0;margin-right:0.25rem
+}
+.wf-name{
+  display:flex;align-items:center;gap:0.5rem;font-size:0.85rem;
+  font-weight:500;color:var(--text-primary);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis
+}
+.wf-icon{
+  flex-shrink:0;width:20px;height:20px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:0.7rem;border:2px solid var(--border);background:var(--bg-base)
+}
+.wf-state{
+  font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.03em
+}
+.wf-bar-container{
+  position:relative;height:22px;background:var(--bg-base);border-radius:3px;overflow:hidden
+}
+.wf-bar{
+  position:absolute;top:3px;height:16px;border-radius:3px;
+  min-width:4px;transition:width 0.3s ease
+}
+.wf-bar-label{
+  position:absolute;right:6px;top:50%;transform:translateY(-50%);
+  font-size:0.65rem;font-weight:500;color:var(--text-muted);white-space:nowrap
+}
+.wf-cost{font-size:0.7rem;color:var(--text-muted);margin-left:auto;flex-shrink:0}
+
+/* Bar state colors */
+.wf-bar.st-completed{background:var(--green);opacity:0.6}
+.wf-bar.st-running{
+  background:linear-gradient(90deg,var(--blue) 0%,rgba(96,165,250,0.4) 50%,var(--blue) 100%);
+  background-size:200% 100%;animation:wf-shimmer 2s linear infinite;opacity:0.7
+}
+.wf-bar.st-failed{background:var(--red);opacity:0.6}
+.wf-bar.st-warning{background:var(--yellow);opacity:0.6}
+.wf-bar.st-pending{background:var(--text-dim);opacity:0.3}
+@keyframes wf-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+/* Icon state colors */
+.wf-icon.st-completed{border-color:var(--green);color:var(--green);background:#0A2E22}
+.wf-icon.st-running{border-color:var(--blue);color:var(--blue);background:#0C1A3D}
+.wf-icon.st-failed{border-color:var(--red);color:var(--red);background:#2D0F0F}
+.wf-icon.st-warning{border-color:var(--yellow);color:var(--yellow);background:#2D1A08}
+.wf-icon.st-pending{border-color:var(--text-dim);color:var(--text-dim)}
+
+/* State text colors */
+.wf-state.st-completed{color:var(--green)}
+.wf-state.st-running{color:var(--blue)}
+.wf-state.st-failed{color:var(--red)}
+.wf-state.st-warning{color:var(--yellow)}
+.wf-state.st-pending{color:var(--text-dim)}
+
+/* ── Waterfall Detail Panel ──────────────────────────────── */
+.wf-detail-panel{
+  margin-top:0.75rem;border:1px solid var(--border);border-radius:var(--radius-lg);
+  background:var(--bg-surface);overflow:hidden;animation:wf-panel-open 0.15s ease-out
+}
+@keyframes wf-panel-open{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+.wf-detail-header{
+  display:flex;align-items:center;gap:0.75rem;padding:0.75rem 1rem;
+  border-bottom:1px solid var(--border);background:var(--bg-elevated)
+}
+.wf-dh-name{font-size:0.95rem;font-weight:600;color:var(--text-primary)}
+.wf-dh-meta{display:flex;gap:1rem;margin-left:auto;font-size:0.78rem;color:var(--text-muted)}
+.wf-dh-close{
+  background:none;border:none;color:var(--text-muted);font-size:1.1rem;
+  cursor:pointer;padding:0.25rem;line-height:1
+}
+.wf-dh-close:hover{color:var(--text-primary)}
+.wf-detail-body{padding:0.5rem 0;max-height:500px;overflow-y:auto}
+.wf-detail-body::-webkit-scrollbar{width:4px}
+.wf-detail-body::-webkit-scrollbar-thumb{background:var(--border-active);border-radius:2px}
+
+/* Detail summary (validation, subtask) */
+.wf-detail-summary{
+  padding:0.75rem 1rem;font-size:0.85rem;color:var(--text-secondary);
+  line-height:1.6;border-bottom:1px solid var(--border)
+}
+.wf-verdict{
+  display:inline-block;font-size:0.72rem;font-weight:700;padding:0.15rem 0.5rem;
+  border-radius:999px;text-transform:uppercase;letter-spacing:0.04em
+}
+.wf-verdict.PASS{background:#064E3B;color:var(--green)}
+.wf-verdict.FAIL{background:#450A0A;color:var(--red)}
+.wf-verdict.PARTIAL{background:#431407;color:var(--yellow)}
+.wf-concerns{list-style:none;padding:0;margin:0.3rem 0 0}
+.wf-concerns li{font-size:0.78rem;color:var(--text-muted);padding:0.15rem 0;padding-left:1rem;position:relative}
+.wf-concerns li::before{content:'\26A0';position:absolute;left:0;color:var(--yellow);font-size:0.7rem}
+
+/* ── Event Rows (shared by waterfall detail + accordion) ─── */
+.wf-event{
+  display:grid;grid-template-columns:1.5rem auto 1fr auto;gap:0.5rem;
+  padding:0.4rem 1rem;align-items:baseline;font-size:0.82rem;
+  line-height:1.6;border-bottom:1px solid rgba(255,255,255,0.03)
+}
+.wf-event:hover{background:rgba(255,255,255,0.02)}
+.wf-event .ev-icon{text-align:center;flex-shrink:0;font-size:0.8rem}
+.wf-event .ev-chip{
+  font-size:0.72rem;font-weight:600;font-family:var(--font-mono);
+  padding:0.1rem 0.45rem;border-radius:4px;white-space:nowrap;
+  background:var(--bg-elevated);color:var(--blue);border:1px solid var(--border)
+}
+.wf-event .ev-body{color:var(--text-secondary);word-break:break-word;font-size:0.82rem}
+.wf-event .ev-ts{
+  font-size:0.7rem;color:var(--text-muted);font-family:var(--font-mono);white-space:nowrap
+}
+.wf-event.ev-tool-call .ev-body{color:var(--text-primary)}
+.wf-event.ev-tool-result .ev-body{color:var(--green);opacity:0.7}
+.wf-event.ev-tool-result.ev-error .ev-body{color:var(--red);opacity:1}
+.wf-event.ev-text .ev-body{color:var(--text-primary)}
+.wf-event.ev-thinking .ev-body{
+  color:var(--text-muted);font-style:italic;max-height:2.4em;
+  overflow:hidden;cursor:pointer;transition:max-height 0.2s
+}
+.wf-event.ev-thinking.expanded .ev-body{max-height:none;white-space:pre-wrap}
+.wf-event.ev-error .ev-body{color:var(--red);font-weight:500}
+.wf-event.ev-result{border-top:1px solid var(--border)}
+.wf-event.ev-result .ev-body{color:var(--green);font-weight:600}
+.wf-event.ev-supervisor .ev-body{color:var(--blue);font-weight:600}
+.wf-event.ev-system{opacity:0.45}
+.wf-events-empty{
+  font-size:0.82rem;color:var(--text-muted);padding:1rem;font-style:italic
+}
+
+/* ── Accordion View ───────────────────────────────────────── */
+.accordion-view{display:flex;flex-direction:column;gap:0.2rem}
+.acc-group{
+  background:var(--bg-surface);border:1px solid var(--border);
+  border-radius:var(--radius);overflow:hidden
+}
+.acc-group-header{
+  display:flex;align-items:center;gap:0.5rem;padding:0.45rem 0.75rem;
+  cursor:pointer;user-select:none;transition:background 0.12s
+}
+.acc-group-header:hover{background:var(--bg-hover)}
+.acc-group-header .ag-chevron{
+  color:var(--text-muted);font-size:0.65rem;transition:transform 0.2s;flex-shrink:0
+}
+.acc-group.expanded .ag-chevron{transform:rotate(90deg)}
+.acc-group-header .ag-icon{font-size:0.8rem;flex-shrink:0;width:1.1rem;text-align:center}
+.acc-group-header .ag-name{
+  font-size:0.8rem;font-weight:600;color:var(--text-primary);flex:1;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis
+}
+.acc-group-header .ag-badge{
+  font-size:0.55rem;font-weight:700;text-transform:uppercase;
+  padding:0.08rem 0.3rem;border-radius:999px;flex-shrink:0
+}
+.acc-group-header .ag-meta{font-size:0.65rem;color:var(--text-muted);flex-shrink:0}
+.acc-group-body{
+  display:none;border-top:1px solid var(--border);
+  padding:0.4rem 0 0.4rem 0;max-height:350px;overflow-y:auto;
+  background:var(--bg-base)
+}
+.acc-group.expanded .acc-group-body{display:block}
+
+/* State colors for accordion */
+.acc-group.st-completed{border-left:2px solid var(--green)}
+.acc-group.st-running{border-left:2px solid var(--blue)}
+.acc-group.st-failed{border-left:2px solid var(--red)}
+.acc-group.st-warning{border-left:2px solid var(--yellow)}
+
+/* Badge state colors (shared) */
+.sc-badge.st-completed{background:#064E3B;color:var(--green)}
+.sc-badge.st-running{background:#172554;color:var(--blue)}
+.sc-badge.st-failed{background:#450A0A;color:var(--red)}
+.sc-badge.st-warning{background:#431407;color:var(--yellow)}
+.sc-badge.st-pending{background:var(--bg-elevated);color:var(--text-muted)}
+
+/* Shared terminal-empty style (used by info tabs) */
+.terminal-empty{color:var(--text-muted);font-size:0.8rem;padding:1.5rem;text-align:center}
+
+/* ── Responsive ───────────────────────────────────────────── */
+@media(max-width:700px){
+  .wf-table{font-size:0.78rem}
+  .wf-row{min-height:36px;padding:0.35rem 0.5rem}
+  .wf-row.wf-child{padding-left:1.5rem}
+  .wf-event{padding:0.3rem 0.75rem;font-size:0.78rem}
+}
