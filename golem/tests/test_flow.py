@@ -1,4 +1,4 @@
-# pylint: disable=too-few-public-methods
+# pylint: disable=too-few-public-methods,too-many-lines
 """Tests for golem.flow — full coverage."""
 import asyncio
 import json
@@ -210,6 +210,20 @@ class TestStopTickLoop:
         await asyncio.sleep(0)
         assert detection_task.cancelled()
         assert session_task.cancelled()
+
+    async def test_kills_cli_subprocesses_on_stop(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow._running = True
+
+        killed = []
+        monkeypatch.setattr(
+            "golem.core.cli_wrapper.kill_all_active",
+            lambda: killed.append(1) or 2,
+        )
+
+        flow.stop_tick_loop()
+
+        assert len(killed) == 1
 
 
 class TestDetectionLoop:

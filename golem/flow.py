@@ -227,7 +227,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         return self._detection_task
 
     def stop_tick_loop(self) -> None:
-        """Stop detection loop and cancel all session tasks."""
+        """Stop detection loop, cancel all session tasks, and kill CLI subprocesses."""
         self._running = False
         if self._detection_task is not None:
             self._detection_task.cancel()
@@ -236,6 +236,11 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             task.cancel()
             logger.info("Cancelled session task #%d", sid)
         self._session_tasks.clear()
+
+        from .core.cli_wrapper import kill_all_active
+        killed = kill_all_active()
+        if killed:
+            logger.info("Killed %d orphaned CLI subprocess(es)", killed)
 
     # -- Detection loop (runs independently of session execution) -----------
 
