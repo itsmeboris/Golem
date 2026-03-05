@@ -244,6 +244,10 @@ class TestBuildValidationPrompt:
         )
         assert "123" in prompt
         assert "Fix the bug" in prompt
+        assert "Antipattern Detection" in prompt
+        assert "Traceback leaks" in prompt
+        assert "Cross-module private access" in prompt
+        assert "String-matching control flow" in prompt
 
 
 class TestFindMergeBase:

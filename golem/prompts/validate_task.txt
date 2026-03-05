@@ -34,6 +34,16 @@ successfully completed task #{issue_id}.
    ``pylint --errors-only golem/``, and ``pytest --cov=golem --cov-fail-under=100``.
    Check the event log for evidence of these commands. If verification commands
    are absent or failed, flag this in concerns and lower your confidence.
+6. **Antipattern Detection**: Scan the git diff and event log for these
+   antipatterns (ignore test code and debug-level logging):
+   - *Traceback leaks*: Raw tracebacks or stack traces exposed in user-facing
+     output, log messages, or API responses.
+   - *Cross-module private access*: Code accessing ``_private`` attributes or
+     methods of objects from other modules (violating encapsulation).
+   - *String-matching control flow*: Using bare string comparisons
+     (e.g., ``if status == "ready"``) for control flow instead of enums,
+     constants, or dedicated types.
+   If any antipattern is detected in a code_change task, flag each in concerns.
 
 ## Required Output
 
@@ -74,3 +84,4 @@ Evaluation notes:
 - An empty git diff is fine for investigation/documentation tasks
 - If the git diff is truncated, lower your confidence accordingly and note it in concerns
 - If no verification commands (black, pylint, pytest) appear in the event log for a code_change task, lower confidence by at least 0.15 and flag in concerns
+- If antipatterns are detected in a code_change task, lower confidence by 0.05 per antipattern found, up to a maximum of 0.15, and flag each in concerns
