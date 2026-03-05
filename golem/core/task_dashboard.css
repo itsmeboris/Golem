@@ -393,7 +393,7 @@
 .acc-group-header .ag-meta{font-size:0.65rem;color:var(--text-muted);flex-shrink:0}
 .acc-group-body{
   display:none;border-top:1px solid var(--border);
-  padding:0.4rem 0 0.4rem 0;max-height:350px;overflow-y:auto;
+  padding:0.4rem 0 0.4rem 0;max-height:60vh;overflow-y:auto;
   background:var(--bg-base)
 }
 .acc-group.expanded .acc-group-body{display:block}
@@ -448,6 +448,10 @@
   padding:0.75rem 1rem;font-size:0.78rem;
   color:var(--text-muted);font-style:italic
 }
+
+/* ── View Transitions ─────────────────────────────────────── */
+.overview,.task-detail{animation:view-fade-in 0.15s ease-out}
+@keyframes view-fade-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 
 /* ── Responsive ───────────────────────────────────────────── */
 @media(max-width:700px){
