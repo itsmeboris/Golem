@@ -832,6 +832,57 @@ def cmd_dashboard(args) -> int:
     return 0
 
 
+def cmd_batch(args: argparse.Namespace) -> int:
+    """Query batch status from the daemon API."""
+    config = load_config(getattr(args, "config", None))
+    port = config.dashboard.port if config.dashboard else DashboardConfig.port
+    batch_cmd = getattr(args, "batch_command", None)
+
+    if batch_cmd == "status":
+        url = f"http://127.0.0.1:{port}/api/batch/{args.group_id}"
+        try:
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read())
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode(errors="replace")
+            print(f"Error {exc.code}: {body}", file=sys.stderr)
+            return 1
+        except urllib.error.URLError as exc:
+            print(f"Cannot reach daemon: {exc.reason}", file=sys.stderr)
+            return 1
+        batch = data.get("batch", {})
+        print(json.dumps(batch, indent=2))
+        return 0
+
+    if batch_cmd == "list":
+        url = f"http://127.0.0.1:{port}/api/batches"
+        try:
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read())
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode(errors="replace")
+            print(f"Error {exc.code}: {body}", file=sys.stderr)
+            return 1
+        except urllib.error.URLError as exc:
+            print(f"Cannot reach daemon: {exc.reason}", file=sys.stderr)
+            return 1
+        batches = data.get("batches", [])
+        if not batches:
+            print("No batches found.")
+            return 0
+        for b in batches:
+            gid = b.get("group_id", "?")
+            status = b.get("status", "?")
+            count = len(b.get("task_ids", []))
+            print(f"  {gid}  status={status}  tasks={count}")
+        return 0
+
+    print("Usage: golem batch {status,list}", file=sys.stderr)
+    return 1
+
+
 # ---------------------------------------------------------------------------
 # Argparse
 # ---------------------------------------------------------------------------
@@ -947,6 +998,14 @@ def main() -> int:
     dash_p = sub.add_parser("dashboard", help="Launch standalone dashboard")
     dash_p.add_argument("--port", type=int)
     dash_p.set_defaults(func=cmd_dashboard)
+
+    # batch
+    batch_p = sub.add_parser("batch", help="Query batch status")
+    batch_sub = batch_p.add_subparsers(dest="batch_command")
+    batch_status_p = batch_sub.add_parser("status", help="Show batch status")
+    batch_status_p.add_argument("group_id", help="Batch group ID")
+    batch_list_p = batch_sub.add_parser("list", help="List all batches")
+    batch_p.set_defaults(func=cmd_batch)
 
     args = parser.parse_args()
     if args.verbose:

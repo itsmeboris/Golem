@@ -1,0 +1,1 @@
+{"active_count": 2, "queue_depth": 1, "active_tasks": [{"event_id": "golem-103", "issue_id": 103, "model": "opus"}, {"event_id": "golem-104", "issue_id": 104, "model": "sonnet"}], "models_active": {"opus": 1, "sonnet": 1}, "uptime_s": 3621}

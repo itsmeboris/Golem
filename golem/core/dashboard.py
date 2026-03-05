@@ -477,6 +477,13 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
             media_type="application/javascript",
         )
 
+    @app.get("/dashboard/elk.js")
+    async def elk_js() -> Response:
+        return Response(
+            content=_elk_js_cache.read(),
+            media_type="application/javascript",
+        )
+
     @app.get("/dashboard")
     async def dashboard() -> HTMLResponse:
         return HTMLResponse(content=_task_dashboard_cache.read())
@@ -512,6 +519,7 @@ _shared_css_cache = _FileCache(Path(__file__).parent / "dashboard_shared.css")
 _shared_js_cache = _FileCache(Path(__file__).parent / "dashboard_shared.js")
 _task_css_cache = _FileCache(Path(__file__).parent / "task_dashboard.css")
 _task_js_cache = _FileCache(Path(__file__).parent / "task_dashboard.js")
+_elk_js_cache = _FileCache(Path(__file__).parent / "elk.min.js")
 
 
 def _format_live_section(snap: dict) -> list[str]:

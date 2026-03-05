@@ -357,6 +357,32 @@ if FASTAPI_AVAILABLE:
             )
         return {"ok": True, "session": session.to_dict()}
 
+    @health_router.get("/batch/{group_id}")
+    async def get_batch(group_id: str):
+        """Return batch status for a given group_id."""
+        if _golem_flow is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Daemon not ready — GolemFlow not wired",
+            )
+        batch = _golem_flow.get_batch(group_id)
+        if batch is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No batch found for group_id={group_id!r}",
+            )
+        return {"ok": True, "batch": batch}
+
+    @health_router.get("/batches")
+    async def list_batches():
+        """Return all tracked batches."""
+        if _golem_flow is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Daemon not ready — GolemFlow not wired",
+            )
+        return {"ok": True, "batches": _golem_flow.list_batches()}
+
 else:  # pragma: no cover
     # Provide a no-op router when FastAPI is not installed.
     control_router = None  # type: ignore[assignment]

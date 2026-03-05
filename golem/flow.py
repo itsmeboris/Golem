@@ -39,6 +39,7 @@ from .merge_review import (
     run_merge_reconciliation,
 )
 from .worktree_manager import MissingAddition
+from .batch_monitor import BatchMonitor
 from .orchestrator import (
     TaskOrchestrator,
     TaskSession,
@@ -91,6 +92,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             on_reconcile=self._handle_merge_reconciliation,
         )
         self._max_infra_retries = getattr(self._task_config, "max_infra_retries", 2)
+        self._batch_monitor = BatchMonitor()
 
         self._submissions_dir = SUBMISSIONS_DIR
         self._submissions_dir.mkdir(parents=True, exist_ok=True)
@@ -586,6 +588,10 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                     duration_s=session.duration_seconds,
                 )
 
+        # Update batch monitor if task belongs to a batch
+        if session.group_id and self._batch_monitor.get(session.group_id):
+            self._batch_monitor.update(session.group_id, self._sessions)
+
     # -- Submission support ----------------------------------------------------
 
     def _build_submission_profile(self) -> GolemProfile:
@@ -693,6 +699,8 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
 
             results.append({"task_id": task_id, "status": "submitted"})
 
+        task_ids = [r["task_id"] for r in results]
+        self._batch_monitor.register(group_id, task_ids)
         self._save_state()
         return {"group_id": group_id, "tasks": results}
 
@@ -802,6 +810,19 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
     def get_session(self, task_id: int) -> "TaskSession | None":
         return self._sessions.get(task_id)
 
+    def get_batch(self, group_id: str) -> dict | None:
+        """Return batch state as dict, or None if not found."""
+        batch = self._batch_monitor.get(group_id)
+        if batch is None:
+            return None
+        # Refresh from live sessions before returning
+        batch = self._batch_monitor.update(group_id, self._sessions)
+        return batch.to_dict()
+
+    def list_batches(self) -> list[dict]:
+        """Return all batches as dicts, sorted by created_at desc."""
+        return [b.to_dict() for b in self._batch_monitor.list_batches()]
+
     def cancel_session(self, task_id: int) -> dict:
         session = self._sessions.get(task_id)
         if session is None:
@@ -852,15 +873,23 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             for sid, s in self._sessions.items()
             if s.state in (TaskSessionState.COMPLETED, TaskSessionState.FAILED)
         }
+        batch_file = self.SESSIONS_DIR / "golem_batches.json"
+        self._batch_monitor.load(batch_file)
 
     def _save_state(self) -> None:
         save_sessions(self._sessions)
+        batch_file = self.SESSIONS_DIR / "golem_batches.json"
+        self._batch_monitor.save(batch_file)
 
     def reset_state(self) -> None:
         """Delete all session state."""
         self._sessions.clear()
         self._trackers.clear()
         self._processed_ids.clear()
+        self._batch_monitor = BatchMonitor()
+        batch_file = self.SESSIONS_DIR / "golem_batches.json"
+        if batch_file.exists():
+            batch_file.unlink()
         from .orchestrator import SESSIONS_FILE
 
         if SESSIONS_FILE.exists():

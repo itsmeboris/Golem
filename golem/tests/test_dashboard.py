@@ -921,3 +921,25 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         with patch.object(_FileCache, "read", return_value="function render(){}"):
             resp = await handlers["/dashboard/task.js"]()
         assert resp.body is not None
+
+    @pytest.mark.asyncio
+    async def test_elk_js(self, handlers):
+        with patch.object(_FileCache, "read", return_value="var ELK={}"):
+            resp = await handlers["/dashboard/elk.js"]()
+        assert resp.media_type == "application/javascript"
+
+    def test_dashboard_html_has_new_layout(self):
+        """Verify the actual HTML file has the new DAG/table layout."""
+        html = Path(__file__).resolve().parent.parent / "core" / "task_dashboard.html"
+        body = html.read_text(encoding="utf-8")
+        assert "dag-container" in body
+        assert "live-bar" in body
+        assert "task-table" in body
+        assert "sidebar" not in body
+
+    def test_dashboard_html_has_dag_filters(self):
+        html = Path(__file__).resolve().parent.parent / "core" / "task_dashboard.html"
+        body = html.read_text(encoding="utf-8")
+        assert "dag-filter-btn" in body
+        assert 'data-filter="active"' in body
+        assert 'data-filter="failed"' in body
