@@ -16,40 +16,71 @@ let _showThinking = false;
 let _showText = true;
 let _prevFingerprints = {};
 let _liveSnap = {};
-let _allTraceEvents = {};
 
 /* Pipeline view state */
-let _pipelineView = 'waterfall'; /* 'waterfall' | 'flow' | 'log' */
+let _pipelineView = 'waterfall'; /* 'waterfall' | 'log' */
 let _expandedStages = new Set();
 let _stageFingerprint = '';
 let _selectedStageId = null;
 
-/* ── Sidebar rendering ─────────────────────────────────────── */
-function renderSidebar() {
-  const list = $('#task-list');
-  const search = ($('#task-search').value || '').toLowerCase();
-  const stateFilter = $('#state-filter').value;
+/* DAG state */
+let _dagFilter = ''; /* '' | 'active' | 'failed' | 'completed' */
+let _dagGroupFilter = ''; /* '' or a group_id string */
+let _dagTransform = { x: 0, y: 0, scale: 1 };
+let _dagLayout = null; /* cached ELK layout result */
+let _dagFingerprint = '';
+let _hoveredNodeId = null;
+let _dagSelectedTasks = new Set();
+let _dragNode = null; /* { taskId, el, startMX, startMY, origTX, origTY } */
+
+/* Table state */
+let _tableSortCol = 'id';
+let _tableSortAsc = false;
+
+/* ── Live Bar ──────────────────────────────────────────────── */
+function renderLiveBar() {
+  const el = document.getElementById('lb-stats');
+  const active = _liveSnap.active_count || 0;
+  const queue = _liveSnap.queue_depth || 0;
+  const models = _liveSnap.models_active || {};
+  const uptime = _liveSnap.uptime_s || 0;
+
+  const entries = Object.entries(_sessions);
+  let totalCost = 0, completed = 0, failed = 0;
+  for (const [, s] of entries) {
+    totalCost += (s.total_cost_usd || 0) + (s.validation_cost_usd || 0);
+    if (s.state === 'completed') completed++;
+    if (s.state === 'failed') failed++;
+  }
+
+  const dotCls = active > 0 ? 'active' : 'idle';
+  const modelStr = Object.entries(models).map(([m, c]) => `${m}\u00D7${c}`).join(' ');
+
+  let html = '';
+  html += `<span class="lb-stat"><span class="lb-dot ${dotCls}"></span>${active} running</span>`;
+  if (queue > 0) html += `<span class="lb-stat">\u25E6 ${queue} queued</span>`;
+  if (modelStr) html += `<span class="lb-sep"></span><span class="lb-stat">${esc(modelStr)}</span>`;
+  html += `<span class="lb-sep"></span><span class="lb-stat">${fmtCost(totalCost)} spent</span>`;
+  html += `<span class="lb-stat">${completed}\u2713 ${failed}\u2717</span>`;
+  if (uptime > 0) html += `<span class="lb-sep"></span><span class="lb-stat">\u2191${fmtUptime(uptime)}</span>`;
+
+  el.innerHTML = html;
+}
+
+/* ── Task Table ───────────────────────────────────────────── */
+function renderTaskTable() {
+  const container = document.getElementById('task-table');
+  const search = (document.getElementById('table-search').value || '').toLowerCase();
+  const stateFilter = document.getElementById('table-state-filter').value;
   const entries = Object.entries(_sessions);
 
   if (!entries.length) {
-    list.innerHTML = '<div class="sidebar-empty">No sessions yet. Tasks will appear when [AGENT] issues are detected.</div>';
-    $('#sidebar-stats').textContent = '0 sessions';
+    container.innerHTML = '<div class="wf-events-empty">No sessions yet.</div>';
     return;
   }
 
-  /* Sort: active first (by created_at asc), then terminal (by updated_at desc) */
-  const active = [];
-  const terminal = [];
-  for (const [id, s] of entries) {
-    if (['completed', 'failed'].includes(s.state)) terminal.push([id, s]);
-    else active.push([id, s]);
-  }
-  active.sort((a, b) => (a[1].created_at || '').localeCompare(b[1].created_at || ''));
-  terminal.sort((a, b) => (b[1].updated_at || '').localeCompare(a[1].updated_at || ''));
-  const sorted = [...active, ...terminal];
-
   /* Filter */
-  const filtered = sorted.filter(([id, s]) => {
+  let filtered = entries.filter(([id, s]) => {
     if (stateFilter && s.state !== stateFilter) return false;
     if (search) {
       const hay = `#${id} ${s.parent_subject || ''} ${s.state || ''}`.toLowerCase();
@@ -58,74 +89,72 @@ function renderSidebar() {
     return true;
   });
 
-  /* Stats */
-  const activeCount = active.length;
-  const totalCount = entries.length;
-  const liveDot = _liveSnap.active_count > 0 ? 'active' : 'idle';
-  $('#sidebar-stats').innerHTML =
-    `${activeCount} active / ${totalCount} total` +
-    `<span class="sidebar-live"><span class="live-dot ${liveDot}"></span>${_liveSnap.active_count || 0} running</span>`;
-
-  /* Result count */
-  const countEl = document.getElementById('filter-count');
-  if (countEl) {
-    if (search || stateFilter) {
-      countEl.textContent = `Showing ${filtered.length} of ${entries.length}`;
-      countEl.classList.remove('hidden');
-    } else {
-      countEl.classList.add('hidden');
+  /* Sort */
+  filtered.sort(([aId, a], [bId, b]) => {
+    let va, vb;
+    switch (_tableSortCol) {
+      case 'id': va = parseInt(aId); vb = parseInt(bId); break;
+      case 'subject': va = (a.parent_subject || '').toLowerCase(); vb = (b.parent_subject || '').toLowerCase(); break;
+      case 'state': va = a.state || ''; vb = b.state || ''; break;
+      case 'cost': va = (a.total_cost_usd || 0) + (a.validation_cost_usd || 0); vb = (b.total_cost_usd || 0) + (b.validation_cost_usd || 0); break;
+      case 'duration': va = a.duration_seconds || 0; vb = b.duration_seconds || 0; break;
+      case 'deps': va = (a.depends_on || []).length; vb = (b.depends_on || []).length; break;
+      default: va = parseInt(aId); vb = parseInt(bId);
     }
-  }
+    const cmp = va < vb ? -1 : va > vb ? 1 : 0;
+    return _tableSortAsc ? cmp : -cmp;
+  });
 
-  if (filtered.length === 0 && (search || stateFilter)) {
-    list.innerHTML = '<div class="sidebar-empty">No tasks match your filter.</div>';
-    return;
-  }
+  const cols = [
+    { key: 'id', label: 'ID' },
+    { key: 'subject', label: 'Subject' },
+    { key: 'state', label: 'State' },
+    { key: 'cost', label: 'Cost' },
+    { key: 'duration', label: 'Duration' },
+    { key: 'deps', label: 'Deps' },
+  ];
 
-  /* Render cards */
-  list.innerHTML = filtered.map(([id, s]) => {
-    const sel = id === _selectedId ? ' selected' : '';
+  let html = '';
+  if (_dagSelectedTasks.size > 0) {
+    html += `<div class="tt-sel-bar"><span>${_dagSelectedTasks.size} selected</span><button class="tt-sel-clear" onclick="clearDagSelection()">Clear</button></div>`;
+  }
+  html += '<div class="tt-header">';
+  html += '<span class="tt-check"></span>';
+  for (const col of cols) {
+    const activeClass = _tableSortCol === col.key ? ' sort-active' : '';
+    const arrow = _tableSortCol === col.key ? (_tableSortAsc ? ' \u25B2' : ' \u25BC') : '';
+    html += `<span class="${activeClass}" onclick="sortTable('${col.key}')">${col.label}${arrow}</span>`;
+  }
+  html += '</div>';
+
+  for (const [id, s] of filtered) {
     const state = s.state || 'detected';
-    const rawSubject = (s.parent_subject || '').replace(/^\[AGENT\]\s*/, '');
-    const subject = esc(truncText(rawSubject, 90));
-    const fullSubject = esc(rawSubject);
-    const cost = s.total_cost_usd ? fmtCost(s.total_cost_usd) : '';
-    const dur = s.duration_seconds ? fmtDuration(s.duration_seconds)
-      : (state === 'detected' && s.grace_deadline) ? fmtCountdown(s.grace_deadline)
-      : fmtAgo(s.created_at);
+    const subject = esc(truncText((s.parent_subject || '').replace(/^\[AGENT\]\s*/, ''), 60));
+    const cost = s.total_cost_usd ? fmtCost(s.total_cost_usd) : '-';
+    const dur = fmtDuration(s.duration_seconds);
+    const deps = (s.depends_on || []).length;
+    const stateLabel = STATE_LABELS[state] || state;
 
-    const deps = s.depends_on || [];
-    const mergeFailed = hasMergeError(s);
-
-    let statusIndicator = '';
-    if (mergeFailed) {
-      statusIndicator = '<span class="tc-badge" style="background:#450a0a;color:#f87171">merge fail</span>';
-    } else if (['running','validating','detected','retrying'].includes(state)) {
-      statusIndicator = `<span class="tc-badge">${esc(state)}</span>`;
-    }
-
-    let depHtml = '';
-    if (deps.length) {
-      const allDone = deps.every(d => { const ds = _sessions[d]; return ds && ds.state === 'completed'; });
-      const anyFailed = deps.some(d => { const ds = _sessions[d]; return ds && ds.state === 'failed'; });
-      const depColor = anyFailed ? 'var(--red)' : allDone ? 'var(--green)' : 'var(--yellow)';
-      depHtml = `<span class="tc-deps" style="color:${depColor}">\u26D3 ${deps.length}</span>`;
-    }
-
-    return `<div class="task-card state-${state}${sel}" data-id="${id}" onclick="selectTask('${id}')" title="${fullSubject}">
-      <div class="tc-top">
-        <span class="tc-id">#${id}</span>
-        ${statusIndicator}
-      </div>
-      <div class="tc-subject">${subject}</div>
-      <div class="tc-meta">
-        ${cost ? `<span>${cost}</span>` : ''}
-        ${dur ? `<span>${dur}</span>` : ''}
-        ${depHtml}
-        ${s.milestone_count ? `<span>${s.milestone_count} steps</span>` : ''}
-      </div>
+    const checked = _dagSelectedTasks.has(id) ? ' checked' : '';
+    html += `<div class="tt-row" data-id="${id}" onclick="pulseDagNode('${id}');selectTask('${id}')"
+      onmouseenter="highlightDagNode('${id}')" onmouseleave="unhighlightDagNode()">
+      <span class="tt-check"><input type="checkbox"${checked} onclick="event.stopPropagation();toggleDagSelect('${id}')"></span>
+      <span class="tt-id">#${id}</span>
+      <span class="tt-subject">${subject}</span>
+      <span class="tt-state st-${state}">${stateLabel}</span>
+      <span class="tt-cost">${cost}</span>
+      <span class="tt-duration">${dur}</span>
+      <span class="tt-deps">${deps ? '\u26D3 ' + deps : ''}</span>
     </div>`;
-  }).join('');
+  }
+
+  container.innerHTML = html;
+}
+
+function sortTable(col) {
+  if (_tableSortCol === col) _tableSortAsc = !_tableSortAsc;
+  else { _tableSortCol = col; _tableSortAsc = col === 'id'; }
+  renderTaskTable();
 }
 
 function hasMergeError(s) {
@@ -133,10 +162,10 @@ function hasMergeError(s) {
 }
 
 function verdictBadgeStyle(v) {
-  if (v === 'PASS') return 'background:#064e3b;color:#4ade80';
-  if (v === 'FAIL') return 'background:#450a0a;color:#f87171';
-  if (v === 'PARTIAL') return 'background:#431407;color:#fb923c';
-  return 'background:#422006;color:#fbbf24';
+  if (v === 'PASS') return 'background:#064e3b;color:var(--green)';
+  if (v === 'FAIL') return 'background:#450a0a;color:var(--red)';
+  if (v === 'PARTIAL') return 'background:#431407;color:var(--orange)';
+  return 'background:#422006;color:var(--yellow)';
 }
 
 /* ── Task selection & routing ──────────────────────────────── */
@@ -145,12 +174,10 @@ function selectTask(id) {
   _expandedStages.clear();
   _stageFingerprint = '';
   _selectedStageId = null;
-  _flowSelectedStageId = null;
   location.hash = '/task/' + id;
 
-  $$('.task-card').forEach(el => el.classList.toggle('selected', el.dataset.id === id));
-  $('#overview-state').classList.add('hidden');
-  $('#task-detail').classList.remove('hidden');
+  document.getElementById('overview').classList.add('hidden');
+  document.getElementById('task-detail').classList.remove('hidden');
 
   const s = _sessions[id];
   if (s) renderTaskDetail(id, s);
@@ -161,11 +188,9 @@ function deselectTask() {
   _expandedStages.clear();
   _stageFingerprint = '';
   _selectedStageId = null;
-  _flowSelectedStageId = null;
   history.pushState(null, '', location.pathname);
-  $('#overview-state').classList.remove('hidden');
-  $('#task-detail').classList.add('hidden');
-  $$('.task-card.selected').forEach(el => el.classList.remove('selected'));
+  document.getElementById('overview').classList.remove('hidden');
+  document.getElementById('task-detail').classList.add('hidden');
   renderOverview();
 }
 
@@ -180,56 +205,626 @@ function handleHash() {
 
 /* ── Overview rendering ────────────────────────────────────── */
 function renderOverview() {
-  const entries = Object.entries(_sessions);
-  const statCards = $('#stat-cards');
-  const emptyState = $('#empty-state');
+  renderLiveBar();
+  renderDagLegend();
+  populateGroupFilter();
+  renderDagGraph();
+  renderTaskTable();
+}
 
+/* ── DAG highlight helpers (used by table hover) ──────────── */
+function highlightDagNode(id) {
+  _hoveredNodeId = id;
+  const ancestors = new Set(), descendants = new Set();
+  function findAncestors(nid) {
+    const s = _sessions[nid]; if (!s) return;
+    for (const dep of (s.depends_on || [])) { ancestors.add(String(dep)); findAncestors(String(dep)); }
+  }
+  function findDescendants(nid) {
+    for (const [oid, os] of Object.entries(_sessions)) {
+      if ((os.depends_on || []).includes(parseInt(nid))) { descendants.add(oid); findDescendants(oid); }
+    }
+  }
+  findAncestors(id); findDescendants(id);
+  const highlight = new Set([id, ...ancestors, ...descendants]);
+
+  document.querySelectorAll('.dag-node').forEach(el => {
+    el.classList.toggle('dimmed', !highlight.has(el.dataset.taskId));
+  });
+  document.querySelectorAll('.dag-edge').forEach(el => {
+    const from = el.dataset.from, to = el.dataset.to;
+    el.classList.toggle('dimmed', !highlight.has(from) || !highlight.has(to));
+  });
+}
+
+function unhighlightDagNode() {
+  _hoveredNodeId = null;
+  document.querySelectorAll('.dag-node.dimmed').forEach(el => el.classList.remove('dimmed'));
+  document.querySelectorAll('.dag-edge.dimmed').forEach(el => el.classList.remove('dimmed'));
+}
+
+/* DAG filter buttons */
+function setDagFilter(filter) {
+  _dagFilter = filter;
+  document.querySelectorAll('.dag-filter-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.filter === filter));
+  if (_dagLayout) renderDagSvg(_dagLayout);
+}
+
+/* DAG zoom controls */
+function applyDagTransform() {
+  const svg = document.getElementById('dag-svg');
+  const g = svg.querySelector('.dag-root');
+  if (g) g.setAttribute('transform', `translate(${_dagTransform.x},${_dagTransform.y}) scale(${_dagTransform.scale})`);
+}
+function dagZoomFit() {
+  const svg = document.getElementById('dag-svg');
+  const container = document.getElementById('dag-container');
+  if (!svg || !container) { _dagTransform = { x: 20, y: 20, scale: 1 }; applyDagTransform(); return; }
+  const svgW = parseFloat(svg.getAttribute('width')) || 400;
+  const svgH = parseFloat(svg.getAttribute('height')) || 300;
+  const cW = container.clientWidth;
+  const cH = container.clientHeight;
+  const pad = 30;
+  const scale = Math.min((cW - pad * 2) / svgW, (cH - pad * 2) / svgH, 1.5);
+  _dagTransform = { x: (cW - svgW * scale) / 2, y: (cH - svgH * scale) / 2, scale };
+  applyDagTransform();
+}
+function dagZoomIn() {
+  const container = document.getElementById('dag-container');
+  const cx = container ? container.clientWidth / 2 : 0;
+  const cy = container ? container.clientHeight / 2 : 0;
+  const newScale = Math.min(3, _dagTransform.scale * 1.15);
+  const ratio = newScale / _dagTransform.scale;
+  _dagTransform.x = cx - ratio * (cx - _dagTransform.x);
+  _dagTransform.y = cy - ratio * (cy - _dagTransform.y);
+  _dagTransform.scale = newScale;
+  applyDagTransform();
+}
+function dagZoomOut() {
+  const container = document.getElementById('dag-container');
+  const cx = container ? container.clientWidth / 2 : 0;
+  const cy = container ? container.clientHeight / 2 : 0;
+  const newScale = Math.max(0.2, _dagTransform.scale / 1.15);
+  const ratio = newScale / _dagTransform.scale;
+  _dagTransform.x = cx - ratio * (cx - _dagTransform.x);
+  _dagTransform.y = cy - ratio * (cy - _dagTransform.y);
+  _dagTransform.scale = newScale;
+  applyDagTransform();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   DAG GRAPH (ELK.js layout + SVG rendering)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Shared filter check: returns true if the state is filtered OUT (should dim) */
+function toggleDagSelect(id) {
+  if (_dagSelectedTasks.has(id)) _dagSelectedTasks.delete(id);
+  else _dagSelectedTasks.add(id);
+  renderTaskTable();
+  applyDagDimming();
+}
+function clearDagSelection() {
+  _dagSelectedTasks.clear();
+  renderTaskTable();
+  applyDagDimming();
+}
+function applyDagDimming() {
+  /* Fast path: toggle .dimmed on existing SVG elements without re-rendering */
+  const svgEl = document.getElementById('dag-svg');
+  if (!svgEl) return;
+
+  svgEl.querySelectorAll('.dag-node').forEach(node => {
+    const taskId = node.dataset.taskId;
+    const s = _sessions[taskId] || {};
+    const state = s.state || 'detected';
+    node.classList.toggle('dimmed', isDagFiltered(state, s, taskId));
+  });
+
+  svgEl.querySelectorAll('.dag-edge, .dag-edge-running').forEach(path => {
+    const fromId = path.dataset.from;
+    const toId = path.dataset.to;
+    const fromS = _sessions[fromId] || {};
+    const toS = _sessions[toId] || {};
+    const dimmed = isDagFiltered(fromS.state || 'detected', fromS, fromId) ||
+                   isDagFiltered(toS.state || 'detected', toS, toId);
+    path.classList.toggle('dimmed', dimmed);
+  });
+}
+
+function isDagFiltered(state, session, taskId) {
+  if (_dagSelectedTasks.size > 0 && taskId && !_dagSelectedTasks.has(taskId)) return true;
+  if (_dagGroupFilter && session && (session.group_id || '') !== _dagGroupFilter) return true;
+  if (!_dagFilter) return false;
+  if (_dagFilter === 'active') return !['running', 'validating', 'retrying', 'detected'].includes(state);
+  if (_dagFilter === 'failed') return state !== 'failed';
+  if (_dagFilter === 'completed') return state !== 'completed';
+  return false;
+}
+
+/* Group/batch filter */
+function populateGroupFilter() {
+  const sel = document.getElementById('dag-group-filter');
+  if (!sel) return;
+  const groups = new Set();
+  for (const s of Object.values(_sessions)) {
+    if (s.group_id) groups.add(s.group_id);
+  }
+  if (groups.size === 0) { sel.classList.add('hidden'); return; }
+  sel.classList.remove('hidden');
+  let html = '<option value="">All groups</option>';
+  for (const g of [...groups].sort()) html += `<option value="${esc(g)}"${g === _dagGroupFilter ? ' selected' : ''}>${esc(g)}</option>`;
+  sel.innerHTML = html;
+}
+function setDagGroupFilter(group) {
+  _dagGroupFilter = group;
+  if (_dagLayout) renderDagSvg(_dagLayout);
+}
+
+/* Color legend */
+function renderDagLegend() {
+  const el = document.getElementById('dag-legend');
+  if (!el) return;
+  const skip = new Set(['warning', 'pending']);
+  let html = '';
+  for (const [state, colors] of Object.entries(DAG_COLORS)) {
+    if (skip.has(state)) continue;
+    const label = STATE_LABELS[state] || state;
+    html += `<span class="dag-legend-item"><span class="dag-legend-dot" style="background:${colors.stroke}"></span>${label}</span>`;
+  }
+  el.innerHTML = html;
+}
+
+const DAG_COLORS = {
+  completed: { fill: '#0a2920', stroke: '#34D399', text: '#6ee7b7', glow: 'rgba(52,211,153,0.12)', edge: 'rgba(52,211,153,0.5)' },
+  running:   { fill: '#0c1a30', stroke: '#60A5FA', text: '#93bbfd', glow: 'rgba(96,165,250,0.15)', edge: 'rgba(96,165,250,0.6)' },
+  failed:    { fill: '#220d0d', stroke: '#F87171', text: '#fca5a5', glow: 'rgba(248,113,113,0.12)', edge: 'rgba(248,113,113,0.5)' },
+  warning:   { fill: '#221508', stroke: '#FBBF24', text: '#fde68a', glow: 'rgba(251,191,36,0.12)', edge: 'rgba(251,191,36,0.5)' },
+  validating:{ fill: '#1a1040', stroke: '#a78bfa', text: '#c4b5fd', glow: 'rgba(167,139,250,0.12)', edge: 'rgba(167,139,250,0.5)' },
+  detected:  { fill: '#1e1508', stroke: '#FBBF24', text: '#fde68a', glow: 'rgba(251,191,36,0.08)', edge: 'rgba(251,191,36,0.35)' },
+  retrying:  { fill: '#221508', stroke: '#fb923c', text: '#fdba74', glow: 'rgba(251,146,60,0.12)', edge: 'rgba(251,146,60,0.5)' },
+  pending:   { fill: '#151520', stroke: '#3B4553', text: '#6B7280', glow: 'rgba(75,85,99,0.05)', edge: 'rgba(75,85,99,0.3)' },
+};
+
+function buildElkGraph(sessions) {
+  const entries = Object.entries(sessions);
+  const children = [];
+  const edges = [];
+  const idSet = new Set(entries.map(([id]) => id));
+
+  for (const [id, s] of entries) {
+    children.push({
+      id: 'n' + id,
+      width: 180,
+      height: 72,
+      labels: [{ text: id }],
+      _session: s,
+      _taskId: id,
+    });
+
+    for (const depId of (s.depends_on || [])) {
+      if (idSet.has(String(depId))) {
+        edges.push({
+          id: 'e' + depId + '-' + id,
+          sources: ['n' + depId],
+          targets: ['n' + id],
+          _fromState: (sessions[depId] || {}).state || 'pending',
+          _toState: s.state || 'detected',
+        });
+      }
+    }
+  }
+
+  /* Group by group_id */
+  const groups = new Map();
+  for (const child of children) {
+    const gid = child._session.group_id;
+    if (gid) {
+      if (!groups.has(gid)) groups.set(gid, []);
+      groups.get(gid).push(child);
+    }
+  }
+
+  /* If groups exist, wrap them in compound nodes */
+  const topChildren = [];
+  const usedIds = new Set();
+  for (const [gid, members] of groups) {
+    if (members.length > 1) {
+      topChildren.push({
+        id: 'g-' + gid,
+        children: members,
+        labels: [{ text: gid }],
+        layoutOptions: { 'elk.padding': '[top=28,left=12,bottom=12,right=12]' },
+      });
+      for (const m of members) usedIds.add(m.id);
+    }
+  }
+  for (const child of children) {
+    if (!usedIds.has(child.id)) topChildren.push(child);
+  }
+
+  return {
+    id: 'root',
+    layoutOptions: {
+      'elk.algorithm': 'layered',
+      'elk.direction': 'RIGHT',
+      'elk.spacing.nodeNode': '30',
+      'elk.layered.spacing.nodeNodeBetweenLayers': '60',
+      'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
+      'elk.edgeRouting': 'SPLINES',
+    },
+    children: topChildren,
+    edges: edges,
+  };
+}
+
+let _elk = null;
+
+async function layoutDag(graph) {
+  if (!_elk && typeof ELK !== 'undefined') _elk = new ELK();
+  if (!_elk) return null;
+  return await _elk.layout(graph);
+}
+
+async function renderDagGraph() {
+  const entries = Object.entries(_sessions);
   if (!entries.length) {
-    statCards.innerHTML = '';
-    emptyState.classList.remove('hidden');
+    document.getElementById('dag-empty').classList.remove('hidden');
+    document.getElementById('dag-svg').innerHTML = '';
+    return;
+  }
+  document.getElementById('dag-empty').classList.add('hidden');
+
+  /* Fingerprint check to avoid re-layout */
+  const fp = entries.map(([id, s]) => id + s.state + (s.depends_on || []).join(',')).join('|');
+  if (fp === _dagFingerprint && _dagLayout) {
+    renderDagSvg(_dagLayout);
     return;
   }
 
-  emptyState.classList.add('hidden');
+  const graph = buildElkGraph(_sessions);
+  try {
+    _dagLayout = await layoutDag(graph);
+    if (!_dagLayout) return;
+    _dagFingerprint = fp;
+    renderDagSvg(_dagLayout);
+    dagZoomFit();
+  } catch (e) {
+    console.error('ELK layout failed:', e);
+  }
+}
 
-  let totalTasks = entries.length;
-  let totalCost = 0, totalValCost = 0, totalDuration = 0, durationCount = 0;
-  let maxCost = 0, completedCostSum = 0, completedCount = 0;
-  const byState = {};
+function collectElkNodes(node, offsetX, offsetY, result) {
+  /* Recursively collect all leaf nodes from ELK layout, applying parent offsets */
+  if (node.children) {
+    for (const child of node.children) {
+      if (child.children) {
+        /* Compound node — recurse with accumulated offset */
+        collectElkNodes(child, offsetX + (child.x || 0), offsetY + (child.y || 0), result);
+      } else {
+        result.push({
+          id: child.id,
+          x: offsetX + (child.x || 0),
+          y: offsetY + (child.y || 0),
+          w: child.width || 180,
+          h: child.height || 72,
+          _session: child._session,
+          _taskId: child._taskId,
+        });
+      }
+    }
+  }
+}
 
-  for (const [id, s] of entries) {
-    const state = s.state || 'detected';
-    byState[state] = (byState[state] || 0) + 1;
-    const taskCost = (s.total_cost_usd || 0) + (s.validation_cost_usd || 0);
-    totalCost += s.total_cost_usd || 0;
-    totalValCost += s.validation_cost_usd || 0;
-    if (taskCost > maxCost) maxCost = taskCost;
-    if (state === 'completed') { completedCostSum += taskCost; completedCount++; }
-    if (s.duration_seconds) { totalDuration += s.duration_seconds; durationCount++; }
+function collectElkEdges(layout, result) {
+  if (layout.edges) {
+    for (const e of layout.edges) result.push(e);
+  }
+  if (layout.children) {
+    for (const child of layout.children) collectElkEdges(child, result);
+  }
+}
+
+function renderDagSvg(layout) {
+  const svgEl = document.getElementById('dag-svg');
+
+  /* Collect all leaf nodes */
+  const nodes = [];
+  collectElkNodes(layout, 0, 0, nodes);
+  const edges = [];
+  collectElkEdges(layout, edges);
+
+  /* Build node lookup */
+  const nodeMap = new Map();
+  for (const n of nodes) nodeMap.set(n.id, n);
+
+  /* Compute SVG dimensions */
+  let maxX = 0, maxY = 0;
+  for (const n of nodes) {
+    if (n.x + n.w > maxX) maxX = n.x + n.w;
+    if (n.y + n.h > maxY) maxY = n.y + n.h;
+  }
+  const svgW = maxX + 40;
+  const svgH = maxY + 40;
+  svgEl.setAttribute('width', svgW);
+  svgEl.setAttribute('height', svgH);
+  svgEl.setAttribute('viewBox', `0 0 ${svgW} ${svgH}`);
+
+  let svg = '';
+
+  /* Defs */
+  svg += '<defs>';
+  for (const [state, colors] of Object.entries(DAG_COLORS)) {
+    svg += `<filter id="dag-glow-${state}" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feFlood flood-color="${colors.glow}" result="color"/>
+      <feComposite in="color" in2="blur" operator="in" result="shadow"/>
+      <feMerge><feMergeNode in="shadow"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>`;
+    svg += `<marker id="dag-arrow-${state}" viewBox="0 0 8 6" refX="7" refY="3" markerWidth="7" markerHeight="5" orient="auto-start-reverse">
+      <path d="M0,0 L8,3 L0,6 Z" fill="${colors.edge || colors.stroke}" opacity="0.8"/>
+    </marker>`;
+  }
+  svg += `<style>
+    @keyframes dag-dash { to { stroke-dashoffset: -20; } }
+    .dag-edge-running { animation: dag-dash 1s linear infinite; }
+    @keyframes dag-pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
+    .dag-running-ring { animation: dag-pulse 2s ease-in-out infinite; }
+  </style>`;
+  svg += '</defs>';
+
+  svg += '<g class="dag-root">';
+
+  /* Render edges */
+  for (const edge of edges) {
+    const fromId = (edge.sources || [])[0];
+    const toId = (edge.targets || [])[0];
+    const fromN = nodeMap.get(fromId);
+    const toN = nodeMap.get(toId);
+    if (!fromN || !toN) continue;
+
+    const toSession = toN._session || {};
+    const edgeState = toSession.state || 'pending';
+    const colors = DAG_COLORS[edgeState] || DAG_COLORS.pending;
+    const isRunning = edgeState === 'running';
+
+    /* Connection points: right edge of source → left edge of target */
+    const sx = fromN.x + fromN.w, sy = fromN.y + fromN.h / 2;
+    const ex = toN.x, ey = toN.y + toN.h / 2;
+
+    /* Apply drag offsets if nodes were moved */
+    const fromOff = _dragOffsets.get(fromN._taskId) || { dx: 0, dy: 0 };
+    const toOff = _dragOffsets.get(toN._taskId) || { dx: 0, dy: 0 };
+    const pathD = bezierPath(sx + fromOff.dx, sy + fromOff.dy, ex + toOff.dx, ey + toOff.dy);
+
+    /* Check if edge should be dimmed by DAG filter or group filter */
+    const fromSession = fromN._session || {};
+    const fromState = fromSession.state || 'detected';
+    const toState = toSession.state || 'detected';
+    const edgeDimmed = isDagFiltered(fromState, fromSession, fromN._taskId) || isDagFiltered(toState, toSession, toN._taskId);
+    const dimCls = edgeDimmed ? ' dimmed' : '';
+    const dashAttrs = isRunning ? ` stroke-dasharray="6 4" class="dag-edge dag-edge-running${dimCls}"` : ` class="dag-edge${dimCls}"`;
+    svg += `<path d="${pathD}" fill="none" stroke="${colors.edge || colors.stroke}" stroke-width="1.2"${dashAttrs}
+      marker-end="url(#dag-arrow-${edgeState})"
+      data-from="${fromN._taskId}" data-to="${toN._taskId}"
+      data-sx="${sx}" data-sy="${sy}" data-ex="${ex}" data-ey="${ey}"><title>#${fromN._taskId} → #${toN._taskId}</title></path>`;
   }
 
-  const avgCost = completedCount > 0 ? completedCostSum / completedCount : 0;
-  const avgDuration = durationCount > 0 ? totalDuration / durationCount : 0;
-  const completed = byState['completed'] || 0;
-  const failed = byState['failed'] || 0;
-  const running = byState['running'] || 0;
-  const validating = byState['validating'] || 0;
-  const detected = byState['detected'] || 0;
-  const retrying = byState['retrying'] || 0;
+  /* Render nodes */
+  for (const node of nodes) {
+    const s = node._session || {};
+    const state = s.state || 'detected';
+    const colors = DAG_COLORS[state] || DAG_COLORS.pending;
+    const taskId = node._taskId;
 
-  statCards.innerHTML = `
-    <div class="stat-card"><div class="sc-label">Total Tasks</div><div class="sc-value">${totalTasks}</div></div>
-    <div class="stat-card"><div class="sc-label">Completed</div><div class="sc-value green">${completed}</div></div>
-    <div class="stat-card"><div class="sc-label">Failed</div><div class="sc-value ${failed ? 'red' : ''}">${failed}</div></div>
-    <div class="stat-card"><div class="sc-label">Running</div><div class="sc-value ${running ? 'blue' : ''}">${running}</div></div>
-    ${validating ? `<div class="stat-card"><div class="sc-label">Validating</div><div class="sc-value">${validating}</div></div>` : ''}
-    ${detected ? `<div class="stat-card"><div class="sc-label">Detected</div><div class="sc-value">${detected}</div></div>` : ''}
-    ${retrying ? `<div class="stat-card"><div class="sc-label">Retrying</div><div class="sc-value">${retrying}</div></div>` : ''}
-    <div class="stat-card"><div class="sc-label">Total Spend</div><div class="sc-value">${fmtCost(totalCost + totalValCost)}</div></div>
-    <div class="stat-card"><div class="sc-label">Validation Cost</div><div class="sc-value">${fmtCost(totalValCost)}</div></div>
-    <div class="stat-card"><div class="sc-label">Avg Cost</div><div class="sc-value">${fmtCost(avgCost)}</div></div>
-    <div class="stat-card"><div class="sc-label">Max Cost</div><div class="sc-value">${fmtCost(maxCost)}</div></div>
-    <div class="stat-card"><div class="sc-label">Avg Duration</div><div class="sc-value">${fmtDuration(avgDuration)}</div></div>`;
+    /* Apply DAG filter */
+    const dimmed = isDagFiltered(state, s, taskId);
+
+    const subject = truncText((s.parent_subject || '').replace(/^\[AGENT\]\s*/, ''), 18);
+    const cost = s.total_cost_usd ? fmtCost(s.total_cost_usd) : '';
+    const dur = fmtDuration(s.duration_seconds);
+    const stateLabel = STATE_LABELS[state] || state;
+    const subInfo = [dur, cost].filter(Boolean).join(' \u00B7 ');
+
+    const dragOff = _dragOffsets.get(taskId) || { dx: 0, dy: 0 };
+    const txAttr = (dragOff.dx || dragOff.dy) ? ` transform="translate(${dragOff.dx},${dragOff.dy})"` : '';
+    svg += `<g class="dag-node${dimmed ? ' dimmed' : ''}" data-task-id="${taskId}" data-orig-x="${node.x}" data-orig-y="${node.y}"${txAttr}
+      onmouseenter="highlightDagNode('${taskId}')" onmouseleave="unhighlightDagNode()">`;
+
+    /* Node rect — subtle border, soft glow */
+    svg += `<rect class="dag-node-rect" x="${node.x}" y="${node.y}" width="${node.w}" height="${node.h}"
+      rx="8" fill="${colors.fill}" stroke="${colors.stroke}" stroke-width="1" stroke-opacity="0.5"
+      filter="url(#dag-glow-${state})"/>`;
+
+    /* Running pulse ring */
+    if (state === 'running') {
+      svg += `<rect class="dag-running-ring" x="${node.x - 2}" y="${node.y - 2}"
+        width="${node.w + 4}" height="${node.h + 4}" rx="10"
+        fill="none" stroke="${colors.stroke}" stroke-width="0.8" opacity="0.35"/>`;
+    }
+
+    /* ID + state label */
+    const textX = node.x + 12;
+    const labelY = node.y + 20;
+    svg += `<text x="${textX}" y="${labelY}" fill="${colors.text}" font-size="11" font-weight="700"
+      font-family="system-ui,sans-serif">#${taskId}</text>`;
+    svg += `<text x="${node.x + node.w - 10}" y="${labelY}" fill="${colors.stroke}" font-size="8"
+      font-weight="600" text-anchor="end" opacity="0.7" text-transform="uppercase" letter-spacing="0.5"
+      font-family="system-ui,sans-serif">${stateLabel}</text>`;
+
+    /* Subject */
+    svg += `<text x="${textX}" y="${node.y + 36}" fill="${colors.text}" font-size="10" opacity="0.65"
+      font-family="system-ui,sans-serif">${esc(subject)}</text>`;
+
+    /* Sub-info (duration · cost) */
+    if (subInfo) {
+      svg += `<text x="${textX}" y="${node.y + 52}" fill="${colors.text}" font-size="9" opacity="0.4"
+        font-family="system-ui,sans-serif">${esc(subInfo)}</text>`;
+    }
+
+    /* Progress bar for running */
+    if (state === 'running') {
+      const barY = node.y + node.h - 5;
+      const barW = node.w - 16;
+      svg += `<rect x="${node.x + 8}" y="${barY}" width="${barW}" height="1.5" rx="1" fill="${colors.stroke}" opacity="0.12"/>`;
+      svg += `<rect x="${node.x + 8}" y="${barY}" width="${barW * 0.6}" height="1.5" rx="1" fill="${colors.stroke}" opacity="0.45">
+        <animate attributeName="width" from="0" to="${barW}" dur="3s" repeatCount="indefinite"/>
+      </rect>`;
+    }
+
+    svg += '</g>';
+  }
+
+  svg += '</g>';
+  svgEl.innerHTML = svg;
+
+  /* Minimap */
+  renderDagMinimap(svgEl, nodes.length);
+}
+
+function renderDagMinimap(svgEl, nodeCount) {
+  const minimap = document.getElementById('dag-minimap');
+  const toggle = document.getElementById('dag-minimap-toggle');
+  /* Auto-hide for small DAGs */
+  if (nodeCount < 6) {
+    if (minimap) minimap.classList.add('hidden');
+    if (toggle) toggle.classList.add('hidden');
+    return;
+  }
+  if (toggle) toggle.classList.remove('hidden');
+  if (minimap && !minimap.classList.contains('user-hidden')) minimap.classList.remove('hidden');
+
+  const clone = svgEl.cloneNode(true);
+  /* Strip animations and interactivity */
+  clone.querySelectorAll('animate').forEach(el => el.remove());
+  clone.querySelectorAll('[onclick]').forEach(el => el.removeAttribute('onclick'));
+  clone.querySelectorAll('[onmouseenter]').forEach(el => el.removeAttribute('onmouseenter'));
+  clone.removeAttribute('width');
+  clone.removeAttribute('height');
+  clone.style.width = '100%';
+  clone.style.height = '100%';
+  minimap.innerHTML = '';
+  minimap.appendChild(clone);
+}
+
+function toggleMinimap() {
+  const minimap = document.getElementById('dag-minimap');
+  const toggle = document.getElementById('dag-minimap-toggle');
+  if (!minimap) return;
+  const isHidden = minimap.classList.toggle('hidden');
+  minimap.classList.toggle('user-hidden', isHidden);
+  if (toggle) toggle.classList.toggle('minimap-off', isHidden);
+}
+
+/* ── Drag offset persistence ─────────────────────────────── */
+let _dragOffsets = new Map(); /* taskId → { dx, dy } */
+
+function updateEdgesForNode(taskId) {
+  /* Recompute all edges connected to this node using stored connection points */
+  const svgEl = document.getElementById('dag-svg');
+  if (!svgEl) return;
+
+  svgEl.querySelectorAll(`path[data-from="${taskId}"], path[data-to="${taskId}"]`).forEach(path => {
+    const fromId = path.dataset.from;
+    const toId = path.dataset.to;
+    const sx = parseFloat(path.dataset.sx);
+    const sy = parseFloat(path.dataset.sy);
+    const ex = parseFloat(path.dataset.ex);
+    const ey = parseFloat(path.dataset.ey);
+
+    /* Apply drag offsets */
+    const fromOff = _dragOffsets.get(fromId) || { dx: 0, dy: 0 };
+    const toOff = _dragOffsets.get(toId) || { dx: 0, dy: 0 };
+    const x1 = sx + fromOff.dx, y1 = sy + fromOff.dy;
+    const x2 = ex + toOff.dx, y2 = ey + toOff.dy;
+
+    path.setAttribute('d', bezierPath(x1, y1, x2, y2));
+  });
+}
+
+function bezierPath(x1, y1, x2, y2) {
+  const cp = Math.max(Math.abs(x2 - x1) * 0.4, 30);
+  return `M${x1},${y1} C${x1 + cp},${y1} ${x2 - cp},${y2} ${x2},${y2}`;
+}
+
+function initDagPanZoom() {
+  const container = document.getElementById('dag-container');
+  if (!container) return;
+  let isPanning = false, startX, startY;
+
+  container.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const direction = e.deltaY > 0 ? -1 : 1;
+    const factor = Math.pow(1.002, direction * Math.min(Math.abs(e.deltaY), 60));
+    const newScale = Math.max(0.2, Math.min(3, _dagTransform.scale * factor));
+    const rect = container.getBoundingClientRect();
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+    const ratio = newScale / _dagTransform.scale;
+    _dagTransform.x = cx - ratio * (cx - _dagTransform.x);
+    _dagTransform.y = cy - ratio * (cy - _dagTransform.y);
+    _dagTransform.scale = newScale;
+    applyDagTransform();
+  }, { passive: false });
+
+  container.addEventListener('mousedown', (e) => {
+    const nodeEl = e.target.closest('.dag-node');
+    if (nodeEl) {
+      /* Start node drag */
+      e.stopPropagation();
+      const taskId = nodeEl.dataset.taskId;
+      const prev = _dragOffsets.get(taskId) || { dx: 0, dy: 0 };
+      _dragNode = { taskId, el: nodeEl, startMX: e.clientX, startMY: e.clientY, baseDX: prev.dx, baseDY: prev.dy };
+      nodeEl.classList.add('dragging');
+      return;
+    }
+    isPanning = true; startX = e.clientX - _dagTransform.x; startY = e.clientY - _dagTransform.y;
+    container.style.cursor = 'grabbing';
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (_dragNode) {
+      const dx = _dragNode.baseDX + (e.clientX - _dragNode.startMX) / _dagTransform.scale;
+      const dy = _dragNode.baseDY + (e.clientY - _dragNode.startMY) / _dagTransform.scale;
+      _dragNode.el.setAttribute('transform', `translate(${dx},${dy})`);
+      _dragOffsets.set(_dragNode.taskId, { dx, dy });
+      updateEdgesForNode(_dragNode.taskId);
+      return;
+    }
+    if (!isPanning) return;
+    _dagTransform.x = e.clientX - startX;
+    _dagTransform.y = e.clientY - startY;
+    applyDagTransform();
+  });
+
+  window.addEventListener('mouseup', (e) => {
+    if (_dragNode) {
+      const mx = Math.abs(e.clientX - _dragNode.startMX);
+      const my = Math.abs(e.clientY - _dragNode.startMY);
+      _dragNode.el.classList.remove('dragging');
+      if (mx < 5 && my < 5) {
+        /* Treat as click — remove any offset we just stored */
+        _dragOffsets.delete(_dragNode.taskId);
+        selectTask(_dragNode.taskId);
+      }
+      _dragNode = null;
+      return;
+    }
+    if (isPanning) { isPanning = false; container.style.cursor = 'grab'; }
+  });
+}
+
+/* ── Escape key deselects task ─────────────────────────────── */
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && _selectedId) deselectTask();
+});
+
+/* ── Table-to-DAG pulse sync ──────────────────────────────── */
+function pulseDagNode(id) {
+  const node = document.querySelector(`.dag-node[data-task-id="${id}"]`);
+  if (!node) return;
+  node.classList.add('dag-node-pulse');
+  setTimeout(() => node.classList.remove('dag-node-pulse'), 800);
 }
 
 /* ── Task Detail rendering ─────────────────────────────────── */
@@ -253,8 +848,8 @@ function renderHeader(id, s) {
   if (mergeFailed) mergeHeaderBadge = '<span class="th-badge" style="background:#450a0a;color:#f87171">merge failed</span>';
   else if (s.merge_ready) mergeHeaderBadge = '<span class="th-badge" style="background:#172554;color:#60a5fa">merge queued</span>';
 
+  $('#task-back').innerHTML = '<button class="back-btn" onclick="deselectTask()">&larr; Dashboard</button>';
   $('#task-header').innerHTML = `
-    <button class="back-btn" onclick="deselectTask()">&larr; Dashboard</button>
     <div class="th-top">
       <span class="th-id">#${id}</span>
       ${mode ? `<span class="th-mode">${esc(mode)}</span>` : ''}
@@ -268,14 +863,14 @@ function renderHeader(id, s) {
 
 function stateBadgeStyle(state) {
   const map = {
-    completed: 'background:#064e3b;color:#4ade80',
-    failed: 'background:#450a0a;color:#f87171',
-    running: 'background:#172554;color:#60a5fa',
-    validating: 'background:#1e1b4b;color:#a78bfa',
-    detected: 'background:#422006;color:#fbbf24',
-    retrying: 'background:#431407;color:#fb923c',
+    completed: 'background:#064e3b;color:var(--green)',
+    failed: 'background:#450a0a;color:var(--red)',
+    running: 'background:#172554;color:var(--blue)',
+    validating: 'background:#1e1b4b;color:var(--purple)',
+    detected: 'background:#422006;color:var(--yellow)',
+    retrying: 'background:#431407;color:var(--orange)',
   };
-  return map[state] || 'background:#1e293b;color:#94a3b8';
+  return map[state] || 'background:var(--bg-elevated);color:var(--text-secondary)';
 }
 
 function renderMetrics(s) {
@@ -293,17 +888,18 @@ function renderMetrics(s) {
   if (s.validation_cost_usd) cards.push({ label: 'Validation Cost', value: fmtCost(s.validation_cost_usd), cls: '' });
   const deps = s.depends_on || [];
   if (deps.length) {
-    const depItems = deps.map(d => {
+    const depChips = deps.map(d => {
       const ds = _sessions[d];
-      const dSubject = ds ? truncText((ds.parent_subject || '').replace(/^\[AGENT\]\s*/, ''), 30) : '#' + d;
-      const dState = ds ? ds.state : 'unknown';
-      return `<a href="#/task/${d}" style="text-decoration:none;color:inherit" title="#${d}">${esc(dSubject)}</a> <span style="font-size:0.65rem;opacity:0.7">(${esc(dState)})</span>`;
-    });
-    cards.push({ label: 'Dependencies', value: depItems.join('<br>'), cls: '' });
+      const dSubject = ds ? truncText((ds.parent_subject || '').replace(/^\[AGENT\]\s*/, ''), 25) : 'Task';
+      const dState = ds ? ds.state || 'pending' : 'pending';
+      const dColors = DAG_COLORS[dState] || DAG_COLORS.pending;
+      return `<a href="#/task/${d}" class="dep-chip" style="border-color:${dColors.stroke};color:${dColors.text}" title="#${d} (${dState})"><span class="dep-chip-dot" style="background:${dColors.stroke}"></span>#${d} ${esc(dSubject)}</a>`;
+    }).join('');
+    cards.push({ label: 'Dependencies', value: depChips, cls: '', wide: true });
   }
 
   $('#metrics-row').innerHTML = cards.map(c =>
-    `<div class="metric-card"><div class="mc-label">${c.label}</div><div class="mc-value ${c.cls}">${c.value}</div></div>`
+    `<div class="metric-card${c.wide ? ' mc-wide' : ''}"><div class="mc-label">${c.label}</div><div class="mc-value ${c.cls}">${c.value}</div></div>`
   ).join('');
 }
 
@@ -351,7 +947,6 @@ const STAGE_ICONS = {
 function computeStages(s) {
   const stages = [];
   const state = s.state || 'detected';
-  const isSubagent = s.execution_mode === 'subagent';
   const allEvents = s.event_log || [];
   const taskId = s.parent_issue_id || _selectedId;
 
@@ -363,17 +958,12 @@ function computeStages(s) {
 
   stages.push({ id: 'preflight', type: 'preflight', label: 'Preflight', state: 'completed', events: [] });
 
-  if (isSubagent) {
-    const execState = ['completed','failed','validating','retrying'].includes(state) ? 'completed'
-      : state === 'running' ? 'running' : 'pending';
-    stages.push({ id: 'orchestration', type: 'orchestration', label: 'Orchestration', state: execState,
-      events: allEvents, meta: { milestones: s.milestone_count, cost: s.total_cost_usd } });
-  } else {
-    const execState = ['completed','failed','validating','retrying'].includes(state) ? 'completed'
-      : state === 'running' ? 'running' : 'pending';
-    stages.push({ id: 'execution', type: 'execution', label: 'Execution', state: execState,
-      events: allEvents, meta: { milestones: s.milestone_count, cost: s.total_cost_usd } });
-  }
+  /* Execution / orchestration stage */
+  const execLabel = s.execution_mode === 'subagent' ? 'Orchestrating' : 'Execution';
+  const execState = ['completed','failed','validating','retrying'].includes(state) ? 'completed'
+    : state === 'running' ? 'running' : 'pending';
+  stages.push({ id: 'execution', type: 'execution', label: execLabel, state: execState,
+    events: allEvents, meta: { milestones: s.milestone_count, cost: s.total_cost_usd } });
 
   if (['validating','completed','failed','retrying'].includes(state) || s.validation_verdict) {
     const valState = state === 'validating' ? 'running'
@@ -453,15 +1043,11 @@ function renderPipelineView(id, s) {
   _stageFingerprint = fp;
 
   document.getElementById('waterfall-view').classList.add('hidden');
-  document.getElementById('flow-view').classList.add('hidden');
   document.getElementById('log-view').classList.add('hidden');
 
   if (_pipelineView === 'waterfall') {
     document.getElementById('waterfall-view').classList.remove('hidden');
     renderWaterfallTable(stages, s);
-  } else if (_pipelineView === 'flow') {
-    document.getElementById('flow-view').classList.remove('hidden');
-    renderFlowGraph(stages, s);
   } else {
     document.getElementById('log-view').classList.remove('hidden');
     renderAccordionView(stages, s);
@@ -472,7 +1058,6 @@ function setPipelineView(view) {
   _pipelineView = view;
   _stageFingerprint = '';
   document.getElementById('btn-waterfall-view').classList.toggle('active', view === 'waterfall');
-  document.getElementById('btn-flow-view').classList.toggle('active', view === 'flow');
   document.getElementById('btn-log-view').classList.toggle('active', view === 'log');
   if (_selectedId && _sessions[_selectedId]) renderPipelineView(_selectedId, _sessions[_selectedId]);
 }
@@ -676,15 +1261,88 @@ function renderDetailEvents(st, session) {
   return html;
 }
 
-function renderWfEventRow(ev) {
+function renderWfEventRow(ev, index) {
   const e = enrichEvent(ev);
   if (!e.body && !e.chip) return '';
-  return `<div class="wf-event ${e.cls}">
+  return `<div class="wf-event ${e.cls}" data-event-idx="${index}" onclick="toggleEventDetail(this, ${index})">
     <span class="ev-icon">${e.icon}</span>
     ${e.chip ? `<span class="ev-chip">${esc(e.chip)}</span>` : '<span></span>'}
     <span class="ev-body">${esc(e.body)}</span>
     ${e.ts ? `<span class="ev-ts">${e.ts}</span>` : '<span></span>'}
   </div>`;
+}
+
+/* ── Expandable Event Detail ──────────────────────────────── */
+let _traceTerminalCache = {};
+
+async function loadTraceTerminal(eventId) {
+  if (_traceTerminalCache[eventId]) return _traceTerminalCache[eventId];
+  try {
+    const res = await fetch('/api/trace-terminal/' + eventId);
+    if (!res.ok) return null;
+    const data = await res.json();
+    _traceTerminalCache[eventId] = data.events || [];
+    return _traceTerminalCache[eventId];
+  } catch (e) { return null; }
+}
+
+async function toggleEventDetail(rowEl, index) {
+  /* If already expanded, collapse */
+  const existing = rowEl.nextElementSibling;
+  if (existing && existing.classList.contains('ev-detail-panel')) {
+    existing.remove();
+    rowEl.classList.remove('ev-expanded');
+    return;
+  }
+
+  /* Collapse any other expanded row */
+  document.querySelectorAll('.ev-detail-panel').forEach(el => el.remove());
+  document.querySelectorAll('.ev-expanded').forEach(el => el.classList.remove('ev-expanded'));
+
+  rowEl.classList.add('ev-expanded');
+
+  const s = _sessions[_selectedId];
+  if (!s) return;
+  const eventId = 'golem-' + _selectedId;
+
+  /* Show loading state */
+  const panel = document.createElement('div');
+  panel.className = 'ev-detail-panel';
+  panel.innerHTML = '<div class="ev-detail-loading">Loading full trace\u2026</div>';
+  rowEl.after(panel);
+
+  const events = await loadTraceTerminal(eventId);
+  if (!events || !events.length) {
+    panel.innerHTML = '<div class="ev-detail-loading">Trace not available.</div>';
+    return;
+  }
+
+  const fullEvent = events[index] || null;
+  if (!fullEvent) {
+    panel.innerHTML = '<div class="ev-detail-loading">Event details not found in trace.</div>';
+    return;
+  }
+
+  let html = '<div class="ev-detail-content">';
+
+  const evType = fullEvent.type || 'unknown';
+  html += `<div class="ev-detail-type">${esc(evType)}</div>`;
+
+  if (fullEvent.tool_name) {
+    html += `<div class="ev-detail-tool">${esc(fullEvent.tool_name)}</div>`;
+  }
+
+  if (fullEvent.text) {
+    const { formatted, isJson } = tryFormatJson(fullEvent.text);
+    if (isJson) {
+      html += `<pre class="ev-detail-pre json">${highlightJson(esc(formatted))}</pre>`;
+    } else {
+      html += `<pre class="ev-detail-pre">${esc(fullEvent.text)}</pre>`;
+    }
+  }
+
+  html += '</div>';
+  panel.innerHTML = html;
 }
 
 function expandStage(stageId) {
@@ -714,296 +1372,6 @@ function renderStageBody(st, s) {
   }
 
   return html;
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   FLOW GRAPH (DAG VISUALIZATION)
-   ═══════════════════════════════════════════════════════════════ */
-
-const FLOW_COLORS = {
-  completed: { fill: '#064e3b', stroke: '#34D399', text: '#34D399', glow: 'rgba(52,211,153,0.25)' },
-  running:   { fill: '#0c1a3d', stroke: '#60A5FA', text: '#60A5FA', glow: 'rgba(96,165,250,0.35)' },
-  failed:    { fill: '#2d0f0f', stroke: '#F87171', text: '#F87171', glow: 'rgba(248,113,113,0.25)' },
-  warning:   { fill: '#2d1a08', stroke: '#FBBF24', text: '#FBBF24', glow: 'rgba(251,191,36,0.25)' },
-  pending:   { fill: '#1a1a2e', stroke: '#4B5563', text: '#6B7280', glow: 'rgba(75,85,99,0.1)' },
-};
-
-const FLOW_NODE = { w: 156, h: 64, rx: 10 };
-const FLOW_GAP = { x: 56, y: 20 };
-
-function layoutFlowGraph(stages) {
-  /* Separate stages into columns:
-     col 0: task
-     col 1: preflight
-     col 2: orchestration/execution
-     col 3: validation
-     col 4: retry/merge
-     col 5: commit/failure
-  */
-  const colOrder = ['task', 'preflight', 'orchestration', 'execution', 'validation', 'retry', 'merge', 'commit', 'failure'];
-
-  /* Group stages by their column position */
-  const colMap = new Map();
-  for (const st of stages) {
-    const colIdx = colOrder.indexOf(st.type);
-    if (colIdx === -1) continue;
-    if (!colMap.has(colIdx)) colMap.set(colIdx, []);
-    colMap.get(colIdx).push(st);
-  }
-
-  /* Build final columns in order */
-  const sortedCols = [...colMap.keys()].sort((a, b) => a - b);
-
-  const nodes = [];
-  const edges = [];
-  let colX = 40;
-
-  const nodeMap = new Map(); /* stageId -> {x, y, w, h, stage} */
-
-  for (const colIdx of sortedCols) {
-    const colStages = colMap.get(colIdx);
-
-    for (let i = 0; i < colStages.length; i++) {
-      const st = colStages[i];
-      const y = 40 + i * (FLOW_NODE.h + FLOW_GAP.y);
-      nodeMap.set(st.id, { x: colX, y, w: FLOW_NODE.w, h: FLOW_NODE.h, stage: st });
-      nodes.push({ ...st, x: colX, y, w: FLOW_NODE.w, h: FLOW_NODE.h });
-    }
-    colX += FLOW_NODE.w + FLOW_GAP.x;
-  }
-
-  /* Build edges based on pipeline flow */
-  for (let i = 1; i < stages.length; i++) {
-    const st = stages[i];
-    const prev = stages[i - 1];
-    if (nodeMap.has(prev.id) && nodeMap.has(st.id)) {
-      edges.push({ from: prev.id, to: st.id, state: st.state });
-    }
-  }
-
-  /* Deduplicate edges */
-  const edgeSet = new Set();
-  const uniqueEdges = edges.filter(e => {
-    const key = e.from + '->' + e.to;
-    if (edgeSet.has(key)) return false;
-    edgeSet.add(key);
-    return true;
-  });
-
-  /* Center nodes vertically around the tallest column */
-  let maxH = 0;
-  const colNodes = new Map();
-  for (const n of nodes) {
-    if (!colNodes.has(n.x)) colNodes.set(n.x, []);
-    colNodes.get(n.x).push(n);
-  }
-  for (const [, col] of colNodes) {
-    const colH = col.length * (FLOW_NODE.h + FLOW_GAP.y) - FLOW_GAP.y;
-    if (colH > maxH) maxH = colH;
-  }
-  for (const [, col] of colNodes) {
-    const colH = col.length * (FLOW_NODE.h + FLOW_GAP.y) - FLOW_GAP.y;
-    const offset = (maxH - colH) / 2;
-    for (const n of col) {
-      n.y += offset;
-      const nm = nodeMap.get(n.id);
-      if (nm) nm.y = n.y;
-    }
-  }
-
-  const svgW = colX + 40;
-  const svgH = maxH + 120;
-
-  return { nodes, edges: uniqueEdges, nodeMap, svgW, svgH };
-}
-
-function svgEdgePath(fromNode, toNode) {
-  const x1 = fromNode.x + fromNode.w;
-  const y1 = fromNode.y + fromNode.h / 2;
-  const x2 = toNode.x;
-  const y2 = toNode.y + toNode.h / 2;
-  const cp = Math.abs(x2 - x1) * 0.45;
-  return `M${x1},${y1} C${x1 + cp},${y1} ${x2 - cp},${y2} ${x2},${y2}`;
-}
-
-let _flowSelectedStageId = null;
-
-function renderFlowGraph(stages, session) {
-  const container = document.getElementById('flow-graph-container');
-  const layout = layoutFlowGraph(stages);
-  const { nodes, edges, nodeMap, svgW, svgH } = layout;
-  const timing = computeTimingInfo(stages, session);
-
-  /* Build SVG */
-  let svg = `<svg class="flow-svg" viewBox="0 0 ${svgW} ${svgH}" width="${svgW}" height="${svgH}" xmlns="http://www.w3.org/2000/svg">`;
-
-  /* Defs: filters, gradients, markers */
-  svg += `<defs>`;
-  for (const [state, colors] of Object.entries(FLOW_COLORS)) {
-    svg += `<filter id="glow-${state}" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="4" result="blur"/>
-      <feFlood flood-color="${colors.glow}" result="color"/>
-      <feComposite in="color" in2="blur" operator="in" result="shadow"/>
-      <feMerge><feMergeNode in="shadow"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>`;
-  }
-  /* Animated dash pattern for running edges */
-  svg += `<style>
-    @keyframes flow-dash { to { stroke-dashoffset: -20; } }
-    .flow-edge-running { animation: flow-dash 1s linear infinite; }
-    .flow-node-group { cursor: pointer; }
-    .flow-node-group:hover .flow-node-rect { filter: brightness(1.3); }
-    .flow-node-group.selected .flow-node-rect { stroke-width: 2.5; }
-    @keyframes flow-pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
-    .flow-running-indicator { animation: flow-pulse 2s ease-in-out infinite; }
-  </style>`;
-  svg += `</defs>`;
-
-  /* Render edges */
-  for (const edge of edges) {
-    const fromN = nodeMap.get(edge.from);
-    const toN = nodeMap.get(edge.to);
-    if (!fromN || !toN) continue;
-    const colors = FLOW_COLORS[edge.state] || FLOW_COLORS.pending;
-    const path = svgEdgePath(fromN, toN);
-    const isRunning = edge.state === 'running';
-    const dashAttrs = isRunning ? `stroke-dasharray="6 4" class="flow-edge-running"` : '';
-    const opacity = edge.state === 'pending' ? 0.3 : 0.5;
-    svg += `<path d="${path}" fill="none" stroke="${colors.stroke}" stroke-width="1.5" opacity="${opacity}" ${dashAttrs}/>`;
-    /* Glow layer for completed/running */
-    if (edge.state === 'completed' || edge.state === 'running') {
-      svg += `<path d="${path}" fill="none" stroke="${colors.stroke}" stroke-width="4" opacity="0.1" ${dashAttrs}/>`;
-    }
-  }
-
-  /* Render nodes */
-  for (const node of nodes) {
-    const colors = FLOW_COLORS[node.state] || FLOW_COLORS.pending;
-    const icon = STAGE_ICONS[node.type] || '\u25CF';
-    const isSelected = _flowSelectedStageId === node.id;
-    const selClass = isSelected ? ' selected' : '';
-    const t = timing.timingMap.get(node.id);
-    const durationText = t && t.duration > 0 ? fmtDuration(t.duration) : '';
-
-    let costText = '';
-    if (node.meta) {
-      if (node.meta.cost) costText = fmtCost(node.meta.cost);
-      else if (node.meta.result && node.meta.result.cost_usd) costText = fmtCost(node.meta.result.cost_usd);
-    }
-
-    svg += `<g class="flow-node-group${selClass}" data-stage-id="${node.id}" onclick="selectFlowNode('${node.id}')">`;
-
-    /* Node background */
-    svg += `<rect class="flow-node-rect" x="${node.x}" y="${node.y}" width="${node.w}" height="${node.h}"
-      rx="${FLOW_NODE.rx}" fill="${colors.fill}" stroke="${colors.stroke}" stroke-width="1.5"
-      filter="url(#glow-${node.state})"/>`;
-
-    /* Running pulse ring */
-    if (node.state === 'running') {
-      svg += `<rect class="flow-running-indicator" x="${node.x - 3}" y="${node.y - 3}"
-        width="${node.w + 6}" height="${node.h + 6}" rx="${FLOW_NODE.rx + 2}"
-        fill="none" stroke="${colors.stroke}" stroke-width="1" opacity="0.4"/>`;
-    }
-
-    /* Icon + label */
-    const textX = node.x + 12;
-    const labelY = node.y + (durationText || costText ? 22 : 28);
-    svg += `<text x="${textX}" y="${labelY}" fill="${colors.text}" font-size="11" font-weight="600" font-family="system-ui,sans-serif">`;
-    svg += `<tspan>${icon} </tspan>`;
-    /* Truncate label */
-    const maxChars = 14;
-    const label = node.label.length > maxChars ? node.label.slice(0, maxChars - 1) + '\u2026' : node.label;
-    svg += `${esc(label)}</text>`;
-
-    /* Status badge */
-    const stateLabel = STATE_LABELS[node.state] || node.state;
-    svg += `<text x="${node.x + node.w - 10}" y="${labelY}" fill="${colors.text}" font-size="9"
-      font-weight="500" text-anchor="end" opacity="0.8" font-family="system-ui,sans-serif">${stateLabel}</text>`;
-
-    /* Duration / cost sub-line */
-    if (durationText || costText) {
-      const subParts = [durationText, costText].filter(Boolean).join(' \u00B7 ');
-      svg += `<text x="${textX}" y="${node.y + 42}" fill="${colors.text}" font-size="9" opacity="0.55"
-        font-family="system-ui,sans-serif">${esc(subParts)}</text>`;
-    }
-
-    /* Progress bar for running stages */
-    if (node.state === 'running' && t && t.duration > 0) {
-      const barY = node.y + node.h - 6;
-      const barW = node.w - 20;
-      svg += `<rect x="${node.x + 10}" y="${barY}" width="${barW}" height="2" rx="1" fill="${colors.stroke}" opacity="0.15"/>`;
-      svg += `<rect x="${node.x + 10}" y="${barY}" width="${barW * 0.6}" height="2" rx="1" fill="${colors.stroke}" opacity="0.5">
-        <animate attributeName="width" from="0" to="${barW}" dur="3s" repeatCount="indefinite"/>
-      </rect>`;
-    }
-
-    svg += `</g>`;
-  }
-
-  svg += `</svg>`;
-  container.innerHTML = svg;
-
-  /* Show detail for selected node */
-  if (_flowSelectedStageId) {
-    const st = stages.find(s => s.id === _flowSelectedStageId);
-    if (st) renderFlowDetail(st, session);
-    else closeFlowDetail();
-  }
-}
-
-function selectFlowNode(stageId) {
-  if (_flowSelectedStageId === stageId) {
-    closeFlowDetail();
-    return;
-  }
-  _flowSelectedStageId = stageId;
-  _stageFingerprint = '';
-  if (_selectedId && _sessions[_selectedId]) renderPipelineView(_selectedId, _sessions[_selectedId]);
-  setTimeout(() => {
-    const panel = document.getElementById('flow-detail-panel');
-    if (panel && !panel.classList.contains('hidden')) {
-      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-  }, 50);
-}
-
-function closeFlowDetail() {
-  _flowSelectedStageId = null;
-  document.getElementById('flow-detail-panel').classList.add('hidden');
-}
-
-function renderFlowDetail(st, session) {
-  const panel = document.getElementById('flow-detail-panel');
-  panel.classList.remove('hidden');
-
-  const icon = STAGE_ICONS[st.type] || '\u25CF';
-  const metaParts = [];
-  if (st.meta && st.meta.cost) metaParts.push(fmtCost(st.meta.cost));
-  if (st.meta && st.meta.result && st.meta.result.cost_usd) metaParts.push(fmtCost(st.meta.result.cost_usd));
-  if (st.meta && st.meta.result && st.meta.result.duration_seconds) metaParts.push(fmtDuration(st.meta.result.duration_seconds));
-
-  let html = `<div class="wf-detail-header">
-    <div class="wf-icon st-${st.state}" style="width:24px;height:24px;font-size:0.85rem">${icon}</div>
-    <span class="wf-dh-name">${esc(st.label)}</span>
-    <span class="wf-state st-${st.state}" style="font-size:0.78rem">${st.state}</span>
-    <div class="wf-dh-meta">${metaParts.map(m => `<span>${m}</span>`).join('')}</div>
-    <button class="wf-dh-close" onclick="closeFlowDetail()" title="Close">&times;</button>
-  </div>`;
-
-  html += renderDetailSummary(st);
-  html += '<div class="wf-detail-body" id="flow-detail-body">';
-  const events = filterEvents(st.events);
-  if (events.length > 0) {
-    const MAX = 200;
-    const rendered = events.length > MAX ? events.slice(-MAX) : events;
-    if (events.length > MAX) html += `<div class="wf-events-empty">${events.length - MAX} older events hidden</div>`;
-    html += rendered.map(renderWfEventRow).join('');
-  } else {
-    html += '<div class="wf-events-empty">No events recorded.</div>';
-  }
-  html += '</div>';
-
-  panel.innerHTML = html;
 }
 
 /* ── Accordion / Tree View ─────────────────────────────────── */
@@ -1082,7 +1450,8 @@ async function loadConfig() {
   try {
     const res = await fetch('/api/config');
     const cfg = await res.json();
-    const el = $('#config-bar');
+    const el = document.getElementById('config-bar');
+    if (!el) return;
     if (!cfg || !Object.keys(cfg).length) { el.style.display = 'none'; return; }
     el.style.display = '';
     let html = '';
@@ -1095,7 +1464,7 @@ async function loadConfig() {
       html += '</span>';
     }
     el.innerHTML = html;
-  } catch (e) { $('#config-bar').style.display = 'none'; }
+  } catch (e) { const bar = document.getElementById('config-bar'); if (bar) bar.style.display = 'none'; }
 }
 
 /* ── Data Fetching ─────────────────────────────────────────── */
@@ -1104,7 +1473,7 @@ async function fetchSessions() {
     const res = await fetch('/api/sessions');
     const data = await res.json();
     _sessions = data.sessions || {};
-    renderSidebar();
+    renderLiveBar();
     if (!_selectedId) renderOverview();
     if (_selectedId && _sessions[_selectedId]) {
       const s = _sessions[_selectedId];
@@ -1123,11 +1492,14 @@ async function fetchLive() {
 }
 
 /* ── Initialization ────────────────────────────────────────── */
-$('#task-search').addEventListener('input', renderSidebar);
-$('#state-filter').addEventListener('change', renderSidebar);
+const _tableSearchEl = document.getElementById('table-search');
+const _tableFilterEl = document.getElementById('table-state-filter');
+if (_tableSearchEl) _tableSearchEl.addEventListener('input', renderTaskTable);
+if (_tableFilterEl) _tableFilterEl.addEventListener('change', renderTaskTable);
 window.addEventListener('hashchange', handleHash);
 
 async function init() {
+  initDagPanZoom();
   await Promise.all([loadConfig(), fetchSessions(), fetchLive()]);
   if (location.hash) handleHash();
   else renderOverview();
