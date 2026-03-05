@@ -16,6 +16,7 @@ Key exports:
 """
 
 import logging
+import re
 import subprocess
 from dataclasses import dataclass, field
 from typing import Any
@@ -185,6 +186,103 @@ def get_git_diff(work_dir: str, max_bytes: int = 30_000) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Static antipattern detection
+# ---------------------------------------------------------------------------
+
+# Matches lines like: traceback.format_exc(), traceback.print_exc(),
+# Traceback (most recent call last), or raise ... from ...
+_TRACEBACK_RE = re.compile(
+    r"traceback\.(format_exc|print_exc|print_stack)"
+    r"|Traceback \(most recent call last\)"
+    r"|\.format_exc\(\)",
+    re.IGNORECASE,
+)
+
+# Matches cross-module private access: obj._private (but not self._ or cls._)
+_PRIVATE_ACCESS_RE = re.compile(
+    r"(?<!self)(?<!cls)(?<!mock)\.\s*_[a-z]\w*",
+)
+
+# Common string-literal status/state comparisons that should use enums
+_STRING_CONTROL_RE = re.compile(
+    r'(?:==|!=|in)\s*["\']'
+    r"(?:ready|running|failed|pending|completed|done|active|inactive|started|stopped)"
+    r'["\']',
+    re.IGNORECASE,
+)
+
+
+def _check_line_antipatterns(
+    content: str,
+    current_file: str | None,
+    traceback_hits: list[str],
+    private_hits: list[str],
+    string_hits: list[str],
+) -> None:
+    """Check a single added line for antipatterns and append to hit lists."""
+    loc = current_file or "unknown file"
+    if _TRACEBACK_RE.search(content):
+        traceback_hits.append(loc)
+    if _PRIVATE_ACCESS_RE.search(content):
+        # Exclude common false positives: logging, dunder, _() i18n
+        if not re.search(r"\._[_A-Z]|logger\._|_\(", content):
+            private_hits.append(loc)
+    if _STRING_CONTROL_RE.search(content):
+        string_hits.append(loc)
+
+
+def scan_diff_antipatterns(diff_text: str) -> list[str]:
+    """Scan a unified diff for common antipatterns.
+
+    Only examines added lines (``+`` prefix) and skips test files and
+    comments.  Returns a list of human-readable concern strings.
+    """
+    if not diff_text:
+        return []
+
+    current_file: str | None = None
+    traceback_hits: list[str] = []
+    private_hits: list[str] = []
+    string_hits: list[str] = []
+
+    for line in diff_text.splitlines():
+        if line.startswith("+++ b/"):
+            current_file = line[6:]
+            continue
+        if not line.startswith("+") or line.startswith("+++"):
+            continue
+        content = line[1:]
+
+        # Skip test files and comment lines
+        if current_file and (
+            "/test_" in current_file or current_file.startswith("test_")
+        ):
+            continue
+        if content.strip().startswith("#"):
+            continue
+
+        _check_line_antipatterns(
+            content, current_file, traceback_hits, private_hits, string_hits
+        )
+
+    concerns: list[str] = []
+    if traceback_hits:
+        files = sorted(set(traceback_hits))
+        concerns.append(f"Antipattern: traceback leak in {', '.join(files)}")
+    if private_hits:
+        files = sorted(set(private_hits))
+        concerns.append(
+            f"Antipattern: cross-module private access in {', '.join(files)}"
+        )
+    if string_hits:
+        files = sorted(set(string_hits))
+        concerns.append(
+            f"Antipattern: string-matching control flow in {', '.join(files)}"
+        )
+    return concerns
+
+
+# ---------------------------------------------------------------------------
 # Prompt formatting
 # ---------------------------------------------------------------------------
 
@@ -311,7 +409,24 @@ def run_validation(
         cwd=work_dir,
     )
 
-    return _invoke_with_retry(prompt, cli_config, callback)
+    verdict = _invoke_with_retry(prompt, cli_config, callback)
+
+    # Augment with static antipattern analysis
+    diff_text = get_git_diff(work_dir)
+    if verdict.task_type == "code_change" or diff_text.startswith("###"):
+        antipatterns = scan_diff_antipatterns(diff_text)
+        if antipatterns:
+            verdict.concerns.extend(antipatterns)
+            penalty = min(len(antipatterns) * 0.05, 0.15)
+            verdict.confidence = max(0.0, verdict.confidence - penalty)
+            logger.info(
+                "Static analysis found %d antipattern(s), "
+                "confidence adjusted by -%.2f",
+                len(antipatterns),
+                penalty,
+            )
+
+    return verdict
 
 
 _MAX_VALIDATION_ATTEMPTS = 2

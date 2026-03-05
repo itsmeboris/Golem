@@ -5,6 +5,8 @@ import subprocess
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 from golem.validation import (
     ValidationVerdict,
     _build_validation_prompt,
@@ -13,6 +15,7 @@ from golem.validation import (
     get_git_diff,
     has_uncommitted_changes,
     run_validation,
+    scan_diff_antipatterns,
 )
 
 
@@ -209,8 +212,8 @@ class TestParseValidationOutput:
             cost_usd=0.02,
         )
         v = _parse_validation_output(result)
-        assert v.files_to_fix == []
-        assert v.test_failures == []
+        assert not v.files_to_fix
+        assert not v.test_failures
 
     def test_lowercase_verdict_uppercased(self):
         result = SimpleNamespace(
@@ -248,6 +251,203 @@ class TestBuildValidationPrompt:
         assert "Traceback leaks" in prompt
         assert "Cross-module private access" in prompt
         assert "String-matching control flow" in prompt
+
+
+class TestScanDiffAntipatterns:
+    def test_empty_diff(self):
+        assert not scan_diff_antipatterns("")
+
+    def test_no_antipatterns(self):
+        diff = '+++ b/golem/foo.py\n+def hello():\n+    return "world"\n'
+        assert not scan_diff_antipatterns(diff)
+
+    def test_traceback_leak(self):
+        diff = (
+            "+++ b/golem/handler.py\n"
+            "+    tb = traceback.format_exc()\n"
+            "+    return tb\n"
+        )
+        concerns = scan_diff_antipatterns(diff)
+        assert len(concerns) == 1
+        assert "traceback leak" in concerns[0]
+        assert "golem/handler.py" in concerns[0]
+
+    def test_traceback_print_exc(self):
+        diff = "+++ b/golem/api.py\n+    traceback.print_exc()\n"
+        concerns = scan_diff_antipatterns(diff)
+        assert any("traceback leak" in c for c in concerns)
+
+    def test_cross_module_private_access(self):
+        diff = "+++ b/golem/flow.py\n+    val = other_obj._internal_state\n"
+        concerns = scan_diff_antipatterns(diff)
+        assert len(concerns) == 1
+        assert "cross-module private access" in concerns[0]
+
+    def test_self_private_not_flagged(self):
+        diff = "+++ b/golem/flow.py\n+    self._state = 1\n"
+        assert not scan_diff_antipatterns(diff)
+
+    def test_cls_private_not_flagged(self):
+        diff = "+++ b/golem/flow.py\n+    cls._counter += 1\n"
+        assert not scan_diff_antipatterns(diff)
+
+    def test_dunder_not_flagged(self):
+        diff = "+++ b/golem/flow.py\n+    x = obj.__class__\n"
+        assert not scan_diff_antipatterns(diff)
+
+    def test_string_control_flow(self):
+        diff = '+++ b/golem/flow.py\n+    if status == "running":\n'
+        concerns = scan_diff_antipatterns(diff)
+        assert len(concerns) == 1
+        assert "string-matching control flow" in concerns[0]
+
+    def test_test_files_skipped(self):
+        diff = (
+            "+++ b/golem/tests/test_foo.py\n"
+            "+    traceback.format_exc()\n"
+            "+    obj._private\n"
+            '+    if x == "running":\n'
+        )
+        assert not scan_diff_antipatterns(diff)
+
+    def test_comment_lines_skipped(self):
+        diff = "+++ b/golem/foo.py\n+    # traceback.format_exc() is bad\n"
+        assert not scan_diff_antipatterns(diff)
+
+    def test_non_added_lines_skipped(self):
+        diff = (
+            "+++ b/golem/foo.py\n"
+            " traceback.format_exc()\n"
+            "-traceback.format_exc()\n"
+        )
+        assert not scan_diff_antipatterns(diff)
+
+    def test_multiple_antipatterns(self):
+        diff = (
+            "+++ b/golem/flow.py\n"
+            "+    traceback.format_exc()\n"
+            "+    obj._secret\n"
+            '+    if state == "ready":\n'
+        )
+        concerns = scan_diff_antipatterns(diff)
+        assert len(concerns) == 3
+
+    def test_deduplicates_files(self):
+        diff = (
+            "+++ b/golem/flow.py\n"
+            "+    traceback.format_exc()\n"
+            "+    traceback.print_exc()\n"
+        )
+        concerns = scan_diff_antipatterns(diff)
+        assert len(concerns) == 1
+        assert concerns[0].count("golem/flow.py") == 1
+
+
+class TestRunValidationWithAntipatterns:
+    @patch("golem.validation.invoke_cli")
+    @patch("golem.validation.get_git_diff")
+    def test_augments_concerns_for_code_change(self, mock_diff, mock_invoke):
+        mock_diff.return_value = "+++ b/golem/handler.py\n+    traceback.format_exc()\n"
+        mock_invoke.return_value = SimpleNamespace(
+            output={
+                "result": {
+                    "verdict": "PASS",
+                    "confidence": 0.95,
+                    "task_type": "code_change",
+                }
+            },
+            cost_usd=0.10,
+        )
+        v = run_validation(
+            issue_id=1,
+            subject="test",
+            description="desc",
+            session_data={},
+            work_dir="/work",
+        )
+        assert any("traceback leak" in c for c in v.concerns)
+        assert v.confidence == pytest.approx(0.90)
+
+    @patch("golem.validation.invoke_cli")
+    @patch("golem.validation.get_git_diff")
+    def test_skips_for_investigation_task(self, mock_diff, mock_invoke):
+        mock_diff.return_value = "(no changes)"
+        mock_invoke.return_value = SimpleNamespace(
+            output={
+                "result": {
+                    "verdict": "PASS",
+                    "confidence": 0.95,
+                    "task_type": "investigation",
+                }
+            },
+            cost_usd=0.10,
+        )
+        v = run_validation(
+            issue_id=1,
+            subject="test",
+            description="desc",
+            session_data={},
+            work_dir="/work",
+        )
+        assert not v.concerns
+        assert v.confidence == 0.95
+
+    @patch("golem.validation.invoke_cli")
+    @patch("golem.validation.get_git_diff")
+    def test_confidence_penalty_capped(self, mock_diff, mock_invoke):
+        mock_diff.return_value = (
+            "+++ b/golem/flow.py\n"
+            "+    traceback.format_exc()\n"
+            "+    obj._secret\n"
+            '+    if state == "ready":\n'
+            '+    if mode == "active":\n'
+        )
+        mock_invoke.return_value = SimpleNamespace(
+            output={
+                "result": {
+                    "verdict": "PASS",
+                    "confidence": 0.95,
+                    "task_type": "code_change",
+                }
+            },
+            cost_usd=0.10,
+        )
+        v = run_validation(
+            issue_id=1,
+            subject="test",
+            description="desc",
+            session_data={},
+            work_dir="/work",
+        )
+        # 3 antipatterns × 0.05 = 0.15 (cap), so 0.95 - 0.15 = 0.80
+        assert v.confidence == pytest.approx(0.80)
+
+    @patch("golem.validation.invoke_cli")
+    @patch("golem.validation.get_git_diff")
+    def test_diff_with_section_header_triggers_scan(self, mock_diff, mock_invoke):
+        mock_diff.return_value = (
+            "### Uncommitted changes\n"
+            "+++ b/golem/x.py\n"
+            "+    traceback.print_exc()\n"
+        )
+        mock_invoke.return_value = SimpleNamespace(
+            output={
+                "result": {
+                    "verdict": "PASS",
+                    "confidence": 0.90,
+                    "task_type": "other",
+                }
+            },
+            cost_usd=0.05,
+        )
+        v = run_validation(
+            issue_id=1,
+            subject="test",
+            description="desc",
+            session_data={},
+            work_dir="/work",
+        )
+        assert any("traceback" in c for c in v.concerns)
 
 
 class TestFindMergeBase:
