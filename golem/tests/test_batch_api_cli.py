@@ -303,7 +303,6 @@ class TestCmdBatchNoSubcommand:
 
 class TestCmdBatchStatus:
     def test_cmd_batch_status_success(self, monkeypatch):
-        import json
         import urllib.request
 
         from golem.cli import cmd_batch
@@ -324,7 +323,6 @@ class TestCmdBatchStatus:
         assert result == 0
 
     def test_cmd_batch_status_with_api_key(self, monkeypatch):
-        import json
         import urllib.request
 
         from golem.cli import cmd_batch
@@ -392,7 +390,6 @@ class TestCmdBatchStatus:
 
 class TestCmdBatchList:
     def test_cmd_batch_list_success(self, monkeypatch):
-        import json
         import urllib.request
 
         from golem.cli import cmd_batch
@@ -412,7 +409,6 @@ class TestCmdBatchList:
         assert result == 0
 
     def test_cmd_batch_list_empty(self, monkeypatch):
-        import json
         import urllib.request
 
         from golem.cli import cmd_batch
@@ -718,7 +714,6 @@ class TestCmdBatchSubmit:
         assert result == 1
 
     def test_submit_success(self, monkeypatch, tmp_path, capsys):
-        import json
         import urllib.request
 
         from golem.cli import cmd_batch
@@ -770,7 +765,6 @@ class TestCmdBatchSubmit:
         assert "depends_on" in out
 
     def test_submit_http_error(self, monkeypatch, tmp_path):
-        import json
         import urllib.error
         import urllib.request
 
@@ -796,7 +790,6 @@ class TestCmdBatchSubmit:
         assert result == 1
 
     def test_submit_url_error(self, monkeypatch, tmp_path):
-        import json
         import urllib.error
         import urllib.request
 
@@ -820,7 +813,6 @@ class TestCmdBatchSubmit:
         assert result == 1
 
     def test_submit_yaml_file(self, monkeypatch, tmp_path, capsys):
-        import json
         import urllib.request
 
         from golem.cli import cmd_batch
@@ -852,7 +844,6 @@ class TestCmdBatchSubmit:
         assert "grp-yaml" in out
 
     def test_submit_unknown_extension_tries_json(self, monkeypatch, tmp_path, capsys):
-        import json
         import urllib.request
 
         from golem.cli import cmd_batch
@@ -885,7 +876,6 @@ class TestCmdBatchSubmit:
         self, monkeypatch, tmp_path, capsys
     ):
         """Unknown extension with non-JSON content falls back to YAML parsing."""
-        import json
         import urllib.request
 
         from golem.cli import cmd_batch

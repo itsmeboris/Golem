@@ -211,7 +211,7 @@ def _decode_content(raw: str, suffix: str, yaml: Any) -> Any:
     if suffix in (".yaml", ".yml"):
         if yaml is None:
             print(
-                "Error: PyYAML is required for .yaml files " "(pip install pyyaml)",
+                "Error: PyYAML is required for .yaml files (pip install pyyaml)",
                 file=sys.stderr,
             )
             raise ValueError("PyYAML not installed")
