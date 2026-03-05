@@ -310,6 +310,37 @@ class TestFlowBatchNotification:
         # flow may skip batch update entirely. Either way, count stays at 1.
         assert notifier.notify_batch_completed.call_count == 1
 
+    def test_failed_batch_skips_integration_validation(self, monkeypatch, tmp_path):
+        """When batch completes with 'failed' status, integration validation
+        should NOT be triggered (flow.py early return on non-completed batch)."""
+        import asyncio
+        from golem.backends.local import LogNotifier
+
+        notifier = MagicMock(spec=LogNotifier)
+        profile = _make_test_profile()
+        object.__setattr__(profile, "notifier", notifier)
+
+        flow = _make_flow(monkeypatch, tmp_path, profile=profile)
+        monkeypatch.setattr(flow, "_spawn_session_task", lambda sid: None)
+
+        result = flow.submit_batch(
+            [{"prompt": "A", "subject": "A"}], group_id="grp-fail"
+        )
+        tid = result["tasks"][0]["task_id"]
+        session = flow._sessions[tid]
+        session.base_work_dir = "/tmp/work"
+        prev_state = session.state
+        session.state = TaskSessionState.FAILED
+
+        mock_loop = MagicMock()
+        monkeypatch.setattr(asyncio, "get_running_loop", lambda: mock_loop)
+
+        flow._handle_state_transition(session, prev_state)
+
+        # Batch completed notification fires, but integration validation should NOT
+        notifier.notify_batch_completed.assert_called_once()
+        mock_loop.create_task.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # Flow auto-trigger integration validation on batch completion

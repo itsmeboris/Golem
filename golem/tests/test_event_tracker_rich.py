@@ -5,6 +5,7 @@
 from golem.event_tracker import (
     TaskEventTracker,
     _short_path,
+    _summarize_agent,
     _summarize_tool_input,
 )
 
@@ -248,3 +249,41 @@ class TestSessionIdCapture:
         tracker = TaskEventTracker(session_id=1)
         tracker.handle_event({"type": "system", "subtype": "init"})
         assert tracker.state.session_id == ""
+
+
+class TestSummarizeAgent:
+    def test_with_type_and_description(self):
+        result = _summarize_agent(
+            "Agent", {"subagent_type": "Explore", "description": "Find config files"}
+        )
+        assert result == "Agent: [Explore] Find config files"
+
+    def test_with_type_and_prompt_no_desc(self):
+        result = _summarize_agent(
+            "Agent", {"subagent_type": "general-purpose", "prompt": "Search for bugs"}
+        )
+        assert result == "Agent: [general-purpose] Search for bugs"
+
+    def test_with_only_description(self):
+        result = _summarize_agent("Agent", {"description": "Analyze code"})
+        assert result == "Agent: Analyze code"
+
+    def test_with_only_prompt(self):
+        result = _summarize_agent(
+            "Agent", {"prompt": "Run the tests\nand check output"}
+        )
+        assert result == "Agent: Run the tests and check output"
+
+    def test_empty_input(self):
+        result = _summarize_agent("Agent", {})
+        assert result == ""
+
+    def test_long_description_truncated(self):
+        long_desc = "x" * 100
+        result = _summarize_agent("Agent", {"description": long_desc})
+        assert len(result.split("Agent: ")[1]) == 80
+
+    def test_desc_preferred_over_prompt(self):
+        result = _summarize_agent("Agent", {"description": "desc", "prompt": "prompt"})
+        assert "desc" in result
+        assert "prompt" not in result

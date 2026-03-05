@@ -835,7 +835,9 @@ def cmd_dashboard(args) -> int:
 
 def cmd_batch(args: argparse.Namespace) -> int:
     """Dispatch to batch subcommands (submit, status, list)."""
-    from .batch_cli import cmd_batch as _cmd_batch  # pylint: disable=import-outside-toplevel
+    from .batch_cli import (
+        cmd_batch as _cmd_batch,
+    )  # pylint: disable=import-outside-toplevel
 
     return _cmd_batch(args)
 

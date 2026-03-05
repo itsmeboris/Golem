@@ -620,9 +620,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             return
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(
-                self.run_integration_validation(batch.group_id, work_dir)
-            )
+            loop.create_task(self.run_integration_validation(batch.group_id, work_dir))
         except RuntimeError:
             logger.debug(
                 "No event loop; skipping integration validation for batch %s",

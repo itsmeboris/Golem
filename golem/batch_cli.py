@@ -90,13 +90,14 @@ def _print_task_row(
     dur = task_result.get("duration_seconds", 0.0)
 
     state_str = _color_status(f"{state:<14}", state, enabled=use_color)
-    verdict_str = _color_verdict(f"{tv:<12}", tv, enabled=use_color) if tv else f"{'-':<12}"
+    verdict_str = (
+        _color_verdict(f"{tv:<12}", tv, enabled=use_color) if tv else f"{'-':<12}"
+    )
     dur_str = format_duration(dur) if dur else "-"
     cost_str = f"${cost:.2f}" if cost else "-"
 
     print(
-        f"  {str(tid):<12} {state_str} {verdict_str} "
-        f"{cost_str:>8}  {dur_str:>10}"
+        f"  {str(tid):<12} {state_str} {verdict_str} " f"{cost_str:>8}  {dur_str:>10}"
     )
 
 
@@ -210,8 +211,7 @@ def _decode_content(raw: str, suffix: str, yaml: Any) -> Any:
     if suffix in (".yaml", ".yml"):
         if yaml is None:
             print(
-                "Error: PyYAML is required for .yaml files "
-                "(pip install pyyaml)",
+                "Error: PyYAML is required for .yaml files " "(pip install pyyaml)",
                 file=sys.stderr,
             )
             raise ValueError("PyYAML not installed")

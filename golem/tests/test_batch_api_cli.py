@@ -2,6 +2,7 @@
 """Tests for batch API endpoints, flow-level batch monitor integration, and CLI."""
 
 import argparse
+import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -915,3 +916,56 @@ class TestCmdBatchSubmit:
         assert result == 0
         out = capsys.readouterr().out
         assert "grp-yaml-fallback" in out
+
+
+# ---------------------------------------------------------------------------
+# _decode_content / _parse_batch_file edge cases (no-yaml paths)
+# ---------------------------------------------------------------------------
+
+
+class TestDecodeContentNoYaml:
+    """Tests for _decode_content when yaml is None (PyYAML not installed)."""
+
+    def test_yaml_suffix_without_pyyaml(self):
+        from golem.batch_cli import _decode_content
+
+        with pytest.raises(ValueError, match="PyYAML not installed"):
+            _decode_content("key: value", ".yaml", None)
+
+    def test_yml_suffix_without_pyyaml(self):
+        from golem.batch_cli import _decode_content
+
+        with pytest.raises(ValueError, match="PyYAML not installed"):
+            _decode_content("key: value", ".yml", None)
+
+    def test_unknown_suffix_invalid_json_no_yaml(self):
+        from golem.batch_cli import _decode_content
+
+        with pytest.raises((json.JSONDecodeError, ValueError)):
+            _decode_content("key: value", ".txt", None)
+
+
+class TestParseBatchFileNoYaml:
+    """Test _parse_batch_file when yaml import fails."""
+
+    def test_yaml_import_error(self, monkeypatch, tmp_path):
+        from golem.batch_cli import _parse_batch_file
+
+        f = tmp_path / "batch.yaml"
+        f.write_text('{"tasks": [{"prompt": "test"}]}')
+
+        # Patch builtins.__import__ to make yaml import fail
+        original_import = (
+            __builtins__.__import__
+            if hasattr(__builtins__, "__import__")  # type: ignore[union-attr]
+            else __import__
+        )
+
+        def mock_import(name, *args, **kwargs):
+            if name == "yaml":
+                raise ImportError("No module named 'yaml'")
+            return original_import(name, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.__import__", mock_import)
+        result = _parse_batch_file(str(f))
+        assert result == 1
