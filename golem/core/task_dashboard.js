@@ -525,6 +525,25 @@ function collectElkEdges(layout, result) {
   }
 }
 
+function collectElkGroups(layout) {
+  const groups = [];
+  if (layout.children) {
+    for (const child of layout.children) {
+      if (child.children && child.id && child.id.startsWith('g-')) {
+        groups.push({
+          id: child.id,
+          label: (child.labels && child.labels[0] && child.labels[0].text) || '',
+          x: child.x || 0,
+          y: child.y || 0,
+          w: child.width || 0,
+          h: child.height || 0,
+        });
+      }
+    }
+  }
+  return groups;
+}
+
 function renderDagSvg(layout) {
   const svgEl = document.getElementById('dag-svg');
 
@@ -574,6 +593,15 @@ function renderDagSvg(layout) {
   svg += '</defs>';
 
   svg += '<g class="dag-root">';
+
+  /* Render group clusters */
+  const groups = collectElkGroups(layout);
+  for (const g of groups) {
+    svg += `<g class="dag-cluster">
+      <rect x="${g.x}" y="${g.y}" width="${g.w}" height="${g.h}"/>
+      ${g.label ? `<text x="${g.x + 8}" y="${g.y + 16}">${esc(g.label)}</text>` : ''}
+    </g>`;
+  }
 
   /* Render edges */
   for (const edge of edges) {
@@ -1264,7 +1292,10 @@ function renderDetailEvents(st, session) {
 function renderWfEventRow(ev, index) {
   const e = enrichEvent(ev);
   if (!e.body && !e.chip) return '';
-  return `<div class="wf-event ${e.cls}" data-event-idx="${index}" onclick="toggleEventDetail(this, ${index})">
+  const evTs = ev.timestamp || 0;
+  const evKind = ev.kind || ev.type || '';
+  const evTool = ev.tool_name || '';
+  return `<div class="wf-event ${e.cls}" data-event-ts="${evTs}" data-event-kind="${evKind}" data-event-tool="${evTool}" onclick="toggleEventDetail(this)">
     <span class="ev-icon">${e.icon}</span>
     ${e.chip ? `<span class="ev-chip">${esc(e.chip)}</span>` : '<span></span>'}
     <span class="ev-body">${esc(e.body)}</span>
@@ -1286,7 +1317,7 @@ async function loadTraceTerminal(eventId) {
   } catch (e) { return null; }
 }
 
-async function toggleEventDetail(rowEl, index) {
+async function toggleEventDetail(rowEl) {
   /* If already expanded, collapse */
   const existing = rowEl.nextElementSibling;
   if (existing && existing.classList.contains('ev-detail-panel')) {
@@ -1317,7 +1348,41 @@ async function toggleEventDetail(rowEl, index) {
     return;
   }
 
-  const fullEvent = events[index] || null;
+  /* Match by timestamp + kind + tool_name instead of index */
+  const targetTs = parseFloat(rowEl.dataset.eventTs) || 0;
+  const targetKind = rowEl.dataset.eventKind || '';
+  const targetTool = rowEl.dataset.eventTool || '';
+
+  let fullEvent = null;
+  let bestScore = -1;
+
+  for (const te of events) {
+    let score = 0;
+    const teKind = te.type || te.kind || '';
+    const teTool = te.tool_name || '';
+    const teTs = te.timestamp || 0;
+
+    /* Kind must match */
+    if (teKind !== targetKind && targetKind) continue;
+    score += 1;
+
+    /* Tool name match */
+    if (targetTool && teTool === targetTool) score += 2;
+
+    /* Timestamp proximity (within 2 seconds is a strong match) */
+    if (targetTs > 0 && teTs > 0) {
+      const diff = Math.abs(teTs - targetTs);
+      if (diff < 2) score += 5;
+      else if (diff < 10) score += 3;
+      else if (diff < 60) score += 1;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      fullEvent = te;
+    }
+  }
+
   if (!fullEvent) {
     panel.innerHTML = '<div class="ev-detail-loading">Event details not found in trace.</div>';
     return;
@@ -1452,8 +1517,8 @@ async function loadConfig() {
     const cfg = await res.json();
     const el = document.getElementById('config-bar');
     if (!el) return;
-    if (!cfg || !Object.keys(cfg).length) { el.style.display = 'none'; return; }
-    el.style.display = '';
+    if (!cfg || !Object.keys(cfg).length) { el.classList.add('hidden'); return; }
+    el.classList.remove('hidden');
     let html = '';
     if (cfg.model) html += `<span><span class="cfg-label">Model</span><span class="cfg-val">${esc(cfg.model)}</span></span>`;
     if (cfg.max_concurrent) html += `<span><span class="cfg-label">Concurrency</span><span class="cfg-val">${cfg.max_concurrent}</span></span>`;
@@ -1464,7 +1529,7 @@ async function loadConfig() {
       html += '</span>';
     }
     el.innerHTML = html;
-  } catch (e) { const bar = document.getElementById('config-bar'); if (bar) bar.style.display = 'none'; }
+  } catch (e) { const bar = document.getElementById('config-bar'); if (bar) bar.classList.add('hidden'); }
 }
 
 /* ── Data Fetching ─────────────────────────────────────────── */
