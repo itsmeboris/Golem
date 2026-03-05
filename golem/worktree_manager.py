@@ -149,7 +149,8 @@ def merge_and_cleanup(
     Returns
     -------
     str
-        The merge commit SHA (short) or empty string if merge failed/no changes.
+        The merge commit SHA (short), or the current HEAD if no changes to merge,
+        or empty string if merge failed.
     """
     branch_name = f"agent/{issue_id}"
     target_branch = _current_branch(base_dir)
@@ -161,8 +162,11 @@ def merge_and_cleanup(
     )
     if not result.stdout.strip():
         logger.info("Session #%s: no new commits to merge", issue_id)
+        # Return current HEAD — "nothing to merge" is a success, not a failure.
+        sha_result = _run_git(["rev-parse", "--short", "HEAD"], cwd=base_dir)
+        sha = sha_result.stdout.strip()
         _cleanup_worktree_impl(base_dir, worktree_path, branch_name)
-        return ""
+        return sha
 
     # Remove the worktree first so the branch is no longer "checked out"
     # — git refuses to rebase a branch that is in use by a worktree.

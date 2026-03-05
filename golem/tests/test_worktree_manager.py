@@ -112,12 +112,13 @@ class TestMergeAndCleanup:
         assert sha  # Should return a non-empty SHA
         assert (git_repo / "new_file.py").exists()
 
-    def test_no_changes_returns_empty(self, git_repo, tmp_path):
+    def test_no_changes_returns_head(self, git_repo, tmp_path):
         wt_root = str(tmp_path / "worktrees")
         wt_path = create_worktree(str(git_repo), 300, worktree_root=wt_root)
 
         sha = merge_and_cleanup(str(git_repo), 300, wt_path)
-        assert sha == ""
+        # No commits to merge → returns current HEAD (success, not failure)
+        assert sha != ""
 
     def test_cleanup_after_merge(self, git_repo, tmp_path):
         wt_root = str(tmp_path / "worktrees")
