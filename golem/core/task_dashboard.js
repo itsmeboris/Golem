@@ -29,6 +29,7 @@ let _dagGroupFilter = ''; /* '' or a group_id string */
 let _dagTransform = { x: 0, y: 0, scale: 1 };
 let _dagLayout = null; /* cached ELK layout result */
 let _dagFingerprint = '';
+let _dagRenderFingerprint = '';
 let _hoveredNodeId = null;
 let _dagSelectedTasks = new Set();
 let _dragNode = null; /* { taskId, el, startMX, startMY, origTX, origTY } */
@@ -267,8 +268,8 @@ function dagZoomFit() {
   const svg = document.getElementById('dag-svg');
   const container = document.getElementById('dag-container');
   if (!svg || !container) { _dagTransform = { x: 20, y: 20, scale: 1 }; applyDagTransform(); return; }
-  const svgW = parseFloat(svg.getAttribute('width')) || 400;
-  const svgH = parseFloat(svg.getAttribute('height')) || 300;
+  const svgW = parseFloat(svg.dataset.contentW) || 400;
+  const svgH = parseFloat(svg.dataset.contentH) || 300;
   const cW = container.clientWidth;
   const cH = container.clientHeight;
   const pad = 30;
@@ -481,9 +482,14 @@ async function renderDagGraph() {
   }
   document.getElementById('dag-empty').classList.add('hidden');
 
-  /* Fingerprint check to avoid re-layout */
+  /* Fingerprint check to avoid re-layout and unnecessary re-render */
   const fp = entries.map(([id, s]) => id + s.state + (s.depends_on || []).join(',')).join('|');
+  const renderFp = fp + '|' + _dagFilter + '|' + _dagGroupFilter + '|' + _hoveredNodeId;
+  if (fp === _dagFingerprint && _dagLayout && renderFp === _dagRenderFingerprint) {
+    return; /* Nothing changed — skip SVG rebuild to preserve pan/zoom state */
+  }
   if (fp === _dagFingerprint && _dagLayout) {
+    _dagRenderFingerprint = renderFp;
     renderDagSvg(_dagLayout);
     return;
   }
@@ -493,6 +499,7 @@ async function renderDagGraph() {
     _dagLayout = await layoutDag(graph);
     if (!_dagLayout) return;
     _dagFingerprint = fp;
+    _dagRenderFingerprint = renderFp;
     renderDagSvg(_dagLayout);
     dagZoomFit();
   } catch (e) {
@@ -571,9 +578,13 @@ function renderDagSvg(layout) {
   }
   const svgW = maxX + 40;
   const svgH = maxY + 40;
-  svgEl.setAttribute('width', svgW);
-  svgEl.setAttribute('height', svgH);
-  svgEl.setAttribute('viewBox', `0 0 ${svgW} ${svgH}`);
+  /* SVG fills the container; pan/zoom is handled by the dag-root transform.
+     Store content dimensions as data attributes for dagZoomFit(). */
+  svgEl.setAttribute('width', '100%');
+  svgEl.setAttribute('height', '100%');
+  svgEl.removeAttribute('viewBox');
+  svgEl.dataset.contentW = svgW;
+  svgEl.dataset.contentH = svgH;
 
   let svg = '';
 
@@ -733,10 +744,16 @@ function renderDagMinimap(svgEl, nodeCount) {
   clone.querySelectorAll('animate').forEach(el => el.remove());
   clone.querySelectorAll('[onclick]').forEach(el => el.removeAttribute('onclick'));
   clone.querySelectorAll('[onmouseenter]').forEach(el => el.removeAttribute('onmouseenter'));
+  /* Minimap needs a viewBox to show full content, and no pan/zoom transform */
+  const cW = svgEl.dataset.contentW || 400;
+  const cH = svgEl.dataset.contentH || 300;
+  clone.setAttribute('viewBox', `0 0 ${cW} ${cH}`);
   clone.removeAttribute('width');
   clone.removeAttribute('height');
   clone.style.width = '100%';
   clone.style.height = '100%';
+  const rootG = clone.querySelector('.dag-root');
+  if (rootG) rootG.removeAttribute('transform');
   minimap.innerHTML = '';
   minimap.appendChild(clone);
 }
