@@ -33,6 +33,7 @@ passing output from all three.
 - **Work autonomously** — use all available tools to complete the task
 - **If blocked**, document the blocker clearly and stop
 - **If the task involves code changes**, write tests first (TDD), then implement
+- **Use `@pytest.mark.parametrize`** for test cases that repeat the same logic with different inputs — do not duplicate test methods that differ only by one variable
 - **If the task involves investigation**, be thorough — check logs, builds, test results
 - **Do NOT commit** code changes — leave files as uncommitted changes. The orchestrator handles commits after validation.
 - **Do NOT push** to any remote repository.

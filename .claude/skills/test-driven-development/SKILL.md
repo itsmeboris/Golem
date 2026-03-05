@@ -78,6 +78,11 @@ class TestFeatureName:
         assert output == "result"
 ```
 
+**Prefer `@pytest.mark.parametrize` over duplicate tests.** When multiple test
+methods share identical logic and differ only in input data or expected output,
+consolidate them into a single parametrized test. This reduces duplication,
+makes adding cases trivial, and produces clearer failure messages.
+
 ## Coverage Requirement
 
 100% coverage is enforced. Every new function/method needs a test.
