@@ -8,7 +8,7 @@ model evaluates the output of the task model.
 
 Key exports:
 - ``ValidationVerdict`` — dataclass holding verdict, confidence, summary,
-  concerns, task_type, and cost_usd.
+  concerns, files_to_fix, test_failures, task_type, and cost_usd.
 - ``run_validation`` — main entry point; runs the validation agent and returns
   a ``ValidationVerdict``.
 - ``has_uncommitted_changes`` — checks whether a git working tree has changes.
@@ -42,6 +42,8 @@ class ValidationVerdict:
     confidence: float = 0.0
     summary: str = ""
     concerns: list[str] = field(default_factory=list)
+    files_to_fix: list[str] = field(default_factory=list)
+    test_failures: list[str] = field(default_factory=list)
     task_type: str = "other"
     cost_usd: float = 0.0
 
@@ -253,6 +255,8 @@ def _parse_validation_output(result: Any) -> ValidationVerdict:
         confidence=float(parsed.get("confidence", 0.0)),
         summary=parsed.get("summary", "Validation could not parse result"),
         concerns=parsed.get("concerns", []),
+        files_to_fix=parsed.get("files_to_fix", []),
+        test_failures=parsed.get("test_failures", []),
         task_type=parsed.get("task_type", "other"),
         cost_usd=result.cost_usd,
     )

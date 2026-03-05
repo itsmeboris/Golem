@@ -10,6 +10,12 @@ but your work was reviewed and found PARTIALLY complete.
 **Verdict**: {validation_verdict}
 **Summary**: {validation_summary}
 
+**Files to fix**:
+{files_to_fix}
+
+**Test failures**:
+{test_failures}
+
 **Specific concerns**:
 {concerns}
 

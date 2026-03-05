@@ -45,6 +45,8 @@ Respond with ONLY this JSON structure (no other text):
   "confidence": 0.85,
   "summary": "Brief explanation of the verdict",
   "concerns": ["list of any concerns or missing items"],
+  "files_to_fix": ["list of file paths that need changes to fully complete the task"],
+  "test_failures": ["list of specific test names or error messages that failed"],
   "task_type": "code_change"
 }}
 ```
@@ -61,6 +63,8 @@ Rules:
   - 0.5-0.69: Partial evidence — some expected items present, others unclear
   - Below 0.5: Low evidence — verdict is largely a guess
 - **concerns**: List specific, actionable items (empty list if none)
+- **files_to_fix**: List specific file paths that need modification (empty list if none)
+- **test_failures**: List specific failing test names or error messages from the event log (empty list if none)
 - **task_type**: One of "code_change", "investigation", "documentation", "configuration", "other"
 
 Evaluation notes:

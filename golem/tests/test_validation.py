@@ -29,6 +29,8 @@ class TestValidationVerdict:
         assert not v.concerns
         assert v.task_type == "other"
         assert v.cost_usd == 0.0
+        assert not v.files_to_fix
+        assert not v.test_failures
 
     def test_custom_values(self):
         v = ValidationVerdict(
@@ -36,6 +38,15 @@ class TestValidationVerdict:
         )
         assert v.verdict == "PASS"
         assert v.confidence == 0.95
+
+    def test_custom_new_fields(self):
+        v = ValidationVerdict(
+            verdict="PARTIAL",
+            files_to_fix=["src/main.py", "src/utils.py"],
+            test_failures=["test_foo failed: AssertionError"],
+        )
+        assert v.files_to_fix == ["src/main.py", "src/utils.py"]
+        assert v.test_failures == ["test_foo failed: AssertionError"]
 
 
 class TestHasUncommittedChanges:
@@ -172,6 +183,34 @@ class TestParseValidationOutput:
         v = _parse_validation_output(result)
         assert v.verdict == "FAIL"
         assert v.cost_usd == 0.01
+
+    def test_parses_new_structured_fields(self):
+        result = SimpleNamespace(
+            output={
+                "result": {
+                    "verdict": "PARTIAL",
+                    "confidence": 0.6,
+                    "summary": "needs work",
+                    "concerns": ["missing tests"],
+                    "files_to_fix": ["golem/validation.py"],
+                    "test_failures": ["test_foo FAILED"],
+                }
+            },
+            cost_usd=0.04,
+        )
+        v = _parse_validation_output(result)
+        assert v.verdict == "PARTIAL"
+        assert v.files_to_fix == ["golem/validation.py"]
+        assert v.test_failures == ["test_foo FAILED"]
+
+    def test_missing_new_fields_default_empty(self):
+        result = SimpleNamespace(
+            output={"result": {"verdict": "PASS", "confidence": 0.9}},
+            cost_usd=0.02,
+        )
+        v = _parse_validation_output(result)
+        assert v.files_to_fix == []
+        assert v.test_failures == []
 
     def test_lowercase_verdict_uppercased(self):
         result = SimpleNamespace(

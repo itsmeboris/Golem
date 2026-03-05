@@ -102,6 +102,8 @@ class TaskSession:
     validation_confidence: float = 0.0
     validation_summary: str = ""
     validation_concerns: list[str] = field(default_factory=list)
+    validation_files_to_fix: list[str] = field(default_factory=list)
+    validation_test_failures: list[str] = field(default_factory=list)
     validation_cost_usd: float = 0.0
     retry_count: int = 0
     commit_sha: str = ""
@@ -152,6 +154,8 @@ class TaskSession:
             validation_confidence=data.get("validation_confidence", 0.0),
             validation_summary=data.get("validation_summary", ""),
             validation_concerns=data.get("validation_concerns", []),
+            validation_files_to_fix=data.get("validation_files_to_fix", []),
+            validation_test_failures=data.get("validation_test_failures", []),
             validation_cost_usd=data.get("validation_cost_usd", 0.0),
             retry_count=data.get("retry_count", 0),
             commit_sha=data.get("commit_sha", ""),
@@ -578,6 +582,8 @@ class TaskOrchestrator:
         self.session.validation_confidence = verdict.confidence
         self.session.validation_summary = verdict.summary
         self.session.validation_concerns = verdict.concerns
+        self.session.validation_files_to_fix = verdict.files_to_fix
+        self.session.validation_test_failures = verdict.test_failures
         self.session.validation_cost_usd += verdict.cost_usd
         self.session.total_cost_usd += verdict.cost_usd
 
@@ -598,6 +604,12 @@ class TaskOrchestrator:
         concerns_text = (
             "\n".join(f"- {c}" for c in verdict.concerns) or "- (none specified)"
         )
+        files_to_fix_text = (
+            "\n".join(f"- {f}" for f in verdict.files_to_fix) or "- (none identified)"
+        )
+        test_failures_text = (
+            "\n".join(f"- {t}" for t in verdict.test_failures) or "- (none identified)"
+        )
 
         retry_prompt = self._format_prompt(
             "retry_task.txt",
@@ -606,6 +618,8 @@ class TaskOrchestrator:
             validation_verdict=verdict.verdict,
             validation_summary=verdict.summary,
             concerns=concerns_text,
+            files_to_fix=files_to_fix_text,
+            test_failures=test_failures_text,
             event_log_summary="\n".join(
                 f"- {e.get('kind', '?')}: {e.get('summary', '')[:80]}"
                 for e in self.session.event_log[-15:]
@@ -692,12 +706,16 @@ class TaskOrchestrator:
         self.session.updated_at = _now_iso()
 
         concerns_text = "\n".join(f"- {c}" for c in verdict.concerns) or "- (none)"
+        files_text = "\n".join(f"- {f}" for f in verdict.files_to_fix) or "- (none)"
+        failures_text = "\n".join(f"- {t}" for t in verdict.test_failures) or "- (none)"
 
         notes = (
             f"**Golem escalation — needs human review**\n\n"
             f"Verdict: {verdict.verdict} (confidence: {verdict.confidence:.0%})\n"
             f"Summary: {verdict.summary}\n\n"
             f"Concerns:\n{concerns_text}\n\n"
+            f"Files to fix:\n{files_text}\n\n"
+            f"Test failures:\n{failures_text}\n\n"
             f"Cost: ${self.session.total_cost_usd:.2f} | "
             f"Duration: {format_duration(self.session.duration_seconds)} | "
             f"Retries: {self.session.retry_count}"
@@ -727,6 +745,14 @@ class TaskOrchestrator:
                 "\n".join(f"- {c}" for c in self.session.validation_concerns)
                 or "- (none)"
             )
+            files_to_fix_str = (
+                "\n".join(f"- {f}" for f in self.session.validation_files_to_fix)
+                or "- (none)"
+            )
+            test_failures_str = (
+                "\n".join(f"- {t}" for t in self.session.validation_test_failures)
+                or "- (none)"
+            )
             errors_str = "\n".join(f"- {e}" for e in self.session.errors) or "- (none)"
             events_str = "\n".join(
                 f"| {str(e.get('timestamp', '?'))[:19]} | {e.get('kind', '?')} "
@@ -751,6 +777,8 @@ class TaskOrchestrator:
                 f"**Summary**: {self.session.validation_summary or '(none)'}\n"
                 f"**Validation cost**: ${self.session.validation_cost_usd:.2f}\n\n"
                 f"**Concerns**:\n{concerns_str}\n\n"
+                f"**Files to fix**:\n{files_to_fix_str}\n\n"
+                f"**Test failures**:\n{test_failures_str}\n\n"
                 f"## Tools\n\n"
                 f"- **Built-in**: {tools_str}\n"
                 f"- **MCP**: {mcp_str}\n\n"
