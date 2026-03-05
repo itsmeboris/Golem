@@ -827,6 +827,12 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                 continue
 
             if not iid or iid in self._sessions or iid in self._processed_ids:
+                # Move to done/ even when skipping — prevents re-processing
+                # on daemon restart from overwriting sessions (e.g. dropping
+                # group_id set by submit_batch).
+                if iid:
+                    done_dir.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(task_file), str(done_dir / task_file.name))
                 continue
 
             subject = task.get("subject", "")

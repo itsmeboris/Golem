@@ -183,6 +183,8 @@ function selectTask(id) {
   _expandedStages.clear();
   _stageFingerprint = '';
   _selectedStageId = null;
+  _liveEventCount = 0;
+  _traceTerminalCache = {};
   location.hash = '/task/' + id;
 
   document.getElementById('overview').classList.add('hidden');
