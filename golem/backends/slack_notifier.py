@@ -144,6 +144,38 @@ class SlackNotifier:
 
         self._send(blocks, f"Golem needs review #{task_id}")
 
+    def notify_batch_submitted(self, group_id: str, task_count: int) -> None:
+        blocks = [
+            _header(f"Batch Submitted: {group_id}", ":package:"),
+            _fields([("Tasks", str(task_count))]),
+        ]
+        self._send(blocks, f"Batch submitted: {group_id}")
+
+    def notify_batch_completed(
+        self,
+        group_id: str,
+        status: str,
+        *,
+        total_cost_usd: float = 0.0,
+        total_duration_s: float = 0.0,
+        task_count: int = 0,
+        validation_verdict: str = "",
+    ) -> None:
+        emoji = ":white_check_mark:" if status == "completed" else ":x:"
+        facts: list[tuple[str, str]] = [
+            ("Status", status),
+            ("Tasks", str(task_count)),
+            ("Cost", f"${total_cost_usd:.2f}"),
+            ("Duration", _fmt_duration(total_duration_s)),
+        ]
+        if validation_verdict:
+            facts.append(("Validation", validation_verdict))
+        blocks: list[dict[str, Any]] = [
+            _header(f"Batch {status.title()}: {group_id}", emoji),
+            _fields(facts),
+        ]
+        self._send(blocks, f"Batch {status}: {group_id}")
+
     def _send(self, blocks: list[dict[str, Any]], fallback_text: str) -> None:
         payload = {"text": fallback_text, "blocks": blocks}
         try:

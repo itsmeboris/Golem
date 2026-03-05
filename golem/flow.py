@@ -93,6 +93,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         )
         self._max_infra_retries = getattr(self._task_config, "max_infra_retries", 2)
         self._batch_monitor = BatchMonitor()
+        self._notified_batches: set[str] = set()
 
         self._submissions_dir = SUBMISSIONS_DIR
         self._submissions_dir.mkdir(parents=True, exist_ok=True)
@@ -590,7 +591,46 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
 
         # Update batch monitor if task belongs to a batch
         if session.group_id and self._batch_monitor.get(session.group_id):
-            self._batch_monitor.update(session.group_id, self._sessions)
+            batch = self._batch_monitor.update(session.group_id, self._sessions)
+
+            # Notify and trigger validation when batch reaches a terminal state
+            # Guard: only fire once per batch to avoid duplicate notifications
+            if (
+                batch.status in ("completed", "failed")
+                and batch.group_id not in self._notified_batches
+            ):
+                self._notified_batches.add(batch.group_id)
+                self._profile.notifier.notify_batch_completed(
+                    batch.group_id,
+                    batch.status,
+                    total_cost_usd=batch.total_cost_usd,
+                    total_duration_s=batch.total_duration_s,
+                    task_count=len(batch.task_ids),
+                    validation_verdict=batch.validation_verdict,
+                )
+
+                # Auto-trigger integration validation for successful batches
+                if batch.status == "completed":
+                    try:
+                        # Use work_dir from the first session in the batch
+                        work_dir = ""
+                        for tid in batch.task_ids:
+                            s = self._sessions.get(tid)
+                            if s and s.base_work_dir:
+                                work_dir = s.base_work_dir
+                                break
+                        if work_dir:
+                            asyncio.ensure_future(
+                                self.run_integration_validation(
+                                    batch.group_id, work_dir
+                                )
+                            )
+                    except Exception:  # pylint: disable=broad-exception-caught
+                        logger.warning(
+                            "Failed to trigger integration validation for batch %s",
+                            batch.group_id,
+                            exc_info=True,
+                        )
 
     # -- Submission support ----------------------------------------------------
 
@@ -701,6 +741,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
 
         task_ids = [r["task_id"] for r in results]
         self._batch_monitor.register(group_id, task_ids)
+        self._profile.notifier.notify_batch_submitted(group_id, len(tasks))
         self._save_state()
         return {"group_id": group_id, "tasks": results}
 
@@ -887,6 +928,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         self._trackers.clear()
         self._processed_ids.clear()
         self._batch_monitor = BatchMonitor()
+        self._notified_batches.clear()
         batch_file = self.SESSIONS_DIR / "golem_batches.json"
         if batch_file.exists():
             batch_file.unlink()

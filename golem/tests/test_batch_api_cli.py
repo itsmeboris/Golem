@@ -322,6 +322,36 @@ class TestCmdBatchStatus:
         result = cmd_batch(args)
         assert result == 0
 
+    def test_cmd_batch_status_with_api_key(self, monkeypatch):
+        import json
+        import urllib.request
+
+        from golem.cli import cmd_batch
+
+        config = Config()
+        config.dashboard.api_key = "secret-key"
+        monkeypatch.setattr("golem.cli.load_config", lambda _cfg=None: config)
+
+        response_data = json.dumps(
+            {"batch": {"group_id": "grp", "status": "completed"}}
+        ).encode()
+        captured_req = {}
+
+        def mock_urlopen(req, **kw):
+            captured_req["headers"] = dict(req.headers)
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = response_data
+            mock_resp.__enter__ = lambda s: s
+            mock_resp.__exit__ = MagicMock(return_value=False)
+            return mock_resp
+
+        monkeypatch.setattr(urllib.request, "urlopen", mock_urlopen)
+
+        args = argparse.Namespace(config=None, batch_command="status", group_id="grp")
+        result = cmd_batch(args)
+        assert result == 0
+        assert captured_req["headers"].get("Authorization") == "Bearer secret-key"
+
     def test_cmd_batch_status_http_error(self, monkeypatch):
         import urllib.error
         import urllib.request
@@ -434,3 +464,803 @@ class TestCmdBatchList:
         args = argparse.Namespace(config=None, batch_command="list")
         result = cmd_batch(args)
         assert result == 1
+
+
+# ---------------------------------------------------------------------------
+# _format_batch_status tests
+# ---------------------------------------------------------------------------
+
+
+class TestFormatBatchStatus:
+    """Tests for the _format_batch_status CLI helper."""
+
+    def test_completed_batch_with_tasks(self, capsys):
+        from golem.cli import _format_batch_status
+
+        batch = {
+            "group_id": "grp-fmt",
+            "status": "completed",
+            "task_ids": [1, 2],
+            "task_results": {
+                "1": {
+                    "state": "completed",
+                    "validation_verdict": "pass",
+                    "total_cost_usd": 1.50,
+                    "duration_seconds": 120.0,
+                },
+                "2": {
+                    "state": "failed",
+                    "validation_verdict": "fail",
+                    "total_cost_usd": 0.75,
+                    "duration_seconds": 60.0,
+                },
+            },
+            "total_cost_usd": 2.25,
+            "total_duration_s": 180.0,
+            "validation_verdict": "pass",
+            "created_at": "2026-01-01T00:00:00",
+            "completed_at": "2026-01-01T01:00:00",
+        }
+        _format_batch_status(batch)
+        out = capsys.readouterr().out
+        assert "grp-fmt" in out
+        assert "COMPLETED" in out
+        assert "Created:" in out
+        assert "Completed:" in out
+        assert "$2.25" in out
+        assert "Overall verdict:" in out
+
+    def test_running_batch_no_results(self, capsys):
+        from golem.cli import _format_batch_status
+
+        batch = {
+            "group_id": "grp-run",
+            "status": "running",
+            "task_ids": [10],
+            "task_results": {},
+            "total_cost_usd": 0.0,
+            "total_duration_s": 0.0,
+            "validation_verdict": "",
+            "created_at": "",
+            "completed_at": "",
+        }
+        _format_batch_status(batch)
+        out = capsys.readouterr().out
+        assert "grp-run" in out
+        assert "RUNNING" in out
+        # No Created/Completed lines when empty
+        assert "Created:" not in out
+        assert "Overall verdict:" not in out
+
+    def test_failed_status_coloring(self, capsys):
+        from golem.cli import _format_batch_status
+
+        batch = {
+            "group_id": "grp-fail",
+            "status": "failed",
+            "task_ids": [],
+            "task_results": {},
+            "total_cost_usd": 0.0,
+            "total_duration_s": 0.0,
+            "validation_verdict": "failed",
+            "created_at": "",
+            "completed_at": "",
+        }
+        _format_batch_status(batch)
+        out = capsys.readouterr().out
+        assert "FAILED" in out
+        assert "Overall verdict:" in out
+
+    def test_unknown_status_no_color(self, capsys):
+        from golem.cli import _format_batch_status
+
+        batch = {
+            "group_id": "grp-unk",
+            "status": "pending",
+            "task_ids": [],
+            "task_results": {},
+            "total_cost_usd": 0.0,
+            "total_duration_s": 0.0,
+            "validation_verdict": "unknown",
+            "created_at": "",
+            "completed_at": "",
+        }
+        _format_batch_status(batch)
+        out = capsys.readouterr().out
+        assert "PENDING" in out
+
+    def test_task_results_with_unknown_and_no_cost(self, capsys):
+        from golem.cli import _format_batch_status
+
+        batch = {
+            "group_id": "grp-unk2",
+            "status": "in_progress",
+            "task_ids": [5, 6],
+            "task_results": {
+                "5": {
+                    "state": "planning",
+                    "validation_verdict": "",
+                    "total_cost_usd": 0.0,
+                    "duration_seconds": 0.0,
+                },
+                "6": {
+                    "state": "unknown_state",
+                    "validation_verdict": "something",
+                    "total_cost_usd": 0.0,
+                    "duration_seconds": 0.0,
+                },
+            },
+            "total_cost_usd": 0.0,
+            "total_duration_s": 0.0,
+            "validation_verdict": "",
+            "created_at": "",
+            "completed_at": "",
+        }
+        _format_batch_status(batch)
+        out = capsys.readouterr().out
+        assert "grp-unk2" in out
+
+    def test_missing_fields_use_defaults(self, capsys):
+        from golem.cli import _format_batch_status
+
+        _format_batch_status({})
+        out = capsys.readouterr().out
+        assert "Batch: ?" in out
+        assert "$0.00" in out
+
+
+# ---------------------------------------------------------------------------
+# _cmd_batch_submit tests
+# ---------------------------------------------------------------------------
+
+
+class TestCmdBatchSubmit:
+    """Tests for _cmd_batch_submit via cmd_batch with batch_command='submit'."""
+
+    def _make_config(self):
+        from golem.core.config import Config
+
+        config = Config()
+        config.dashboard.port = 9999
+        config.dashboard.api_key = "test-key"
+        return config
+
+    def test_file_not_found(self, monkeypatch, tmp_path):
+        from golem.cli import cmd_batch
+
+        monkeypatch.setattr(
+            "golem.cli.load_config", lambda _cfg=None: self._make_config()
+        )
+
+        args = argparse.Namespace(
+            config=None,
+            batch_command="submit",
+            file=str(tmp_path / "nonexistent.json"),
+        )
+        result = cmd_batch(args)
+        assert result == 1
+
+    def test_empty_file(self, monkeypatch, tmp_path):
+        from golem.cli import cmd_batch
+
+        monkeypatch.setattr(
+            "golem.cli.load_config", lambda _cfg=None: self._make_config()
+        )
+
+        f = tmp_path / "empty.json"
+        f.write_text("")
+        args = argparse.Namespace(config=None, batch_command="submit", file=str(f))
+        result = cmd_batch(args)
+        assert result == 1
+
+    def test_invalid_json(self, monkeypatch, tmp_path):
+        from golem.cli import cmd_batch
+
+        monkeypatch.setattr(
+            "golem.cli.load_config", lambda _cfg=None: self._make_config()
+        )
+
+        f = tmp_path / "bad.json"
+        f.write_text("{not valid json!!")
+        args = argparse.Namespace(config=None, batch_command="submit", file=str(f))
+        result = cmd_batch(args)
+        assert result == 1
+
+    def test_payload_not_dict(self, monkeypatch, tmp_path):
+        from golem.cli import cmd_batch
+
+        monkeypatch.setattr(
+            "golem.cli.load_config", lambda _cfg=None: self._make_config()
+        )
+
+        f = tmp_path / "list.json"
+        f.write_text("[1, 2, 3]")
+        args = argparse.Namespace(config=None, batch_command="submit", file=str(f))
+        result = cmd_batch(args)
+        assert result == 1
+
+    def test_missing_tasks_array(self, monkeypatch, tmp_path):
+        from golem.cli import cmd_batch
+
+        monkeypatch.setattr(
+            "golem.cli.load_config", lambda _cfg=None: self._make_config()
+        )
+
+        f = tmp_path / "no_tasks.json"
+        f.write_text('{"foo": "bar"}')
+        args = argparse.Namespace(config=None, batch_command="submit", file=str(f))
+        result = cmd_batch(args)
+        assert result == 1
+
+    def test_empty_tasks_array(self, monkeypatch, tmp_path):
+        from golem.cli import cmd_batch
+
+        monkeypatch.setattr(
+            "golem.cli.load_config", lambda _cfg=None: self._make_config()
+        )
+
+        f = tmp_path / "empty_tasks.json"
+        f.write_text('{"tasks": []}')
+        args = argparse.Namespace(config=None, batch_command="submit", file=str(f))
+        result = cmd_batch(args)
+        assert result == 1
+
+    def test_submit_success(self, monkeypatch, tmp_path, capsys):
+        import json
+        import urllib.request
+
+        from golem.cli import cmd_batch
+
+        monkeypatch.setattr(
+            "golem.cli.load_config", lambda _cfg=None: self._make_config()
+        )
+        monkeypatch.setattr("golem.cli._ensure_daemon", lambda *a, **kw: None)
+
+        response_data = json.dumps(
+            {
+                "group_id": "grp-sub",
+                "tasks": [
+                    {"task_id": 100, "status": "submitted"},
+                    {"task_id": 101, "status": "submitted"},
+                ],
+            }
+        ).encode()
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = response_data
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **kw: mock_resp)
+
+        f = tmp_path / "batch.json"
+        f.write_text(
+            json.dumps(
+                {
+                    "tasks": [
+                        {"prompt": "A", "subject": "Task A", "key": "a"},
+                        {
+                            "prompt": "B",
+                            "subject": "Task B",
+                            "depends_on": ["a"],
+                        },
+                    ]
+                }
+            )
+        )
+
+        args = argparse.Namespace(config=None, batch_command="submit", file=str(f))
+        result = cmd_batch(args)
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "grp-sub" in out
+        assert "#100" in out
+        assert "#101" in out
+        assert "key=a" in out
+        assert "depends_on" in out
+
+    def test_submit_http_error(self, monkeypatch, tmp_path):
+        import json
+        import urllib.error
+        import urllib.request
+
+        from golem.cli import cmd_batch
+
+        monkeypatch.setattr(
+            "golem.cli.load_config", lambda _cfg=None: self._make_config()
+        )
+        monkeypatch.setattr("golem.cli._ensure_daemon", lambda *a, **kw: None)
+
+        def raise_http_error(*a, **kw):
+            raise urllib.error.HTTPError(
+                None, 400, "Bad Request", {}, MagicMock(read=lambda: b"bad")
+            )
+
+        monkeypatch.setattr(urllib.request, "urlopen", raise_http_error)
+
+        f = tmp_path / "batch.json"
+        f.write_text(json.dumps({"tasks": [{"prompt": "A"}]}))
+
+        args = argparse.Namespace(config=None, batch_command="submit", file=str(f))
+        result = cmd_batch(args)
+        assert result == 1
+
+    def test_submit_url_error(self, monkeypatch, tmp_path):
+        import json
+        import urllib.error
+        import urllib.request
+
+        from golem.cli import cmd_batch
+
+        monkeypatch.setattr(
+            "golem.cli.load_config", lambda _cfg=None: self._make_config()
+        )
+        monkeypatch.setattr("golem.cli._ensure_daemon", lambda *a, **kw: None)
+
+        def raise_url_error(*a, **kw):
+            raise urllib.error.URLError("Connection refused")
+
+        monkeypatch.setattr(urllib.request, "urlopen", raise_url_error)
+
+        f = tmp_path / "batch.json"
+        f.write_text(json.dumps({"tasks": [{"prompt": "A"}]}))
+
+        args = argparse.Namespace(config=None, batch_command="submit", file=str(f))
+        result = cmd_batch(args)
+        assert result == 1
+
+    def test_submit_yaml_file(self, monkeypatch, tmp_path, capsys):
+        import json
+        import urllib.request
+
+        from golem.cli import cmd_batch
+
+        monkeypatch.setattr(
+            "golem.cli.load_config", lambda _cfg=None: self._make_config()
+        )
+        monkeypatch.setattr("golem.cli._ensure_daemon", lambda *a, **kw: None)
+
+        response_data = json.dumps(
+            {
+                "group_id": "grp-yaml",
+                "tasks": [{"task_id": 200, "status": "submitted"}],
+            }
+        ).encode()
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = response_data
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **kw: mock_resp)
+
+        f = tmp_path / "batch.yaml"
+        f.write_text("tasks:\n  - prompt: 'hello'\n    subject: 'Test YAML'\n")
+
+        args = argparse.Namespace(config=None, batch_command="submit", file=str(f))
+        result = cmd_batch(args)
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "grp-yaml" in out
+
+    def test_submit_unknown_extension_tries_json(self, monkeypatch, tmp_path, capsys):
+        import json
+        import urllib.request
+
+        from golem.cli import cmd_batch
+
+        monkeypatch.setattr(
+            "golem.cli.load_config", lambda _cfg=None: self._make_config()
+        )
+        monkeypatch.setattr("golem.cli._ensure_daemon", lambda *a, **kw: None)
+
+        response_data = json.dumps(
+            {
+                "group_id": "grp-unk",
+                "tasks": [{"task_id": 300, "status": "submitted"}],
+            }
+        ).encode()
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = response_data
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **kw: mock_resp)
+
+        f = tmp_path / "batch.txt"
+        f.write_text(json.dumps({"tasks": [{"prompt": "A"}]}))
+
+        args = argparse.Namespace(config=None, batch_command="submit", file=str(f))
+        result = cmd_batch(args)
+        assert result == 0
+
+    def test_submit_unknown_extension_falls_back_to_yaml(
+        self, monkeypatch, tmp_path, capsys
+    ):
+        """Unknown extension with non-JSON content falls back to YAML parsing."""
+        import json
+        import urllib.request
+
+        from golem.cli import cmd_batch
+
+        monkeypatch.setattr(
+            "golem.cli.load_config", lambda _cfg=None: self._make_config()
+        )
+        monkeypatch.setattr("golem.cli._ensure_daemon", lambda *a, **kw: None)
+
+        response_data = json.dumps(
+            {
+                "group_id": "grp-yaml-fallback",
+                "tasks": [{"task_id": 400, "status": "submitted"}],
+            }
+        ).encode()
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = response_data
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **kw: mock_resp)
+
+        # .txt file with YAML content (not valid JSON) triggers JSON fallback to YAML
+        f = tmp_path / "batch.txt"
+        f.write_text("tasks:\n  - prompt: 'YAML fallback test'\n")
+
+        args = argparse.Namespace(config=None, batch_command="submit", file=str(f))
+        result = cmd_batch(args)
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "grp-yaml-fallback" in out
+
+
+# ---------------------------------------------------------------------------
+# Slack notifier batch method tests
+# ---------------------------------------------------------------------------
+
+
+class TestSlackNotifierBatch:
+    def test_notify_batch_submitted(self):
+        from golem.backends.slack_notifier import SlackNotifier
+
+        client = MagicMock()
+        notifier = SlackNotifier(client, "test-chan")
+        notifier.notify_batch_submitted("grp-1", 5)
+        client.send_to_channel.assert_called_once()
+        payload = client.send_to_channel.call_args[0][1]
+        assert payload["text"] == "Batch submitted: grp-1"
+        blocks = payload["blocks"]
+        # header block has group_id
+        assert "grp-1" in blocks[0]["text"]["text"]
+        # fields block has task count
+        field_texts = [f["text"] for f in blocks[1]["fields"]]
+        assert any("5" in t for t in field_texts)
+
+    def test_notify_batch_completed_success(self):
+        from golem.backends.slack_notifier import SlackNotifier
+
+        client = MagicMock()
+        notifier = SlackNotifier(client, "test-chan")
+        notifier.notify_batch_completed(
+            "grp-2",
+            "completed",
+            total_cost_usd=3.50,
+            total_duration_s=600.0,
+            task_count=10,
+            validation_verdict="PASS",
+        )
+        client.send_to_channel.assert_called_once()
+        payload = client.send_to_channel.call_args[0][1]
+        assert "Batch completed: grp-2" in payload["text"]
+        blocks = payload["blocks"]
+        # Check header contains status title
+        assert "Completed" in blocks[0]["text"]["text"]
+        # Check fields contain validation verdict
+        field_texts = [f["text"] for f in blocks[1]["fields"]]
+        assert any("PASS" in t for t in field_texts)
+
+    def test_notify_batch_completed_failed_no_verdict(self):
+        from golem.backends.slack_notifier import SlackNotifier
+
+        client = MagicMock()
+        notifier = SlackNotifier(client, "test-chan")
+        notifier.notify_batch_completed(
+            "grp-3",
+            "failed",
+            total_cost_usd=1.00,
+            total_duration_s=30.0,
+            task_count=2,
+        )
+        client.send_to_channel.assert_called_once()
+        payload = client.send_to_channel.call_args[0][1]
+        assert "Batch failed: grp-3" in payload["text"]
+        # No validation field when empty
+        field_texts = [f["text"] for f in payload["blocks"][1]["fields"]]
+        assert not any("Validation" in t for t in field_texts)
+
+
+# ---------------------------------------------------------------------------
+# Teams notifier batch method tests
+# ---------------------------------------------------------------------------
+
+
+class TestTeamsNotifierBatch:
+    def test_notify_batch_submitted(self):
+        from golem.backends.teams_notifier import TeamsNotifier
+
+        client = MagicMock()
+        notifier = TeamsNotifier(client, "chan")
+        notifier.notify_batch_submitted("grp-t1", 3)
+        client.send_to_channel.assert_called_once()
+        card = client.send_to_channel.call_args[0][1]
+        assert card["type"] == "message"
+        body = card["attachments"][0]["content"]["body"]
+        assert "grp-t1" in body[0]["text"]
+        assert "3" in body[1]["text"]
+
+    def test_notify_batch_completed_with_verdict(self):
+        from golem.backends.teams_notifier import TeamsNotifier
+
+        client = MagicMock()
+        notifier = TeamsNotifier(client, "chan")
+        notifier.notify_batch_completed(
+            "grp-t2",
+            "completed",
+            total_cost_usd=5.00,
+            total_duration_s=300.0,
+            task_count=4,
+            validation_verdict="PASS",
+        )
+        client.send_to_channel.assert_called_once()
+        card = client.send_to_channel.call_args[0][1]
+        body = card["attachments"][0]["content"]["body"]
+        facts = body[1]["facts"]
+        fact_titles = [f["title"] for f in facts]
+        assert "Validation" in fact_titles
+
+    def test_notify_batch_completed_no_verdict(self):
+        from golem.backends.teams_notifier import TeamsNotifier
+
+        client = MagicMock()
+        notifier = TeamsNotifier(client, "chan")
+        notifier.notify_batch_completed(
+            "grp-t3",
+            "failed",
+            total_cost_usd=0.50,
+            total_duration_s=10.0,
+            task_count=1,
+        )
+        client.send_to_channel.assert_called_once()
+        card = client.send_to_channel.call_args[0][1]
+        body = card["attachments"][0]["content"]["body"]
+        facts = body[1]["facts"]
+        fact_titles = [f["title"] for f in facts]
+        assert "Validation" not in fact_titles
+
+
+# ---------------------------------------------------------------------------
+# LogNotifier batch method tests
+# ---------------------------------------------------------------------------
+
+
+class TestLogNotifierBatch:
+    def test_notify_batch_submitted(self, caplog):
+        import logging
+        from golem.backends.local import LogNotifier
+
+        with caplog.at_level(logging.INFO, logger="golem.backends.local"):
+            notifier = LogNotifier()
+            notifier.notify_batch_submitted("grp-log", 7)
+        assert "grp-log" in caplog.text
+        assert "7 tasks" in caplog.text
+
+    def test_notify_batch_completed(self, caplog):
+        import logging
+        from golem.backends.local import LogNotifier
+
+        with caplog.at_level(logging.INFO, logger="golem.backends.local"):
+            notifier = LogNotifier()
+            notifier.notify_batch_completed(
+                "grp-log2",
+                "completed",
+                total_cost_usd=2.50,
+                total_duration_s=100.0,
+                task_count=3,
+                validation_verdict="PASS",
+            )
+        assert "grp-log2" in caplog.text
+        assert "completed" in caplog.text
+        assert "3 tasks" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# Flow batch completion notification tests
+# ---------------------------------------------------------------------------
+
+
+class TestFlowBatchNotification:
+    """Tests that batch notification fires on terminal states."""
+
+    def test_notify_batch_completed_on_terminal(self, monkeypatch, tmp_path):
+        """When all tasks complete, notify_batch_completed should be called."""
+        from golem.backends.local import LogNotifier
+
+        notifier = MagicMock(spec=LogNotifier)
+        profile = _make_test_profile()
+        # Replace the notifier with our mock
+        object.__setattr__(profile, "notifier", notifier)
+
+        flow = _make_flow(monkeypatch, tmp_path, profile=profile)
+        monkeypatch.setattr(flow, "_spawn_session_task", lambda sid: None)
+
+        result = flow.submit_batch(
+            [{"prompt": "A", "subject": "A"}], group_id="grp-notify"
+        )
+        tid = result["tasks"][0]["task_id"]
+        session = flow._sessions[tid]
+        prev_state = session.state
+        session.state = TaskSessionState.COMPLETED
+        session.validation_verdict = "PASS"
+
+        flow._handle_state_transition(session, prev_state)
+
+        notifier.notify_batch_completed.assert_called_once()
+        call_args = notifier.notify_batch_completed.call_args
+        assert call_args[0][0] == "grp-notify"
+        assert call_args[0][1] in ("completed", "failed")
+
+    def test_notify_batch_not_called_for_non_terminal(self, monkeypatch, tmp_path):
+        """Notification should NOT fire if not all tasks are terminal."""
+        from golem.backends.local import LogNotifier
+
+        notifier = MagicMock(spec=LogNotifier)
+        profile = _make_test_profile()
+        object.__setattr__(profile, "notifier", notifier)
+
+        flow = _make_flow(monkeypatch, tmp_path, profile=profile)
+        monkeypatch.setattr(flow, "_spawn_session_task", lambda sid: None)
+
+        result = flow.submit_batch(
+            [
+                {"prompt": "A", "subject": "A"},
+                {"prompt": "B", "subject": "B"},
+            ],
+            group_id="grp-partial",
+        )
+        tid_a = result["tasks"][0]["task_id"]
+        session_a = flow._sessions[tid_a]
+        prev_state = session_a.state
+        session_a.state = TaskSessionState.COMPLETED
+        session_a.validation_verdict = "PASS"
+
+        flow._handle_state_transition(session_a, prev_state)
+
+        # Only one of two tasks completed, batch is still in_progress
+        notifier.notify_batch_completed.assert_not_called()
+
+    def test_notify_batch_fires_once_not_twice(self, monkeypatch, tmp_path):
+        """Batch notification should fire once even if _handle_state_transition
+        is called again for the same terminal batch.
+
+        This tests the _notified_batches dedup guard if present, or verifies
+        that the batch status no longer transitions (so no duplicate).
+        """
+        from golem.backends.local import LogNotifier
+
+        notifier = MagicMock(spec=LogNotifier)
+        profile = _make_test_profile()
+        object.__setattr__(profile, "notifier", notifier)
+
+        flow = _make_flow(monkeypatch, tmp_path, profile=profile)
+        monkeypatch.setattr(flow, "_spawn_session_task", lambda sid: None)
+
+        result = flow.submit_batch(
+            [{"prompt": "A", "subject": "A"}], group_id="grp-once"
+        )
+        tid = result["tasks"][0]["task_id"]
+        session = flow._sessions[tid]
+        prev_state = session.state
+        session.state = TaskSessionState.COMPLETED
+        session.validation_verdict = "PASS"
+
+        # First transition - should fire notification
+        flow._handle_state_transition(session, prev_state)
+        assert notifier.notify_batch_completed.call_count == 1
+
+        # Second transition with same state - should NOT fire again
+        flow._handle_state_transition(session, TaskSessionState.COMPLETED)
+        # The guard (either _notified_batches or status check) should prevent
+        # a second notification. If the dedup guard doesn't exist yet,
+        # the second call has prev_state == COMPLETED == new_state, so the
+        # flow may skip batch update entirely. Either way, count stays at 1.
+        assert notifier.notify_batch_completed.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Flow auto-trigger integration validation on batch completion
+# ---------------------------------------------------------------------------
+
+
+class TestFlowBatchIntegrationValidation:
+    """Test that integration validation is triggered on batch completion."""
+
+    def test_integration_validation_triggered(self, monkeypatch, tmp_path):
+        """When batch completes successfully, run_integration_validation
+        should be scheduled via asyncio.ensure_future."""
+        import asyncio
+        from golem.backends.local import LogNotifier
+
+        notifier = MagicMock(spec=LogNotifier)
+        profile = _make_test_profile()
+        object.__setattr__(profile, "notifier", notifier)
+
+        flow = _make_flow(monkeypatch, tmp_path, profile=profile)
+        monkeypatch.setattr(flow, "_spawn_session_task", lambda sid: None)
+
+        result = flow.submit_batch(
+            [{"prompt": "A", "subject": "A"}], group_id="grp-val"
+        )
+        tid = result["tasks"][0]["task_id"]
+        session = flow._sessions[tid]
+        session.base_work_dir = "/tmp/work"
+        prev_state = session.state
+        session.state = TaskSessionState.COMPLETED
+        session.validation_verdict = "PASS"
+
+        # Mock asyncio.ensure_future to capture the call
+        ensure_future_mock = MagicMock()
+        monkeypatch.setattr(asyncio, "ensure_future", ensure_future_mock)
+
+        flow._handle_state_transition(session, prev_state)
+
+        ensure_future_mock.assert_called_once()
+
+    def test_integration_validation_skipped_no_work_dir(self, monkeypatch, tmp_path):
+        """When no session has a work_dir, validation is not triggered."""
+        import asyncio
+        from golem.backends.local import LogNotifier
+
+        notifier = MagicMock(spec=LogNotifier)
+        profile = _make_test_profile()
+        object.__setattr__(profile, "notifier", notifier)
+
+        flow = _make_flow(monkeypatch, tmp_path, profile=profile)
+        monkeypatch.setattr(flow, "_spawn_session_task", lambda sid: None)
+
+        result = flow.submit_batch(
+            [{"prompt": "A", "subject": "A"}], group_id="grp-nodir"
+        )
+        tid = result["tasks"][0]["task_id"]
+        session = flow._sessions[tid]
+        session.base_work_dir = ""
+        prev_state = session.state
+        session.state = TaskSessionState.COMPLETED
+        session.validation_verdict = "PASS"
+
+        ensure_future_mock = MagicMock()
+        monkeypatch.setattr(asyncio, "ensure_future", ensure_future_mock)
+
+        flow._handle_state_transition(session, prev_state)
+
+        ensure_future_mock.assert_not_called()
+
+    def test_integration_validation_exception_caught(self, monkeypatch, tmp_path):
+        """If ensure_future raises, the exception is caught and logged."""
+        import asyncio
+        from golem.backends.local import LogNotifier
+
+        notifier = MagicMock(spec=LogNotifier)
+        profile = _make_test_profile()
+        object.__setattr__(profile, "notifier", notifier)
+
+        flow = _make_flow(monkeypatch, tmp_path, profile=profile)
+        monkeypatch.setattr(flow, "_spawn_session_task", lambda sid: None)
+
+        result = flow.submit_batch(
+            [{"prompt": "A", "subject": "A"}], group_id="grp-exc"
+        )
+        tid = result["tasks"][0]["task_id"]
+        session = flow._sessions[tid]
+        session.base_work_dir = "/tmp/work"
+        prev_state = session.state
+        session.state = TaskSessionState.COMPLETED
+        session.validation_verdict = "PASS"
+
+        monkeypatch.setattr(
+            asyncio, "ensure_future", MagicMock(side_effect=RuntimeError("no loop"))
+        )
+
+        # Should not raise - exception is caught
+        flow._handle_state_transition(session, prev_state)

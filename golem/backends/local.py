@@ -234,6 +234,29 @@ class LogNotifier:
             "NOTIFY: Task %s escalated (%s): %s", task_id, verdict, summary[:120]
         )
 
+    def notify_batch_submitted(self, group_id: str, task_count: int) -> None:
+        """Log a batch-submitted notification."""
+        logger.info("NOTIFY: Batch %s submitted (%d tasks)", group_id, task_count)
+
+    def notify_batch_completed(  # pylint: disable=unused-argument
+        self,
+        group_id: str,
+        status: str,
+        *,
+        total_cost_usd: float = 0.0,
+        total_duration_s: float = 0.0,
+        task_count: int = 0,
+        validation_verdict: str = "",
+    ) -> None:
+        """Log a batch-completed notification."""
+        logger.info(
+            "NOTIFY: Batch %s %s (%d tasks, cost=$%.2f)",
+            group_id,
+            status,
+            task_count,
+            total_cost_usd,
+        )
+
 
 # ---------------------------------------------------------------------------
 # NullToolProvider

@@ -105,6 +105,77 @@ class TeamsNotifier:
         )
         self._send(card)
 
+    def notify_batch_submitted(self, group_id: str, task_count: int) -> None:
+        """Send a batch-submitted card to Teams."""
+        card = {
+            "type": "message",
+            "attachments": [
+                {
+                    "contentType": "application/vnd.microsoft.card.adaptive",
+                    "content": {
+                        "type": "AdaptiveCard",
+                        "body": [
+                            {
+                                "type": "TextBlock",
+                                "size": "Medium",
+                                "weight": "Bolder",
+                                "text": f"Batch Submitted: {group_id}",
+                            },
+                            {
+                                "type": "TextBlock",
+                                "text": f"Tasks: {task_count}",
+                            },
+                        ],
+                    },
+                }
+            ],
+        }
+        self._send(card)
+
+    def notify_batch_completed(
+        self,
+        group_id: str,
+        status: str,
+        *,
+        total_cost_usd: float = 0.0,
+        total_duration_s: float = 0.0,
+        task_count: int = 0,
+        validation_verdict: str = "",
+    ) -> None:
+        """Send a batch-completed card to Teams."""
+        facts = [
+            {"title": "Status", "value": status},
+            {"title": "Tasks", "value": str(task_count)},
+            {"title": "Cost", "value": f"${total_cost_usd:.2f}"},
+            {"title": "Duration", "value": f"{total_duration_s:.0f}s"},
+        ]
+        if validation_verdict:
+            facts.append({"title": "Validation", "value": validation_verdict})
+        card = {
+            "type": "message",
+            "attachments": [
+                {
+                    "contentType": "application/vnd.microsoft.card.adaptive",
+                    "content": {
+                        "type": "AdaptiveCard",
+                        "body": [
+                            {
+                                "type": "TextBlock",
+                                "size": "Medium",
+                                "weight": "Bolder",
+                                "text": f"Batch Completed: {group_id}",
+                            },
+                            {
+                                "type": "FactSet",
+                                "facts": facts,
+                            },
+                        ],
+                    },
+                }
+            ],
+        }
+        self._send(card)
+
     def _send(self, card: dict[str, Any]) -> None:
         try:
             self._teams.send_to_channel(self._channel, card)

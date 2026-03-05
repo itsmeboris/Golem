@@ -59,6 +59,12 @@ class DummyNotifier:
     def notify_escalated(self, task_id, subject, verdict, summary, **kwargs):
         pass
 
+    def notify_batch_submitted(self, group_id, task_count):
+        pass
+
+    def notify_batch_completed(self, group_id, status, **kwargs):
+        pass
+
 
 class DummyToolProvider:
     def base_servers(self):

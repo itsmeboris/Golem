@@ -154,6 +154,23 @@ class Notifier(Protocol):
     ) -> None:
         ...  # pragma: no cover
 
+    def notify_batch_submitted(self, group_id: str, task_count: int) -> None:
+        """Notify that a batch of tasks has been submitted."""
+        ...  # pragma: no cover
+
+    def notify_batch_completed(
+        self,
+        group_id: str,
+        status: str,
+        *,
+        total_cost_usd: float = 0.0,
+        total_duration_s: float = 0.0,
+        task_count: int = 0,
+        validation_verdict: str = "",
+    ) -> None:
+        """Notify that a batch of tasks has completed (or failed)."""
+        ...  # pragma: no cover
+
 
 # ---------------------------------------------------------------------------
 # ToolProvider — MCP server selection
