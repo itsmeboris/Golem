@@ -293,19 +293,23 @@ class TestMergeWithVerifyMissingNoHandler:
     @patch("golem.merge_queue.merge_and_cleanup", return_value="sha1")
     @patch("golem.merge_queue.get_agent_diff", return_value="diff")
     @patch("golem.merge_queue.get_changed_files", return_value=[])
-    async def test_missing_no_reconciler_succeeds_anyway(
+    async def test_missing_no_reconciler_fails(
         self, _gcf, _gad, _mac, _vmi, queue, base_entry
     ):
         await queue.enqueue(base_entry)
         results = await queue.process_all()
-        assert results[0].success is True
+        assert results[0].success is False
+        assert results[0].merge_sha == "sha1"
+        assert results[0].error == "agent additions lost during merge"
+        assert results[0].conflict_files == ["lost.py"]
 
 
 class TestMergeWithReconcileSuccess:
     @patch(
         "golem.merge_queue.verify_merge_integrity",
-        return_value=[
-            MissingAddition(file="f.py", expected_lines=["x"], description="d")
+        side_effect=[
+            [MissingAddition(file="f.py", expected_lines=["x"], description="d")],
+            [],  # re-verification passes
         ],
     )
     @patch("golem.merge_queue.merge_and_cleanup", return_value="sha1")
@@ -343,6 +347,56 @@ class TestMergeWithReconcileFailure:
         assert results[0].success is False
         assert "reconciliation failed" in results[0].error
         assert results[0].conflict_files == ["f.py"]
+
+
+class TestMergeWithReconcileStillMissing:
+    @patch(
+        "golem.merge_queue.verify_merge_integrity",
+        side_effect=[
+            [MissingAddition(file="f.py", expected_lines=["x"], description="d")],
+            [MissingAddition(file="f.py", expected_lines=["x"], description="d")],
+        ],
+    )
+    @patch("golem.merge_queue.merge_and_cleanup", return_value="sha1")
+    @patch("golem.merge_queue.get_agent_diff", return_value="diff text")
+    @patch("golem.merge_queue.get_changed_files", return_value=[])
+    async def test_reconcile_succeeds_but_still_missing(
+        self, _gcf, _gad, _mac, _vmi, base_entry
+    ):
+        handler = MagicMock(
+            return_value=ReconciliationResult(resolved=True, commit_sha="fix1")
+        )
+        q = MergeQueue(on_reconcile=handler)
+        await q.enqueue(base_entry)
+        results = await q.process_all()
+        assert results[0].success is False
+        assert "still missing" in results[0].error
+        assert results[0].conflict_files == ["f.py"]
+        assert _vmi.call_count == 2
+
+
+class TestMergeWithReconcileReverifyException:
+    @patch(
+        "golem.merge_queue.verify_merge_integrity",
+        side_effect=[
+            [MissingAddition(file="f.py", expected_lines=["x"], description="d")],
+            RuntimeError("disk error"),
+        ],
+    )
+    @patch("golem.merge_queue.merge_and_cleanup", return_value="sha1")
+    @patch("golem.merge_queue.get_agent_diff", return_value="diff text")
+    @patch("golem.merge_queue.get_changed_files", return_value=[])
+    async def test_reverify_exception_returns_failure(
+        self, _gcf, _gad, _mac, _vmi, base_entry
+    ):
+        handler = MagicMock(
+            return_value=ReconciliationResult(resolved=True, commit_sha="fix1")
+        )
+        q = MergeQueue(on_reconcile=handler)
+        await q.enqueue(base_entry)
+        results = await q.process_all()
+        assert results[0].success is False
+        assert "disk error" in results[0].error
 
 
 class TestMergeGetAgentDiffCalled:

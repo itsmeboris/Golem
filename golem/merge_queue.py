@@ -149,6 +149,40 @@ class MergeQueue:
                             conflict_files=[m.file for m in missing],
                         )
 
+                    # Re-verify after reconciliation
+                    still_missing = verify_merge_integrity(
+                        entry.base_dir, agent_diff, entry.changed_files
+                    )
+                    if still_missing:
+                        logger.warning(
+                            "Session %d: reconciliation committed but "
+                            "%d file(s) still missing additions",
+                            entry.session_id,
+                            len(still_missing),
+                        )
+                        return MergeResult(
+                            session_id=entry.session_id,
+                            success=False,
+                            merge_sha=sha,
+                            error="additions still missing after reconciliation",
+                            conflict_files=[m.file for m in still_missing],
+                        )
+
+                elif missing:
+                    logger.warning(
+                        "Session %d: %d file(s) lost additions after merge, "
+                        "no reconciler configured",
+                        entry.session_id,
+                        len(missing),
+                    )
+                    return MergeResult(
+                        session_id=entry.session_id,
+                        success=False,
+                        merge_sha=sha,
+                        error="agent additions lost during merge",
+                        conflict_files=[m.file for m in missing],
+                    )
+
                 logger.info(
                     "Session %d: merged successfully → %s",
                     entry.session_id,
