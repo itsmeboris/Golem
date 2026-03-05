@@ -52,6 +52,10 @@
   cursor:grab
 }
 .dag-container:active{cursor:grabbing}
+.dag-section.collapsed .dag-container{max-height:0;min-height:0;border:none;margin:0;overflow:hidden;transition:max-height 0.2s ease}
+.dag-section.collapsed .dag-minimap,.dag-section.collapsed .dag-minimap-toggle{display:none}
+.dag-collapse-btn{transition:transform 0.2s}
+.dag-section.collapsed .dag-collapse-btn{transform:rotate(180deg)}
 .dag-svg{display:block;transform-origin:0 0}
 .dag-empty{
   position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
@@ -166,11 +170,14 @@
 .task-back{
   position:sticky;top:0;z-index:10;
   background:var(--bg-base);
-  padding:0.5rem 0 0.25rem
+  padding:0.5rem 0 0
 }
-
-/* Header */
-.task-header{margin-bottom:1.25rem}
+.task-header{
+  position:sticky;top:2rem;z-index:9;
+  background:var(--bg-base);
+  margin-bottom:1.25rem;padding-bottom:0.5rem;
+  border-bottom:1px solid var(--border)
+}
 .task-header .th-top{display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;margin-bottom:0.35rem}
 .task-header .th-id{font-size:1.3rem;font-weight:800;color:var(--text-primary)}
 .task-header .th-badge{
@@ -458,7 +465,7 @@
   .dag-container{max-height:35vh;margin:0 0.5rem}
   .live-bar{padding:0.5rem 0.75rem;font-size:0.75rem}
   .tt-header,.tt-row{grid-template-columns:28px 40px 1fr 70px 60px}
-  .tt-row .tt-duration,.tt-row .tt-deps{display:none}
+  .tt-header span:nth-child(6),.tt-header span:nth-child(7),.tt-row .tt-duration,.tt-row .tt-deps{display:none}
   .wf-table{font-size:0.78rem}
   .wf-row{min-height:36px;padding:0.35rem 0.5rem}
   .wf-row.wf-child{padding-left:1.5rem}

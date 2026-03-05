@@ -943,3 +943,26 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         assert "dag-filter-btn" in body
         assert 'data-filter="active"' in body
         assert 'data-filter="failed"' in body
+
+    def test_dashboard_html_has_dag_collapse(self):
+        html = Path(__file__).resolve().parent.parent / "core" / "task_dashboard.html"
+        body = html.read_text(encoding="utf-8")
+        assert "dag-collapse-btn" in body
+
+    def test_css_responsive_hides_header_columns(self):
+        """Mobile responsive rule hides duration/deps in both header and rows."""
+        css = Path(__file__).resolve().parent.parent / "core" / "task_dashboard.css"
+        body = css.read_text(encoding="utf-8")
+        assert ".tt-header span:nth-child(6)" in body or ".tt-header .hide-mobile" in body, \
+            "Responsive CSS should hide duration column in header too"
+
+    def test_css_task_header_sticky(self):
+        """Task detail header should be sticky so it's always visible."""
+        css = Path(__file__).resolve().parent.parent / "core" / "task_dashboard.css"
+        body = css.read_text(encoding="utf-8")
+        # Find the .task-header rule and check it contains sticky
+        import re
+        match = re.search(r'\.task-header\{[^}]*\}', body)
+        assert match, ".task-header rule not found in CSS"
+        assert "sticky" in match.group(), \
+            "Task header should use sticky positioning"

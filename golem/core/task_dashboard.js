@@ -32,6 +32,12 @@ let _dagFingerprint = '';
 let _hoveredNodeId = null;
 let _dagSelectedTasks = new Set();
 let _dragNode = null; /* { taskId, el, startMX, startMY, origTX, origTY } */
+let _dagCollapsed = false;
+
+function toggleDagCollapse() {
+  _dagCollapsed = !_dagCollapsed;
+  document.getElementById('dag-section').classList.toggle('collapsed', _dagCollapsed);
+}
 
 /* Table state */
 let _tableSortCol = 'id';

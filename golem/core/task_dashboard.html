@@ -20,6 +20,8 @@
 <!-- Level 1: Overview -->
 <main class="main-view" id="main-view">
   <div class="overview" id="overview">
+    <!-- DAG Section (collapsible) -->
+    <div class="dag-section" id="dag-section">
     <!-- DAG Filter Bar -->
     <div class="dag-toolbar">
       <div class="dag-filters">
@@ -31,6 +33,7 @@
       <div class="dag-legend" id="dag-legend"></div>
       <select class="dag-group-filter hidden" id="dag-group-filter" onchange="setDagGroupFilter(this.value)"></select>
       <div class="dag-controls">
+        <button class="dag-ctrl-btn dag-collapse-btn" onclick="toggleDagCollapse()" title="Collapse/expand DAG">&#9650;</button>
         <button class="dag-ctrl-btn" onclick="dagZoomFit()" title="Fit to view">&#8862;</button>
         <button class="dag-ctrl-btn" onclick="dagZoomIn()" title="Zoom in">+</button>
         <button class="dag-ctrl-btn" onclick="dagZoomOut()" title="Zoom out">&minus;</button>
@@ -45,6 +48,7 @@
       <div class="dag-empty" id="dag-empty">
         <p>No tasks yet. Tasks will appear when issues are detected.</p>
       </div>
+    </div>
     </div>
 
     <!-- Task Table -->
