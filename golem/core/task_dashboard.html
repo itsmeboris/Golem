@@ -9,91 +9,101 @@
 </head>
 <body>
 
-<button class="mobile-toggle" onclick="toggleSidebar()">&#9776;</button>
+<!-- Live Bar (always visible) -->
+<header class="live-bar" id="live-bar">
+  <div class="lb-brand"><span class="lb-logo">&#9881;</span> Golem</div>
+  <div class="lb-stats" id="lb-stats"></div>
+</header>
 
-<div class="layout">
-  <!-- ─── Sidebar ─── -->
-  <aside class="sidebar" id="sidebar">
-    <div class="sidebar-header">
-      <h1><span class="logo">&#9881;</span> Golem</h1>
-      <div class="sidebar-stats" id="sidebar-stats">Loading...</div>
-    </div>
-    <div class="sidebar-filters">
-      <input type="search" id="task-search" placeholder="Filter tasks...">
-      <select id="state-filter">
-        <option value="">All</option>
-        <option value="running">Running</option>
-        <option value="completed">Completed</option>
-        <option value="failed">Failed</option>
-        <option value="validating">Validating</option>
-        <option value="detected">Detected</option>
-      </select>
-    </div>
-    <div class="filter-count hidden" id="filter-count"></div>
-    <div class="task-list" id="task-list">
-      <div class="skeleton skeleton-card"></div>
-      <div class="skeleton skeleton-card"></div>
-      <div class="skeleton skeleton-card"></div>
-    </div>
-  </aside>
+<div class="config-bar hidden" id="config-bar"></div>
 
-  <!-- ─── Main ─── -->
-  <main class="main" id="main">
-    <!-- Overview state (shown when no task is selected) -->
-    <div class="overview-state" id="overview-state">
-      <div class="config-bar" id="config-bar" style="display:none"></div>
-      <div class="stat-cards" id="stat-cards"></div>
-      <div class="empty-state" id="empty-state">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        <h2>Select a task</h2>
-        <p>Choose a task from the sidebar to view execution details.</p>
+<!-- Level 1: Overview -->
+<main class="main-view" id="main-view">
+  <div class="overview" id="overview">
+    <!-- DAG Filter Bar -->
+    <div class="dag-toolbar">
+      <div class="dag-filters">
+        <button class="dag-filter-btn active" data-filter="" onclick="setDagFilter('')">All</button>
+        <button class="dag-filter-btn" data-filter="active" onclick="setDagFilter('active')">Active</button>
+        <button class="dag-filter-btn" data-filter="failed" onclick="setDagFilter('failed')">Failed</button>
+        <button class="dag-filter-btn" data-filter="completed" onclick="setDagFilter('completed')">Completed</button>
+      </div>
+      <div class="dag-legend" id="dag-legend"></div>
+      <select class="dag-group-filter hidden" id="dag-group-filter" onchange="setDagGroupFilter(this.value)"></select>
+      <div class="dag-controls">
+        <button class="dag-ctrl-btn" onclick="dagZoomFit()" title="Fit to view">&#8862;</button>
+        <button class="dag-ctrl-btn" onclick="dagZoomIn()" title="Zoom in">+</button>
+        <button class="dag-ctrl-btn" onclick="dagZoomOut()" title="Zoom out">&minus;</button>
       </div>
     </div>
 
-    <!-- Task detail (hidden until selected) -->
-    <div class="task-detail hidden" id="task-detail">
-      <header class="task-header" id="task-header"></header>
-      <div class="metrics-row" id="metrics-row"></div>
-      <div id="phase-banner-container"></div>
-      <div class="pipeline-view hidden" id="pipeline-view">
-        <div class="pv-toolbar">
-          <h3>Pipeline</h3>
-          <div class="pv-controls">
-            <button class="pv-toggle-btn active" id="btn-waterfall-view" onclick="setPipelineView('waterfall')">Waterfall</button>
-            <button class="pv-toggle-btn" id="btn-flow-view" onclick="setPipelineView('flow')">Flow</button>
-            <button class="pv-toggle-btn" id="btn-log-view" onclick="setPipelineView('log')">Log</button>
-            <button class="pv-toggle-btn" id="btn-thinking" onclick="toggleThinking()">Reasoning</button>
-            <button class="pv-toggle-btn" id="btn-text" onclick="toggleText()">Agent text</button>
-          </div>
-        </div>
-        <div id="waterfall-view">
-          <div class="wf-table" id="wf-table"></div>
-          <div class="wf-detail-panel hidden" id="wf-detail-panel"></div>
-        </div>
-        <div id="flow-view" class="hidden">
-          <div class="flow-graph-container" id="flow-graph-container"></div>
-          <div class="flow-detail-panel hidden" id="flow-detail-panel"></div>
-        </div>
-        <div id="log-view" class="hidden">
-          <div class="accordion-view" id="accordion-view"></div>
-        </div>
-      </div>
-      <div class="info-tabs" id="info-tabs">
-        <div class="tab-bar" id="tab-bar">
-          <button class="tab-btn active" data-tab="errors" onclick="activateTab('errors')">Errors</button>
-          <button class="tab-btn" data-tab="tools" onclick="activateTab('tools')">Tools</button>
-          <button class="tab-btn" data-tab="coordination" onclick="activateTab('coordination')">Coordination</button>
-          <button class="tab-btn" data-tab="raw" onclick="activateTab('raw')">Raw Session</button>
-        </div>
-        <div id="tab-errors" class="tab-content active"></div>
-        <div id="tab-tools" class="tab-content"></div>
-        <div id="tab-coordination" class="tab-content"></div>
-        <div id="tab-raw" class="tab-content"></div>
+    <!-- DAG Graph -->
+    <div class="dag-container" id="dag-container">
+      <svg class="dag-svg" id="dag-svg"></svg>
+      <button class="dag-minimap-toggle" id="dag-minimap-toggle" onclick="toggleMinimap()" title="Toggle minimap">&#9638;</button>
+      <div class="dag-minimap" id="dag-minimap"></div>
+      <div class="dag-empty" id="dag-empty">
+        <p>No tasks yet. Tasks will appear when issues are detected.</p>
       </div>
     </div>
-  </main>
-</div>
 
+    <!-- Task Table -->
+    <div class="task-table-section">
+      <div class="tt-toolbar">
+        <input type="search" id="table-search" placeholder="Filter tasks...">
+        <select id="table-state-filter">
+          <option value="">All states</option>
+          <option value="running">Running</option>
+          <option value="completed">Completed</option>
+          <option value="failed">Failed</option>
+          <option value="validating">Validating</option>
+          <option value="detected">Detected</option>
+        </select>
+      </div>
+      <div class="task-table" id="task-table"></div>
+    </div>
+  </div>
+
+  <!-- Level 2: Task Detail (hidden until selected) -->
+  <div class="task-detail hidden" id="task-detail">
+    <div class="task-back" id="task-back"></div>
+    <header class="task-header" id="task-header"></header>
+    <div class="metrics-row" id="metrics-row"></div>
+    <div id="phase-banner-container"></div>
+    <div class="pipeline-view hidden" id="pipeline-view">
+      <div class="pv-toolbar">
+        <h3>Pipeline</h3>
+        <div class="pv-controls">
+          <button class="pv-toggle-btn active" id="btn-waterfall-view" onclick="setPipelineView('waterfall')">Waterfall</button>
+          <button class="pv-toggle-btn" id="btn-log-view" onclick="setPipelineView('log')">Log</button>
+          <button class="pv-toggle-btn" id="btn-thinking" onclick="toggleThinking()">Reasoning</button>
+          <button class="pv-toggle-btn" id="btn-text" onclick="toggleText()">Agent text</button>
+        </div>
+      </div>
+      <div id="waterfall-view">
+        <div class="wf-table" id="wf-table"></div>
+        <div class="wf-detail-panel hidden" id="wf-detail-panel"></div>
+      </div>
+      <div id="log-view" class="hidden">
+        <div class="accordion-view" id="accordion-view"></div>
+      </div>
+    </div>
+    <div class="info-tabs" id="info-tabs">
+      <div class="tab-bar" id="tab-bar">
+        <button class="tab-btn active" data-tab="errors" onclick="activateTab('errors')">Errors</button>
+        <button class="tab-btn" data-tab="tools" onclick="activateTab('tools')">Tools</button>
+        <button class="tab-btn" data-tab="coordination" onclick="activateTab('coordination')">Coordination</button>
+        <button class="tab-btn" data-tab="raw" onclick="activateTab('raw')">Raw Session</button>
+      </div>
+      <div id="tab-errors" class="tab-content active"></div>
+      <div id="tab-tools" class="tab-content"></div>
+      <div id="tab-coordination" class="tab-content"></div>
+      <div id="tab-raw" class="tab-content"></div>
+    </div>
+  </div>
+</main>
+
+<script src="/dashboard/elk.js"></script>
 <script src="/dashboard/shared.js"></script>
 <script src="/dashboard/task.js"></script>
 </body>
