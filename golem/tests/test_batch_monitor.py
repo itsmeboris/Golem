@@ -60,13 +60,13 @@ class TestBatchState:
         """Default field values are set correctly."""
         state = BatchState(group_id="g0")
         assert state.group_id == "g0"
-        assert state.task_ids == []
+        assert not state.task_ids
         assert state.status == "submitted"
         assert state.created_at == ""
         assert state.completed_at == ""
         assert state.total_cost_usd == 0.0
         assert state.total_duration_s == 0.0
-        assert state.task_results == {}
+        assert not state.task_results
         assert state.validation_verdict == ""
 
 
@@ -102,7 +102,7 @@ class TestBatchMonitorBasic:
     def test_get_returns_registered_batch(self):
         """get() returns the batch created by register()."""
         mon = BatchMonitor()
-        registered = mon.register("grp-1", [5, 6])
+        mon.register("grp-1", [5, 6])
         fetched = mon.get("grp-1")
         assert fetched is not None
         assert fetched.group_id == "grp-1"
@@ -262,17 +262,14 @@ class TestBatchMonitorUpdateEdgeCases:
         import glob
 
         leftover = glob.glob(str(tmp_path / ".batches_*.tmp"))
-        assert leftover == []
+        assert not leftover
 
     def test_save_error_before_close_cleans_up(self, tmp_path, monkeypatch):
         """save() closes fd and cleans temp file if os.write/fsync fails."""
-        import os as _os
-
         mon = BatchMonitor()
         mon.register("grp", [1])
 
         save_path = tmp_path / "batches.json"
-        orig_write = _os.write
 
         def fail_write(fd, data):
             raise OSError("write failed")

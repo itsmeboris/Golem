@@ -2,14 +2,14 @@
 """Tests for batch API endpoints, flow-level batch monitor integration, and CLI."""
 
 import argparse
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from golem.core import control_api
 from golem.core.config import Config, GolemFlowConfig
 from golem.core.control_api import wire_control_api
-from golem.orchestrator import TaskSession, TaskSessionState
+from golem.orchestrator import TaskSessionState
 
 
 # ---------------------------------------------------------------------------
