@@ -163,7 +163,7 @@ class TeamsNotifier:
                                 "type": "TextBlock",
                                 "size": "Medium",
                                 "weight": "Bolder",
-                                "text": f"Batch Completed: {group_id}",
+                                "text": f"Batch {status.title()}: {group_id}",
                             },
                             {
                                 "type": "FactSet",

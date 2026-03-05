@@ -666,6 +666,19 @@ class TestCmdBatchSubmit:
         result = cmd_batch(args)
         assert result == 1
 
+    def test_invalid_yaml(self, monkeypatch, tmp_path):
+        from golem.cli import cmd_batch
+
+        monkeypatch.setattr(
+            "golem.cli.load_config", lambda _cfg=None: self._make_config()
+        )
+
+        f = tmp_path / "bad.yaml"
+        f.write_text("tasks:\n  - subject: ok\n  bad indent\n: :\n")
+        args = argparse.Namespace(config=None, batch_command="submit", file=str(f))
+        result = cmd_batch(args)
+        assert result == 1
+
     def test_payload_not_dict(self, monkeypatch, tmp_path):
         from golem.cli import cmd_batch
 
@@ -1178,7 +1191,7 @@ class TestFlowBatchIntegrationValidation:
 
     def test_integration_validation_triggered(self, monkeypatch, tmp_path):
         """When batch completes successfully, run_integration_validation
-        should be scheduled via asyncio.ensure_future."""
+        should be scheduled via loop.create_task."""
         import asyncio
         from golem.backends.local import LogNotifier
 
@@ -1199,13 +1212,13 @@ class TestFlowBatchIntegrationValidation:
         session.state = TaskSessionState.COMPLETED
         session.validation_verdict = "PASS"
 
-        # Mock asyncio.ensure_future to capture the call
-        ensure_future_mock = MagicMock()
-        monkeypatch.setattr(asyncio, "ensure_future", ensure_future_mock)
+        # Mock asyncio.get_running_loop to return a mock loop
+        mock_loop = MagicMock()
+        monkeypatch.setattr(asyncio, "get_running_loop", lambda: mock_loop)
 
         flow._handle_state_transition(session, prev_state)
 
-        ensure_future_mock.assert_called_once()
+        mock_loop.create_task.assert_called_once()
 
     def test_integration_validation_skipped_no_work_dir(self, monkeypatch, tmp_path):
         """When no session has a work_dir, validation is not triggered."""
@@ -1229,15 +1242,45 @@ class TestFlowBatchIntegrationValidation:
         session.state = TaskSessionState.COMPLETED
         session.validation_verdict = "PASS"
 
-        ensure_future_mock = MagicMock()
-        monkeypatch.setattr(asyncio, "ensure_future", ensure_future_mock)
+        mock_loop = MagicMock()
+        monkeypatch.setattr(asyncio, "get_running_loop", lambda: mock_loop)
 
         flow._handle_state_transition(session, prev_state)
 
-        ensure_future_mock.assert_not_called()
+        mock_loop.create_task.assert_not_called()
+
+    def test_integration_validation_no_event_loop(self, monkeypatch, tmp_path):
+        """If no event loop is running, RuntimeError is caught gracefully."""
+        import asyncio
+        from golem.backends.local import LogNotifier
+
+        notifier = MagicMock(spec=LogNotifier)
+        profile = _make_test_profile()
+        object.__setattr__(profile, "notifier", notifier)
+
+        flow = _make_flow(monkeypatch, tmp_path, profile=profile)
+        monkeypatch.setattr(flow, "_spawn_session_task", lambda sid: None)
+
+        result = flow.submit_batch(
+            [{"prompt": "A", "subject": "A"}], group_id="grp-noloop"
+        )
+        tid = result["tasks"][0]["task_id"]
+        session = flow._sessions[tid]
+        session.base_work_dir = "/tmp/work"
+        prev_state = session.state
+        session.state = TaskSessionState.COMPLETED
+        session.validation_verdict = "PASS"
+
+        def no_loop():
+            raise RuntimeError("no running event loop")
+
+        monkeypatch.setattr(asyncio, "get_running_loop", no_loop)
+
+        # Should not raise - RuntimeError is caught
+        flow._handle_state_transition(session, prev_state)
 
     def test_integration_validation_exception_caught(self, monkeypatch, tmp_path):
-        """If ensure_future raises, the exception is caught and logged."""
+        """If create_task raises a non-RuntimeError, it is caught and logged."""
         import asyncio
         from golem.backends.local import LogNotifier
 
@@ -1258,9 +1301,9 @@ class TestFlowBatchIntegrationValidation:
         session.state = TaskSessionState.COMPLETED
         session.validation_verdict = "PASS"
 
-        monkeypatch.setattr(
-            asyncio, "ensure_future", MagicMock(side_effect=RuntimeError("no loop"))
-        )
+        mock_loop = MagicMock()
+        mock_loop.create_task.side_effect = TypeError("bad coroutine")
+        monkeypatch.setattr(asyncio, "get_running_loop", lambda: mock_loop)
 
         # Should not raise - exception is caught
         flow._handle_state_transition(session, prev_state)

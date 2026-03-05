@@ -620,11 +620,18 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                                 work_dir = s.base_work_dir
                                 break
                         if work_dir:
-                            asyncio.ensure_future(
+                            loop = asyncio.get_running_loop()
+                            loop.create_task(
                                 self.run_integration_validation(
                                     batch.group_id, work_dir
                                 )
                             )
+                    except RuntimeError:
+                        logger.debug(
+                            "No event loop; skipping integration validation "
+                            "for batch %s",
+                            batch.group_id,
+                        )
                     except Exception:  # pylint: disable=broad-exception-caught
                         logger.warning(
                             "Failed to trigger integration validation for batch %s",

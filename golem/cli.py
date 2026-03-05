@@ -27,7 +27,6 @@ import time
 import urllib.error
 import urllib.request
 
-import yaml
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -865,6 +864,11 @@ def _format_batch_status(batch: dict) -> None:
     created = batch.get("created_at", "")
     completed = batch.get("completed_at", "")
 
+    _use_color = sys.stdout.isatty()
+
+    def _color(text: str, code: str) -> str:
+        return f"\033[{code}m{text}\033[0m" if _use_color else text
+
     # Header
     print(f"\n{'=' * 60}")
     print(f"  Batch: {group_id}")
@@ -873,11 +877,11 @@ def _format_batch_status(batch: dict) -> None:
     # Status line with color
     status_upper = status.upper()
     if status in ("completed", "done"):
-        status_display = f"\033[32m{status_upper}\033[0m"  # green
+        status_display = _color(status_upper, "32")  # green
     elif status in ("failed", "error"):
-        status_display = f"\033[31m{status_upper}\033[0m"  # red
+        status_display = _color(status_upper, "31")  # red
     elif status in ("running", "in_progress"):
-        status_display = f"\033[33m{status_upper}\033[0m"  # yellow
+        status_display = _color(status_upper, "33")  # yellow
     else:
         status_display = status_upper
     print(f"  Status: {status_display}")
@@ -906,19 +910,19 @@ def _format_batch_status(batch: dict) -> None:
 
             # Color state
             if state == "completed":
-                state_str = f"\033[32m{state:<14}\033[0m"
+                state_str = _color(f"{state:<14}", "32")
             elif state == "failed":
-                state_str = f"\033[31m{state:<14}\033[0m"
+                state_str = _color(f"{state:<14}", "31")
             elif state in ("running", "detected", "planning"):
-                state_str = f"\033[33m{state:<14}\033[0m"
+                state_str = _color(f"{state:<14}", "33")
             else:
                 state_str = f"{state:<14}"
 
             # Color verdict
             if tv.lower() in ("pass", "passed", "success"):
-                verdict_str = f"\033[32m{tv:<12}\033[0m"
+                verdict_str = _color(f"{tv:<12}", "32")
             elif tv.lower() in ("fail", "failed"):
-                verdict_str = f"\033[31m{tv:<12}\033[0m"
+                verdict_str = _color(f"{tv:<12}", "31")
             else:
                 verdict_str = f"{(tv or '-'):<12}"
 
@@ -936,9 +940,9 @@ def _format_batch_status(batch: dict) -> None:
     print(f"  Total duration: {format_duration(total_duration)}")
     if verdict:
         if verdict.lower() in ("pass", "passed", "success"):
-            v_display = f"\033[32m{verdict}\033[0m"
+            v_display = _color(verdict, "32")
         elif verdict.lower() in ("fail", "failed"):
-            v_display = f"\033[31m{verdict}\033[0m"
+            v_display = _color(verdict, "31")
         else:
             v_display = verdict
         print(f"  Overall verdict: {v_display}")
@@ -947,6 +951,11 @@ def _format_batch_status(batch: dict) -> None:
 
 def _cmd_batch_submit(args: argparse.Namespace, config) -> int:
     """Submit a batch of tasks from a JSON or YAML file."""
+    try:
+        import yaml
+    except ImportError:
+        yaml = None  # type: ignore[assignment]
+
     file_path = args.file
     p = Path(file_path)
 
@@ -961,8 +970,18 @@ def _cmd_batch_submit(args: argparse.Namespace, config) -> int:
         return 1
 
     suffix = p.suffix.lower()
+    yaml_exc_types: tuple = (json.JSONDecodeError, ValueError)
+    if yaml is not None:
+        yaml_exc_types = (json.JSONDecodeError, ValueError, yaml.YAMLError)
     try:
         if suffix in (".yaml", ".yml"):
+            if yaml is None:
+                print(
+                    "Error: PyYAML is required for .yaml files "
+                    "(pip install pyyaml)",
+                    file=sys.stderr,
+                )
+                return 1
             payload = yaml.safe_load(raw)
         elif suffix == ".json":
             payload = json.loads(raw)
@@ -971,8 +990,10 @@ def _cmd_batch_submit(args: argparse.Namespace, config) -> int:
             try:
                 payload = json.loads(raw)
             except (json.JSONDecodeError, ValueError):
+                if yaml is None:
+                    raise  # noqa: TRY201
                 payload = yaml.safe_load(raw)
-    except (json.JSONDecodeError, ValueError, yaml.YAMLError) as exc:
+    except yaml_exc_types as exc:
         print(f"Error: failed to parse {file_path}: {exc}", file=sys.stderr)
         return 1
 
