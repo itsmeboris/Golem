@@ -592,52 +592,56 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         # Update batch monitor if task belongs to a batch
         if session.group_id and self._batch_monitor.get(session.group_id):
             batch = self._batch_monitor.update(session.group_id, self._sessions)
+            self._handle_batch_terminal(batch)
 
-            # Notify and trigger validation when batch reaches a terminal state
-            # Guard: only fire once per batch to avoid duplicate notifications
-            if (
-                batch.status in ("completed", "failed")
-                and batch.group_id not in self._notified_batches
-            ):
-                self._notified_batches.add(batch.group_id)
-                self._profile.notifier.notify_batch_completed(
-                    batch.group_id,
-                    batch.status,
-                    total_cost_usd=batch.total_cost_usd,
-                    total_duration_s=batch.total_duration_s,
-                    task_count=len(batch.task_ids),
-                    validation_verdict=batch.validation_verdict,
-                )
+    def _handle_batch_terminal(self, batch: Any) -> None:
+        """Notify and trigger validation when a batch reaches a terminal state."""
+        if batch.status not in ("completed", "failed"):
+            return
+        if batch.group_id in self._notified_batches:
+            return
 
-                # Auto-trigger integration validation for successful batches
-                if batch.status == "completed":
-                    try:
-                        # Use work_dir from the first session in the batch
-                        work_dir = ""
-                        for tid in batch.task_ids:
-                            s = self._sessions.get(tid)
-                            if s and s.base_work_dir:
-                                work_dir = s.base_work_dir
-                                break
-                        if work_dir:
-                            loop = asyncio.get_running_loop()
-                            loop.create_task(
-                                self.run_integration_validation(
-                                    batch.group_id, work_dir
-                                )
-                            )
-                    except RuntimeError:
-                        logger.debug(
-                            "No event loop; skipping integration validation "
-                            "for batch %s",
-                            batch.group_id,
-                        )
-                    except Exception:  # pylint: disable=broad-exception-caught
-                        logger.warning(
-                            "Failed to trigger integration validation for batch %s",
-                            batch.group_id,
-                            exc_info=True,
-                        )
+        self._notified_batches.add(batch.group_id)
+        self._profile.notifier.notify_batch_completed(
+            batch.group_id,
+            batch.status,
+            total_cost_usd=batch.total_cost_usd,
+            total_duration_s=batch.total_duration_s,
+            task_count=len(batch.task_ids),
+            validation_verdict=batch.validation_verdict,
+        )
+
+        if batch.status != "completed":
+            return
+
+        # Auto-trigger integration validation for successful batches
+        work_dir = self._find_batch_work_dir(batch)
+        if not work_dir:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(
+                self.run_integration_validation(batch.group_id, work_dir)
+            )
+        except RuntimeError:
+            logger.debug(
+                "No event loop; skipping integration validation for batch %s",
+                batch.group_id,
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.warning(
+                "Failed to trigger integration validation for batch %s",
+                batch.group_id,
+                exc_info=True,
+            )
+
+    def _find_batch_work_dir(self, batch: Any) -> str:
+        """Return the work_dir from the first session in the batch that has one."""
+        for tid in batch.task_ids:
+            s = self._sessions.get(tid)
+            if s and s.base_work_dir:
+                return s.base_work_dir
+        return ""
 
     # -- Submission support ----------------------------------------------------
 

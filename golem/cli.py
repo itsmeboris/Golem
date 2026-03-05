@@ -833,279 +833,11 @@ def cmd_dashboard(args) -> int:
     return 0
 
 
-def _batch_api_get(port: int, path: str, api_key: str = "") -> dict | None:
-    """GET a batch API endpoint. Returns parsed JSON or None on error."""
-    url = f"http://127.0.0.1:{port}{path}"
-    headers: dict[str, str] = {}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-    req = urllib.request.Request(url, headers=headers)
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return json.loads(resp.read())
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode(errors="replace")
-        print(f"Error {exc.code}: {body}", file=sys.stderr)
-        return None
-    except urllib.error.URLError as exc:
-        print(f"Cannot reach daemon: {exc.reason}", file=sys.stderr)
-        return None
-
-
-def _format_batch_status(batch: dict) -> None:
-    """Print a richly formatted batch status report."""
-    group_id = batch.get("group_id", "?")
-    status = batch.get("status", "?")
-    task_ids = batch.get("task_ids", [])
-    task_results = batch.get("task_results", {})
-    total_cost = batch.get("total_cost_usd", 0.0)
-    total_duration = batch.get("total_duration_s", 0.0)
-    verdict = batch.get("validation_verdict", "")
-    created = batch.get("created_at", "")
-    completed = batch.get("completed_at", "")
-
-    _use_color = sys.stdout.isatty()
-
-    def _color(text: str, code: str) -> str:
-        return f"\033[{code}m{text}\033[0m" if _use_color else text
-
-    # Header
-    print(f"\n{'=' * 60}")
-    print(f"  Batch: {group_id}")
-    print(f"{'=' * 60}")
-
-    # Status line with color
-    status_upper = status.upper()
-    if status in ("completed", "done"):
-        status_display = _color(status_upper, "32")  # green
-    elif status in ("failed", "error"):
-        status_display = _color(status_upper, "31")  # red
-    elif status in ("running", "in_progress"):
-        status_display = _color(status_upper, "33")  # yellow
-    else:
-        status_display = status_upper
-    print(f"  Status: {status_display}")
-
-    if created:
-        print(f"  Created: {created}")
-    if completed:
-        print(f"  Completed: {completed}")
-    print(f"  Tasks: {len(task_ids)}")
-
-    # Per-task breakdown
-    if task_results:
-        print(f"\n  {'─' * 56}")
-        print(
-            f"  {'Task ID':<12} {'State':<14} {'Verdict':<12} "
-            f"{'Cost':>8}  {'Duration':>10}"
-        )
-        print(f"  {'─' * 56}")
-
-        for tid in task_ids:
-            tr = task_results.get(str(tid), {})
-            state = tr.get("state", "unknown")
-            tv = tr.get("validation_verdict", "")
-            cost = tr.get("total_cost_usd", 0.0)
-            dur = tr.get("duration_seconds", 0.0)
-
-            # Color state
-            if state == "completed":
-                state_str = _color(f"{state:<14}", "32")
-            elif state == "failed":
-                state_str = _color(f"{state:<14}", "31")
-            elif state in ("running", "detected", "planning"):
-                state_str = _color(f"{state:<14}", "33")
-            else:
-                state_str = f"{state:<14}"
-
-            # Color verdict
-            if tv.lower() in ("pass", "passed", "success"):
-                verdict_str = _color(f"{tv:<12}", "32")
-            elif tv.lower() in ("fail", "failed"):
-                verdict_str = _color(f"{tv:<12}", "31")
-            else:
-                verdict_str = f"{(tv or '-'):<12}"
-
-            dur_str = format_duration(dur) if dur else "-"
-            cost_str = f"${cost:.2f}" if cost else "-"
-            print(
-                f"  {str(tid):<12} {state_str} {verdict_str} "
-                f"{cost_str:>8}  {dur_str:>10}"
-            )
-
-        print(f"  {'─' * 56}")
-
-    # Totals
-    print(f"\n  Total cost:     ${total_cost:.2f}")
-    print(f"  Total duration: {format_duration(total_duration)}")
-    if verdict:
-        if verdict.lower() in ("pass", "passed", "success"):
-            v_display = _color(verdict, "32")
-        elif verdict.lower() in ("fail", "failed"):
-            v_display = _color(verdict, "31")
-        else:
-            v_display = verdict
-        print(f"  Overall verdict: {v_display}")
-    print()
-
-
-def _cmd_batch_submit(args: argparse.Namespace, config) -> int:
-    """Submit a batch of tasks from a JSON or YAML file."""
-    try:
-        import yaml
-    except ImportError:
-        yaml = None  # type: ignore[assignment]
-
-    file_path = args.file
-    p = Path(file_path)
-
-    if not p.is_file():
-        print(f"Error: file not found: {file_path}", file=sys.stderr)
-        return 1
-
-    # Read and parse the file
-    raw = p.read_text(encoding="utf-8")
-    if not raw.strip():
-        print(f"Error: file is empty: {file_path}", file=sys.stderr)
-        return 1
-
-    suffix = p.suffix.lower()
-    yaml_exc_types: tuple = (json.JSONDecodeError, ValueError)
-    if yaml is not None:
-        yaml_exc_types = (json.JSONDecodeError, ValueError, yaml.YAMLError)
-    try:
-        if suffix in (".yaml", ".yml"):
-            if yaml is None:
-                print(
-                    "Error: PyYAML is required for .yaml files "
-                    "(pip install pyyaml)",
-                    file=sys.stderr,
-                )
-                return 1
-            payload = yaml.safe_load(raw)
-        elif suffix == ".json":
-            payload = json.loads(raw)
-        else:
-            # Try JSON first, then YAML as fallback
-            try:
-                payload = json.loads(raw)
-            except (json.JSONDecodeError, ValueError):
-                if yaml is None:
-                    raise  # noqa: TRY201
-                payload = yaml.safe_load(raw)
-    except yaml_exc_types as exc:
-        print(f"Error: failed to parse {file_path}: {exc}", file=sys.stderr)
-        return 1
-
-    if not isinstance(payload, dict):
-        print(
-            "Error: file must contain a JSON/YAML object with a 'tasks' array",
-            file=sys.stderr,
-        )
-        return 1
-
-    tasks = payload.get("tasks")
-    if not tasks or not isinstance(tasks, list):
-        print("Error: 'tasks' array is required in the batch file", file=sys.stderr)
-        return 1
-
-    # Ensure daemon is running
-    port = config.dashboard.port if config.dashboard else DashboardConfig.port
-    daemon_cfg = config.daemon
-    _ensure_daemon(args, config, port, daemon_cfg=daemon_cfg)
-
-    # POST to /api/submit/batch
-    url = f"http://127.0.0.1:{port}/api/submit/batch"
-    data = json.dumps(payload).encode("utf-8")
-    headers: dict[str, str] = {"Content-Type": "application/json"}
-    api_key = config.dashboard.api_key if config.dashboard else ""
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
-
-    try:
-        with urllib.request.urlopen(
-            req, timeout=daemon_cfg.http_submit_timeout
-        ) as resp:
-            result = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        print(f"  Submit failed ({exc.code}): {body}", file=sys.stderr)
-        return 1
-    except (urllib.error.URLError, OSError) as exc:
-        print(f"  Submit failed: {exc}", file=sys.stderr)
-        return 1
-
-    # Print formatted summary
-    group_id = result.get("group_id", "?")
-    submitted_tasks = result.get("tasks", [])
-
-    print(f"\n{'=' * 60}")
-    print(f"  Batch submitted: {group_id}")
-    print(f"{'=' * 60}")
-    print(f"  Tasks: {len(submitted_tasks)}")
-    print()
-
-    # Show per-task summary with subjects and deps from the input file
-    for i, st in enumerate(submitted_tasks):
-        task_id = st.get("task_id", "?")
-        status = st.get("status", "?")
-        # Pull subject and deps from the original input
-        orig = tasks[i] if i < len(tasks) else {}
-        subject = orig.get("subject", "")
-        key = orig.get("key", "")
-        deps = orig.get("depends_on", [])
-
-        parts = [f"  #{task_id}"]
-        if key:
-            parts.append(f"[key={key}]")
-        parts.append(f"({status})")
-        if subject:
-            parts.append(f"- {subject}")
-        if deps:
-            deps_str = ", ".join(str(d) for d in deps)
-            parts.append(f"  depends_on: [{deps_str}]")
-        print(" ".join(parts))
-
-    print(f"\n  Track with: golem batch status {group_id}")
-    return 0
-
-
 def cmd_batch(args: argparse.Namespace) -> int:
-    """Query batch status from the daemon API."""
-    config = load_config(getattr(args, "config", None))
-    port = config.dashboard.port if config.dashboard else DashboardConfig.port
-    api_key = config.dashboard.api_key if config.dashboard else ""
-    batch_cmd = getattr(args, "batch_command", None)
+    """Dispatch to batch subcommands (submit, status, list)."""
+    from .batch_cli import cmd_batch as _cmd_batch  # pylint: disable=import-outside-toplevel
 
-    if batch_cmd == "submit":
-        return _cmd_batch_submit(args, config)
-
-    if batch_cmd == "status":
-        data = _batch_api_get(port, f"/api/batch/{args.group_id}", api_key=api_key)
-        if data is None:
-            return 1
-        batch = data.get("batch", {})
-        _format_batch_status(batch)
-        return 0
-
-    if batch_cmd == "list":
-        data = _batch_api_get(port, "/api/batches", api_key=api_key)
-        if data is None:
-            return 1
-        batches = data.get("batches", [])
-        if not batches:
-            print("No batches found.")
-            return 0
-        for b in batches:
-            gid = b.get("group_id", "?")
-            status = b.get("status", "?")
-            count = len(b.get("task_ids", []))
-            print(f"  {gid}  status={status}  tasks={count}")
-        return 0
-
-    print("Usage: golem batch {submit,status,list}", file=sys.stderr)
-    return 1
+    return _cmd_batch(args)
 
 
 # ---------------------------------------------------------------------------
@@ -1113,8 +845,8 @@ def cmd_batch(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 
-def main() -> int:
-    """CLI entry point for Golem."""
+def _build_parser() -> argparse.ArgumentParser:
+    """Build the CLI argument parser."""
     parser = argparse.ArgumentParser(
         description="Golem",
         prog="golem",
@@ -1235,9 +967,15 @@ def main() -> int:
     )
     batch_status_p = batch_sub.add_parser("status", help="Show batch status")
     batch_status_p.add_argument("group_id", help="Batch group ID")
-    batch_list_p = batch_sub.add_parser("list", help="List all batches")
+    batch_sub.add_parser("list", help="List all batches")
     batch_p.set_defaults(func=cmd_batch)
 
+    return parser
+
+
+def main() -> int:
+    """CLI entry point for Golem."""
+    parser = _build_parser()
     args = parser.parse_args()
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
