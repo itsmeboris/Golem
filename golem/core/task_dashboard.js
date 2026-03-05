@@ -18,10 +18,12 @@ let _prevFingerprints = {};
 let _liveSnap = {};
 
 /* Pipeline view state */
-let _pipelineView = 'waterfall'; /* 'waterfall' | 'log' */
+let _pipelineView = 'waterfall'; /* 'waterfall' | 'log' | 'live' */
 let _expandedStages = new Set();
 let _stageFingerprint = '';
 let _selectedStageId = null;
+let _liveAutoScroll = true;
+let _liveEventCount = 0;
 
 /* DAG state */
 let _dagFilter = ''; /* '' | 'active' | 'failed' | 'completed' */
@@ -1095,10 +1097,14 @@ function renderPipelineView(id, s) {
 
   document.getElementById('waterfall-view').classList.add('hidden');
   document.getElementById('log-view').classList.add('hidden');
+  document.getElementById('live-view').classList.add('hidden');
 
   if (_pipelineView === 'waterfall') {
     document.getElementById('waterfall-view').classList.remove('hidden');
     renderWaterfallTable(stages, s);
+  } else if (_pipelineView === 'live') {
+    document.getElementById('live-view').classList.remove('hidden');
+    renderLiveTerminal(s);
   } else {
     document.getElementById('log-view').classList.remove('hidden');
     renderAccordionView(stages, s);
@@ -1108,8 +1114,10 @@ function renderPipelineView(id, s) {
 function setPipelineView(view) {
   _pipelineView = view;
   _stageFingerprint = '';
+  _liveEventCount = 0;
   document.getElementById('btn-waterfall-view').classList.toggle('active', view === 'waterfall');
   document.getElementById('btn-log-view').classList.toggle('active', view === 'log');
+  document.getElementById('btn-live-view').classList.toggle('active', view === 'live');
   if (_selectedId && _sessions[_selectedId]) renderPipelineView(_selectedId, _sessions[_selectedId]);
 }
 
@@ -1460,6 +1468,149 @@ function renderStageBody(st, s) {
   }
 
   return html;
+}
+
+/* ── Live Terminal View ───────────────────────────────────── */
+function renderLiveTerminal(s) {
+  const container = document.getElementById('live-terminal');
+  const events = s.event_log || [];
+  const filtered = filterEvents(events);
+
+  /* Only do incremental append if new events arrived */
+  if (filtered.length === _liveEventCount && container.querySelector('.lt-row')) return;
+
+  const isNewRender = _liveEventCount === 0 || !container.querySelector('.lt-row');
+  const startIdx = isNewRender ? 0 : _liveEventCount;
+  _liveEventCount = filtered.length;
+
+  if (!filtered.length) {
+    container.innerHTML = '<div class="lt-empty">Waiting for events\u2026 Events will stream here as the agent works.</div>';
+    return;
+  }
+
+  /* Stats bar (always re-render) */
+  const toolCalls = filtered.filter(e => (e.kind || e.type) === 'tool_call').length;
+  const errors = filtered.filter(e => e.is_error).length;
+  const textMsgs = filtered.filter(e => (e.kind || e.type) === 'text').length;
+  const supervisorMsgs = filtered.filter(e => (e.kind || e.type) === 'supervisor').length;
+  const isRunning = s.state === 'running';
+
+  let statsHtml = '<div class="lt-stats-bar">';
+  statsHtml += `<span>\u2699 Tools:<span class="lt-stat-val">${toolCalls}</span></span>`;
+  statsHtml += `<span>\u2709 Messages:<span class="lt-stat-val">${textMsgs}</span></span>`;
+  if (supervisorMsgs) statsHtml += `<span>\u25C6 Supervisor:<span class="lt-stat-val">${supervisorMsgs}</span></span>`;
+  if (errors) statsHtml += `<span style="color:var(--red)">\u2717 Errors:<span class="lt-stat-val">${errors}</span></span>`;
+  statsHtml += `<span>Total:<span class="lt-stat-val">${filtered.length}</span></span>`;
+  if (isRunning) statsHtml += '<span style="color:var(--blue)">\u25CF live</span>';
+  statsHtml += `<label class="lt-auto-scroll"><input type="checkbox" ${_liveAutoScroll ? 'checked' : ''} onchange="_liveAutoScroll=this.checked"> Auto-scroll</label>`;
+  statsHtml += '</div>';
+
+  if (isNewRender) {
+    let html = statsHtml;
+    html += '<div class="lt-events">';
+    html += filtered.map(renderLiveRow).join('');
+    html += '<div class="lt-scroll-anchor"></div>';
+    html += '</div>';
+    container.innerHTML = html;
+  } else {
+    /* Update stats bar */
+    const existingStats = container.querySelector('.lt-stats-bar');
+    if (existingStats) {
+      const temp = document.createElement('div');
+      temp.innerHTML = statsHtml;
+      existingStats.replaceWith(temp.firstElementChild);
+    }
+    /* Append new events */
+    const anchor = container.querySelector('.lt-scroll-anchor');
+    const newEvents = filtered.slice(startIdx);
+    for (const ev of newEvents) {
+      const temp = document.createElement('div');
+      temp.innerHTML = renderLiveRow(ev);
+      if (temp.firstElementChild && anchor) anchor.before(temp.firstElementChild);
+    }
+  }
+
+  /* Auto-scroll to bottom */
+  if (_liveAutoScroll) {
+    const anchor = container.querySelector('.lt-scroll-anchor');
+    if (anchor) anchor.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }
+}
+
+function renderLiveRow(ev) {
+  const kind = ev.kind || ev.type || '';
+  const toolName = ev.tool_name || '';
+  const text = ev.summary || ev.text || '';
+  const isError = ev.is_error;
+  const ts = ev.timestamp ? fmtTermTs(ev.timestamp) : '';
+
+  let icon, label, cls, body;
+
+  switch (kind) {
+    case 'tool_call':
+      icon = '\u2699';
+      /* Detect Agent calls and render them specially */
+      if (toolName === 'Agent') {
+        cls = 'lt-agent';
+        label = 'AGENT';
+        body = text || 'Agent subagent spawned';
+      } else {
+        cls = 'lt-tool-call';
+        label = toolName || 'TOOL';
+        body = text || toolName;
+      }
+      break;
+    case 'tool_result':
+    case 'result':
+      if (kind === 'result' && !isError) {
+        icon = '\u2501';
+        cls = 'lt-result';
+        label = 'DONE';
+        body = text;
+        break;
+      }
+      icon = isError ? '\u2717' : '\u2192';
+      cls = isError ? 'lt-error' : 'lt-tool-result';
+      label = isError ? 'ERROR' : 'RESULT';
+      body = text;
+      break;
+    case 'text':
+      icon = '\u2026';
+      cls = 'lt-text';
+      label = 'TEXT';
+      body = text;
+      break;
+    case 'thinking':
+      icon = '~';
+      cls = 'lt-thinking';
+      label = 'THINK';
+      body = text;
+      break;
+    case 'error':
+      icon = '\u2717';
+      cls = 'lt-error';
+      label = 'ERROR';
+      body = text;
+      break;
+    case 'supervisor':
+      icon = isError ? '\u2717' : '\u25C6';
+      cls = isError ? 'lt-error' : 'lt-supervisor';
+      label = 'SUPER';
+      body = text;
+      break;
+    default:
+      icon = '\u00B7';
+      cls = '';
+      label = kind.toUpperCase() || 'EVENT';
+      body = text || kind;
+  }
+
+  return `<div class="lt-row ${cls}">
+    <span class="lt-icon">${icon}</span>
+    <span class="lt-label">${esc(label)}</span>
+    <span class="lt-body">${esc(body)}</span>
+    ${ts ? `<span class="lt-ts">${ts}</span>` : '<span></span>'}
+  </div>`;
 }
 
 /* ── Accordion / Tree View ─────────────────────────────────── */

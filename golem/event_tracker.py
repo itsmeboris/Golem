@@ -95,6 +95,20 @@ def _summarize_keyed(key: str) -> Callable[[str, dict], str]:
     return _fn
 
 
+def _summarize_agent(_name: str, inp: dict) -> str:
+    desc = inp.get("description", "")
+    prompt = inp.get("prompt", "")
+    agent_type = inp.get("subagent_type", "")
+    parts = []
+    if agent_type:
+        parts.append(f"[{agent_type}]")
+    if desc:
+        parts.append(desc[:80])
+    elif prompt:
+        parts.append(prompt.replace("\n", " ").strip()[:80])
+    return "Agent: " + " ".join(parts) if parts else ""
+
+
 def _summarize_default(name: str, _inp: dict) -> str:
     if name.startswith("mcp__"):
         parts = name.split("__")
@@ -111,6 +125,7 @@ _TOOL_SUMMARIZERS: dict[str, Callable[[str, dict], str]] = {
     "Grep": _summarize_grep,
     "Task": _summarize_keyed("description"),
     "ToolSearch": _summarize_keyed("query"),
+    "Agent": _summarize_agent,
 }
 
 
