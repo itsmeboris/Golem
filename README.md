@@ -39,7 +39,7 @@ Most AI coding tools wait for you to invoke them. Golem runs the other way aroun
 
 **Parallel execution** — Multiple Claude instances run simultaneously, each on a different task. Every task gets its own git worktree, so concurrent work never collides. When tasks complete, changes merge cleanly back into your branch.
 
-**Closed-loop validation** — Every task goes through a separate validation agent before anything is committed. If the result is partial, Golem retries automatically. Only fully validated work gets committed and pushed.
+**Closed-loop validation** — Every task goes through a separate validation agent before anything is committed. If the result is partial, Golem retries with structured feedback (specific files to fix, test failures, and actionable concerns). A static antipattern scanner also checks the diff for traceback leaks, cross-module private access, and string-matching control flow. Only fully validated work gets committed and pushed.
 
 **Pluggable everything** — The profile system decouples Golem from any specific tracker, notifier, or tool provider. Swap Redmine for GitHub Issues, Teams for Slack, or write your own backend — without touching core logic.
 
@@ -223,15 +223,16 @@ Switch with one line in config:
 ```yaml
 profile: local     # file-based submissions, no external services
 profile: redmine   # Redmine issue tracking + Slack/Teams + MCP
+profile: github    # GitHub Issues via gh CLI + Slack/Teams
 ```
 
-| Interface | Purpose | Redmine profile | Local profile |
-|-----------|---------|-----------------|---------------|
-| `TaskSource` | Discover and read tasks | Redmine REST API | File drop (`data/submissions/`) |
-| `StateBackend` | Update status, post comments | Redmine REST API | No-op |
-| `Notifier` | Send lifecycle notifications | Slack or Teams (configurable) | Log to stdout |
-| `ToolProvider` | Select MCP servers per task | Keyword-based scoping | None (or keyword-based if `mcp_enabled`) |
-| `PromptProvider` | Load prompt templates | `prompts/` directory | `prompts/` |
+| Interface | Purpose | Redmine profile | Local profile | GitHub profile |
+|-----------|---------|-----------------|---------------|----------------|
+| `TaskSource` | Discover and read tasks | Redmine REST API | File drop (`data/submissions/`) | `gh issue list` |
+| `StateBackend` | Update status, post comments | Redmine REST API | No-op | `gh issue edit/comment` |
+| `Notifier` | Send lifecycle notifications | Slack or Teams (configurable) | Log to stdout | Slack or Teams (configurable) |
+| `ToolProvider` | Select MCP servers per task | Keyword-based scoping | None (or keyword-based if `mcp_enabled`) | None (or keyword-based if `mcp_enabled`) |
+| `PromptProvider` | Load prompt templates | `prompts/` directory | `prompts/` | `prompts/` |
 
 The `local` profile is the default for prompt-based workflows. Submitted prompts (via CLI, HTTP API, or file drop) are always handled through the daemon's submission pipeline regardless of which profile is active.
 
@@ -263,8 +264,9 @@ golem/
 │   ├── slack_notifier.py  #   Slack Block Kit notifier
 │   ├── teams_notifier.py  #   Teams Adaptive Card notifier
 │   ├── mcp_tools.py       #   Keyword-based MCP tool provider
+│   ├── github.py          #   GitHub Issues via gh CLI
 │   ├── local.py           #   File-drop task source + null backends
-│   └── profiles.py        #   Built-in profile factories (local, redmine)
+│   └── profiles.py        #   Built-in profile factories (local, redmine, github)
 │
 ├── prompts/               # Prompt templates
 ├── core/                  # Shared utilities
@@ -321,42 +323,42 @@ SLACK_GOLEM_WEBHOOK_URL=https://hooks.slack.com/services/T/B/X  # optional
 
 ## Custom Profiles
 
-Implement the five protocols from `interfaces.py` and register:
+Three profiles ship built-in: `local`, `redmine`, and `github`. To create your own, implement the five protocols from `interfaces.py` and register:
 
 ```python
 from golem.profile import register_profile, GolemProfile
 from golem.backends.local import LogNotifier, NullToolProvider
 from golem.prompts import FilePromptProvider
 
-class GitHubTaskSource:
+class JiraTaskSource:
     def poll_tasks(self, projects, detection_tag, timeout=30):
         ...
     def get_task_description(self, task_id):
         ...
 
-class GitHubStateBackend:
+class JiraStateBackend:
     def update_status(self, task_id, status):
         ...
     def post_comment(self, task_id, text):
         ...
 
-def _build_github_profile(config):
+def _build_jira_profile(config):
     return GolemProfile(
-        name="github",
-        task_source=GitHubTaskSource(),
-        state_backend=GitHubStateBackend(),
+        name="jira",
+        task_source=JiraTaskSource(),
+        state_backend=JiraStateBackend(),
         notifier=LogNotifier(),
         tool_provider=NullToolProvider(),
         prompt_provider=FilePromptProvider(),
     )
 
-register_profile("github", _build_github_profile)
+register_profile("jira", _build_jira_profile)
 ```
 
 Then in `config.yaml`:
 
 ```yaml
-profile: github
+profile: jira
 ```
 
 ---

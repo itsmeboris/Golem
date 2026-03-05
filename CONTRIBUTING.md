@@ -33,7 +33,7 @@ pytest golem/tests/ -x -q
 
 ## Adding a Backend
 
-Implement the five protocols in `interfaces.py` (`TaskSource`, `StateBackend`, `Notifier`, `ToolProvider`, `PromptProvider`) and register via `register_profile()`. See `backends/local.py` for a minimal example.
+Implement the five protocols in `interfaces.py` (`TaskSource`, `StateBackend`, `Notifier`, `ToolProvider`, `PromptProvider`) and register via `register_profile()`. See `backends/local.py` for a minimal example and `backends/github.py` for a full CLI-based implementation.
 
 ## Tests
 
