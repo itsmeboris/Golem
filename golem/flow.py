@@ -238,6 +238,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         self._session_tasks.clear()
 
         from .core.cli_wrapper import kill_all_active
+
         killed = kill_all_active()
         if killed:
             logger.info("Killed %d orphaned CLI subprocess(es)", killed)
