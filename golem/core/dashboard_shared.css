@@ -35,6 +35,15 @@
   --metrics-min:120px;
   --tab-pre-max-h:500px;
   --responsive-sidebar:300px;
+  /* DAG graph derived tokens */
+  --dag-node-bg:var(--bg-elevated);
+  --dag-edge-default:var(--text-dim);
+  --dag-edge-active:var(--blue);
+  --dag-edge-done:color-mix(in srgb, var(--green) 40%, transparent);
+  --dag-edge-failed:var(--red);
+  --dag-cluster-border:color-mix(in srgb, var(--border) 50%, transparent);
+  --dag-minimap-bg:var(--bg-base);
+  --dag-minimap-viewport:color-mix(in srgb, var(--blue) 20%, transparent);
 }
 body{font-family:var(--font-sans);background:var(--bg-base);color:var(--text-primary);line-height:1.5;overflow:hidden;height:100vh;display:flex;flex-direction:column}
 

@@ -59,8 +59,8 @@
 }
 .dag-minimap{
   position:absolute;bottom:8px;right:8px;width:120px;height:80px;
-  background:rgba(11,15,25,0.85);border:1px solid var(--border);border-radius:4px;
-  overflow:hidden
+  background:var(--dag-minimap-bg);border:1px solid var(--border);border-radius:4px;
+  overflow:hidden;opacity:0.85
 }
 .dag-minimap svg{width:100%;height:100%}
 .dag-minimap-toggle{
@@ -94,6 +94,10 @@
 .dag-edge.dimmed{opacity:0.04}
 @keyframes dag-pulse-flash{0%{filter:brightness(1)}50%{filter:brightness(1.8)}100%{filter:brightness(1)}}
 .dag-node-pulse .dag-node-rect{animation:dag-pulse-flash 0.4s ease-out 2}
+
+/* DAG group cluster borders */
+.dag-cluster rect{fill:none;stroke:var(--dag-cluster-border);stroke-width:1;stroke-dasharray:4 3;rx:12}
+.dag-cluster text{fill:var(--text-muted);font-size:10px;font-weight:600}
 
 /* Dependency chips in task detail */
 .dep-chip{
