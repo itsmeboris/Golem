@@ -244,15 +244,12 @@ class TestBatchMonitorUpdateEdgeCases:
         batch = mon.update("grp", sessions)
         assert batch.validation_verdict == ""
 
-    def test_save_error_cleans_up_temp_file(self, tmp_path, monkeypatch):
-        """save() cleans up temp file if os.replace fails."""
-        import os as _os
-
+    def test_save_error_after_close_cleans_up_temp_file(self, tmp_path, monkeypatch):
+        """save() cleans up temp file if os.replace fails after fd is closed."""
         mon = BatchMonitor()
         mon.register("grp", [1])
 
         save_path = tmp_path / "batches.json"
-        orig_replace = _os.replace
 
         def fail_replace(src, dst):
             raise OSError("disk full")
@@ -266,6 +263,41 @@ class TestBatchMonitorUpdateEdgeCases:
 
         leftover = glob.glob(str(tmp_path / ".batches_*.tmp"))
         assert leftover == []
+
+    def test_save_error_before_close_cleans_up(self, tmp_path, monkeypatch):
+        """save() closes fd and cleans temp file if os.write/fsync fails."""
+        import os as _os
+
+        mon = BatchMonitor()
+        mon.register("grp", [1])
+
+        save_path = tmp_path / "batches.json"
+        orig_write = _os.write
+
+        def fail_write(fd, data):
+            raise OSError("write failed")
+
+        monkeypatch.setattr("os.write", fail_write)
+        with pytest.raises(OSError, match="write failed"):
+            mon.save(save_path)
+
+    def test_save_error_unlink_fails_silently(self, tmp_path, monkeypatch):
+        """save() swallows OSError from os.unlink in cleanup."""
+        mon = BatchMonitor()
+        mon.register("grp", [1])
+
+        save_path = tmp_path / "batches.json"
+
+        def fail_replace(src, dst):
+            raise OSError("disk full")
+
+        def fail_unlink(path):
+            raise OSError("unlink failed")
+
+        monkeypatch.setattr("os.replace", fail_replace)
+        monkeypatch.setattr("os.unlink", fail_unlink)
+        with pytest.raises(OSError, match="disk full"):
+            mon.save(save_path)
 
 
 class TestBatchMonitorList:
