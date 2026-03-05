@@ -31,10 +31,8 @@
   --radius:6px;
   --radius-lg:8px;
   /* Overridable per-dashboard */
-  --sidebar-width:360px;
   --metrics-min:120px;
   --tab-pre-max-h:500px;
-  --responsive-sidebar:300px;
   /* DAG graph derived tokens */
   --dag-node-bg:var(--bg-elevated);
   --dag-edge-default:var(--text-dim);

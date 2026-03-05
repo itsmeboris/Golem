@@ -158,8 +158,3 @@ function renderMarkdown(md) {
   html = html.replace(/^(?!<[hulo\s]|<pre|<code|<\/|$)(.+)$/gm, '<p>$1</p>');
   return '<div class="markdown-body">' + html + '</div>';
 }
-
-/* ── Sidebar toggle ────────────────────────────────────────── */
-function toggleSidebar() {
-  $('#sidebar').classList.toggle('open');
-}
