@@ -95,6 +95,34 @@ class TestListBatchesReturnsSubmitted:
         assert grp_list[0]["status"] == "submitted"
 
 
+class TestGetBatchReturnsNone:
+    def test_get_batch_returns_none_for_unknown(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path)
+        assert flow.get_batch("nonexistent") is None
+
+
+class TestBatchMonitorUpdateOnSessionChange:
+    def test_session_change_triggers_batch_update(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path)
+        monkeypatch.setattr(flow, "_spawn_session_task", lambda sid: None)
+
+        result = flow.submit_batch(
+            [{"prompt": "task A", "subject": "A"}], group_id="grp-update"
+        )
+        tid = result["tasks"][0]["task_id"]
+        session = flow._sessions[tid]
+        prev_state = session.state
+        session.state = TaskSessionState.COMPLETED
+        session.validation_verdict = "PASS"
+
+        # Trigger _handle_state_transition which updates batch monitor
+        flow._handle_state_transition(session, prev_state)
+
+        batch = flow._batch_monitor.get("grp-update")
+        assert batch is not None
+        assert batch.status == "completed"
+
+
 class TestBatchStatusUpdatesOnCompletion:
     def test_batch_status_updates_on_completion(self, monkeypatch, tmp_path):
         flow = _make_flow(monkeypatch, tmp_path)
@@ -235,6 +263,28 @@ class TestListBatchesEndpoint:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(
+    not control_api.FASTAPI_AVAILABLE,
+    reason="FastAPI not installed",
+)
+class TestBatchEndpoints503WhenNoFlow:
+    @pytest.mark.asyncio
+    async def test_get_batch_503_when_no_flow(self):
+        from golem.core.control_api import get_batch
+
+        wire_control_api()  # reset — no golem_flow
+        with pytest.raises(Exception, match="Daemon not ready"):
+            await get_batch("any-group")
+
+    @pytest.mark.asyncio
+    async def test_list_batches_503_when_no_flow(self):
+        from golem.core.control_api import list_batches
+
+        wire_control_api()  # reset — no golem_flow
+        with pytest.raises(Exception, match="Daemon not ready"):
+            await list_batches()
+
+
 class TestCmdBatchNoSubcommand:
     def test_cmd_batch_no_subcommand(self, monkeypatch, tmp_path):
         from golem.cli import cmd_batch
@@ -246,5 +296,141 @@ class TestCmdBatchNoSubcommand:
         )
 
         args = argparse.Namespace(config=None, batch_command=None)
+        result = cmd_batch(args)
+        assert result == 1
+
+
+class TestCmdBatchStatus:
+    def test_cmd_batch_status_success(self, monkeypatch):
+        import json
+        import urllib.request
+
+        from golem.cli import cmd_batch
+
+        monkeypatch.setattr("golem.cli.load_config", lambda _cfg=None: Config())
+
+        response_data = json.dumps(
+            {"batch": {"group_id": "grp", "status": "completed"}}
+        ).encode()
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = response_data
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **kw: mock_resp)
+
+        args = argparse.Namespace(config=None, batch_command="status", group_id="grp")
+        result = cmd_batch(args)
+        assert result == 0
+
+    def test_cmd_batch_status_http_error(self, monkeypatch):
+        import urllib.error
+        import urllib.request
+
+        from golem.cli import cmd_batch
+
+        monkeypatch.setattr("golem.cli.load_config", lambda _cfg=None: Config())
+
+        def raise_http_error(*a, **kw):
+            raise urllib.error.HTTPError(
+                None, 404, "Not Found", {}, MagicMock(read=lambda: b"nope")
+            )
+
+        monkeypatch.setattr(urllib.request, "urlopen", raise_http_error)
+
+        args = argparse.Namespace(config=None, batch_command="status", group_id="grp")
+        result = cmd_batch(args)
+        assert result == 1
+
+    def test_cmd_batch_status_url_error(self, monkeypatch):
+        import urllib.error
+        import urllib.request
+
+        from golem.cli import cmd_batch
+
+        monkeypatch.setattr("golem.cli.load_config", lambda _cfg=None: Config())
+
+        def raise_url_error(*a, **kw):
+            raise urllib.error.URLError("Connection refused")
+
+        monkeypatch.setattr(urllib.request, "urlopen", raise_url_error)
+
+        args = argparse.Namespace(config=None, batch_command="status", group_id="grp")
+        result = cmd_batch(args)
+        assert result == 1
+
+
+class TestCmdBatchList:
+    def test_cmd_batch_list_success(self, monkeypatch):
+        import json
+        import urllib.request
+
+        from golem.cli import cmd_batch
+
+        monkeypatch.setattr("golem.cli.load_config", lambda _cfg=None: Config())
+
+        batches = [{"group_id": "grp-1", "status": "completed", "task_ids": [1, 2]}]
+        response_data = json.dumps({"batches": batches}).encode()
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = response_data
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **kw: mock_resp)
+
+        args = argparse.Namespace(config=None, batch_command="list")
+        result = cmd_batch(args)
+        assert result == 0
+
+    def test_cmd_batch_list_empty(self, monkeypatch):
+        import json
+        import urllib.request
+
+        from golem.cli import cmd_batch
+
+        monkeypatch.setattr("golem.cli.load_config", lambda _cfg=None: Config())
+
+        response_data = json.dumps({"batches": []}).encode()
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = response_data
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **kw: mock_resp)
+
+        args = argparse.Namespace(config=None, batch_command="list")
+        result = cmd_batch(args)
+        assert result == 0
+
+    def test_cmd_batch_list_http_error(self, monkeypatch):
+        import urllib.error
+        import urllib.request
+
+        from golem.cli import cmd_batch
+
+        monkeypatch.setattr("golem.cli.load_config", lambda _cfg=None: Config())
+
+        def raise_http_error(*a, **kw):
+            raise urllib.error.HTTPError(
+                None, 500, "Error", {}, MagicMock(read=lambda: b"err")
+            )
+
+        monkeypatch.setattr(urllib.request, "urlopen", raise_http_error)
+
+        args = argparse.Namespace(config=None, batch_command="list")
+        result = cmd_batch(args)
+        assert result == 1
+
+    def test_cmd_batch_list_url_error(self, monkeypatch):
+        import urllib.error
+        import urllib.request
+
+        from golem.cli import cmd_batch
+
+        monkeypatch.setattr("golem.cli.load_config", lambda _cfg=None: Config())
+
+        def raise_url_error(*a, **kw):
+            raise urllib.error.URLError("Connection refused")
+
+        monkeypatch.setattr(urllib.request, "urlopen", raise_url_error)
+
+        args = argparse.Namespace(config=None, batch_command="list")
         result = cmd_batch(args)
         assert result == 1

@@ -221,6 +221,53 @@ class TestBatchMonitorPersistence:
 # ---------------------------------------------------------------------------
 
 
+class TestBatchMonitorUpdateEdgeCases:
+    def test_update_skips_missing_session(self):
+        """Tasks not in sessions dict are skipped (continue branch)."""
+        mon = BatchMonitor()
+        mon.register("grp", [1, 2])
+        sessions = {
+            1: _make_session(state="completed"),
+            # task 2 is missing from sessions
+        }
+        batch = mon.update("grp", sessions)
+        # Only 1 completed out of 2 total, no in-flight, no failed → submitted
+        assert batch.status == "submitted"
+
+    def test_update_no_verdicts_sets_empty(self):
+        """When no tasks have verdicts, validation_verdict is empty."""
+        mon = BatchMonitor()
+        mon.register("grp", [1])
+        sessions = {
+            1: _make_session(state="completed", validation_verdict=""),
+        }
+        batch = mon.update("grp", sessions)
+        assert batch.validation_verdict == ""
+
+    def test_save_error_cleans_up_temp_file(self, tmp_path, monkeypatch):
+        """save() cleans up temp file if os.replace fails."""
+        import os as _os
+
+        mon = BatchMonitor()
+        mon.register("grp", [1])
+
+        save_path = tmp_path / "batches.json"
+        orig_replace = _os.replace
+
+        def fail_replace(src, dst):
+            raise OSError("disk full")
+
+        monkeypatch.setattr("os.replace", fail_replace)
+        with pytest.raises(OSError, match="disk full"):
+            mon.save(save_path)
+
+        # Temp file should be cleaned up
+        import glob
+
+        leftover = glob.glob(str(tmp_path / ".batches_*.tmp"))
+        assert leftover == []
+
+
 class TestBatchMonitorList:
     def test_list_batches_sorted_by_created_at(self):
         """list_batches() returns batches sorted by created_at descending."""
