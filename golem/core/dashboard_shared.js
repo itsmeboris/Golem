@@ -60,6 +60,12 @@ function truncText(s, n) {
   return s.length > n ? s.slice(0, n) + '\u2026' : s;
 }
 
+/** Shorten a numeric task ID for display (e.g. 1772720007620 → "…7620"). */
+function shortId(id) {
+  const s = String(id);
+  return s.length > 6 ? '\u2026' + s.slice(-4) : s;
+}
+
 /* ── JSON formatting & highlighting ────────────────────────── */
 
 /** Try to detect and pretty-print JSON; returns {formatted, isJson, isPartialJson} */

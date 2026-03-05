@@ -148,7 +148,7 @@ function renderTaskTable() {
     html += `<div class="tt-row" data-id="${id}" onclick="pulseDagNode('${id}');selectTask('${id}')"
       onmouseenter="highlightDagNode('${id}')" onmouseleave="unhighlightDagNode()">
       <span class="tt-check"><input type="checkbox"${checked} onclick="event.stopPropagation();toggleDagSelect('${id}')"></span>
-      <span class="tt-id">#${id}</span>
+      <span class="tt-id" title="#${id}">#${shortId(id)}</span>
       <span class="tt-subject">${subject}</span>
       <span class="tt-state st-${state}">${stateLabel}</span>
       <span class="tt-cost">${cost}</span>
@@ -696,7 +696,7 @@ function renderDagSvg(layout) {
     const textX = node.x + 12;
     const labelY = node.y + 20;
     svg += `<text x="${textX}" y="${labelY}" fill="${colors.text}" font-size="11" font-weight="700"
-      font-family="system-ui,sans-serif">#${taskId}</text>`;
+      font-family="system-ui,sans-serif">#${shortId(taskId)}</text>`;
     svg += `<text x="${node.x + node.w - 10}" y="${labelY}" fill="${colors.stroke}" font-size="8"
       font-weight="600" text-anchor="end" opacity="0.7" text-transform="uppercase" letter-spacing="0.5"
       font-family="system-ui,sans-serif">${stateLabel}</text>`;
@@ -906,7 +906,7 @@ function renderHeader(id, s) {
   $('#task-back').innerHTML = '<button class="back-btn" onclick="deselectTask()">&larr; Dashboard</button>';
   $('#task-header').innerHTML = `
     <div class="th-top">
-      <span class="th-id">#${id}</span>
+      <span class="th-id" title="#${id}">#${shortId(id)}</span>
       ${mode ? `<span class="th-mode">${esc(mode)}</span>` : ''}
       <span class="th-badge" style="${stateBadgeStyle(state)}">${esc(state)}</span>
       ${sha ? `<span class="th-mode" title="${esc(sha)}">&#10003; ${esc(sha.slice(0, 7))}</span>` : ''}
@@ -948,7 +948,7 @@ function renderMetrics(s) {
       const dSubject = ds ? truncText((ds.parent_subject || '').replace(/^\[AGENT\]\s*/, ''), 25) : 'Task';
       const dState = ds ? ds.state || 'pending' : 'pending';
       const dColors = DAG_COLORS[dState] || DAG_COLORS.pending;
-      return `<a href="#/task/${d}" class="dep-chip" style="border-color:${dColors.stroke};color:${dColors.text}" title="#${d} (${dState})"><span class="dep-chip-dot" style="background:${dColors.stroke}"></span>#${d} ${esc(dSubject)}</a>`;
+      return `<a href="#/task/${d}" class="dep-chip" style="border-color:${dColors.stroke};color:${dColors.text}" title="#${d} (${dState})"><span class="dep-chip-dot" style="background:${dColors.stroke}"></span>#${shortId(d)} ${esc(dSubject)}</a>`;
     }).join('');
     cards.push({ label: 'Dependencies', value: depChips, cls: '', wide: true });
   }
@@ -1005,7 +1005,7 @@ function computeStages(s) {
   const allEvents = s.event_log || [];
   const taskId = s.parent_issue_id || _selectedId;
 
-  stages.push({ id: 'task', type: 'task', label: '#' + taskId,
+  stages.push({ id: 'task', type: 'task', label: '#' + shortId(taskId),
     state: state === 'detected' ? 'pending' : 'completed', events: [],
     meta: { subject: s.parent_subject, mode: s.execution_mode } });
 
@@ -1669,7 +1669,7 @@ function renderInfoTabs(s) {
     coordRows.push(['Dependencies', depIds.map(d => {
       const ds = _sessions[d], dState = ds ? ds.state : 'unknown';
       const style = ds ? stateBadgeStyle(dState) : 'background:#1e293b;color:#94a3b8';
-      return `<a href="#/task/${d}" style="text-decoration:none"><span class="th-badge" style="${style};font-size:0.65rem;cursor:pointer">#${d} ${esc(dState)}</span></a>`;
+      return `<a href="#/task/${d}" style="text-decoration:none" title="#${d}"><span class="th-badge" style="${style};font-size:0.65rem;cursor:pointer">#${shortId(d)} ${esc(dState)}</span></a>`;
     }).join(' ')]);
   }
   if (s.merge_ready) coordRows.push(['Merge Status', '<span style="color:var(--blue);font-weight:600">Queued for merge</span>']);

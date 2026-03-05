@@ -49,6 +49,14 @@ Thumbs.db
 # Agent
 AGENTS.md
 
+# Worktree artifacts leaked into subdirectories
+golem/.claude/
+golem/HEAD
+golem/config
+golem/hooks
+golem/objects
+golem/refs
+
 # Claude CLI sandbox artifacts
 .bash_profile
 .bashrc

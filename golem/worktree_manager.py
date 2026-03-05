@@ -20,6 +20,7 @@ Key exports:
 import logging
 import os
 import re
+import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -405,13 +406,16 @@ def _cleanup_worktree_impl(
     if result.returncode != 0:
         # Fallback: prune and try again
         _run_git(["worktree", "prune"], cwd=base_dir)
-        # If directory still exists, just log a warning
-        if Path(worktree_path).exists():
+        # If directory still exists, force-remove it so a fresh worktree
+        # can be created (the .git file inside may be corrupted/missing).
+        wt = Path(worktree_path)
+        if wt.exists():
             logger.warning(
-                "Could not remove worktree at %s: %s",
+                "Could not remove worktree at %s via git: %s — removing directory",
                 worktree_path,
                 result.stderr.strip(),
             )
+            shutil.rmtree(str(wt), ignore_errors=True)
 
     # Delete the branch
     if branch_name:
