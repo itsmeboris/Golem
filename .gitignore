@@ -48,6 +48,7 @@ Thumbs.db
 
 # Agent
 AGENTS.md
+CLAUDE.md
 
 # Worktree artifacts leaked into subdirectories
 golem/.claude/
@@ -72,3 +73,6 @@ HEAD
 /objects
 /refs
 .playwright-mcp/
+
+#plan files
+docs/plans
