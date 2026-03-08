@@ -257,6 +257,15 @@ class LogNotifier:
             total_cost_usd,
         )
 
+    def notify_health_alert(
+        self,
+        alert_type: str,
+        message: str,
+        *,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        logger.info("[health:%s] %s details=%s", alert_type, message, details)
+
 
 # ---------------------------------------------------------------------------
 # NullToolProvider

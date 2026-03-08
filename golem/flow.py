@@ -16,10 +16,12 @@ import asyncio
 import json
 import logging
 import shutil
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from .core.config import Config, DATA_DIR, GolemFlowConfig
+from .health import HealthMonitor
 from .core.live_state import LiveState
 from .core.triggers.base import TriggerEvent
 from .core.flow_base import BaseFlow, FlowResult, PollableFlow, WebhookableFlow
@@ -93,6 +95,10 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         )
         self._max_infra_retries = getattr(self._task_config, "max_infra_retries", 2)
         self._batch_monitor = BatchMonitor()
+        self._health = HealthMonitor(
+            config=config.health,
+            notifier=self._profile.notifier,
+        )
         self._notified_batches: set[str] = set()
 
         self._submissions_dir = SUBMISSIONS_DIR
@@ -109,6 +115,10 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
     @property
     def mcp_servers(self) -> list[str]:
         return self._profile.tool_provider.base_servers()
+
+    @property
+    def health(self) -> HealthMonitor:
+        return self._health
 
     # -- BaseFlow interface ---------------------------------------------------
 
@@ -247,11 +257,22 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
 
     async def _detection_loop(self) -> None:
         """Periodically poll for new [AGENT] issues and spawn session tasks."""
+        last_health_check = 0.0
         while self._running:
             try:
                 self._detect_new_issues()
+                self._health.record_poll_success()
             except Exception:  # pylint: disable=broad-exception-caught
                 logger.exception("Error in detection loop")
+                self._health.record_poll_error()
+
+            self._health.record_heartbeat()
+
+            now = time.time()
+            if now - last_health_check >= self._health.check_interval:
+                self._health.check()
+                last_health_check = now
+
             await asyncio.sleep(self._task_config.tick_interval)
 
     def _detect_new_issues(self) -> None:
@@ -566,6 +587,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                 commit_sha=session.commit_sha,
                 retry_count=session.retry_count,
             )
+            self._health.record_task_result(success=True)
 
         # Failed — finish in LiveState and notify
         if (
@@ -594,6 +616,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                     cost_usd=session.total_cost_usd,
                     duration_s=session.duration_seconds,
                 )
+            self._health.record_task_result(success=False)
 
         # Update batch monitor if task belongs to a batch
         if session.group_id and self._batch_monitor.get(session.group_id):
@@ -676,9 +699,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
 
         Returns ``{"task_id": <int>, "status": "submitted"}``.
         """
-        import time as _time
-
-        task_id = int(_time.time() * 1000)
+        task_id = int(time.time() * 1000)
         if not subject:
             subject = f"[AGENT] {prompt[:80]}"
 
@@ -720,10 +741,8 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
 
         Returns ``{"group_id": ..., "tasks": [{"task_id": ..., "status": ...}]}``.
         """
-        import time as _time
-
         if not group_id:
-            group_id = f"batch-{int(_time.time() * 1000)}"
+            group_id = f"batch-{int(time.time() * 1000)}"
 
         results: list[dict[str, Any]] = []
         dep_map: dict[int | str, int] = {}

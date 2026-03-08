@@ -78,6 +78,19 @@ teams:
   # webhooks:
   #   golem: ${TEAMS_GOLEM_WEBHOOK_URL}
 
+# Health monitoring & alerting
+health:
+  enabled: true
+  check_interval_seconds: 60
+  consecutive_failure_threshold: 3
+  error_rate_threshold: 0.5
+  error_rate_window_seconds: 900   # 15-minute time window
+  error_rate_min_tasks: 4          # minimum tasks before evaluating
+  queue_depth_threshold: 10
+  stale_seconds: 3600
+  alert_cooldown_seconds: 900
+  disk_usage_threshold_gb: 0       # 0 = disabled
+
 logging:
   log_level: INFO
   store_agent_traces: true

@@ -990,6 +990,14 @@ class TestRunSessionWithSubmissionProfile:
         assert captured_profiles[0].name == "test"
 
 
+class TestHealthProperty:
+    def test_returns_health_monitor(self, monkeypatch, tmp_path):
+        from golem.health import HealthMonitor
+
+        flow = _make_flow(monkeypatch, tmp_path)
+        assert isinstance(flow.health, HealthMonitor)
+
+
 class TestSaveState:
     def test_delegates_to_save_sessions(self, monkeypatch, tmp_path):
         flow = _make_flow(monkeypatch, tmp_path)

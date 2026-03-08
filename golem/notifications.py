@@ -163,3 +163,30 @@ def build_task_escalation_card(
 
     actions = [_open_url_action("View Issue", f"{REDMINE_ISSUES_URL}/{parent_id}")]
     return _card_envelope(body, actions)
+
+
+def build_health_alert_card(
+    alert_type: str,
+    message: str,
+    details: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Card sent when a daemon health threshold is breached."""
+    from .health import ALERT_LABELS
+
+    label = ALERT_LABELS.get(alert_type, alert_type.replace("_", " ").title())
+
+    body: list[dict[str, Any]] = [
+        _header_block(f"Golem Health Alert: {label}", color="attention"),
+        _text_block(message),
+    ]
+
+    if details:
+        facts: list[tuple[str, str]] = []
+        if "value" in details and details["value"] is not None:
+            facts.append(("Current", str(details["value"])))
+        if "threshold" in details and details["threshold"] is not None:
+            facts.append(("Threshold", str(details["threshold"])))
+        if facts:
+            body.append(_fact_set(facts))
+
+    return _card_envelope(body)

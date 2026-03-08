@@ -1323,6 +1323,16 @@ class TestControlApiWiring:
         assert "pid" in result
         assert "uptime_seconds" in result
 
+    def test_health_endpoint_includes_metrics_when_wired(self):
+        from golem.core.control_api import health_check, wire_control_api
+
+        mock_flow = MagicMock()
+        mock_flow.health.snapshot.return_value = {"status": "healthy"}
+        wire_control_api(golem_flow=mock_flow)
+        result = asyncio.run(health_check())
+        assert result["health"] == {"status": "healthy"}
+        wire_control_api(golem_flow=None)
+
     def test_submit_without_flow_raises(self):
         from golem.core.control_api import submit_task, wire_control_api
         from fastapi import HTTPException

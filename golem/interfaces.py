@@ -171,6 +171,16 @@ class Notifier(Protocol):
         """Notify that a batch of tasks has completed (or failed)."""
         ...  # pragma: no cover
 
+    def notify_health_alert(
+        self,
+        alert_type: str,
+        message: str,
+        *,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        """Notify about a daemon health alert."""
+        ...  # pragma: no cover
+
 
 # ---------------------------------------------------------------------------
 # ToolProvider — MCP server selection

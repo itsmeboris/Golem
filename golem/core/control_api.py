@@ -173,12 +173,15 @@ if FASTAPI_AVAILABLE:
 
     @health_router.get("/health")
     async def health_check():
-        """Lightweight health check for CLI daemon-readiness probing."""
-        return {
+        """Health check — includes metrics when GolemFlow is wired."""
+        result = {
             "ok": True,
             "pid": os.getpid(),
             "uptime_seconds": round(time.time() - _start_time, 1),
         }
+        if _golem_flow is not None:
+            result["health"] = _golem_flow.health.snapshot()
+        return result
 
     @health_router.post("/submit")
     async def submit_task(request: Request):

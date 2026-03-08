@@ -1,6 +1,7 @@
 # pylint: disable=too-few-public-methods
 """Tests for batch notification backends and flow-level batch integration."""
 
+import pytest
 from unittest.mock import MagicMock
 
 from golem.core.config import Config, GolemFlowConfig
@@ -206,6 +207,125 @@ class TestLogNotifierBatch:
         assert "grp-log2" in caplog.text
         assert "completed" in caplog.text
         assert "3 tasks" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# Health alert notification tests
+# ---------------------------------------------------------------------------
+
+
+class TestSlackNotifierHealthAlert:
+    def test_notify_health_alert_basic(self):
+        from golem.backends.slack_notifier import SlackNotifier
+
+        client = MagicMock()
+        notifier = SlackNotifier(client, "test-chan")
+        notifier.notify_health_alert("queue_depth", "Queue too deep")
+        client.send_to_channel.assert_called_once()
+        payload = client.send_to_channel.call_args[0][1]
+        assert "Health alert: Queue Backlog" in payload["text"]
+        blocks = payload["blocks"]
+        assert "Queue Backlog" in blocks[0]["text"]["text"]
+        assert "Queue too deep" in blocks[1]["text"]["text"]
+
+    def test_notify_health_alert_with_details(self):
+        from golem.backends.slack_notifier import SlackNotifier
+
+        client = MagicMock()
+        notifier = SlackNotifier(client, "test-chan")
+        notifier.notify_health_alert(
+            "high_error_rate",
+            "Error rate too high",
+            details={"value": 0.5, "threshold": 0.1},
+        )
+        client.send_to_channel.assert_called_once()
+        payload = client.send_to_channel.call_args[0][1]
+        blocks = payload["blocks"]
+        field_texts = [f["text"] for f in blocks[2]["fields"]]
+        assert any("0.5" in t for t in field_texts)
+        assert any("0.1" in t for t in field_texts)
+
+    def test_notify_health_alert_unknown_type(self):
+        from golem.backends.slack_notifier import SlackNotifier
+
+        client = MagicMock()
+        notifier = SlackNotifier(client, "test-chan")
+        notifier.notify_health_alert("custom_alert", "Something happened")
+        payload = client.send_to_channel.call_args[0][1]
+        assert "Custom Alert" in payload["text"]
+
+    @pytest.mark.parametrize(
+        "details, expected_block_count",
+        [
+            (None, 2),
+            ({"value": None, "threshold": None}, 2),
+            ({"value": 10, "threshold": None}, 3),
+            ({"value": None, "threshold": 5}, 3),
+            ({"value": 10, "threshold": 5}, 3),
+        ],
+    )
+    def test_health_alert_block_count(self, details, expected_block_count):
+        from golem.backends.slack_notifier import SlackNotifier
+
+        client = MagicMock()
+        notifier = SlackNotifier(client, "test-chan")
+        notifier.notify_health_alert("stale_daemon", "Daemon idle", details=details)
+        payload = client.send_to_channel.call_args[0][1]
+        assert len(payload["blocks"]) == expected_block_count
+
+
+class TestTeamsNotifierHealthAlert:
+    def test_notify_health_alert_basic(self):
+        from golem.backends.teams_notifier import TeamsNotifier
+
+        client = MagicMock()
+        notifier = TeamsNotifier(client, "chan")
+        notifier.notify_health_alert("stale_daemon", "Daemon is idle")
+        client.send_to_channel.assert_called_once()
+        card = client.send_to_channel.call_args[0][1]
+        body_str = str(card)
+        assert "Health Alert" in body_str
+        assert "Daemon Idle" in body_str
+
+    def test_notify_health_alert_with_details(self):
+        from golem.backends.teams_notifier import TeamsNotifier
+
+        client = MagicMock()
+        notifier = TeamsNotifier(client, "chan")
+        notifier.notify_health_alert(
+            "consecutive_failures",
+            "Too many failures",
+            details={"value": 7, "threshold": 5},
+        )
+        body_str = str(client.send_to_channel.call_args[0][1])
+        assert "7" in body_str
+        assert "5" in body_str
+
+
+class TestLogNotifierHealthAlert:
+    def test_notify_health_alert_logs(self, caplog):
+        import logging
+        from golem.backends.local import LogNotifier
+
+        with caplog.at_level(logging.INFO, logger="golem.backends.local"):
+            notifier = LogNotifier()
+            notifier.notify_health_alert(
+                "queue_depth",
+                "Queue is full",
+                details={"value": 100, "threshold": 50},
+            )
+        assert "queue_depth" in caplog.text
+        assert "Queue is full" in caplog.text
+
+    def test_notify_health_alert_no_details(self, caplog):
+        import logging
+        from golem.backends.local import LogNotifier
+
+        with caplog.at_level(logging.INFO, logger="golem.backends.local"):
+            notifier = LogNotifier()
+            notifier.notify_health_alert("stale_daemon", "Idle too long")
+        assert "stale_daemon" in caplog.text
+        assert "Idle too long" in caplog.text
 
 
 # ---------------------------------------------------------------------------

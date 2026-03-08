@@ -276,6 +276,29 @@ class TestTeamsNotifier:
         )
         client.send_to_channel.assert_called_once()
 
+    def test_notify_health_alert_basic(self):
+        client = MagicMock()
+        notifier = TeamsNotifier(client, "chan")
+        notifier.notify_health_alert("queue_depth", "Queue too deep")
+        client.send_to_channel.assert_called_once()
+        card = client.send_to_channel.call_args[0][1]
+        assert card["type"] == "AdaptiveCard"
+        body_str = str(card)
+        assert "Health Alert" in body_str
+
+    def test_notify_health_alert_with_details(self):
+        client = MagicMock()
+        notifier = TeamsNotifier(client, "chan")
+        notifier.notify_health_alert(
+            "high_error_rate",
+            "Rate exceeded",
+            details={"value": 0.5, "threshold": 0.1},
+        )
+        client.send_to_channel.assert_called_once()
+        body_str = str(client.send_to_channel.call_args[0][1])
+        assert "0.5" in body_str
+        assert "0.1" in body_str
+
     def test_send_error_logged(self):
         client = MagicMock()
         client.send_to_channel.side_effect = RuntimeError("network error")

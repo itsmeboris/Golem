@@ -8,6 +8,7 @@ import logging
 from typing import Any
 
 from ..notifications import (
+    build_health_alert_card,
     build_task_completed_card,
     build_task_escalation_card,
     build_task_failure_card,
@@ -174,6 +175,21 @@ class TeamsNotifier:
                 }
             ],
         }
+        self._send(card)
+
+    def notify_health_alert(
+        self,
+        alert_type: str,
+        message: str,
+        *,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        """Send a health alert card to Teams."""
+        card = build_health_alert_card(
+            alert_type=alert_type,
+            message=message,
+            details=details,
+        )
         self._send(card)
 
     def _send(self, card: dict[str, Any]) -> None:

@@ -65,6 +65,9 @@ class DummyNotifier:
     def notify_batch_completed(self, group_id, status, **kwargs):
         pass
 
+    def notify_health_alert(self, alert_type, message, **kwargs):
+        pass
+
 
 class DummyToolProvider:
     def base_servers(self):

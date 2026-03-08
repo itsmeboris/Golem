@@ -141,6 +141,22 @@ class PollingConfig:
 
 
 @dataclass
+class HealthConfig:
+    """Daemon health monitoring thresholds and alert settings."""
+
+    enabled: bool = True
+    check_interval_seconds: int = 60
+    consecutive_failure_threshold: int = 3
+    error_rate_threshold: float = 0.5
+    error_rate_window_seconds: int = 900  # 15-minute time window
+    error_rate_min_tasks: int = 4  # minimum tasks in window before evaluating
+    queue_depth_threshold: int = 10
+    stale_seconds: int = 3600
+    alert_cooldown_seconds: int = 900
+    disk_usage_threshold_gb: float = 0  # 0 = disabled
+
+
+@dataclass
 class TeamsConfig:
     """Teams incoming webhook integration settings."""
 
@@ -167,6 +183,7 @@ class Config:
     webhook: WebhookConfig = field(default_factory=WebhookConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     polling: PollingConfig = field(default_factory=PollingConfig)
+    health: HealthConfig = field(default_factory=HealthConfig)
     teams: TeamsConfig = field(default_factory=TeamsConfig)
     slack: SlackConfig = field(default_factory=SlackConfig)
     dry_run: bool = False
@@ -311,6 +328,21 @@ def _parse_polling_config(data: dict[str, Any]) -> PollingConfig:
     )
 
 
+def _parse_health_config(data: dict[str, Any]) -> HealthConfig:
+    return HealthConfig(
+        enabled=data.get("enabled", True),
+        check_interval_seconds=data.get("check_interval_seconds", 60),
+        consecutive_failure_threshold=data.get("consecutive_failure_threshold", 3),
+        error_rate_threshold=data.get("error_rate_threshold", 0.5),
+        error_rate_window_seconds=data.get("error_rate_window_seconds", 900),
+        error_rate_min_tasks=data.get("error_rate_min_tasks", 4),
+        queue_depth_threshold=data.get("queue_depth_threshold", 10),
+        stale_seconds=data.get("stale_seconds", 3600),
+        alert_cooldown_seconds=data.get("alert_cooldown_seconds", 900),
+        disk_usage_threshold_gb=data.get("disk_usage_threshold_gb", 0),
+    )
+
+
 def _parse_teams_config(data: dict[str, Any]) -> TeamsConfig:
     return TeamsConfig(
         enabled=data.get("enabled", False),
@@ -373,6 +405,7 @@ def load_config(config_path: str | Path | None = None) -> Config:
         webhook=_parse_webhook_config(raw_config.get("webhook", {})),
         logging=_parse_logging_config(raw_config.get("logging", {})),
         polling=_parse_polling_config(raw_config.get("polling", {})),
+        health=_parse_health_config(raw_config.get("health", {})),
         teams=_parse_teams_config(raw_config.get("teams", {})),
         slack=_parse_slack_config(raw_config.get("slack", {})),
     )

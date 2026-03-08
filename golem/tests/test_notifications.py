@@ -1,8 +1,11 @@
 # pylint: disable=too-few-public-methods
 """Tests for golem.notifications — Teams card builders."""
 
+import pytest
+
 from golem.notifications import (
     _fmt_duration,
+    build_health_alert_card,
     build_task_activity_card,
     build_task_completed_card,
     build_task_escalation_card,
@@ -125,3 +128,72 @@ class TestBuildTaskEscalationCard:
         assert "Needs Review" in body_str
         assert "PARTIAL" in body_str
         assert "Missing test" in body_str
+
+
+class TestBuildHealthAlertCard:
+    @pytest.mark.parametrize(
+        "alert_type, expected_label",
+        [
+            ("consecutive_failures", "Consecutive Failures"),
+            ("high_error_rate", "High Error Rate"),
+            ("queue_depth", "Queue Backlog"),
+            ("stale_daemon", "Daemon Idle"),
+            ("unknown_type", "Unknown Type"),
+        ],
+    )
+    def test_known_and_unknown_labels(self, alert_type, expected_label):
+        card = build_health_alert_card(alert_type, "Something went wrong")
+        body_str = str(card)
+        assert expected_label in body_str
+
+    def test_structure_no_details(self):
+        card = build_health_alert_card("queue_depth", "Queue is too deep")
+        assert card["type"] == "AdaptiveCard"
+        body_str = str(card)
+        assert "Health Alert" in body_str
+        assert "Queue is too deep" in body_str
+
+    def test_details_with_value_and_threshold(self):
+        card = build_health_alert_card(
+            "high_error_rate",
+            "Error rate exceeded",
+            details={"value": 0.42, "threshold": 0.10},
+        )
+        body_str = str(card)
+        assert "0.42" in body_str
+        assert "0.1" in body_str
+
+    def test_details_with_none_value_omitted(self):
+        card = build_health_alert_card(
+            "consecutive_failures",
+            "Too many failures",
+            details={"value": None, "threshold": 5},
+        )
+        body_str = str(card)
+        assert "Current" not in body_str
+        assert "5" in body_str
+
+    def test_details_with_none_threshold_omitted(self):
+        card = build_health_alert_card(
+            "consecutive_failures",
+            "Too many failures",
+            details={"value": 10, "threshold": None},
+        )
+        body_str = str(card)
+        assert "10" in body_str
+        assert "Threshold" not in body_str
+
+    def test_details_both_none_no_fact_set(self):
+        card = build_health_alert_card(
+            "stale_daemon",
+            "Daemon is idle",
+            details={"value": None, "threshold": None},
+        )
+        body_str = str(card)
+        assert "Current" not in body_str
+        assert "Threshold" not in body_str
+
+    def test_no_details_no_fact_set(self):
+        card = build_health_alert_card("stale_daemon", "Daemon is idle", details=None)
+        # body should have only header and text block (2 items)
+        assert len(card["body"]) == 2

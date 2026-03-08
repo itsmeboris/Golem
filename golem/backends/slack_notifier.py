@@ -176,6 +176,30 @@ class SlackNotifier:
         ]
         self._send(blocks, f"Batch {status}: {group_id}")
 
+    def notify_health_alert(
+        self,
+        alert_type: str,
+        message: str,
+        *,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        from ..health import ALERT_LABELS
+
+        label = ALERT_LABELS.get(alert_type, alert_type.replace("_", " ").title())
+        blocks: list[dict[str, Any]] = [
+            _header(f"Health Alert: {label}", ":rotating_light:"),
+            _section(message),
+        ]
+        if details:
+            facts: list[tuple[str, str]] = []
+            if "value" in details and details["value"] is not None:
+                facts.append(("Current", str(details["value"])))
+            if "threshold" in details and details["threshold"] is not None:
+                facts.append(("Threshold", str(details["threshold"])))
+            if facts:
+                blocks.append(_fields(facts))
+        self._send(blocks, f"Health alert: {label}")
+
     def _send(self, blocks: list[dict[str, Any]], fallback_text: str) -> None:
         payload = {"text": fallback_text, "blocks": blocks}
         try:
