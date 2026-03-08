@@ -52,6 +52,7 @@ from .orchestrator import (
     save_sessions,
     _now_iso,
 )
+from .checkpoint import is_checkpoint_fresh, load_checkpoint
 from .priority_gate import PriorityGate
 from .profile import GolemProfile, build_profile
 from .prompts import FilePromptProvider
@@ -951,6 +952,34 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         recovered = recover_sessions(self._sessions)
         if recovered:
             logger.info("Recovered %d RUNNING session(s) -> DETECTED", recovered)
+
+        max_age = self._task_config.checkpoint_max_age_minutes
+        restored = 0
+        for sid, session in self._sessions.items():
+            if session.state != TaskSessionState.DETECTED:
+                continue
+            cp = load_checkpoint(sid)
+            if cp is None or not is_checkpoint_fresh(cp, max_age_minutes=max_age):
+                continue
+            phase = cp.get("phase", "")
+            session_data = {
+                k: v for k, v in cp.items() if k not in ("phase", "saved_at")
+            }
+            try:
+                restored_session = TaskSession.from_dict(session_data)
+                restored_session.state = TaskSessionState.DETECTED
+                self._sessions[sid] = restored_session
+                restored += 1
+                logger.info(
+                    "Restored session #%d from checkpoint (phase=%s)", sid, phase
+                )
+            except Exception:  # pylint: disable=broad-exception-caught
+                logger.warning(
+                    "Failed to restore session #%d from checkpoint", sid, exc_info=True
+                )
+        if restored:
+            logger.info("Restored %d session(s) from checkpoints", restored)
+
         self._processed_ids = {
             sid
             for sid, s in self._sessions.items()

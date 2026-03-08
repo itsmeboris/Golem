@@ -998,6 +998,264 @@ class TestHealthProperty:
         assert isinstance(flow.health, HealthMonitor)
 
 
+class TestCheckpointRecovery:
+    """Tests for checkpoint-based session recovery in GolemFlow._load_state()."""
+
+    def test_restores_session_from_fresh_checkpoint(self, monkeypatch, tmp_path):
+        """Session restored from fresh checkpoint preserves accumulated state."""
+        sessions_path = tmp_path / "golem_sessions.json"
+        data = {
+            "sessions": {
+                "600": {
+                    "parent_issue_id": 600,
+                    "parent_subject": "important task",
+                    "state": "running",
+                    "total_cost_usd": 1.5,
+                    "retry_count": 0,
+                    "tools_called": ["Read", "Write"],
+                },
+            },
+            "completed_ids": [],
+        }
+        sessions_path.write_text(json.dumps(data))
+        monkeypatch.setattr("golem.orchestrator.SESSIONS_FILE", sessions_path)
+
+        checkpoint_data = {
+            "parent_issue_id": 600,
+            "parent_subject": "important task",
+            "state": "running",
+            "total_cost_usd": 2.0,
+            "retry_count": 1,
+            "tools_called": ["Read", "Write", "Bash"],
+            "saved_at": "2025-01-01T00:00:00+00:00",
+            "phase": "validated",
+        }
+        monkeypatch.setattr(
+            "golem.flow.load_checkpoint",
+            lambda sid: dict(checkpoint_data) if sid == 600 else None,
+        )
+        monkeypatch.setattr("golem.flow.is_checkpoint_fresh", lambda cp, **kw: True)
+
+        profile = _make_test_profile()
+        config = Config(
+            golem=GolemFlowConfig(enabled=True, projects=["p"], profile="test")
+        )
+        monkeypatch.setattr("golem.flow.build_profile", lambda _n, _c: profile)
+
+        from golem.flow import GolemFlow
+
+        flow = GolemFlow(config)
+
+        assert 600 in flow._sessions
+        restored = flow._sessions[600]
+        # State is always reset to DETECTED after restoration
+        assert restored.state == TaskSessionState.DETECTED
+        # The richer data from the checkpoint should be present
+        assert restored.total_cost_usd == 2.0
+        assert restored.retry_count == 1
+        assert "Bash" in restored.tools_called
+
+    def test_skips_stale_checkpoint(self, monkeypatch, tmp_path):
+        """Stale checkpoint (past max_age) is ignored, session stays as-is."""
+        sessions_path = tmp_path / "golem_sessions.json"
+        data = {
+            "sessions": {
+                "601": {
+                    "parent_issue_id": 601,
+                    "parent_subject": "stale task",
+                    "state": "running",
+                },
+            },
+            "completed_ids": [],
+        }
+        sessions_path.write_text(json.dumps(data))
+        monkeypatch.setattr("golem.orchestrator.SESSIONS_FILE", sessions_path)
+
+        checkpoint_data = {
+            "parent_issue_id": 601,
+            "parent_subject": "stale task",
+            "state": "running",
+            "total_cost_usd": 5.0,
+            "saved_at": "2000-01-01T00:00:00+00:00",
+            "phase": "executing",
+        }
+        monkeypatch.setattr(
+            "golem.flow.load_checkpoint",
+            lambda sid: dict(checkpoint_data) if sid == 601 else None,
+        )
+        monkeypatch.setattr("golem.flow.is_checkpoint_fresh", lambda cp, **kw: False)
+
+        profile = _make_test_profile()
+        config = Config(
+            golem=GolemFlowConfig(enabled=True, projects=["p"], profile="test")
+        )
+        monkeypatch.setattr("golem.flow.build_profile", lambda _n, _c: profile)
+
+        from golem.flow import GolemFlow
+
+        flow = GolemFlow(config)
+
+        # Session was recovered from running->detected but NOT from the stale checkpoint
+        assert 601 in flow._sessions
+        # total_cost_usd should be the default, not 5.0 from the stale checkpoint
+        assert flow._sessions[601].total_cost_usd == 0.0
+
+    def test_skips_missing_checkpoint(self, monkeypatch, tmp_path):
+        """No checkpoint file — session stays as-is (DETECTED with defaults)."""
+        sessions_path = tmp_path / "golem_sessions.json"
+        data = {
+            "sessions": {
+                "602": {
+                    "parent_issue_id": 602,
+                    "parent_subject": "no checkpoint",
+                    "state": "running",
+                },
+            },
+            "completed_ids": [],
+        }
+        sessions_path.write_text(json.dumps(data))
+        monkeypatch.setattr("golem.orchestrator.SESSIONS_FILE", sessions_path)
+
+        monkeypatch.setattr("golem.flow.load_checkpoint", lambda sid: None)
+
+        profile = _make_test_profile()
+        config = Config(
+            golem=GolemFlowConfig(enabled=True, projects=["p"], profile="test")
+        )
+        monkeypatch.setattr("golem.flow.build_profile", lambda _n, _c: profile)
+
+        from golem.flow import GolemFlow
+
+        flow = GolemFlow(config)
+
+        assert 602 in flow._sessions
+        assert flow._sessions[602].state == TaskSessionState.DETECTED
+        assert flow._sessions[602].total_cost_usd == 0.0
+
+    def test_corrupt_checkpoint_skipped(self, monkeypatch, tmp_path):
+        """Corrupt checkpoint doesn't crash _load_state, session stays as-is."""
+        sessions_path = tmp_path / "golem_sessions.json"
+        data = {
+            "sessions": {
+                "603": {
+                    "parent_issue_id": 603,
+                    "parent_subject": "corrupt cp",
+                    "state": "running",
+                },
+            },
+            "completed_ids": [],
+        }
+        sessions_path.write_text(json.dumps(data))
+        monkeypatch.setattr("golem.orchestrator.SESSIONS_FILE", sessions_path)
+
+        # Return a fresh-looking checkpoint but with invalid content that
+        # causes TaskSession.from_dict to raise
+        monkeypatch.setattr(
+            "golem.flow.load_checkpoint",
+            lambda sid: {
+                "saved_at": "2099-01-01T00:00:00+00:00",
+                "phase": "executing",
+                "parent_issue_id": "not-an-int",  # will cause from_dict to fail
+            },
+        )
+        monkeypatch.setattr("golem.flow.is_checkpoint_fresh", lambda cp, **kw: True)
+
+        profile = _make_test_profile()
+        config = Config(
+            golem=GolemFlowConfig(enabled=True, projects=["p"], profile="test")
+        )
+        monkeypatch.setattr("golem.flow.build_profile", lambda _n, _c: profile)
+
+        from golem.flow import GolemFlow
+
+        # Must not raise
+        flow = GolemFlow(config)
+
+        assert 603 in flow._sessions
+        assert flow._sessions[603].state == TaskSessionState.DETECTED
+
+    def test_skips_completed_sessions(self, monkeypatch, tmp_path):
+        """Completed/failed sessions are not considered for checkpoint recovery."""
+        sessions_path = tmp_path / "golem_sessions.json"
+        data = {
+            "sessions": {
+                "605": {
+                    "parent_issue_id": 605,
+                    "parent_subject": "already done",
+                    "state": "completed",
+                    "total_cost_usd": 3.0,
+                },
+            },
+            "completed_ids": [605],
+        }
+        sessions_path.write_text(json.dumps(data))
+        monkeypatch.setattr("golem.orchestrator.SESSIONS_FILE", sessions_path)
+
+        load_called = []
+        monkeypatch.setattr(
+            "golem.flow.load_checkpoint",
+            lambda sid: load_called.append(sid),
+        )
+
+        profile = _make_test_profile()
+        config = Config(
+            golem=GolemFlowConfig(enabled=True, projects=["p"], profile="test")
+        )
+        monkeypatch.setattr("golem.flow.build_profile", lambda _n, _c: profile)
+
+        from golem.flow import GolemFlow
+
+        flow = GolemFlow(config)
+
+        assert 605 in flow._sessions
+        assert flow._sessions[605].state == TaskSessionState.COMPLETED
+        assert not load_called
+
+    def test_restored_session_state_is_detected(self, monkeypatch, tmp_path):
+        """Restored session always has state=DETECTED regardless of checkpoint state."""
+        sessions_path = tmp_path / "golem_sessions.json"
+        data = {
+            "sessions": {
+                "604": {
+                    "parent_issue_id": 604,
+                    "parent_subject": "in-flight",
+                    "state": "running",
+                },
+            },
+            "completed_ids": [],
+        }
+        sessions_path.write_text(json.dumps(data))
+        monkeypatch.setattr("golem.orchestrator.SESSIONS_FILE", sessions_path)
+
+        # Checkpoint says state=validating — should be overridden to DETECTED
+        checkpoint_data = {
+            "parent_issue_id": 604,
+            "parent_subject": "in-flight",
+            "state": "validating",
+            "total_cost_usd": 0.5,
+            "saved_at": "2099-01-01T00:00:00+00:00",
+            "phase": "validated",
+        }
+        monkeypatch.setattr(
+            "golem.flow.load_checkpoint",
+            lambda sid: dict(checkpoint_data) if sid == 604 else None,
+        )
+        monkeypatch.setattr("golem.flow.is_checkpoint_fresh", lambda cp, **kw: True)
+
+        profile = _make_test_profile()
+        config = Config(
+            golem=GolemFlowConfig(enabled=True, projects=["p"], profile="test")
+        )
+        monkeypatch.setattr("golem.flow.build_profile", lambda _n, _c: profile)
+
+        from golem.flow import GolemFlow
+
+        flow = GolemFlow(config)
+
+        assert 604 in flow._sessions
+        assert flow._sessions[604].state == TaskSessionState.DETECTED
+
+
 class TestSaveState:
     def test_delegates_to_save_sessions(self, monkeypatch, tmp_path):
         flow = _make_flow(monkeypatch, tmp_path)
