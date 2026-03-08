@@ -16,6 +16,7 @@ import asyncio
 import json
 import logging
 import shutil
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -78,6 +79,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         self._sessions: dict[int, TaskSession] = {}
         self._trackers: dict[int, TaskEventTracker] = {}
         self._processed_ids: set[int] = set()
+        self._save_lock = threading.Lock()
         self._running = False
         self._detection_task: asyncio.Task | None = None
         self._session_tasks: dict[int, asyncio.Task] = {}
@@ -958,9 +960,10 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         self._batch_monitor.load(batch_file)
 
     def _save_state(self) -> None:
-        save_sessions(self._sessions)
-        batch_file = self.SESSIONS_DIR / "golem_batches.json"
-        self._batch_monitor.save(batch_file)
+        with self._save_lock:
+            save_sessions(self._sessions)
+            batch_file = self.SESSIONS_DIR / "golem_batches.json"
+            self._batch_monitor.save(batch_file)
 
     def reset_state(self) -> None:
         """Delete all session state."""

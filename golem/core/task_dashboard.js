@@ -1082,7 +1082,7 @@ function renderPipelineView(id, s) {
   section.classList.remove('hidden');
 
   const stages = computeStages(s);
-  const fp = (s.state || '') + '|' + (s.milestone_count || 0) + '|' +
+  const fp = id + '|' + (s.state || '') + '|' + (s.milestone_count || 0) + '|' +
     (s.total_cost_usd || 0) + '|' + ((s.event_log || []).length) + '|' +
     (s.validation_verdict || '') + '|' +
     (s.supervisor_phase || '') + '|' +

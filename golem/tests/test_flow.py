@@ -1009,3 +1009,9 @@ class TestSaveState:
         )
         flow._save_state()
         assert len(saved) == 1
+
+    def test_save_state_is_thread_safe(self, monkeypatch, tmp_path):
+        import threading
+
+        flow = _make_flow(monkeypatch, tmp_path)
+        assert type(flow._save_lock) is type(threading.Lock())
