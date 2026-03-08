@@ -457,24 +457,28 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
 
     @app.get("/dashboard/shared.css")
     async def shared_css() -> Response:
-        return Response(content=_shared_css_cache.read(), media_type="text/css")
+        return Response(content=_shared_css_cache.read(), media_type="text/css",
+                        headers=_NO_CACHE_HEADERS)
 
     @app.get("/dashboard/shared.js")
     async def shared_js() -> Response:
         return Response(
             content=_shared_js_cache.read(),
             media_type="application/javascript",
+            headers=_NO_CACHE_HEADERS,
         )
 
     @app.get("/dashboard/task.css")
     async def task_css() -> Response:
-        return Response(content=_task_css_cache.read(), media_type="text/css")
+        return Response(content=_task_css_cache.read(), media_type="text/css",
+                        headers=_NO_CACHE_HEADERS)
 
     @app.get("/dashboard/task.js")
     async def task_js() -> Response:
         return Response(
             content=_task_js_cache.read(),
             media_type="application/javascript",
+            headers=_NO_CACHE_HEADERS,
         )
 
     @app.get("/dashboard/elk.js")
@@ -482,15 +486,34 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
         return Response(
             content=_elk_js_cache.read(),
             media_type="application/javascript",
+            headers=_NO_CACHE_HEADERS,
         )
 
     @app.get("/dashboard")
     async def dashboard() -> HTMLResponse:
-        return HTMLResponse(content=_task_dashboard_cache.read())
+        html = _task_dashboard_cache.read()
+        # Inject cache-busting version query params into asset URLs
+        # so browsers fetch fresh JS/CSS after file changes.
+        for cache, ext in [
+            (_shared_css_cache, "shared.css"),
+            (_task_css_cache, "task.css"),
+            (_shared_js_cache, "shared.js"),
+            (_task_js_cache, "task.js"),
+        ]:
+            # Trigger a read so .version reflects current mtime
+            cache.read()
+            html = html.replace(
+                f"/dashboard/{ext}",
+                f"/dashboard/{ext}?v={cache.version}",
+            )
+        return HTMLResponse(content=html, headers=_NO_CACHE_HEADERS)
 
     @app.get("/dashboard/admin")
     async def admin_page() -> HTMLResponse:
         return HTMLResponse(content=_admin_cache.read())
+
+
+_NO_CACHE_HEADERS = {"Cache-Control": "no-cache, must-revalidate"}
 
 
 class _FileCache:
@@ -500,6 +523,11 @@ class _FileCache:
         self._path = path
         self._mtime: float = 0.0
         self._content: str = ""
+
+    @property
+    def version(self) -> str:
+        """Return mtime as a short version string for cache-busting URLs."""
+        return str(int(self._mtime))
 
     def read(self) -> str:
         """Return cached content, re-reading from disk if mtime changed."""
