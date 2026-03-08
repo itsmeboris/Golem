@@ -39,16 +39,16 @@ let _dagCollapsed = false;
 
 function toggleDagCollapse() {
   _dagCollapsed = !_dagCollapsed;
-  document.getElementById('dag-section').classList.toggle('collapsed', _dagCollapsed);
+  document.getElementById('dag-panel').classList.toggle('collapsed', _dagCollapsed);
 }
 
 /* Table state */
 let _tableSortCol = 'id';
 let _tableSortAsc = false;
 
-/* ── Live Bar ──────────────────────────────────────────────── */
-function renderLiveBar() {
-  const el = document.getElementById('lb-stats');
+/* ── Top Stats ────────────────────────────────────────────── */
+function renderTopStats() {
+  const el = document.getElementById('top-stats');
   const active = _liveSnap.active_count || 0;
   const queue = _liveSnap.queue_depth || 0;
   const models = _liveSnap.models_active || {};
@@ -76,9 +76,9 @@ function renderLiveBar() {
   el.innerHTML = html;
 }
 
-/* ── Task Table ───────────────────────────────────────────── */
-function renderTaskTable() {
-  const container = document.getElementById('task-table');
+/* ── Task List ────────────────────────────────────────────── */
+function renderTaskList() {
+  const container = document.getElementById('task-list');
   const search = (document.getElementById('table-search').value || '').toLowerCase();
   const stateFilter = document.getElementById('table-state-filter').value;
   const entries = Object.entries(_sessions);
@@ -114,46 +114,19 @@ function renderTaskTable() {
     return _tableSortAsc ? cmp : -cmp;
   });
 
-  const cols = [
-    { key: 'id', label: 'ID' },
-    { key: 'subject', label: 'Subject' },
-    { key: 'state', label: 'State' },
-    { key: 'cost', label: 'Cost' },
-    { key: 'duration', label: 'Duration' },
-    { key: 'deps', label: 'Deps' },
-  ];
-
   let html = '';
-  if (_dagSelectedTasks.size > 0) {
-    html += `<div class="tt-sel-bar"><span>${_dagSelectedTasks.size} selected</span><button class="tt-sel-clear" onclick="clearDagSelection()">Clear</button></div>`;
-  }
-  html += '<div class="tt-header">';
-  html += '<span class="tt-check"></span>';
-  for (const col of cols) {
-    const activeClass = _tableSortCol === col.key ? ' sort-active' : '';
-    const arrow = _tableSortCol === col.key ? (_tableSortAsc ? ' \u25B2' : ' \u25BC') : '';
-    html += `<span class="${activeClass}" onclick="sortTable('${col.key}')">${col.label}${arrow}</span>`;
-  }
-  html += '</div>';
-
   for (const [id, s] of filtered) {
     const state = s.state || 'detected';
     const subject = esc(truncText((s.parent_subject || '').replace(/^\[AGENT\]\s*/, ''), 60));
     const cost = s.total_cost_usd ? fmtCost(s.total_cost_usd) : '-';
-    const dur = fmtDuration(s.duration_seconds);
-    const deps = (s.depends_on || []).length;
     const stateLabel = STATE_LABELS[state] || state;
 
-    const checked = _dagSelectedTasks.has(id) ? ' checked' : '';
-    html += `<div class="tt-row" data-id="${id}" onclick="pulseDagNode('${id}');selectTask('${id}')"
+    html += `<div class="tl-row st-${state}" data-id="${id}" onclick="pulseDagNode('${id}');selectTask('${id}')"
       onmouseenter="highlightDagNode('${id}')" onmouseleave="unhighlightDagNode()">
-      <span class="tt-check"><input type="checkbox"${checked} onclick="event.stopPropagation();toggleDagSelect('${id}')"></span>
-      <span class="tt-id" title="#${id}">#${shortId(id)}</span>
-      <span class="tt-subject">${subject}</span>
-      <span class="tt-state st-${state}">${stateLabel}</span>
-      <span class="tt-cost">${cost}</span>
-      <span class="tt-duration">${dur}</span>
-      <span class="tt-deps">${deps ? '\u26D3 ' + deps : ''}</span>
+      <span class="tl-id" title="#${id}">#${shortId(id)}</span>
+      <span class="tl-subject">${subject}</span>
+      <span class="tl-badge" style="${stateBadgeStyle(state)}">${stateLabel}</span>
+      <span class="tl-cost">${cost}</span>
     </div>`;
   }
 
@@ -163,7 +136,7 @@ function renderTaskTable() {
 function sortTable(col) {
   if (_tableSortCol === col) _tableSortAsc = !_tableSortAsc;
   else { _tableSortCol = col; _tableSortAsc = col === 'id'; }
-  renderTaskTable();
+  renderTaskList();
 }
 
 function hasMergeError(s) {
@@ -171,10 +144,10 @@ function hasMergeError(s) {
 }
 
 function verdictBadgeStyle(v) {
-  if (v === 'PASS') return 'background:#064e3b;color:var(--green)';
-  if (v === 'FAIL') return 'background:#450a0a;color:var(--red)';
-  if (v === 'PARTIAL') return 'background:#431407;color:var(--orange)';
-  return 'background:#422006;color:var(--yellow)';
+  if (v === 'PASS') return 'background:var(--green-bg);color:var(--green)';
+  if (v === 'FAIL') return 'background:var(--red-bg);color:var(--red)';
+  if (v === 'PARTIAL') return 'background:var(--yellow-bg);color:var(--orange)';
+  return 'background:var(--yellow-bg);color:var(--yellow)';
 }
 
 /* ── Task selection & routing ──────────────────────────────── */
@@ -216,11 +189,32 @@ function handleHash() {
 
 /* ── Overview rendering ────────────────────────────────────── */
 function renderOverview() {
-  renderLiveBar();
+  renderTopStats();
+  renderOverviewMetrics();
   renderDagLegend();
   populateGroupFilter();
   renderDagGraph();
-  renderTaskTable();
+  renderTaskList();
+}
+
+function renderOverviewMetrics() {
+  const el = document.getElementById('overview-metrics');
+  if (!el) return;
+  const entries = Object.entries(_sessions);
+  let active = 0, completed = 0, failed = 0, totalCost = 0;
+  for (const [, s] of entries) {
+    totalCost += (s.total_cost_usd || 0) + (s.validation_cost_usd || 0);
+    if (['running', 'validating', 'retrying'].includes(s.state)) active++;
+    else if (s.state === 'completed') completed++;
+    else if (s.state === 'failed') failed++;
+  }
+
+  el.innerHTML = `
+    <div class="mr-card"><span class="mr-dot" style="background:var(--accent-bg);color:var(--accent)">${active}</span><div class="mr-text"><span class="mr-label">Active</span><span class="mr-value">${active}</span></div></div>
+    <div class="mr-card"><span class="mr-dot" style="background:var(--green-bg);color:var(--green)">${completed}</span><div class="mr-text"><span class="mr-label">Done</span><span class="mr-value">${completed}</span></div></div>
+    <div class="mr-card"><span class="mr-dot" style="background:var(--red-bg);color:var(--red)">${failed}</span><div class="mr-text"><span class="mr-label">Failed</span><span class="mr-value">${failed}</span></div></div>
+    <div class="mr-card"><span class="mr-dot" style="background:var(--blue-bg);color:var(--blue)">$</span><div class="mr-text"><span class="mr-label">Cost</span><span class="mr-value">${fmtCost(totalCost)}</span></div></div>
+  `;
 }
 
 /* ── DAG highlight helpers (used by table hover) ──────────── */
@@ -257,7 +251,7 @@ function unhighlightDagNode() {
 /* DAG filter buttons */
 function setDagFilter(filter) {
   _dagFilter = filter;
-  document.querySelectorAll('.dag-filter-btn').forEach(b =>
+  document.querySelectorAll('.dag-pill').forEach(b =>
     b.classList.toggle('active', b.dataset.filter === filter));
   if (_dagLayout) renderDagSvg(_dagLayout);
 }
@@ -270,7 +264,7 @@ function applyDagTransform() {
 }
 function dagZoomFit() {
   const svg = document.getElementById('dag-svg');
-  const container = document.getElementById('dag-container');
+  const container = document.getElementById('dag-body');
   if (!svg || !container) { _dagTransform = { x: 20, y: 20, scale: 1 }; applyDagTransform(); return; }
   const svgW = parseFloat(svg.dataset.contentW) || 400;
   const svgH = parseFloat(svg.dataset.contentH) || 300;
@@ -282,7 +276,7 @@ function dagZoomFit() {
   applyDagTransform();
 }
 function dagZoomIn() {
-  const container = document.getElementById('dag-container');
+  const container = document.getElementById('dag-body');
   const cx = container ? container.clientWidth / 2 : 0;
   const cy = container ? container.clientHeight / 2 : 0;
   const newScale = Math.min(3, _dagTransform.scale * 1.15);
@@ -293,7 +287,7 @@ function dagZoomIn() {
   applyDagTransform();
 }
 function dagZoomOut() {
-  const container = document.getElementById('dag-container');
+  const container = document.getElementById('dag-body');
   const cx = container ? container.clientWidth / 2 : 0;
   const cy = container ? container.clientHeight / 2 : 0;
   const newScale = Math.max(0.2, _dagTransform.scale / 1.15);
@@ -312,12 +306,12 @@ function dagZoomOut() {
 function toggleDagSelect(id) {
   if (_dagSelectedTasks.has(id)) _dagSelectedTasks.delete(id);
   else _dagSelectedTasks.add(id);
-  renderTaskTable();
+  renderTaskList();
   applyDagDimming();
 }
 function clearDagSelection() {
   _dagSelectedTasks.clear();
-  renderTaskTable();
+  renderTaskList();
   applyDagDimming();
 }
 function applyDagDimming() {
@@ -803,7 +797,7 @@ function bezierPath(x1, y1, x2, y2) {
 }
 
 function initDagPanZoom() {
-  const container = document.getElementById('dag-container');
+  const container = document.getElementById('dag-body');
   if (!container) return;
   let isPanning = false, startX, startY;
 
@@ -918,12 +912,12 @@ function renderHeader(id, s) {
 
 function stateBadgeStyle(state) {
   const map = {
-    completed: 'background:#064e3b;color:var(--green)',
-    failed: 'background:#450a0a;color:var(--red)',
-    running: 'background:#172554;color:var(--blue)',
-    validating: 'background:#1e1b4b;color:var(--purple)',
-    detected: 'background:#422006;color:var(--yellow)',
-    retrying: 'background:#431407;color:var(--orange)',
+    completed: 'background:var(--green-bg);color:var(--green)',
+    failed: 'background:var(--red-bg);color:var(--red)',
+    running: 'background:var(--accent-bg);color:var(--accent)',
+    validating: 'background:var(--blue-bg);color:var(--blue)',
+    detected: 'background:var(--yellow-bg);color:var(--yellow)',
+    retrying: 'background:var(--red-bg);color:var(--red)',
   };
   return map[state] || 'background:var(--bg-elevated);color:var(--text-secondary)';
 }
@@ -1714,7 +1708,7 @@ async function fetchSessions() {
     const res = await fetch('/api/sessions');
     const data = await res.json();
     _sessions = data.sessions || {};
-    renderLiveBar();
+    renderTopStats();
     if (!_selectedId) renderOverview();
     if (_selectedId && _sessions[_selectedId]) {
       const s = _sessions[_selectedId];
@@ -1735,8 +1729,8 @@ async function fetchLive() {
 /* ── Initialization ────────────────────────────────────────── */
 const _tableSearchEl = document.getElementById('table-search');
 const _tableFilterEl = document.getElementById('table-state-filter');
-if (_tableSearchEl) _tableSearchEl.addEventListener('input', renderTaskTable);
-if (_tableFilterEl) _tableFilterEl.addEventListener('change', renderTaskTable);
+if (_tableSearchEl) _tableSearchEl.addEventListener('input', renderTaskList);
+if (_tableFilterEl) _tableFilterEl.addEventListener('change', renderTaskList);
 window.addEventListener('hashchange', handleHash);
 
 async function init() {
