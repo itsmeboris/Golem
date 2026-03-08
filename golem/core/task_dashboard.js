@@ -1128,7 +1128,8 @@ function computeStages(s) {
 
   stages.push({ id: 'preflight', type: 'preflight', label: 'Preflight',
     state: 'completed', events: [],
-    meta: { worktree: s.worktree_path, depends: s.depends_on } });
+    meta: { worktree: s.worktree_path, depends: s.depends_on,
+      createdAt: s.created_at, startedAt: s.started_at } });
 
   const isOrchestrated = s.execution_mode === 'subagent';
   const supervisorEvents = allEvents.filter(e => (e.kind || e.type) === 'supervisor');
@@ -1211,13 +1212,14 @@ function computeStages(s) {
 
   if (s.validation_verdict === 'PASS' || s.merge_ready || s.commit_sha) {
     stages.push({ id: 'merge', type: 'merge', label: 'Merge Queue',
-      state: s.commit_sha ? 'completed' : 'running', events: [] });
+      state: s.commit_sha ? 'completed' : 'running', events: [],
+      meta: { mergeQueuedAt: s.merge_queued_at, updatedAt: s.updated_at } });
   }
 
   if (s.commit_sha) {
     stages.push({ id: 'commit', type: 'commit', label: 'Committed',
       state: 'completed', events: [],
-      meta: { sha: s.commit_sha } });
+      meta: { sha: s.commit_sha, filesChanged: s.files_changed } });
   }
 
   if (s.validation_verdict === 'FAIL' || (state === 'failed' && !s.validation_verdict)) {
@@ -1338,7 +1340,9 @@ function stageSummaryText(st) {
     case 'execution': {
       const parts = [];
       if (m.cost) parts.push(fmtCost(m.cost));
-      if (m.milestones) parts.push(m.milestones + ' events');
+      const toolCount = (st.events || []).filter(e => (e.kind || e.type) === 'tool_call').length;
+      if (toolCount) parts.push(toolCount + ' tools');
+      else if (m.milestones) parts.push(m.milestones + ' events');
       if (m.isRetry) parts.push('retry');
       return parts.join(' \u00B7 ');
     }
@@ -1355,8 +1359,12 @@ function stageSummaryText(st) {
       if (m.concerns && m.concerns.length) parts.push(m.concerns.length + ' concerns');
       return parts.join(' \u00B7 ');
     }
-    case 'commit':
-      return m.sha ? m.sha.slice(0, 7) : '';
+    case 'commit': {
+      const parts = [];
+      if (m.sha) parts.push(m.sha.slice(0, 7));
+      if (m.filesChanged && m.filesChanged.length) parts.push(m.filesChanged.length + ' files');
+      return parts.join(' \u00B7 ');
+    }
     default:
       return '';
   }
@@ -1510,6 +1518,10 @@ function renderDetailSummary(st) {
       if (m.depends && m.depends.length) {
         html += `<div class="wf-detail-line"><span class="wf-dl-label">Dependencies</span>${m.depends.map(d => `<span class="dep-chip" style="border-color:var(--text-muted);color:var(--text-secondary)">#${shortId(d)}</span>`).join(' ')}</div>`;
       }
+      if (m.createdAt && m.startedAt) {
+        const waitSec = (new Date(m.startedAt) - new Date(m.createdAt)) / 1000;
+        if (waitSec > 1) html += `<div class="wf-detail-line"><span class="wf-dl-label">Wait time</span><span>${fmtDuration(waitSec)}</span></div>`;
+      }
       if (m.mode) html += `<div class="wf-detail-line"><span class="wf-dl-label">Mode</span><span>${esc(m.mode)}</span></div>`;
       if (!m.worktree && !(m.depends && m.depends.length)) {
         html += '<div class="wf-detail-line" style="color:var(--text-muted)">Environment ready.</div>';
@@ -1534,10 +1546,18 @@ function renderDetailSummary(st) {
     }
     case 'merge': {
       html += '<div class="wf-detail-line" style="color:var(--text-muted)">Queued for sequential merge via MergeQueue.</div>';
+      if (m.mergeQueuedAt && m.updatedAt) {
+        const waitSec = (new Date(m.updatedAt) - new Date(m.mergeQueuedAt)) / 1000;
+        if (waitSec > 0) html += `<div class="wf-detail-line"><span class="wf-dl-label">Queue time</span><span>${fmtDuration(waitSec)}</span></div>`;
+      }
       break;
     }
     case 'commit': {
       if (m.sha) html += `<div class="wf-detail-line"><span class="wf-dl-label">Commit</span><code>${esc(m.sha)}</code></div>`;
+      if (m.filesChanged && m.filesChanged.length) {
+        html += `<div class="wf-detail-line"><span class="wf-dl-label">Files</span><span>${m.filesChanged.length} changed</span></div>`;
+        html += m.filesChanged.map(f => `<div style="padding:0.15rem 0 0.15rem 7.5rem;font-size:0.78rem;font-family:var(--font-mono);color:var(--text-muted)">${esc(f)}</div>`).join('');
+      }
       break;
     }
     case 'failure': {

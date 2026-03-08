@@ -439,6 +439,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             priority=session.priority,
             group_id=session.group_id,
         )
+        session.merge_queued_at = _now_iso()
         await self._merge_queue.enqueue(entry)
         results = await self._merge_queue.process_all()
         for r in results:
@@ -453,6 +454,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         if result.success and result.merge_sha:
             session.commit_sha = result.merge_sha
             session.merge_ready = False
+            session.files_changed = result.changed_files
             logger.info(
                 "Session %d: merge applied → %s",
                 result.session_id,

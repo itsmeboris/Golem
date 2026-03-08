@@ -407,19 +407,19 @@ def fast_forward_if_safe(
     if merge_result.returncode == 0:
         return True, ""
 
-    stderr = merge_result.stderr.strip()
-    if "overwritten by merge" in stderr or "local changes" in stderr.lower():
+    output = (merge_result.stdout + merge_result.stderr).strip()
+    if "overwritten by merge" in output or "local changes" in output.lower():
         logger.info(
             "Fast-forward deferred — dirty working tree overlaps with %s",
             source_branch,
         )
         return False, f"dirty working tree overlaps with {source_branch}"
 
-    if "not possible to fast-forward" in stderr.lower():
-        logger.warning("Fast-forward not possible for %s: %s", source_branch, stderr)
-        return False, f"branches diverged: {stderr}"
+    if "not possible to fast-forward" in output.lower():
+        logger.warning("Fast-forward not possible for %s: %s", source_branch, output)
+        return False, f"branches diverged: {output}"
 
-    return False, f"ff-only failed: {stderr}"
+    return False, f"ff-only failed: {output}"
 
 
 def _stash_if_dirty(base_dir: str, issue_id: int) -> bool:

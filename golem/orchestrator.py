@@ -127,6 +127,10 @@ class TaskSession:
     checkpoint_phase: str = ""
     merge_deferred: bool = False
     merge_branch: str = ""
+    # Dashboard enrichment
+    started_at: str = ""
+    files_changed: list[str] = field(default_factory=list)
+    merge_queued_at: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-safe dictionary."""
@@ -178,6 +182,9 @@ class TaskSession:
             checkpoint_phase=data.get("checkpoint_phase", ""),
             merge_deferred=data.get("merge_deferred", False),
             merge_branch=data.get("merge_branch", ""),
+            started_at=data.get("started_at", ""),
+            files_changed=data.get("files_changed", []),
+            merge_queued_at=data.get("merge_queued_at", ""),
         )
 
 
@@ -283,6 +290,7 @@ class TaskOrchestrator:
         """
         self.session.state = TaskSessionState.RUNNING
         self.session.updated_at = _now_iso()
+        self.session.started_at = self.session.updated_at
         await self._run_agent()
         return self.session
 
@@ -300,6 +308,7 @@ class TaskOrchestrator:
         )
         self.session.state = TaskSessionState.RUNNING
         self.session.updated_at = _now_iso()
+        self.session.started_at = self.session.updated_at
 
         await self._run_agent()
 

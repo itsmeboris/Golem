@@ -43,6 +43,7 @@ class MergeResult:
     merge_sha: str = ""
     conflict_files: list[str] = field(default_factory=list)
     error: str = ""
+    changed_files: list[str] = field(default_factory=list)
 
 
 OnConflict = Callable[["MergeEntry", list[str]], bool] | None
@@ -215,7 +216,10 @@ class MergeQueue:
                     final_sha,
                 )
                 return MergeResult(
-                    session_id=entry.session_id, success=True, merge_sha=final_sha
+                    session_id=entry.session_id,
+                    success=True,
+                    merge_sha=final_sha,
+                    changed_files=entry.changed_files,
                 )
 
             if self._on_conflict:
@@ -229,6 +233,7 @@ class MergeQueue:
                             session_id=entry.session_id,
                             success=True,
                             merge_sha=outcome_retry.sha,
+                            changed_files=entry.changed_files,
                         )
 
             cleanup_worktree(entry.base_dir, entry.worktree_path, keep_branch=True)
