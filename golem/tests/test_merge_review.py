@@ -58,11 +58,10 @@ class TestReadFileContent:
         result = _read_file_content(str(tmp_path), "nope.py")
         assert "does not exist" in result
 
-    def test_truncation(self, tmp_path):
+    def test_large_file_preserved(self, tmp_path):
         (tmp_path / "big.py").write_text("x" * 100)
-        result = _read_file_content(str(tmp_path), "big.py", max_bytes=50)
-        assert "truncated" in result
-        assert len(result) < 100
+        result = _read_file_content(str(tmp_path), "big.py")
+        assert len(result) == 100
 
 
 class TestFormatMissingSummary:
@@ -71,14 +70,14 @@ class TestFormatMissingSummary:
         assert "foo.py" in result
         assert "def hello():" in result
 
-    def test_many_lines_truncated(self):
+    def test_all_lines_included(self):
         m = MissingAddition(
             file="big.py",
             expected_lines=[f"line {i}" for i in range(30)],
             description="30/30 missing",
         )
         result = _format_missing_summary([m])
-        assert "10 more lines" in result
+        assert "line 29" in result
 
     def test_empty(self):
         assert _format_missing_summary([]) == ""

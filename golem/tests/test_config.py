@@ -5,7 +5,6 @@ from unittest.mock import patch
 from golem.core.config import (
     Config,
     ClaudeConfig,
-    DaemonConfig,
     GolemFlowConfig,
     FlowConfig,
     _expand_env_vars,
@@ -78,7 +77,7 @@ class TestParseDaemonConfig:
         assert config.startup_poll_seconds == 0.5
         assert config.http_submit_timeout == 10
         assert config.fallback_budget_usd == 10.0
-        assert config.fallback_task_timeout_seconds == 1800
+        assert config.fallback_task_timeout_seconds == 3600
 
     def test_custom_values(self):
         config = _parse_daemon_config(

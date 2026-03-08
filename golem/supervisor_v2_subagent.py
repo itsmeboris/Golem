@@ -166,7 +166,7 @@ class SubagentSupervisor:
             self.session.duration_seconds = time.time() - start
             self.session.state = TaskSessionState.FAILED
             self.session.errors.append(str(exc))
-            self._emit_event(f"Supervisor failed: {str(exc)[:150]}", is_error=True)
+            self._emit_event(f"Supervisor failed: {exc}", is_error=True)
             self._update_task(
                 issue_id,
                 comment=f"Golem subagent supervisor failed: {exc}",
@@ -226,7 +226,7 @@ class SubagentSupervisor:
         prompt = self._build_prompt(issue_id, description, work_dir)
         result = await self._invoke_orchestrator(prompt, work_dir, issue_id, start)
         report = self._parse_report(result)
-        self.session.result_summary = report.get("summary", "")[:1000]
+        self.session.result_summary = report.get("summary", "")
         self._emit_event(f"Orchestrator finished: {report.get('status', 'unknown')}")
         self._update_task(issue_id, status=TaskStatus.FIXED, progress=80)
         self._save_checkpoint(issue_id, "post_execute")
@@ -361,7 +361,7 @@ class SubagentSupervisor:
         # Graceful degradation: return raw output as summary
         return {
             "status": "UNKNOWN",
-            "summary": str(raw_output)[:500],
+            "summary": str(raw_output),
         }
 
     # -- Validation ------------------------------------------------------------
@@ -616,8 +616,6 @@ class SubagentSupervisor:
                 "is_error": is_error,
             }
         )
-        if len(self.session.event_log) > 500:
-            self.session.event_log = self.session.event_log[-500:]
         self.session.milestone_count += 1
         self._checkpoint()
 

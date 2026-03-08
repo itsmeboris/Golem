@@ -48,5 +48,5 @@ def determine_mcp_scope(subtask_subject: str) -> list[str]:
             servers.update(extra_servers)
 
     result = sorted(servers)
-    logger.debug("MCP scope for '%s': %s", subtask_subject[:60], result)
+    logger.debug("MCP scope for '%s': %s", subtask_subject, result)
     return result

@@ -115,7 +115,7 @@ def _print_cli_summary(session: TaskSession) -> None:
         print(f"  Summary: {session.validation_summary}")
         if session.validation_concerns:
             print("  Concerns:")
-            for c in session.validation_concerns[:5]:
+            for c in session.validation_concerns:
                 print(f"    - {c}")
     if session.commit_sha:
         print(f"  Commit: {session.commit_sha}")
@@ -123,8 +123,8 @@ def _print_cli_summary(session: TaskSession) -> None:
         print(f"  Mode: subagent ({session.supervisor_phase})")
     if session.errors:
         print(f"  Errors: {len(session.errors)}")
-        for err in session.errors[:3]:
-            print(f"    - {err[:120]}")
+        for err in session.errors:
+            print(f"    - {err}")
 
 
 def _print_run_header(

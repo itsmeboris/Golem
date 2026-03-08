@@ -27,13 +27,15 @@ flows:
 
     # Execution
     task_model: sonnet             # model for single-agent & Builder subagents
-    task_timeout_seconds: 1800     # 30 min max per task
+    task_timeout_seconds: 3600     # 1 hour max per task (0 = unlimited)
     budget_per_task_usd: 10.0      # 0 = unlimited
     max_active_sessions: 3
 
     # Validation (strong reasoning model reviews the work)
     validation_model: opus         # opus for strongest review
-    validation_budget_usd: 0.50
+    validation_budget_usd: 0.0     # 0 = unlimited (recommended; validator costs are low)
+    validation_timeout_seconds: 600  # 10 min (0 = unlimited)
+    retry_budget_usd: 5.0         # budget for retry agent (0 = unlimited)
     max_retries: 1                 # retry once on PARTIAL verdict
     auto_commit: true              # commit on PASS verdict
 
@@ -41,7 +43,7 @@ flows:
     supervisor_mode: true
     orchestrate_model: opus            # orchestrator needs strong planning
     orchestrate_budget_usd: 15.0
-    orchestrate_timeout_seconds: 2400
+    orchestrate_timeout_seconds: 3600  # 1 hour (0 = unlimited)
     inner_retry_max: 3
     resume_on_partial: true
 
@@ -50,6 +52,13 @@ flows:
     default_work_dir: ""           # fallback CWD for agent
     work_dirs: {}                  # tag -> directory mapping
     #   MYPROJECT: /path/to/project
+
+    # Merge review (agent-assisted reconciliation / conflict resolution)
+    merge_review_budget_usd: 1.0   # budget for merge reconciliation agent
+    merge_review_timeout: 600      # timeout (seconds)
+
+    # Infrastructure resilience
+    max_infra_retries: 2           # auto-retries for infra failures (worktree, NFS)
 
     # Checkpoint persistence (crash recovery)
     checkpoint_interval_seconds: 300   # seconds between checkpoint saves
@@ -61,7 +70,7 @@ flows:
 claude:
   cli_type: claude                 # "claude" or "agent"
   model: sonnet
-  timeout_seconds: 1800
+  timeout_seconds: 3600             # 1 hour
   max_concurrent: 5
 
 dashboard:

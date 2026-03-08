@@ -295,20 +295,29 @@ See [`config.yaml.example`](config.yaml.example) for the full annotated template
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `profile` | `local` | Backend profile (`local`, `redmine`, or custom) |
+| `profile` | `local` | Backend profile (`local`, `redmine`, `github`, or custom) |
 | `task_model` | `sonnet` | Claude model for single-agent execution and Builder subagents |
 | `budget_per_task_usd` | `10.0` | Max spend per task (0 = unlimited) |
 | `supervisor_mode` | `true` | Enable subagent orchestration (Agent tool delegation) |
 | `orchestrate_model` | `opus` | Model for orchestration and review |
-| `orchestrate_budget_usd` | `15.0` | Budget for orchestration session |
-| `orchestrate_timeout_seconds` | `2400` | Timeout for orchestration session |
+| `orchestrate_budget_usd` | `15.0` | Budget for orchestration session (0 = unlimited) |
+| `task_timeout_seconds` | `3600` | Timeout for single-agent execution (0 = unlimited) |
+| `orchestrate_timeout_seconds` | `3600` | Timeout for orchestration session (0 = unlimited) |
 | `max_retries` | `1` | Retries on PARTIAL validation verdict |
 | `auto_commit` | `true` | Git commit on PASS |
 | `use_worktrees` | `true` | Isolate tasks in separate git worktrees |
 | `max_active_sessions` | `3` | Concurrent tasks running in parallel |
-| `max_infra_retries` | `2` | Auto-retries for infrastructure failures (e.g. worktree creation) without consuming task retry budget |
+| `max_infra_retries` | `2` | Auto-retries for infrastructure failures without consuming task retry budget |
+| `validation_model` | `opus` | Model for validation agent (strong reasoning recommended) |
+| `validation_budget_usd` | `0.0` | Budget for validation agent (0 = unlimited) |
+| `validation_timeout_seconds` | `600` | Timeout for validation agent |
+| `retry_budget_usd` | `5.0` | Budget for retry agent (0 = unlimited) |
 | `merge_review_budget_usd` | `1.0` | Budget for merge reconciliation / conflict resolution agents |
-| `merge_review_timeout` | `120` | Timeout (seconds) for merge review agent invocations |
+| `merge_review_timeout` | `600` | Timeout (seconds) for merge review agent invocations |
+| `checkpoint_interval_seconds` | `300` | Seconds between checkpoint saves for crash recovery |
+| `checkpoint_max_age_minutes` | `10` | Max age before a checkpoint is considered stale |
+| `inner_retry_max` | `3` | Circuit breaker for inner test-fix loops in subagent mode |
+| `resume_on_partial` | `true` | Use `--resume` for warm retries instead of cold-starting |
 
 ### Environment Variables
 

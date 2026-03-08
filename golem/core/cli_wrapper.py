@@ -687,7 +687,7 @@ def _extract_error_from_stream_output(stdout: str, stderr: str) -> str:
     combined = "\n".join(parts)
     if not combined:
         return "CLI exited during init with no error details"
-    return combined[:3000]
+    return combined
 
 
 def _invoke_cli_quiet(prompt: str, config: CLIConfig) -> CLIResult:

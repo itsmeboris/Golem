@@ -113,7 +113,7 @@ class TestGetGitDiff:
         assert "Uncommitted" in result
 
     @patch("golem.validation.subprocess.run")
-    def test_truncates_large_diff(self, mock_run):
+    def test_preserves_large_diff(self, mock_run):
         big_diff = "+" * 50_000
 
         def side_effect(args, **kwargs):
@@ -130,8 +130,8 @@ class TestGetGitDiff:
             return subprocess.CompletedProcess(args=args, returncode=0, stdout="")
 
         mock_run.side_effect = side_effect
-        result = get_git_diff("/some/dir", max_bytes=100)
-        assert "truncated" in result
+        result = get_git_diff("/some/dir")
+        assert big_diff in result
 
 
 class TestFormatEventLog:
@@ -150,10 +150,11 @@ class TestFormatEventLog:
         result = _format_event_log(events)
         assert "[ERROR]" in result
 
-    def test_truncation_message(self):
+    def test_all_events_included(self):
         events = [{"kind": f"ev{i}"} for i in range(50)]
-        result = _format_event_log(events, max_entries=10)
-        assert "showing last 10 of 50" in result
+        result = _format_event_log(events)
+        assert "ev0" in result
+        assert "ev49" in result
 
 
 class TestParseValidationOutput:
@@ -510,7 +511,7 @@ class TestGetBranchDiff:
             return subprocess.CompletedProcess(args=args, returncode=0, stdout="")
 
         mock_run.side_effect = side_effect
-        result = _get_branch_diff("/dir", 30000)
+        result = _get_branch_diff("/dir")
         assert "Committed changes" in result
         assert "Fix stuff" in result
 
@@ -518,7 +519,7 @@ class TestGetBranchDiff:
     def test_no_merge_base(self, _):
         from golem.validation import _get_branch_diff
 
-        assert _get_branch_diff("/dir", 30000) == ""
+        assert _get_branch_diff("/dir") == ""
 
     @patch("golem.validation.subprocess.run")
     def test_no_stat_changes(self, mock_run):
@@ -532,10 +533,10 @@ class TestGetBranchDiff:
             return subprocess.CompletedProcess(args=args, returncode=0, stdout="")
 
         mock_run.side_effect = side_effect
-        assert _get_branch_diff("/dir", 30000) == ""
+        assert _get_branch_diff("/dir") == ""
 
     @patch("golem.validation.subprocess.run")
-    def test_truncates_large_branch_diff(self, mock_run):
+    def test_preserves_large_branch_diff(self, mock_run):
         from golem.validation import _get_branch_diff
 
         big_diff = "+" * 50000
@@ -560,8 +561,8 @@ class TestGetBranchDiff:
             return subprocess.CompletedProcess(args=args, returncode=0, stdout="")
 
         mock_run.side_effect = side_effect
-        result = _get_branch_diff("/dir", 100)
-        assert "truncated" in result
+        result = _get_branch_diff("/dir")
+        assert big_diff in result
 
 
 class TestGetGitDiffWithBranchSection:

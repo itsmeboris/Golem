@@ -286,12 +286,11 @@ class TestBuildCommitMessage:
         first_line = msg.split("\n")[0]
         assert first_line.startswith(f"[{expected_tag}]")
 
-    def test_subject_truncated_at_72(self):
+    def test_long_subject_preserved(self):
         long_subject = "A" * 100
         msg = _build(long_subject)
         first_line = msg.split("\n")[0]
-        assert len(first_line) <= 72
-        assert first_line.endswith("...")
+        assert long_subject in first_line
 
     def test_body_contains_issue_id(self):
         msg = _build("Fix thing", issue_id=42)

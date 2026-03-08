@@ -35,22 +35,17 @@ class ReconciliationResult:
     explanation: str = ""
 
 
-def _read_file_content(base_dir: str, filepath: str, max_bytes: int = 30_000) -> str:
+def _read_file_content(base_dir: str, filepath: str) -> str:
     full = Path(base_dir) / filepath
     if not full.exists():
         return f"(file {filepath} does not exist)"
-    text = full.read_text(encoding="utf-8", errors="replace")
-    if len(text) > max_bytes:
-        return text[:max_bytes] + "\n... (truncated)"
-    return text
+    return full.read_text(encoding="utf-8", errors="replace")
 
 
 def _format_missing_summary(missing: list[MissingAddition]) -> str:
     parts: list[str] = []
     for m in missing:
-        lines_preview = "\n".join(m.expected_lines[:20])
-        if len(m.expected_lines) > 20:
-            lines_preview += f"\n... ({len(m.expected_lines) - 20} more lines)"
+        lines_preview = "\n".join(m.expected_lines)
         parts.append(f"### {m.file}\n{m.description}\n```\n{lines_preview}\n```")
     return "\n\n".join(parts)
 
@@ -93,7 +88,7 @@ def run_merge_reconciliation(
 
     prompt = format_prompt(
         "reconcile_merge.txt",
-        agent_diff=agent_diff[:20_000],
+        agent_diff=agent_diff,
         missing_summary=_format_missing_summary(missing),
         current_files=_format_current_files(base_dir, missing),
     )

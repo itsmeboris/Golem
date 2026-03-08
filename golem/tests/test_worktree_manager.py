@@ -523,7 +523,7 @@ class TestMergeReviewConfigFields:
 
         config = GolemFlowConfig()
         assert config.merge_review_budget_usd == 1.0
-        assert config.merge_review_timeout == 120
+        assert config.merge_review_timeout == 600
 
     def test_parse_from_yaml(self):
         from golem.core.config import _parse_golem_config
@@ -550,7 +550,7 @@ class TestMergeAndCleanupIntegrity:
         result = merge_and_cleanup(str(git_repo), 810, wt_path)
         assert isinstance(result, MergeOutcome)
         assert result.sha
-        assert result.missing_additions == []
+        assert not result.missing_additions
 
     def test_merge_returns_agent_diff(self, git_repo, tmp_path):
         """merge_and_cleanup returns MergeOutcome with agent_diff populated."""
@@ -564,7 +564,7 @@ class TestMergeAndCleanupIntegrity:
         result = merge_and_cleanup(str(git_repo), 812, wt_path)
         assert isinstance(result, MergeOutcome)
         assert result.sha
-        assert result.missing_additions == []
+        assert not result.missing_additions
         assert isinstance(result.agent_diff, str)
         assert "new.py" in result.agent_diff
 
@@ -613,5 +613,5 @@ class TestMergeAndCleanupIntegrity:
         result = merge_and_cleanup(str(git_repo), 814, wt_path)
         assert isinstance(result, MergeOutcome)
         assert result.sha != ""
-        assert result.missing_additions == []
+        assert not result.missing_additions
         assert result.agent_diff == ""

@@ -229,10 +229,10 @@ class TestExtractErrorFromStreamOutput:
         result = _extract_error_from_stream_output("", "")
         assert "no error details" in result
 
-    def test_truncates_long_output(self):
+    def test_preserves_long_output(self):
         stdout = "x" * 5000
         result = _extract_error_from_stream_output(stdout, "")
-        assert len(result) <= 3000
+        assert len(result) == 5000
 
 
 class TestActiveProcessCount:

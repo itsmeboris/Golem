@@ -88,7 +88,7 @@ def _find_merge_base(work_dir: str) -> str:
     return ""
 
 
-def _get_branch_diff(work_dir: str, max_bytes: int) -> str:
+def _get_branch_diff(work_dir: str) -> str:
     """Return formatted diff of committed changes relative to the base branch."""
     merge_base = _find_merge_base(work_dir)
     if not merge_base:
@@ -112,9 +112,7 @@ def _get_branch_diff(work_dir: str, max_bytes: int) -> str:
         timeout=10,
         check=False,
     )
-    bdiff = branch_diff.stdout[: max(max_bytes, 2000)]
-    if len(branch_diff.stdout) > len(bdiff):
-        bdiff += "\n... (diff truncated)"
+    bdiff = branch_diff.stdout
     log = subprocess.run(
         ["git", "log", "--oneline", f"{merge_base}..HEAD"],
         cwd=work_dir,
@@ -132,7 +130,7 @@ def _get_branch_diff(work_dir: str, max_bytes: int) -> str:
     )
 
 
-def get_git_diff(work_dir: str, max_bytes: int = 30_000) -> str:
+def get_git_diff(work_dir: str) -> str:
     """Return git changes for validation.
 
     Checks both uncommitted changes (``git diff HEAD``) and committed changes
@@ -162,18 +160,13 @@ def get_git_diff(work_dir: str, max_bytes: int = 30_000) -> str:
                 timeout=10,
                 check=False,
             )
-            diff_text = diff.stdout[:max_bytes]
-            if len(diff.stdout) > max_bytes:
-                diff_text += "\n... (diff truncated)"
             parts.append(
                 f"### Uncommitted changes\n```\n{uncommitted}\n```"
-                f"\n\n```diff\n{diff_text}\n```"
+                f"\n\n```diff\n{diff.stdout}\n```"
             )
 
         # 2. Committed changes relative to base branch (handles worktrees)
-        branch_section = _get_branch_diff(
-            work_dir, max_bytes - sum(len(p) for p in parts)
-        )
+        branch_section = _get_branch_diff(work_dir)
         if branch_section:
             parts.append(branch_section)
 
@@ -287,15 +280,15 @@ def scan_diff_antipatterns(diff_text: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def _format_event_log(event_log: list[dict], max_entries: int = 30) -> str:
+def _format_event_log(event_log: list[dict]) -> str:
     """Format the event log into a human-readable summary."""
     if not event_log:
         return "(no events recorded)"
     lines = []
-    for evt in event_log[-max_entries:]:
+    for evt in event_log:
         kind = evt.get("kind", "?")
         tool = evt.get("tool_name", "")
-        summary = evt.get("summary", "")[:120]
+        summary = evt.get("summary", "")
         err_tag = " [ERROR]" if evt.get("is_error") else ""
         line = f"- {kind}{err_tag}"
         if tool:
@@ -303,8 +296,6 @@ def _format_event_log(event_log: list[dict], max_entries: int = 30) -> str:
         if summary:
             line += f": {summary}"
         lines.append(line)
-    if len(event_log) > max_entries:
-        lines.insert(0, f"(showing last {max_entries} of {len(event_log)} events)")
     return "\n".join(lines)
 
 
@@ -328,7 +319,7 @@ def _build_validation_prompt(
         "validate_task.txt",
         issue_id=issue_id,
         subject=subject,
-        description=(description or "(no description)")[:3000],
+        description=description or "(no description)",
         duration=int(session_data.get("duration_seconds", 0)),
         cost=f"{session_data.get('total_cost_usd', 0):.2f}",
         milestone_count=session_data.get("milestone_count", 0),
@@ -367,9 +358,9 @@ def run_validation(
     session_data: dict[str, Any],
     work_dir: str,
     *,
-    model: str = "opu",
-    budget_usd: float = 0.50,
-    timeout_seconds: int = 120,
+    model: str = "opus",
+    budget_usd: float = 0.0,
+    timeout_seconds: int = 600,
     callback: ProgressCallback | None = None,
 ) -> ValidationVerdict:
     """Run the validation agent and return a structured verdict.

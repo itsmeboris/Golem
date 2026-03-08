@@ -57,7 +57,7 @@ class TestBuildCommitMessage:
             )
             assert tag not in msg
 
-    def test_truncates_long_first_line(self):
+    def test_long_first_line_preserved(self):
         msg = build_commit_message(
             issue_id=1,
             subject="[AGENT] " + "x" * 100,
@@ -65,7 +65,7 @@ class TestBuildCommitMessage:
             summary="",
         )
         first_line = msg.split("\n")[0]
-        assert len(first_line) <= 72
+        assert "x" * 100 in first_line
 
     def test_maps_task_types(self):
         mappings = {

@@ -101,13 +101,11 @@ def build_commit_message(
     clean_subject = _clean_subject(subject)
 
     first_line = f"[{main_tag}][{sub_tag}] {clean_subject}"
-    if len(first_line) > 72:
-        first_line = first_line[:69] + "..."
 
     body_parts = [
         f"Redmine issue #{issue_id}",
         "",
-        (summary[:500] if summary else "Task completed by agent."),
+        (summary if summary else "Task completed by agent."),
         "",
         "Automated-By: Golem",
     ]

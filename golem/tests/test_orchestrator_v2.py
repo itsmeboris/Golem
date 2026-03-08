@@ -1136,7 +1136,7 @@ class TestOnMilestone:
 
         assert "subtask_id" not in session.event_log[0]
 
-    def test_event_log_capped_at_500(self):
+    def test_event_log_grows_without_cap(self):
         session = TaskSession(parent_issue_id=1)
         session.event_log = [{"kind": "old"} for _ in range(500)]
         orch = _make_orch(session)
@@ -1144,7 +1144,7 @@ class TestOnMilestone:
         ts = TrackerState(milestone_count=501)
         orch._on_milestone(milestone, ts)
 
-        assert len(session.event_log) == 500
+        assert len(session.event_log) == 501
         assert session.event_log[-1]["kind"] == "new"
 
     def test_progress_callback_called(self):

@@ -54,7 +54,7 @@ class TestGolemFlowConfig:
         assert config.detection_tag == "[AGENT]"
         assert config.default_work_dir == ""
         assert config.task_model == "sonnet"
-        assert config.task_timeout_seconds == 1800
+        assert config.task_timeout_seconds == 3600
         assert config.progress_interval_seconds == 60
 
     def test_custom_values(self):
@@ -83,7 +83,7 @@ class TestParseGolemConfig:
         assert config.tick_interval == 30
         assert config.detection_tag == "[AGENT]"
         assert config.task_model == "sonnet"
-        assert config.task_timeout_seconds == 1800
+        assert config.task_timeout_seconds == 3600
         assert config.progress_interval_seconds == 60
 
     def test_full_data(self):

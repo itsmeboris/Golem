@@ -278,10 +278,10 @@ class TestSummarizeAgent:
         result = _summarize_agent("Agent", {})
         assert result == ""
 
-    def test_long_description_truncated(self):
+    def test_long_description_preserved(self):
         long_desc = "x" * 100
         result = _summarize_agent("Agent", {"description": long_desc})
-        assert len(result.split("Agent: ")[1]) == 80
+        assert len(result.split("Agent: ")[1]) == 100
 
     def test_desc_preferred_over_prompt(self):
         result = _summarize_agent("Agent", {"description": "desc", "prompt": "prompt"})

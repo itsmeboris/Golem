@@ -45,7 +45,7 @@ class SlackNotifier:
     def notify_started(self, task_id: int | str, subject: str) -> None:
         blocks = [
             _header(f"Golem Started: #{task_id}", ":rocket:"),
-            _section(subject[:300]),
+            _section(subject),
         ]
         self._send(blocks, f"Golem started #{task_id}")
 
@@ -68,7 +68,7 @@ class SlackNotifier:
         )
         blocks: list[dict[str, Any]] = [
             _header(f"Golem Completed: #{task_id}", emoji),
-            _section(subject[:300]),
+            _section(subject),
         ]
 
         facts: list[tuple[str, str]] = [
@@ -85,7 +85,7 @@ class SlackNotifier:
         blocks.append(_fields(facts))
 
         if concerns:
-            items = "\n".join(f"• {c}" for c in concerns[:5])
+            items = "\n".join(f"• {c}" for c in concerns)
             blocks.extend([_divider(), _section(f"*Concerns*\n{items}")])
 
         self._send(blocks, f"Golem completed #{task_id}")
@@ -101,10 +101,10 @@ class SlackNotifier:
     ) -> None:
         blocks = [
             _header(f"Golem Failed: #{task_id}", ":x:"),
-            _section(subject[:300]),
+            _section(subject),
             _fields(
                 [
-                    ("Error", reason[:200]),
+                    ("Error", reason),
                     ("Cost", f"${cost_usd:.2f}"),
                     ("Duration", _fmt_duration(duration_s)),
                 ]
@@ -126,7 +126,7 @@ class SlackNotifier:
     ) -> None:
         blocks: list[dict[str, Any]] = [
             _header(f"Golem Needs Review: #{task_id}", ":warning:"),
-            _section(subject[:300]),
+            _section(subject),
             _fields(
                 [
                     ("Verdict", verdict),
@@ -137,9 +137,9 @@ class SlackNotifier:
             ),
         ]
         if summary:
-            blocks.append(_section(f"*Summary*: {summary[:300]}"))
+            blocks.append(_section(f"*Summary*: {summary}"))
         if concerns:
-            items = "\n".join(f"• {c}" for c in concerns[:5])
+            items = "\n".join(f"• {c}" for c in concerns)
             blocks.extend([_divider(), _section(f"*Concerns*\n{items}")])
 
         self._send(blocks, f"Golem needs review #{task_id}")

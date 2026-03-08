@@ -53,7 +53,7 @@ class TeamsClient:
             )
             if resp.status_code >= 400:
                 logger.error(
-                    "Teams webhook returned %d: %s", resp.status_code, resp.text[:300]
+                    "Teams webhook returned %d: %s", resp.status_code, resp.text
                 )
                 return False
             logger.info("Card sent successfully (status=%d)", resp.status_code)

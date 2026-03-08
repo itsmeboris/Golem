@@ -176,7 +176,7 @@ class NullStateBackend:
 
     def post_comment(self, task_id: int | str, text: str) -> bool:
         """Log a comment."""
-        logger.info("Comment on %s: %s", task_id, text[:120])
+        logger.info("Comment on %s: %s", task_id, text)
         return True
 
     def update_progress(self, task_id: int | str, percent: int) -> bool:
@@ -219,7 +219,7 @@ class LogNotifier:
         **kwargs: Any,
     ) -> None:
         """Log a task-failed notification."""
-        logger.info("NOTIFY: Task %s failed: %s — %s", task_id, subject, reason[:120])
+        logger.info("NOTIFY: Task %s failed: %s — %s", task_id, subject, reason)
 
     def notify_escalated(  # pylint: disable=unused-argument
         self,
@@ -230,9 +230,7 @@ class LogNotifier:
         **kwargs: Any,
     ) -> None:
         """Log a task-escalated notification."""
-        logger.info(
-            "NOTIFY: Task %s escalated (%s): %s", task_id, verdict, summary[:120]
-        )
+        logger.info("NOTIFY: Task %s escalated (%s): %s", task_id, verdict, summary)
 
     def notify_batch_submitted(self, group_id: str, task_count: int) -> None:
         """Log a batch-submitted notification."""

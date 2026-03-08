@@ -561,12 +561,12 @@ class TestHelpers:
         assert session.event_log[0]["summary"] == "test event"
         assert session.milestone_count == 1
 
-    def test_emit_event_caps_at_500(self):
+    def test_emit_event_grows_without_cap(self):
         session = TaskSession(parent_issue_id=42, parent_subject="Test")
         session.event_log = [{"kind": "test"} for _ in range(500)]
         sup = _make_supervisor(session=session)
         sup._emit_event("overflow event")
-        assert len(session.event_log) == 500
+        assert len(session.event_log) == 501
 
     def test_checkpoint_calls_save(self):
         save = MagicMock()

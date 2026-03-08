@@ -20,7 +20,7 @@ class TestOrchestrationConfig:
         config = GolemFlowConfig()
         assert config.supervisor_mode is True
         assert config.orchestrate_budget_usd == 15.0
-        assert config.orchestrate_timeout_seconds == 2400
+        assert config.orchestrate_timeout_seconds == 3600
         assert config.orchestrate_model == "opus"
         assert config.inner_retry_max == 3
         assert config.resume_on_partial is True

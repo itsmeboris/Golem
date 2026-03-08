@@ -151,7 +151,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         self._sessions[issue_id] = session
         self._save_state()
 
-        logger.info("Created new task session for #%d: %s", issue_id, subject[:60])
+        logger.info("Created new task session for #%d: %s", issue_id, subject)
 
         self._profile.notifier.notify_started(issue_id, subject)
 
@@ -295,7 +295,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             model = self._task_config.task_model or "sonnet"
             live.enqueue(event_id, "golem", model)
             live.update_phase(event_id, "detected")
-            logger.info("Detected new task: #%d %s", iid, subject[:60])
+            logger.info("Detected new task: #%d %s", iid, subject)
             self._spawn_session_task(iid)
 
         self._scan_submissions()
@@ -616,7 +616,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                 self._profile.notifier.notify_failed(
                     sid,
                     session.parent_subject,
-                    reason[:200],
+                    reason,
                     cost_usd=session.total_cost_usd,
                     duration_s=session.duration_seconds,
                 )
@@ -705,7 +705,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         """
         task_id = int(time.time() * 1000)
         if not subject:
-            subject = f"[AGENT] {prompt[:80]}"
+            subject = f"[AGENT] {prompt}"
 
         self._submissions_dir.mkdir(parents=True, exist_ok=True)
         task_file = self._submissions_dir / f"{task_id}.json"
@@ -724,7 +724,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         self._sessions[task_id] = session
         self._save_state()
 
-        logger.info("Submitted task #%d: %s", task_id, subject[:60])
+        logger.info("Submitted task #%d: %s", task_id, subject)
         self._profile.notifier.notify_started(task_id, subject)
 
         if self._running:
@@ -875,7 +875,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             model = self._task_config.task_model or "sonnet"
             live.enqueue(event_id, "golem", model)
             live.update_phase(event_id, "detected")
-            logger.info("Picked up submission: #%d %s", iid, subject[:60])
+            logger.info("Picked up submission: #%d %s", iid, subject)
             self._spawn_session_task(iid)
 
             done_dir.mkdir(parents=True, exist_ok=True)

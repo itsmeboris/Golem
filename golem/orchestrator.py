@@ -654,8 +654,8 @@ class TaskOrchestrator:
             files_to_fix=files_to_fix_text,
             test_failures=test_failures_text,
             event_log_summary="\n".join(
-                f"- {e.get('kind', '?')}: {e.get('summary', '')[:80]}"
-                for e in self.session.event_log[-15:]
+                f"- {e.get('kind', '?')}: {e.get('summary', '')}"
+                for e in self.session.event_log
             )
             or "(no events)",
         )
@@ -886,7 +886,6 @@ class TaskOrchestrator:
         self.session.errors = list(tracker_state.errors)
 
         # Append milestone to session event_log for live trace view.
-        # Cap at 500 entries to prevent unbounded growth.
         entry: dict = {
             "kind": milestone.kind,
             "tool_name": milestone.tool_name,
@@ -895,8 +894,6 @@ class TaskOrchestrator:
             "is_error": milestone.is_error,
         }
         self.session.event_log.append(entry)
-        if len(self.session.event_log) > 500:
-            self.session.event_log = self.session.event_log[-500:]
 
         if self._on_progress:
             self._on_progress(self.session, milestone)
@@ -943,7 +940,7 @@ class TaskOrchestrator:
 
         if result is not None:
             self.session.total_cost_usd = result.cost_usd
-            self.session.result_summary = str(result.output.get("result", ""))[:1000]
+            self.session.result_summary = str(result.output.get("result", ""))
         else:
             self.session.total_cost_usd = state.cost_usd
 

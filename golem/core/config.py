@@ -48,19 +48,19 @@ class GolemFlowConfig(FlowConfig):
     default_work_dir: str = ""
     work_dirs: dict[str, str] = field(default_factory=dict)
     task_model: str = "sonnet"
-    task_timeout_seconds: int = 1800
+    task_timeout_seconds: int = 3600
     progress_interval_seconds: int = 60
     # v2 validation & commit
     validation_model: str = "opus"
-    validation_budget_usd: float = 0.50
-    validation_timeout_seconds: int = 120
+    validation_budget_usd: float = 0.0  # 0 = unlimited
+    validation_timeout_seconds: int = 600
     retry_budget_usd: float = 5.0
     max_retries: int = 1
     auto_commit: bool = True
     # Subagent orchestration mode
     supervisor_mode: bool = True
     orchestrate_budget_usd: float = 15.0
-    orchestrate_timeout_seconds: int = 2400
+    orchestrate_timeout_seconds: int = 3600
     orchestrate_model: str = "opus"
     inner_retry_max: int = 3  # circuit breaker for inner test-fix loops
     resume_on_partial: bool = True  # use --resume instead of cold retry
@@ -74,7 +74,7 @@ class GolemFlowConfig(FlowConfig):
     max_infra_retries: int = 2
     # Merge review (agent-assisted reconciliation / conflict resolution)
     merge_review_budget_usd: float = 1.0
-    merge_review_timeout: int = 120
+    merge_review_timeout: int = 600
     # Checkpoint persistence for crash recovery
     checkpoint_interval_seconds: int = 300
     checkpoint_max_age_minutes: int = 10
@@ -101,7 +101,7 @@ class DaemonConfig:
     startup_poll_seconds: float = 0.5
     http_submit_timeout: int = 10
     fallback_budget_usd: float = 10.0
-    fallback_task_timeout_seconds: int = 1800
+    fallback_task_timeout_seconds: int = 3600
 
 
 @dataclass
@@ -238,19 +238,19 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
         default_work_dir=data.get("default_work_dir", ""),
         work_dirs=data.get("work_dirs", {}),
         task_model=data.get("task_model", "sonnet"),
-        task_timeout_seconds=data.get("task_timeout_seconds", 1800),
+        task_timeout_seconds=data.get("task_timeout_seconds", 3600),
         progress_interval_seconds=data.get("progress_interval_seconds", 60),
         # v2 validation & commit
         validation_model=data.get("validation_model", "opus"),
-        validation_budget_usd=data.get("validation_budget_usd", 0.50),
-        validation_timeout_seconds=data.get("validation_timeout_seconds", 120),
+        validation_budget_usd=data.get("validation_budget_usd", 0.0),
+        validation_timeout_seconds=data.get("validation_timeout_seconds", 600),
         retry_budget_usd=data.get("retry_budget_usd", 5.0),
         max_retries=data.get("max_retries", 1),
         auto_commit=data.get("auto_commit", True),
         # Subagent orchestration
         supervisor_mode=data.get("supervisor_mode", True),
         orchestrate_budget_usd=data.get("orchestrate_budget_usd", 15.0),
-        orchestrate_timeout_seconds=data.get("orchestrate_timeout_seconds", 2400),
+        orchestrate_timeout_seconds=data.get("orchestrate_timeout_seconds", 3600),
         orchestrate_model=data.get("orchestrate_model", "opus"),
         inner_retry_max=data.get("inner_retry_max", 3),
         resume_on_partial=data.get("resume_on_partial", True),
@@ -260,7 +260,7 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
         prompts_dir=data.get("prompts_dir", ""),
         max_infra_retries=data.get("max_infra_retries", 2),
         merge_review_budget_usd=data.get("merge_review_budget_usd", 1.0),
-        merge_review_timeout=data.get("merge_review_timeout", 120),
+        merge_review_timeout=data.get("merge_review_timeout", 600),
         checkpoint_interval_seconds=data.get("checkpoint_interval_seconds", 300),
         checkpoint_max_age_minutes=data.get("checkpoint_max_age_minutes", 10),
     )
@@ -294,7 +294,7 @@ def _parse_daemon_config(data: dict[str, Any]) -> DaemonConfig:
         startup_poll_seconds=data.get("startup_poll_seconds", 0.5),
         http_submit_timeout=data.get("http_submit_timeout", 10),
         fallback_budget_usd=data.get("fallback_budget_usd", 10.0),
-        fallback_task_timeout_seconds=data.get("fallback_task_timeout_seconds", 1800),
+        fallback_task_timeout_seconds=data.get("fallback_task_timeout_seconds", 3600),
     )
 
 

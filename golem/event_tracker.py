@@ -63,10 +63,10 @@ def _summarize_tool_input(name: str, tool_input: dict) -> str:
 def _summarize_bash(_name: str, inp: dict) -> str:
     desc = inp.get("description", "")
     if desc:
-        return f"Bash: {desc[:100]}"
+        return f"Bash: {desc}"
     cmd = inp.get("command", "")
     if cmd:
-        return f"Bash: {cmd.replace(chr(10), ' ').strip()[:80]}"
+        return f"Bash: {cmd.replace(chr(10), ' ').strip()}"
     return ""
 
 
@@ -90,7 +90,7 @@ def _summarize_keyed(key: str) -> Callable[[str, dict], str]:
 
     def _fn(name: str, inp: dict) -> str:
         val = inp.get(key, "")
-        return f"{name}: {val[:100]}" if val else ""
+        return f"{name}: {val}" if val else ""
 
     return _fn
 
@@ -103,9 +103,9 @@ def _summarize_agent(_name: str, inp: dict) -> str:
     if agent_type:
         parts.append(f"[{agent_type}]")
     if desc:
-        parts.append(desc[:80])
+        parts.append(desc)
     elif prompt:
-        parts.append(prompt.replace("\n", " ").strip()[:80])
+        parts.append(prompt.replace("\n", " ").strip())
     return "Agent: " + " ".join(parts) if parts else ""
 
 
@@ -247,7 +247,7 @@ class TaskEventTracker:
             combined = " ".join(text_parts)
             return Milestone(
                 kind="text",
-                summary=combined[:200],
+                summary=combined,
                 timestamp=time.time(),
             )
         return None
@@ -260,7 +260,7 @@ class TaskEventTracker:
                 c.get("text", "") for c in content if isinstance(c, dict)
             )
         text = str(content).replace("\n", " ").strip()
-        snippet = text[:200] if text else ""
+        snippet = text or ""
 
         if is_error:
             self.state.errors.append(snippet or "(empty error)")

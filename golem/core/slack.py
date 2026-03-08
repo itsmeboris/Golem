@@ -37,7 +37,7 @@ class SlackClient:
             )
             if resp.status_code >= 400:
                 logger.error(
-                    "Slack webhook returned %d: %s", resp.status_code, resp.text[:300]
+                    "Slack webhook returned %d: %s", resp.status_code, resp.text
                 )
                 return False
             logger.info("Slack message sent successfully (status=%d)", resp.status_code)

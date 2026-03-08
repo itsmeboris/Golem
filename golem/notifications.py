@@ -33,7 +33,7 @@ def build_task_started_card(
     """Card sent when a golem session starts execution."""
     body: list[dict[str, Any]] = [
         _header_block(f"Golem Started: #{parent_id}", color="accent"),
-        _text_block(subject[:120]),
+        _text_block(subject),
     ]
     actions = [_open_url_action("View Issue", f"{REDMINE_ISSUES_URL}/{parent_id}")]
     return _card_envelope(body, actions)
@@ -56,7 +56,7 @@ def build_task_completed_card(
     color = "good" if retry_count == 0 else "accent"
     body: list[dict[str, Any]] = [
         _header_block(f"Golem Completed: #{parent_id}", color=color),
-        _text_block(subject[:120]),
+        _text_block(subject),
     ]
 
     facts: list[tuple[str, str]] = [
@@ -73,7 +73,7 @@ def build_task_completed_card(
     body.append(_fact_set(facts))
 
     if concerns:
-        items = "\n".join(f"- {c}" for c in concerns[:5])
+        items = "\n".join(f"- {c}" for c in concerns)
         body.append(_text_block(f"**Concerns**:\n{items}"))
 
     actions = [_open_url_action("View Issue", f"{REDMINE_ISSUES_URL}/{parent_id}")]
@@ -90,8 +90,8 @@ def build_task_activity_card(
     """Card for mid-run updates (future threaded replies via Graph API)."""
     body: list[dict[str, Any]] = [
         _header_block(f"Golem: #{parent_id} — In Progress", color="accent"),
-        _text_block(f"**{subject[:80]}**"),
-        _text_block(status_text[:200] if status_text else "Working..."),
+        _text_block(f"**{subject}**"),
+        _text_block(status_text if status_text else "Working..."),
         _fact_set(
             [
                 ("Elapsed", _fmt_duration(elapsed_s)),
@@ -114,7 +114,7 @@ def build_task_failure_card(
 ) -> dict[str, Any]:
     """Card sent when a session fails (agent crash or unrecoverable error)."""
     facts: list[tuple[str, str]] = [
-        ("Error", reason[:200]),
+        ("Error", reason),
         ("Cost", f"${cost_usd:.2f}"),
         ("Duration", _fmt_duration(duration_s)),
     ]
@@ -123,7 +123,7 @@ def build_task_failure_card(
 
     body: list[dict[str, Any]] = [
         _header_block(f"Golem Failed: #{parent_id}", color="attention"),
-        _text_block(subject[:120]),
+        _text_block(subject),
         _fact_set(facts),
     ]
     actions = [_open_url_action("View Issue", f"{REDMINE_ISSUES_URL}/{parent_id}")]
@@ -143,7 +143,7 @@ def build_task_escalation_card(
     """Card sent when validation fails and the task is escalated for human review."""
     body: list[dict[str, Any]] = [
         _header_block(f"Golem Needs Review: #{parent_id}", color="warning"),
-        _text_block(subject[:120]),
+        _text_block(subject),
         _fact_set(
             [
                 ("Verdict", verdict),
@@ -155,10 +155,10 @@ def build_task_escalation_card(
     ]
 
     if summary:
-        body.append(_text_block(f"**Summary**: {summary[:300]}"))
+        body.append(_text_block(f"**Summary**: {summary}"))
 
     if concerns:
-        items = "\n".join(f"- {c}" for c in concerns[:5])
+        items = "\n".join(f"- {c}" for c in concerns)
         body.append(_text_block(f"**Concerns**:\n{items}"))
 
     actions = [_open_url_action("View Issue", f"{REDMINE_ISSUES_URL}/{parent_id}")]
