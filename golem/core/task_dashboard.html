@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -9,10 +9,21 @@
 </head>
 <body>
 
-<!-- Live Bar (always visible) -->
-<header class="live-bar" id="live-bar">
-  <div class="lb-brand"><span class="lb-logo">&#9881;</span> Golem</div>
-  <div class="lb-stats" id="lb-stats"></div>
+<!-- Top Bar -->
+<header class="top-bar" id="top-bar">
+  <div class="top-brand">
+    <svg class="top-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+    <span>Golem</span>
+  </div>
+  <nav class="top-nav" id="top-nav">
+    <button class="nav-tab active" data-view="overview">Overview</button>
+    <button class="nav-tab" data-view="tasks">Tasks</button>
+    <button class="nav-tab" data-view="config">Config</button>
+  </nav>
+  <div class="top-stats" id="top-stats"></div>
+  <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
+    <span class="theme-icon" id="theme-icon">&#9789;</span>
+  </button>
 </header>
 
 <div class="config-bar hidden" id="config-bar"></div>
@@ -20,51 +31,55 @@
 <!-- Level 1: Overview -->
 <main class="main-view" id="main-view">
   <div class="overview" id="overview">
-    <!-- DAG Section (collapsible) -->
-    <div class="dag-section" id="dag-section">
-    <!-- DAG Filter Bar -->
-    <div class="dag-toolbar">
-      <div class="dag-filters">
-        <button class="dag-filter-btn active" data-filter="" onclick="setDagFilter('')">All</button>
-        <button class="dag-filter-btn" data-filter="active" onclick="setDagFilter('active')">Active</button>
-        <button class="dag-filter-btn" data-filter="failed" onclick="setDagFilter('failed')">Failed</button>
-        <button class="dag-filter-btn" data-filter="completed" onclick="setDagFilter('completed')">Completed</button>
-      </div>
-      <div class="dag-legend" id="dag-legend"></div>
-      <select class="dag-group-filter hidden" id="dag-group-filter" onchange="setDagGroupFilter(this.value)"></select>
-      <div class="dag-controls">
-        <button class="dag-ctrl-btn dag-collapse-btn" onclick="toggleDagCollapse()" title="Collapse/expand DAG">&#9650;</button>
-        <button class="dag-ctrl-btn" onclick="dagZoomFit()" title="Fit to view">&#8862;</button>
-        <button class="dag-ctrl-btn" onclick="dagZoomIn()" title="Zoom in">+</button>
-        <button class="dag-ctrl-btn" onclick="dagZoomOut()" title="Zoom out">&minus;</button>
-      </div>
-    </div>
+    <!-- Metrics Row -->
+    <div class="metrics-row" id="overview-metrics"></div>
 
-    <!-- DAG Graph -->
-    <div class="dag-container" id="dag-container">
-      <svg class="dag-svg" id="dag-svg"></svg>
-      <button class="dag-minimap-toggle" id="dag-minimap-toggle" onclick="toggleMinimap()" title="Toggle minimap">&#9638;</button>
-      <div class="dag-minimap" id="dag-minimap"></div>
-      <div class="dag-empty" id="dag-empty">
-        <p>No tasks yet. Tasks will appear when issues are detected.</p>
+    <!-- Split View: DAG + Task List -->
+    <div class="split-view">
+      <!-- DAG Panel (left) -->
+      <div class="dag-panel" id="dag-panel">
+        <div class="dag-header">
+          <span class="dag-title">Task Graph</span>
+          <div class="dag-filters" id="dag-filters">
+            <button class="dag-pill active" data-filter="" onclick="setDagFilter('')">All</button>
+            <button class="dag-pill" data-filter="active" onclick="setDagFilter('active')">Active</button>
+            <button class="dag-pill" data-filter="failed" onclick="setDagFilter('failed')">Failed</button>
+            <button class="dag-pill" data-filter="completed" onclick="setDagFilter('completed')">Completed</button>
+          </div>
+          <select class="dag-group-filter hidden" id="dag-group-filter" onchange="setDagGroupFilter(this.value)"></select>
+          <div class="dag-controls">
+            <button class="dag-ctrl-btn dag-collapse-btn" onclick="toggleDagCollapse()" title="Toggle DAG">&#9650;</button>
+            <button class="dag-ctrl-btn" onclick="dagZoomFit()" title="Fit">&#8862;</button>
+            <button class="dag-ctrl-btn" onclick="dagZoomIn()" title="Zoom in">+</button>
+            <button class="dag-ctrl-btn" onclick="dagZoomOut()" title="Zoom out">&minus;</button>
+          </div>
+        </div>
+        <div class="dag-body" id="dag-body">
+          <svg class="dag-svg" id="dag-svg"></svg>
+          <button class="dag-minimap-toggle" id="dag-minimap-toggle" onclick="toggleMinimap()" title="Minimap">&#9638;</button>
+          <div class="dag-minimap" id="dag-minimap"></div>
+          <div class="dag-empty" id="dag-empty">
+            <p>No tasks yet.</p>
+          </div>
+        </div>
       </div>
-    </div>
-    </div>
 
-    <!-- Task Table -->
-    <div class="task-table-section">
-      <div class="tt-toolbar">
-        <input type="search" id="table-search" placeholder="Filter tasks...">
-        <select id="table-state-filter">
-          <option value="">All states</option>
-          <option value="running">Running</option>
-          <option value="completed">Completed</option>
-          <option value="failed">Failed</option>
-          <option value="validating">Validating</option>
-          <option value="detected">Detected</option>
-        </select>
+      <!-- Task List (right) -->
+      <div class="task-list-panel" id="task-list-panel">
+        <div class="tl-header">
+          <span class="tl-title">Tasks</span>
+          <input type="search" id="table-search" class="tl-search" placeholder="Filter tasks...">
+          <select id="table-state-filter" class="tl-filter">
+            <option value="">All</option>
+            <option value="running">Running</option>
+            <option value="completed">Completed</option>
+            <option value="failed">Failed</option>
+            <option value="validating">Validating</option>
+            <option value="detected">Detected</option>
+          </select>
+        </div>
+        <div class="task-list" id="task-list"></div>
       </div>
-      <div class="task-table" id="task-table"></div>
     </div>
   </div>
 
