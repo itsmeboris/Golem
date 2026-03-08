@@ -142,7 +142,7 @@ def merge_and_cleanup(
     base_dir: str,
     issue_id: int,
     worktree_path: str,
-) -> str:
+) -> "MergeOutcome":
     """Merge the worktree branch back to the base branch and clean up.
 
     Parameters
@@ -156,9 +156,11 @@ def merge_and_cleanup(
 
     Returns
     -------
-    str
-        The merge commit SHA (short), or the current HEAD if no changes to merge,
-        or empty string if merge failed.
+    MergeOutcome
+        ``sha`` contains the merge commit SHA (short), or the current HEAD if
+        no changes to merge, or empty string if merge failed.
+        ``missing_additions`` lists any agent additions lost during the merge.
+        ``agent_diff`` is the raw unified diff captured before the merge.
     """
     branch_name = f"agent/{issue_id}"
     target_branch = _current_branch(base_dir)
@@ -174,7 +176,11 @@ def merge_and_cleanup(
         sha_result = _run_git(["rev-parse", "--short", "HEAD"], cwd=base_dir)
         sha = sha_result.stdout.strip()
         _cleanup_worktree_impl(base_dir, worktree_path, branch_name)
-        return sha
+        return MergeOutcome(sha=sha)
+
+    # Capture the agent diff and changed files before removing the worktree.
+    agent_diff = get_agent_diff(base_dir, branch_name)
+    changed_files = get_changed_files(base_dir, branch_name, target_branch)
 
     # Remove the worktree first so the branch is no longer "checked out"
     # — git refuses to rebase a branch that is in use by a worktree.
@@ -234,6 +240,15 @@ def merge_and_cleanup(
             branch_name,
             sha,
         )
+        missing = verify_merge_integrity(base_dir, agent_diff, changed_files)
+        if missing:
+            logger.warning(
+                "Session #%s: %d file(s) have missing additions after merge",
+                issue_id,
+                len(missing),
+            )
+            for m in missing:
+                logger.warning("  %s: %s", m.file, m.description)
     else:
         logger.error(
             "Session #%s: merge failed: %s",
@@ -242,14 +257,14 @@ def merge_and_cleanup(
         )
         cleanup_worktree(base_dir, worktree_path, keep_branch=True)
         _unstash(base_dir, stashed, issue_id)
-        return ""
+        return MergeOutcome(sha="", agent_diff=agent_diff)
 
     _unstash(base_dir, stashed, issue_id)
     # Worktree was removed before rebase; just prune stale entries and
     # delete the branch now that the merge is complete.
     _run_git(["worktree", "prune"], cwd=base_dir)
     _run_git(["branch", "-D", branch_name], cwd=base_dir)
-    return sha
+    return MergeOutcome(sha=sha, missing_additions=missing, agent_diff=agent_diff)
 
 
 def _stash_if_dirty(base_dir: str, issue_id: int) -> bool:
@@ -303,6 +318,15 @@ class MissingAddition:
     file: str
     expected_lines: list[str] = field(default_factory=list)
     description: str = ""
+
+
+@dataclass
+class MergeOutcome:
+    """Return type of merge_and_cleanup with integrity information."""
+
+    sha: str
+    missing_additions: list[MissingAddition] = field(default_factory=list)
+    agent_diff: str = ""
 
 
 _TRIVIAL_LINE = re.compile(

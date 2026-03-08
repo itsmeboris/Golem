@@ -32,7 +32,12 @@ from .orchestrator import (
 from .profile import GolemProfile
 from .validation import ValidationVerdict, run_validation
 from .workdir import resolve_work_dir
-from .worktree_manager import cleanup_worktree, create_worktree, merge_and_cleanup
+from .worktree_manager import (
+    MergeOutcome,
+    cleanup_worktree,
+    create_worktree,
+    merge_and_cleanup,
+)
 
 logger = logging.getLogger("golem.supervisor_v2_subagent")
 
@@ -462,14 +467,53 @@ class SubagentSupervisor:
                 return
 
             if self._worktree_path:
-                merge_sha = merge_and_cleanup(
+                merge_outcome = merge_and_cleanup(
                     self._base_work_dir, issue_id, self._worktree_path
                 )
-                if merge_sha:
-                    self.session.commit_sha = merge_sha
-                    self._emit_event(f"Merged worktree branch → {merge_sha}")
-                    self._slog.info("Merged to base → %s", merge_sha)
+                if merge_outcome.sha:
+                    self.session.commit_sha = merge_outcome.sha
+                    self._emit_event(f"Merged worktree branch → {merge_outcome.sha}")
+                    self._slog.info("Merged to base → %s", merge_outcome.sha)
                     self._worktree_path = ""
+
+                    if merge_outcome.missing_additions:
+                        missing_summary = "; ".join(
+                            m.description for m in merge_outcome.missing_additions
+                        )
+                        if self.task_config.merge_review_budget_usd > 0:
+                            from .merge_review import run_merge_reconciliation
+
+                            recon = run_merge_reconciliation(
+                                self._base_work_dir,
+                                merge_outcome.agent_diff,
+                                merge_outcome.missing_additions,
+                                budget_usd=self.task_config.merge_review_budget_usd,
+                                timeout_seconds=self.task_config.merge_review_timeout,
+                            )
+                            if recon.resolved:
+                                self.session.commit_sha = (
+                                    recon.commit_sha or self.session.commit_sha
+                                )
+                                self._slog.info(
+                                    "Reconciliation resolved missing additions: %s",
+                                    recon.explanation,
+                                )
+                            else:
+                                self._slog.warning(
+                                    "Reconciliation failed: %s — flagging concerns",
+                                    recon.explanation,
+                                )
+                                self.session.validation_concerns.append(
+                                    f"Missing additions after merge: {missing_summary}"
+                                )
+                        else:
+                            self._slog.warning(
+                                "Missing additions after merge (no review budget): %s",
+                                missing_summary,
+                            )
+                            self.session.validation_concerns.append(
+                                f"Missing additions after merge: {missing_summary}"
+                            )
                 else:
                     self._emit_event(
                         "Worktree merge failed — branch preserved",

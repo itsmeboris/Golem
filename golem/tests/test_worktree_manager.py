@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from golem.worktree_manager import (
+    MergeOutcome,
     MissingAddition,
     _cleanup_worktree_impl,
     _current_branch,
@@ -108,17 +109,19 @@ class TestMergeAndCleanup:
         _run_git(["add", "."], cwd=wt_path)
         _run_git(["commit", "-m", "Add new file"], cwd=wt_path)
 
-        sha = merge_and_cleanup(str(git_repo), 200, wt_path)
-        assert sha  # Should return a non-empty SHA
+        result = merge_and_cleanup(str(git_repo), 200, wt_path)
+        assert isinstance(result, MergeOutcome)
+        assert result.sha  # Should return a non-empty SHA
         assert (git_repo / "new_file.py").exists()
 
     def test_no_changes_returns_head(self, git_repo, tmp_path):
         wt_root = str(tmp_path / "worktrees")
         wt_path = create_worktree(str(git_repo), 300, worktree_root=wt_root)
 
-        sha = merge_and_cleanup(str(git_repo), 300, wt_path)
+        result = merge_and_cleanup(str(git_repo), 300, wt_path)
+        assert isinstance(result, MergeOutcome)
         # No commits to merge → returns current HEAD (success, not failure)
-        assert sha != ""
+        assert result.sha != ""
 
     def test_cleanup_after_merge(self, git_repo, tmp_path):
         wt_root = str(tmp_path / "worktrees")
@@ -179,8 +182,9 @@ class TestRebaseFailure:
         _run_git(["add", "."], cwd=wt_path)
         _run_git(["commit", "-m", "Conflict commit"], cwd=wt_path)
 
-        sha = merge_and_cleanup(str(git_repo), 700, wt_path)
-        assert isinstance(sha, str)
+        result = merge_and_cleanup(str(git_repo), 700, wt_path)
+        assert isinstance(result, MergeOutcome)
+        assert isinstance(result.sha, str)
 
 
 class TestMergeFailure:
@@ -215,8 +219,9 @@ class TestMergeFailure:
             return result
 
         monkeypatch.setattr("golem.worktree_manager._run_git", mock_run_git)
-        sha = merge_and_cleanup("/base", 888, "/wt/888")
-        assert sha == ""
+        result = merge_and_cleanup("/base", 888, "/wt/888")
+        assert isinstance(result, MergeOutcome)
+        assert result.sha == ""
 
 
 class TestStashIfDirty:
@@ -279,8 +284,9 @@ class TestFFFailFallsBackToRegularMerge:
         _run_git(["add", "."], cwd=str(git_repo))
         _run_git(["commit", "-m", "Diverge main"], cwd=str(git_repo))
 
-        sha = merge_and_cleanup(str(git_repo), 801, wt_path)
-        assert isinstance(sha, str)
+        result = merge_and_cleanup(str(git_repo), 801, wt_path)
+        assert isinstance(result, MergeOutcome)
+        assert isinstance(result.sha, str)
 
 
 class TestGetChangedFiles:
@@ -529,3 +535,83 @@ class TestMergeReviewConfigFields:
         config = _parse_golem_config(data)
         assert config.merge_review_budget_usd == 2.5
         assert config.merge_review_timeout == 300
+
+
+class TestMergeAndCleanupIntegrity:
+    def test_clean_merge_has_empty_missing(self, git_repo, tmp_path):
+        """merge_and_cleanup returns MergeOutcome with empty missing_additions when clean."""
+        wt_root = str(tmp_path / "worktrees")
+        wt_path = create_worktree(str(git_repo), 810, worktree_root=wt_root)
+
+        (Path(wt_path) / "new_file.py").write_text("def hello():\n    return 42\n")
+        _run_git(["add", "."], cwd=wt_path)
+        _run_git(["commit", "-m", "Add new file"], cwd=wt_path)
+
+        result = merge_and_cleanup(str(git_repo), 810, wt_path)
+        assert isinstance(result, MergeOutcome)
+        assert result.sha
+        assert result.missing_additions == []
+
+    def test_merge_returns_agent_diff(self, git_repo, tmp_path):
+        """merge_and_cleanup returns MergeOutcome with agent_diff populated."""
+        wt_root = str(tmp_path / "worktrees")
+        wt_path = create_worktree(str(git_repo), 812, worktree_root=wt_root)
+
+        (Path(wt_path) / "new.py").write_text("def greet():\n    return 'hello'\n")
+        _run_git(["add", "."], cwd=wt_path)
+        _run_git(["commit", "-m", "Add file"], cwd=wt_path)
+
+        result = merge_and_cleanup(str(git_repo), 812, wt_path)
+        assert isinstance(result, MergeOutcome)
+        assert result.sha
+        assert result.missing_additions == []
+        assert isinstance(result.agent_diff, str)
+        assert "new.py" in result.agent_diff
+
+    def test_missing_additions_in_outcome(self, monkeypatch):
+        """MergeOutcome includes missing_additions from verify_merge_integrity."""
+        missing = [
+            MissingAddition(file="a.py", expected_lines=["x = 1"], description="1 lost")
+        ]
+
+        def mock_run_git(args, cwd, timeout=30):  # pylint: disable=unused-argument
+            result = MagicMock()
+            result.stdout = ""
+            result.stderr = ""
+            result.returncode = 0
+
+            if args == ["rev-parse", "--abbrev-ref", "HEAD"]:
+                result.stdout = "main"
+            elif "log" in args and ".." in " ".join(args):
+                result.stdout = "abc123 some commit"
+            elif args[0] == "diff" and "--name-only" in args:
+                result.stdout = "a.py"
+            elif args[0] == "diff":
+                result.stdout = "+++ b/a.py\n+x = 1\n"
+            elif args == ["rev-parse", "--short", "HEAD"]:
+                result.stdout = "abc1234"
+            return result
+
+        monkeypatch.setattr("golem.worktree_manager._run_git", mock_run_git)
+        monkeypatch.setattr(
+            "golem.worktree_manager.verify_merge_integrity",
+            lambda *a, **kw: missing,
+        )
+
+        result = merge_and_cleanup("/base", 813, "/wt/813")
+        assert isinstance(result, MergeOutcome)
+        assert result.sha == "abc1234"
+        assert result.missing_additions == missing
+        assert "a.py" in result.agent_diff
+
+    def test_no_changes_returns_outcome_with_sha(self, git_repo, tmp_path):
+        """No-changes path returns MergeOutcome with HEAD sha and no missing_additions."""
+        wt_root = str(tmp_path / "worktrees")
+        wt_path = create_worktree(str(git_repo), 814, worktree_root=wt_root)
+
+        # No commits in worktree — nothing to merge
+        result = merge_and_cleanup(str(git_repo), 814, wt_path)
+        assert isinstance(result, MergeOutcome)
+        assert result.sha != ""
+        assert result.missing_additions == []
+        assert result.agent_diff == ""

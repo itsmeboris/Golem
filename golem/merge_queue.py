@@ -13,8 +13,8 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from .worktree_manager import (
+    MergeOutcome,
     cleanup_worktree,
-    get_agent_diff,
     get_changed_files,
     merge_and_cleanup,
     verify_merge_integrity,
@@ -119,22 +119,18 @@ class MergeQueue:
 
     async def _merge_one(self, entry: MergeEntry) -> MergeResult:
         try:
-            agent_diff = get_agent_diff(entry.base_dir, entry.branch_name)
-
-            sha = merge_and_cleanup(
+            outcome = merge_and_cleanup(
                 entry.base_dir, entry.session_id, entry.worktree_path
             )
-            if sha:
-                missing = verify_merge_integrity(
-                    entry.base_dir, agent_diff, entry.changed_files
-                )
+            if outcome.sha:
+                missing = outcome.missing_additions
                 if missing and self._on_reconcile:
                     logger.warning(
                         "Session %d: %d file(s) lost additions after merge",
                         entry.session_id,
                         len(missing),
                     )
-                    recon = self._on_reconcile(entry, agent_diff, missing)
+                    recon = self._on_reconcile(entry, outcome.agent_diff, missing)
                     if not recon.resolved:
                         logger.warning(
                             "Session %d: reconciliation failed — %s",
@@ -144,14 +140,14 @@ class MergeQueue:
                         return MergeResult(
                             session_id=entry.session_id,
                             success=False,
-                            merge_sha=sha,
+                            merge_sha=outcome.sha,
                             error=f"reconciliation failed: {recon.explanation}",
                             conflict_files=[m.file for m in missing],
                         )
 
                     # Re-verify after reconciliation
                     still_missing = verify_merge_integrity(
-                        entry.base_dir, agent_diff, entry.changed_files
+                        entry.base_dir, outcome.agent_diff, entry.changed_files
                     )
                     if still_missing:
                         logger.warning(
@@ -163,7 +159,7 @@ class MergeQueue:
                         return MergeResult(
                             session_id=entry.session_id,
                             success=False,
-                            merge_sha=sha,
+                            merge_sha=outcome.sha,
                             error="additions still missing after reconciliation",
                             conflict_files=[m.file for m in still_missing],
                         )
@@ -178,7 +174,7 @@ class MergeQueue:
                     return MergeResult(
                         session_id=entry.session_id,
                         success=False,
-                        merge_sha=sha,
+                        merge_sha=outcome.sha,
                         error="agent additions lost during merge",
                         conflict_files=[m.file for m in missing],
                     )
@@ -186,23 +182,23 @@ class MergeQueue:
                 logger.info(
                     "Session %d: merged successfully → %s",
                     entry.session_id,
-                    sha,
+                    outcome.sha,
                 )
                 return MergeResult(
-                    session_id=entry.session_id, success=True, merge_sha=sha
+                    session_id=entry.session_id, success=True, merge_sha=outcome.sha
                 )
 
             if self._on_conflict:
                 resolved = self._on_conflict(entry, entry.changed_files)
                 if resolved:
-                    sha_retry = merge_and_cleanup(
+                    outcome_retry = merge_and_cleanup(
                         entry.base_dir, entry.session_id, entry.worktree_path
                     )
-                    if sha_retry:
+                    if outcome_retry.sha:
                         return MergeResult(
                             session_id=entry.session_id,
                             success=True,
-                            merge_sha=sha_retry,
+                            merge_sha=outcome_retry.sha,
                         )
 
             cleanup_worktree(entry.base_dir, entry.worktree_path, keep_branch=True)

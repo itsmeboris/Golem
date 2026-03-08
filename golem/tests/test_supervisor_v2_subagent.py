@@ -7,9 +7,11 @@ import pytest
 from golem.committer import CommitResult
 from golem.core.cli_wrapper import CLIResult
 from golem.core.config import GolemFlowConfig
+from golem.merge_review import ReconciliationResult
 from golem.orchestrator import TaskSession, TaskSessionState
 from golem.supervisor_v2_subagent import SubagentSupervisor
 from golem.validation import ValidationVerdict
+from golem.worktree_manager import MergeOutcome, MissingAddition
 
 
 def _make_profile():
@@ -464,7 +466,7 @@ class TestCommitAndComplete:
             ),
             patch(
                 "golem.supervisor_v2_subagent.merge_and_cleanup",
-                return_value="merge123",
+                return_value=MergeOutcome(sha="merge123"),
             ) as mock_merge,
         ):
             sup._commit_and_complete(42, "/wt/42", verdict)
@@ -537,7 +539,7 @@ class TestCommitAndComplete:
             ),
             patch(
                 "golem.supervisor_v2_subagent.merge_and_cleanup",
-                return_value=None,
+                return_value=MergeOutcome(sha=""),
             ),
         ):
             sup._commit_and_complete(42, "/wt/42", verdict)
@@ -556,6 +558,115 @@ class TestCommitAndComplete:
         sup._commit_and_complete(42, "/work", verdict)
 
         assert session.state == TaskSessionState.COMPLETED
+
+    def test_missing_additions_triggers_reconciliation(self):
+        session = TaskSession(parent_issue_id=42, parent_subject="Test")
+        config = _make_config(auto_commit=True, merge_review_budget_usd=1.0)
+        sup = _make_supervisor(session=session, config=config)
+        sup._base_work_dir = "/repo"
+        sup._worktree_path = "/wt/42"
+
+        verdict = ValidationVerdict(
+            verdict="PASS", confidence=0.9, summary="ok", task_type="feature"
+        )
+
+        missing = [
+            MissingAddition(file="a.py", expected_lines=["x"], description="1 lost")
+        ]
+
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.commit_changes",
+                return_value=CommitResult(committed=True, sha="abc"),
+            ),
+            patch(
+                "golem.supervisor_v2_subagent.merge_and_cleanup",
+                return_value=MergeOutcome(
+                    sha="merge1", missing_additions=missing, agent_diff="diff"
+                ),
+            ),
+            patch(
+                "golem.merge_review.run_merge_reconciliation",
+                return_value=ReconciliationResult(
+                    resolved=True, commit_sha="fix1", explanation="fixed"
+                ),
+            ) as mock_recon,
+        ):
+            sup._commit_and_complete(42, "/wt/42", verdict)
+
+        mock_recon.assert_called_once()
+        assert session.commit_sha == "fix1"
+        assert session.state == TaskSessionState.COMPLETED
+
+    def test_missing_additions_no_budget_logs_warning(self):
+        session = TaskSession(parent_issue_id=42, parent_subject="Test")
+        config = _make_config(auto_commit=True, merge_review_budget_usd=0)
+        sup = _make_supervisor(session=session, config=config)
+        sup._base_work_dir = "/repo"
+        sup._worktree_path = "/wt/42"
+
+        verdict = ValidationVerdict(
+            verdict="PASS", confidence=0.9, summary="ok", task_type="feature"
+        )
+
+        missing = [
+            MissingAddition(file="a.py", expected_lines=["x"], description="1 lost")
+        ]
+
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.commit_changes",
+                return_value=CommitResult(committed=True, sha="abc"),
+            ),
+            patch(
+                "golem.supervisor_v2_subagent.merge_and_cleanup",
+                return_value=MergeOutcome(
+                    sha="merge1", missing_additions=missing, agent_diff="diff"
+                ),
+            ),
+        ):
+            sup._commit_and_complete(42, "/wt/42", verdict)
+
+        assert session.state == TaskSessionState.COMPLETED
+        assert any("Missing additions" in c for c in session.validation_concerns)
+
+    def test_reconciliation_failure_flags_concerns(self):
+        session = TaskSession(parent_issue_id=42, parent_subject="Test")
+        config = _make_config(auto_commit=True, merge_review_budget_usd=1.0)
+        sup = _make_supervisor(session=session, config=config)
+        sup._base_work_dir = "/repo"
+        sup._worktree_path = "/wt/42"
+
+        verdict = ValidationVerdict(
+            verdict="PASS", confidence=0.9, summary="ok", task_type="feature"
+        )
+
+        missing = [
+            MissingAddition(file="a.py", expected_lines=["x"], description="1 lost")
+        ]
+
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.commit_changes",
+                return_value=CommitResult(committed=True, sha="abc"),
+            ),
+            patch(
+                "golem.supervisor_v2_subagent.merge_and_cleanup",
+                return_value=MergeOutcome(
+                    sha="merge1", missing_additions=missing, agent_diff="diff"
+                ),
+            ),
+            patch(
+                "golem.merge_review.run_merge_reconciliation",
+                return_value=ReconciliationResult(
+                    resolved=False, explanation="cannot fix"
+                ),
+            ),
+        ):
+            sup._commit_and_complete(42, "/wt/42", verdict)
+
+        assert session.state == TaskSessionState.COMPLETED
+        assert any("Missing additions" in c for c in session.validation_concerns)
 
 
 # -- Escalation --------------------------------------------------------------
