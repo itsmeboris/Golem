@@ -1,82 +1,128 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
 /* ══════════════════════════════════════════════════════════════
    Shared CSS for both Flow Dashboard and Golem Dashboard.
-   Each dashboard includes this via <link> and can override
-   CSS custom properties to customise layout.
+   Warm Mono design system — dark/light themes.
    ══════════════════════════════════════════════════════════════ */
 
-/* ── Reset & Base ──────────────────────────────────────────── */
+/* ── Reset & Custom Properties (Dark + Light) ────────────── */
 *{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg-base:#0B0F19;
-  --bg-surface:#111827;
-  --bg-elevated:#1F2937;
-  --bg-hover:#2D3748;
-  --bg-terminal:#060A12;
-  --border:#1F2937;
-  --border-active:#374151;
-  --border-focus:#4B83F0;
-  --text-primary:#E8ECF1;
-  --text-secondary:#9CA3AF;
-  --text-muted:#6B7280;
-  --text-dim:#4B5563;
-  --green:#34D399;
-  --green-dim:#86efac;
-  --red:#F87171;
-  --yellow:#FBBF24;
-  --blue:#60A5FA;
-  --purple:#a78bfa;
-  --orange:#fb923c;
-  --font-sans:system-ui,-apple-system,'Segoe UI',sans-serif;
-  --font-mono:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace;
-  --radius:6px;
-  --radius-lg:8px;
-  /* Overridable per-dashboard */
-  --metrics-min:120px;
-  --tab-pre-max-h:500px;
-  /* DAG graph derived tokens */
-  --dag-node-bg:var(--bg-elevated);
-  --dag-edge-default:var(--text-dim);
-  --dag-edge-active:var(--blue);
-  --dag-edge-done:color-mix(in srgb, var(--green) 40%, transparent);
-  --dag-edge-failed:var(--red);
-  --dag-cluster-border:color-mix(in srgb, var(--border) 50%, transparent);
-  --dag-minimap-bg:var(--bg-base);
-  --dag-minimap-viewport:color-mix(in srgb, var(--blue) 20%, transparent);
-}
-body{font-family:var(--font-sans);background:var(--bg-base);color:var(--text-primary);line-height:1.5;overflow:hidden;height:100vh;display:flex;flex-direction:column}
 
-/* ── Layout ────────────────────────────────────────────────── */
+:root, [data-theme="dark"] {
+  --bg-base: #19181c;
+  --bg-surface: #1f1e24;
+  --bg-elevated: #2a2930;
+  --bg-hover: #302f38;
+  --bg-terminal: #14131a;
+  --border: #2a2930;
+  --border-active: #3a3944;
+  --border-focus: #c084fc;
+  --text-primary: #e4e2eb;
+  --text-secondary: #a09ca8;
+  --text-muted: #6e6a78;
+  --text-dim: #5a5664;
+  --accent: #c084fc;
+  --accent-bg: rgba(192,132,252,0.12);
+  --green: #6ee7b7;
+  --green-bg: rgba(110,231,183,0.10);
+  --green-dim: #86efac;
+  --red: #fca5a5;
+  --red-bg: rgba(252,165,165,0.10);
+  --yellow: #fbbf24;
+  --yellow-bg: rgba(251,191,36,0.10);
+  --blue: #93c5fd;
+  --blue-bg: rgba(147,197,253,0.12);
+  --purple: #a78bfa;
+  --orange: #fb923c;
+  --font-sans: 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  --radius: 8px;
+  --radius-lg: 14px;
+  /* Overridable per-dashboard */
+  --metrics-min: 120px;
+  --tab-pre-max-h: 500px;
+  /* DAG graph derived tokens */
+  --dag-node-bg: var(--bg-elevated);
+  --dag-edge-default: var(--text-dim);
+  --dag-edge-active: var(--blue);
+  --dag-edge-done: color-mix(in srgb, var(--green) 40%, transparent);
+  --dag-edge-failed: var(--red);
+  --dag-cluster-border: color-mix(in srgb, var(--border) 50%, transparent);
+  --dag-minimap-bg: var(--bg-base);
+  --dag-minimap-viewport: color-mix(in srgb, var(--blue) 20%, transparent);
+}
+
+[data-theme="light"] {
+  --bg-base: #f5f3ef;
+  --bg-surface: #fff;
+  --bg-elevated: #f0ede8;
+  --bg-hover: #eae7e1;
+  --bg-terminal: #faf9f6;
+  --border: #e0ddd6;
+  --border-active: #d0ccc4;
+  --border-focus: #7c3aed;
+  --text-primary: #1e1e24;
+  --text-secondary: #5a5664;
+  --text-muted: #8a8690;
+  --text-dim: #a09ca8;
+  --accent: #7c3aed;
+  --accent-bg: rgba(124,58,237,0.08);
+  --green: #059669;
+  --green-bg: rgba(5,150,105,0.08);
+  --green-dim: #10b981;
+  --red: #dc2626;
+  --red-bg: rgba(220,38,38,0.08);
+  --yellow: #d97706;
+  --yellow-bg: rgba(217,119,6,0.08);
+  --blue: #2563eb;
+  --blue-bg: rgba(37,99,235,0.08);
+  --purple: #7c3aed;
+  --orange: #ea580c;
+}
+
+/* ── Body & Layout ───────────────────────────────────────── */
+body{font-family:var(--font-sans);background:var(--bg-base);color:var(--text-primary);line-height:1.5;overflow:hidden;height:100vh;display:flex;flex-direction:column}
 .main-view{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column}
-.main-view::-webkit-scrollbar{width:6px}
-.main-view::-webkit-scrollbar-track{background:transparent}
-.main-view::-webkit-scrollbar-thumb{background:var(--border-active);border-radius:3px}
 
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
 
 .hidden{display:none!important}
 
-/* ── Back Button ───────────────────────────────────────────── */
+/* ── Scrollbars ──────────────────────────────────────────── */
+.main-view::-webkit-scrollbar{width:6px}
+.main-view::-webkit-scrollbar-track{background:transparent}
+.main-view::-webkit-scrollbar-thumb{background:var(--border-active);border-radius:3px}
+
+/* ── Back Button ─────────────────────────────────────────── */
 .back-btn{
   background:none;border:1px solid var(--border);color:var(--text-secondary);padding:0.25rem 0.6rem;
   border-radius:var(--radius);font-size:0.75rem;cursor:pointer;transition:all 0.12s;display:inline-flex;align-items:center;gap:0.3rem;margin-bottom:0.5rem
 }
 .back-btn:hover{background:var(--bg-elevated);color:var(--text-primary);border-color:var(--border-active)}
 
-/* ── Metrics Row ───────────────────────────────────────────── */
+/* ── Metrics Row (icon-tile style) ───────────────────────── */
 .metrics-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(var(--metrics-min),1fr));gap:0.6rem;margin-bottom:1.5rem}
-.metric-card{
+.metric-card, .mr-card{
   background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--radius);
-  padding:0.7rem 0.85rem
+  padding:0.7rem 0.85rem;display:flex;align-items:flex-start;gap:0.6rem
 }
-.metric-card .mc-label{font-size:0.65rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:0.1rem}
-.metric-card .mc-value{font-size:1.15rem;font-weight:700;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;word-break:break-all}
+.mr-dot{
+  width:8px;height:8px;border-radius:50%;margin-top:0.35rem;flex-shrink:0;
+  background:var(--accent)
+}
+.mr-dot.green{background:var(--green)}
+.mr-dot.red{background:var(--red)}
+.mr-dot.blue{background:var(--blue)}
+.mr-dot.yellow{background:var(--yellow)}
+.metric-card .mc-label, .mr-card .mc-label{font-size:0.65rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:0.1rem}
+.metric-card .mc-value, .mr-card .mc-value{font-size:1.15rem;font-weight:700;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;word-break:break-all}
 .metric-card .mc-value.green{color:var(--green)}
 .metric-card .mc-value.red{color:var(--red)}
 .metric-card .mc-value.blue{color:var(--blue)}
 
-@keyframes pulse-dot{0%,100%{box-shadow:0 0 0 0 rgba(96,165,250,.4)}50%{box-shadow:0 0 0 4px rgba(96,165,250,0)}}
+@keyframes pulse-dot{0%,100%{box-shadow:0 0 0 0 rgba(147,197,253,.4)}50%{box-shadow:0 0 0 4px rgba(147,197,253,0)}}
 
-/* ── Info Tabs ─────────────────────────────────────────────── */
+/* ── Info Tabs ───────────────────────────────────────────── */
 .info-tabs{margin-bottom:2rem}
 .tab-bar{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:0.75rem}
 .tab-btn{
@@ -84,7 +130,7 @@ body{font-family:var(--font-sans);background:var(--bg-base);color:var(--text-pri
   padding:0.5rem 1rem;cursor:pointer;border-bottom:2px solid transparent;transition:all 0.15s
 }
 .tab-btn:hover{color:var(--text-secondary)}
-.tab-btn.active{color:var(--text-primary);border-bottom-color:var(--blue)}
+.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
 .tab-content{display:none}
 .tab-content.active{display:block}
 .tab-content pre{
@@ -94,25 +140,25 @@ body{font-family:var(--font-sans);background:var(--bg-base);color:var(--text-pri
 }
 .tab-content .error-item{
   padding:0.5rem 0.75rem;border-left:3px solid var(--red);margin-bottom:0.4rem;
-  font-size:0.78rem;color:var(--red);background:rgba(248,113,113,.05);border-radius:0 var(--radius) var(--radius) 0
+  font-size:0.78rem;color:var(--red);background:var(--red-bg);border-radius:0 var(--radius) var(--radius) 0
 }
 .tab-content .tool-chip{
   display:inline-block;padding:0.2rem 0.5rem;margin:0.15rem;border-radius:var(--radius);
   font-size:0.72rem;background:var(--bg-elevated);color:var(--text-secondary);border:1px solid var(--border)
 }
-.tab-content .tool-chip.mcp{border-color:#1e1b4b;color:var(--purple)}
+.tab-content .tool-chip.mcp{border-color:var(--accent-bg);color:var(--purple)}
 
-/* ── Config Bar ────────────────────────────────────────────── */
+/* ── Config Bar ──────────────────────────────────────────── */
 .config-bar{display:flex;gap:1rem;flex-wrap:wrap;align-items:center;padding:0.6rem 1rem;background:var(--bg-surface);border-radius:var(--radius-lg);font-size:0.8rem;color:var(--text-secondary);border:1px solid var(--border);margin-bottom:1.25rem}
 .config-bar .cfg-label{text-transform:uppercase;font-size:0.65rem;letter-spacing:0.05em;color:var(--text-muted);margin-right:0.25rem}
 .config-bar .cfg-val{color:var(--text-primary);font-weight:500}
 .config-bar .cfg-chip{background:var(--bg-base);padding:0.2rem 0.5rem;border-radius:0.3rem;font-size:0.75rem;color:var(--text-secondary);margin-left:0.25rem}
 .config-bar .cfg-chip.on{color:var(--green)}
 .config-bar .cfg-chip.off{color:var(--text-muted);text-decoration:line-through}
-.admin-link{margin-left:auto;font-size:0.75rem;color:var(--blue);text-decoration:none}
+.admin-link{margin-left:auto;font-size:0.75rem;color:var(--accent);text-decoration:none}
 .admin-link:hover{text-decoration:underline}
 
-/* ── Empty State ───────────────────────────────────────────── */
+/* ── Empty State ─────────────────────────────────────────── */
 .empty-state{
   display:flex;flex-direction:column;align-items:center;justify-content:center;
   height:100%;color:var(--text-muted);gap:0.75rem
@@ -121,7 +167,7 @@ body{font-family:var(--font-sans);background:var(--bg-base);color:var(--text-pri
 .empty-state h2{font-size:1.1rem;font-weight:600;color:var(--text-secondary)}
 .empty-state p{font-size:0.85rem}
 
-/* ── Markdown Body ─────────────────────────────────────────── */
+/* ── Markdown Body ───────────────────────────────────────── */
 .markdown-body{font-size:0.9rem;line-height:1.8;color:var(--text-primary)}
 .markdown-body h1,.markdown-body h2,.markdown-body h3,.markdown-body h4{color:var(--text-primary);margin:1rem 0 .5rem;font-weight:600}
 .markdown-body h1{font-size:1.4rem;border-bottom:1px solid var(--border-active);padding-bottom:.3rem}
@@ -147,12 +193,12 @@ body{font-family:var(--font-sans);background:var(--bg-base);color:var(--text-pri
 .markdown-body blockquote{border-left:3px solid var(--border-focus);padding-left:1rem;color:var(--text-secondary);margin:.75rem 0}
 .no-data{text-align:center;padding:2rem;color:var(--text-muted);font-style:italic}
 
-/* ── Error Tooltip ─────────────────────────────────────────── */
+/* ── Error Tooltip ───────────────────────────────────────── */
 .err-tip{cursor:help;position:relative}
 .err-tip .err-text{display:none;position:absolute;left:0;top:110%;z-index:10;background:var(--bg-elevated);border:1px solid var(--border-active);border-radius:var(--radius);padding:.5rem .75rem;font-size:.75rem;color:var(--red);max-width:350px;white-space:pre-wrap;box-shadow:0 4px 12px rgba(0,0,0,.4)}
 .err-tip:hover .err-text{display:block}
 
-/* ── Validation ────────────────────────────────────────────── */
+/* ── Validation ──────────────────────────────────────────── */
 .validation-section{margin-bottom:1.5rem}
 .validation-section h3{font-size:0.85rem;font-weight:600;color:var(--text-secondary);margin-bottom:0.5rem;text-transform:uppercase;letter-spacing:0.05em}
 .validation-card{
@@ -164,9 +210,9 @@ body{font-family:var(--font-sans);background:var(--bg-base);color:var(--text-pri
   font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;
   padding:0.2rem 0.7rem;border-radius:999px
 }
-.vc-verdict.PASS{background:#064e3b;color:var(--green)}
-.vc-verdict.FAIL{background:#450a0a;color:var(--red)}
-.vc-verdict.PARTIAL{background:#431407;color:var(--orange)}
+.vc-verdict.PASS{background:var(--green-bg);color:var(--green)}
+.vc-verdict.FAIL{background:var(--red-bg);color:var(--red)}
+.vc-verdict.PARTIAL{background:var(--yellow-bg);color:var(--orange)}
 .vc-confidence{font-size:0.78rem;color:var(--text-muted)}
 .vc-summary{font-size:0.82rem;color:var(--text-secondary);line-height:1.5;margin-bottom:0.5rem}
 .vc-concerns{list-style:none;padding:0}
@@ -176,9 +222,7 @@ body{font-family:var(--font-sans);background:var(--bg-base);color:var(--text-pri
 }
 .vc-concerns li::before{content:'\26A0';position:absolute;left:0;color:var(--yellow);font-size:0.7rem}
 
-/* ── Responsive ────────────────────────────────────────────── */
-
-/* ── Skeleton Loading ──────────────────────────────────────── */
+/* ── Skeleton Loading ────────────────────────────────────── */
 .skeleton{
   background:linear-gradient(90deg,var(--bg-elevated) 25%,var(--bg-hover) 50%,var(--bg-elevated) 75%);
   background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:var(--radius)
