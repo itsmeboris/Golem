@@ -40,7 +40,21 @@
 
 /* ── Overview + Split View ───────────────────────────────────────── */
 .overview{padding:1.25rem 1.5rem}
-.split-view{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+.split-view{display:grid;grid-template-columns:1fr 6px 1fr;gap:0}
+
+/* Split resize handle */
+.split-handle{
+  width:6px;cursor:col-resize;position:relative;
+  background:transparent;transition:background 0.15s;
+  border-radius:3px;margin:0.5rem 0
+}
+.split-handle:hover,.split-handle.active{background:var(--accent);opacity:0.5}
+.split-handle::after{
+  content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:2px;height:24px;border-radius:1px;background:var(--border-active);
+  transition:background 0.15s
+}
+.split-handle:hover::after,.split-handle.active::after{background:var(--accent)}
 
 /* ── Metrics Row ─────────────────────────────────────────────────── */
 .metrics-row{
@@ -64,7 +78,8 @@
 /* ── DAG Panel ───────────────────────────────────────────────────── */
 .dag-panel{
   border:1px solid var(--border);border-radius:14px;
-  background:var(--bg-surface);overflow:hidden;display:flex;flex-direction:column
+  background:var(--bg-surface);overflow:hidden;display:flex;flex-direction:column;
+  margin-right:0.5rem
 }
 .dag-header{
   display:flex;align-items:center;gap:0.5rem;padding:0.65rem 1rem;
@@ -169,7 +184,8 @@
 /* ── Task List Panel ─────────────────────────────────────────────── */
 .task-list-panel{
   border:1px solid var(--border);border-radius:14px;
-  background:var(--bg-surface);overflow:hidden;display:flex;flex-direction:column
+  background:var(--bg-surface);overflow:hidden;display:flex;flex-direction:column;
+  margin-left:0.5rem
 }
 .tl-header{
   display:flex;align-items:center;gap:0.5rem;padding:0.65rem 1rem;
@@ -593,11 +609,14 @@
 
 /* ── Responsive ──────────────────────────────────────────────────── */
 @media(max-width:900px){
-  .split-view{grid-template-columns:1fr}
+  .split-view{grid-template-columns:1fr !important}
+  .split-handle{display:none}
+  .dag-panel{margin-right:0}
+  .task-list-panel{margin-left:0;margin-top:1rem}
   .dag-body{max-height:35vh}
 }
 @media(max-width:700px){
-  .split-view{grid-template-columns:1fr}
+  .split-view{grid-template-columns:1fr !important}
   .dag-body{max-height:35vh}
   .top-bar{padding:0.5rem 0.75rem;font-size:0.75rem}
   .top-nav{display:none}

@@ -1733,8 +1733,59 @@ if (_tableSearchEl) _tableSearchEl.addEventListener('input', renderTaskList);
 if (_tableFilterEl) _tableFilterEl.addEventListener('change', renderTaskList);
 window.addEventListener('hashchange', handleHash);
 
+/* ── Split View Resize ──────────────────────────────────────── */
+function initSplitResize() {
+  const handle = document.getElementById('split-handle');
+  const splitView = handle ? handle.parentElement : null;
+  if (!handle || !splitView) return;
+
+  /* Restore saved ratio */
+  try {
+    const saved = localStorage.getItem('golem-split-ratio');
+    if (saved) {
+      const ratio = parseFloat(saved);
+      if (ratio > 0.15 && ratio < 0.85) {
+        splitView.style.gridTemplateColumns = `${ratio}fr 6px ${1 - ratio}fr`;
+      }
+    }
+  } catch(e) {}
+
+  let dragging = false;
+
+  handle.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    dragging = true;
+    handle.classList.add('active');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const rect = splitView.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const ratio = Math.max(0.15, Math.min(0.85, x / rect.width));
+    splitView.style.gridTemplateColumns = `${ratio}fr 6px ${1 - ratio}fr`;
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('active');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    /* Persist ratio */
+    const cols = splitView.style.gridTemplateColumns;
+    const match = cols.match(/([\d.]+)fr/);
+    if (match) {
+      try { localStorage.setItem('golem-split-ratio', match[1]); } catch(e) {}
+    }
+  });
+}
+
 async function init() {
   initDagPanZoom();
+  initSplitResize();
   await Promise.all([loadConfig(), fetchSessions(), fetchLive()]);
   if (location.hash) handleHash();
   else renderOverview();
