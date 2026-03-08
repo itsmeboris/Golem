@@ -5,6 +5,13 @@
 :root{
   --metrics-min:150px;
   --tab-pre-max-h:400px;
+  --phase-scout:#22d3ee;--phase-scout-bg:rgba(34,211,238,0.1);
+  --phase-build:#4ade80;--phase-build-bg:rgba(74,222,128,0.1);
+  --phase-review:#fbbf24;--phase-review-bg:rgba(251,191,36,0.1);
+  --phase-verify:#2dd4bf;--phase-verify-bg:rgba(45,212,191,0.1);
+  --phase-validation:#a78bfa;--phase-validation-bg:rgba(167,139,250,0.1);
+  --phase-commit:#e2e8f0;--phase-commit-bg:rgba(226,232,240,0.08);
+  --phase-retry:#fb923c;--phase-retry-bg:rgba(251,146,60,0.1);
 }
 
 /* ── Top Bar ─────────────────────────────────────────────────────── */
@@ -355,6 +362,13 @@
   content:'';display:inline-block;width:12px;height:1px;
   background:var(--border-active);flex-shrink:0;margin-right:0.25rem
 }
+.wf-row[data-stage-type="scout"]{border-left:3px solid var(--phase-scout)}
+.wf-row[data-stage-type="build"]{border-left:3px solid var(--phase-build)}
+.wf-row[data-stage-type="review"]{border-left:3px solid var(--phase-review)}
+.wf-row[data-stage-type="verify"]{border-left:3px solid var(--phase-verify)}
+.wf-row[data-stage-type="validation"]{border-left:3px solid var(--phase-validation)}
+.wf-row[data-stage-type="commit"]{border-left:3px solid var(--phase-commit)}
+.wf-row[data-stage-type="retry"]{border-left:3px solid var(--phase-retry)}
 .wf-name{
   display:flex;align-items:center;gap:0.5rem;font-size:0.85rem;
   font-weight:500;color:var(--text-primary);white-space:nowrap;
@@ -392,6 +406,18 @@
 .wf-bar.st-pending{background:var(--text-dim);opacity:0.3}
 @keyframes wf-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 
+/* Phase-colored duration bars */
+.wf-bar[data-phase="scout"]{background:var(--phase-scout);opacity:0.6}
+.wf-bar[data-phase="build"]{background:var(--phase-build);opacity:0.6}
+.wf-bar[data-phase="review"]{background:var(--phase-review);opacity:0.6}
+.wf-bar[data-phase="verify"]{background:var(--phase-verify);opacity:0.6}
+.wf-bar[data-phase="validation"]{background:var(--phase-validation);opacity:0.6}
+.wf-bar[data-phase="commit"]{background:var(--phase-commit);opacity:0.4}
+.wf-bar[data-phase="retry"]{background:repeating-linear-gradient(-45deg,var(--phase-retry),var(--phase-retry) 4px,transparent 4px,transparent 8px);opacity:0.6}
+
+/* Compact summary text */
+.wf-summary{color:var(--text-muted);font-size:0.75rem;margin-left:auto;white-space:nowrap}
+
 /* Icon state colors */
 .wf-icon.st-completed{border-color:var(--green);color:var(--green);background:var(--green-bg)}
 .wf-icon.st-running{border-color:var(--blue);color:var(--blue);background:var(--blue-bg)}
@@ -426,6 +452,11 @@
 .wf-detail-body{padding:0.5rem 0;max-height:500px;overflow-y:auto}
 .wf-detail-body::-webkit-scrollbar{width:4px}
 .wf-detail-body::-webkit-scrollbar-thumb{background:var(--border-active);border-radius:2px}
+
+/* Detail line styles (preflight, commit, merge) */
+.wf-detail-line { display: flex; align-items: baseline; gap: 0.75rem; padding: 0.3rem 1rem; font-size: 0.82rem; }
+.wf-dl-label { color: var(--text-muted); min-width: 6rem; flex-shrink: 0; }
+.wf-detail-line code { font-family: var(--font-mono); font-size: 0.8rem; background: var(--bg-surface); padding: 1px 6px; border-radius: 3px; }
 
 /* Detail summary (validation, subtask) */
 .wf-detail-summary{
@@ -614,6 +645,27 @@
 .lt-row.lt-agent .lt-label{background:var(--blue-bg);color:var(--blue);font-size:0.72rem}
 .lt-row.lt-agent .lt-body{color:var(--blue);font-weight:600}
 
+/* Tool call chips — color by tool type */
+.lt-row.lt-tool-call .lt-label[data-tool-type="read"] { background: var(--blue-bg); color: var(--blue); }
+.lt-row.lt-tool-call .lt-label[data-tool-type="edit"] { background: var(--green-bg); color: var(--green); }
+.lt-row.lt-tool-call .lt-label[data-tool-type="bash"] { background: var(--orange-bg); color: var(--orange); }
+.lt-row.lt-tool-call .lt-label[data-tool-type="search"] { background: var(--accent-bg); color: var(--accent); }
+
+/* Supervisor events as section dividers */
+.lt-row.lt-supervisor {
+  border-top: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+}
+.lt-row.lt-supervisor .lt-body {
+  font-size: 0.78rem;
+  letter-spacing: 0.3px;
+}
+
+/* Tool results even more dimmed */
+.lt-row.lt-tool-result .lt-body { opacity: 0.5; }
+.lt-row.lt-tool-result:hover .lt-body { opacity: 1; }
+
 /* Auto-scroll indicator */
 .lt-scroll-anchor{height:1px;width:100%}
 .lt-empty{color:var(--text-muted);padding:2rem;text-align:center;font-style:italic}
@@ -628,6 +680,55 @@
   cursor:pointer;user-select:none
 }
 .lt-auto-scroll input{accent-color:var(--accent)}
+
+/* ── Live terminal expand ────────────────────────────────────────── */
+.lt-row { cursor: pointer; }
+.lt-row.lt-expanded { background: var(--bg-hover); }
+.lt-detail-panel {
+  background: var(--bg-elevated);
+  border-left: 2px solid var(--text-muted);
+  margin: 0 0.5rem 0.25rem 2.2rem;
+  border-radius: 0 0 6px 6px;
+  overflow: hidden;
+  animation: lt-expand 0.15s ease-out;
+}
+@keyframes lt-expand {
+  from { max-height: 0; opacity: 0; }
+  to { max-height: 2000px; opacity: 1; }
+}
+.lt-detail-panel pre {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+.lt-detail-panel .lt-detail-loading {
+  padding: 0.75rem 1rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Filter preset pills */
+.lt-filter-pills { display: flex; gap: 0.25rem; margin-left: auto; }
+.lt-filter-pill {
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  transition: all 0.15s;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.lt-filter-pill:hover { border-color: var(--text-secondary); color: var(--text-secondary); }
+.lt-filter-pill.active { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
 
 /* ── View Transitions ────────────────────────────────────────────── */
 .overview,.task-detail{animation:view-fade-in 0.15s ease-out}

@@ -12,8 +12,7 @@ function fmtTermTs(ts) {
 let _sessions = {};
 let _selectedId = null;
 let _traceCache = {};
-let _showThinking = false;
-let _showText = true;
+let _filterPreset = 'all'; /* 'all' | 'agent' | 'tools' | 'errors' */
 let _prevFingerprints = {};
 let _liveSnap = {};
 
@@ -1035,9 +1034,57 @@ function renderPhaseBanner(s) {
 
 const STAGE_ICONS = {
   task: '\uD83D\uDCCB', preflight: '\u2714', orchestration: '\u2699',
-  execution: '\u25B6', validation: '\uD83D\uDD0D',
+  build: '\u2699', execution: '\u25B6', validation: '\uD83D\uDD0D',
   merge: '\u2B06', commit: '\u2714', retry: '\u21BA', failure: '\u2717'
 };
+
+/* ── Orchestration Sub-Phase Detection ───────────────────── */
+function detectOrchestraPhases(events) {
+  const phases = [];
+  let current = { phase: 'setup', events: [], startTs: 0, endTs: 0 };
+  let buildCount = 0;
+
+  for (const ev of events) {
+    const kind = ev.kind || ev.type || '';
+    const summary = ev.summary || ev.text || '';
+    const ts = ev.timestamp || 0;
+
+    if (kind === 'supervisor') {
+      const newPhase = detectPhaseTransition(summary);
+      if (newPhase) {
+        if (current.events.length > 0) {
+          current.endTs = ts;
+          phases.push(current);
+        }
+        let phaseName = newPhase;
+        if (phaseName === 'build' || phaseName === 'retry') {
+          buildCount++;
+          phaseName = buildCount > 1 ? 'build_' + buildCount : 'build';
+        }
+        current = { phase: phaseName, events: [ev], startTs: ts, endTs: ts };
+        continue;
+      }
+    }
+
+    current.events.push(ev);
+    if (ts > 0 && current.startTs === 0) current.startTs = ts;
+    if (ts > 0) current.endTs = ts;
+  }
+
+  if (current.events.length > 0) phases.push(current);
+  return phases;
+}
+
+function detectPhaseTransition(summary) {
+  if (/Starting single-session orchestration/i.test(summary)) return 'build';
+  if (/Warm retry|Cold retry/i.test(summary)) return 'retry';
+  if (/Running external validation/i.test(summary)) return 'ext_validation';
+  if (/Committing and merging/i.test(summary)) return 'committing';
+  if (/Queued for merge/i.test(summary)) return 'merge_queue';
+  if (/Orchestrator finished/i.test(summary)) return '_end_build';
+  if (/Task completed/i.test(summary)) return '_end';
+  return null;
+}
 
 /* ── Stage Grouping Engine ─────────────────────────────────── */
 function computeStages(s) {
@@ -1052,28 +1099,64 @@ function computeStages(s) {
 
   if (state === 'detected') return stages;
 
-  stages.push({ id: 'preflight', type: 'preflight', label: 'Preflight', state: 'completed', events: [] });
+  stages.push({ id: 'preflight', type: 'preflight', label: 'Preflight',
+    state: 'completed', events: [],
+    meta: { worktree: s.worktree_path, depends: s.depends_on } });
 
-  /* Execution / orchestration stage */
-  const execLabel = s.execution_mode === 'subagent' ? 'Orchestrating' : 'Execution';
-  const execState = ['completed','failed','validating','retrying'].includes(state) ? 'completed'
-    : state === 'running' ? 'running' : 'pending';
-  stages.push({ id: 'execution', type: 'execution', label: execLabel, state: execState,
-    events: allEvents, meta: { milestones: s.milestone_count, cost: s.total_cost_usd } });
+  const isOrchestrated = s.execution_mode === 'subagent';
+  const supervisorEvents = allEvents.filter(e => (e.kind || e.type) === 'supervisor');
+
+  if (isOrchestrated && supervisorEvents.length > 1) {
+    const phases = detectOrchestraPhases(allEvents);
+    let buildIdx = 0;
+
+    for (const ph of phases) {
+      if (ph.phase.startsWith('_end') || ph.phase === 'setup') continue;
+      if (ph.phase === 'ext_validation' || ph.phase === 'committing' || ph.phase === 'merge_queue') continue;
+
+      if (ph.phase.startsWith('build')) {
+        buildIdx++;
+        const isRetry = buildIdx > 1;
+        const phaseType = isRetry ? 'retry' : 'build';
+        const suffix = buildIdx > 1 ? '\u2082' : '';
+        const label = 'Build' + suffix;
+        const execState = ['completed','failed','validating','retrying'].includes(state) ? 'completed'
+          : state === 'running' ? 'running' : 'pending';
+        stages.push({
+          id: 'build_' + buildIdx, type: phaseType, label: label,
+          state: execState, events: ph.events,
+          meta: { milestones: ph.events.length, cost: buildIdx === 1 ? s.total_cost_usd : 0,
+            startTs: ph.startTs, endTs: ph.endTs, isRetry }
+        });
+      }
+    }
+
+    if (buildIdx === 0) {
+      const execState = ['completed','failed','validating','retrying'].includes(state) ? 'completed'
+        : state === 'running' ? 'running' : 'pending';
+      stages.push({ id: 'execution', type: 'execution', label: 'Orchestrating',
+        state: execState, events: allEvents,
+        meta: { milestones: s.milestone_count, cost: s.total_cost_usd } });
+    }
+  } else {
+    const execLabel = isOrchestrated ? 'Orchestrating' : 'Execution';
+    const execState = ['completed','failed','validating','retrying'].includes(state) ? 'completed'
+      : state === 'running' ? 'running' : 'pending';
+    stages.push({ id: 'execution', type: 'execution', label: execLabel,
+      state: execState, events: allEvents,
+      meta: { milestones: s.milestone_count, cost: s.total_cost_usd } });
+  }
 
   if (['validating','completed','failed','retrying'].includes(state) || s.validation_verdict) {
     const valState = state === 'validating' ? 'running'
       : s.validation_verdict === 'PASS' ? 'completed'
       : s.validation_verdict === 'FAIL' ? 'failed'
       : s.validation_verdict === 'PARTIAL' ? 'warning' : 'pending';
-    stages.push({ id: 'validation', type: 'validation', label: 'Validation', state: valState, events: [],
+    stages.push({ id: 'validation', type: 'validation', label: 'Validation',
+      state: valState, events: [],
       meta: { verdict: s.validation_verdict, confidence: s.validation_confidence,
-        summary: s.validation_summary, concerns: s.validation_concerns, cost: s.validation_cost_usd } });
-  }
-
-  if (s.validation_verdict === 'PARTIAL' || state === 'retrying') {
-    stages.push({ id: 'retry', type: 'retry', label: 'Retry #' + (s.retry_count || 1),
-      state: 'warning', events: [], meta: { retryCount: s.retry_count } });
+        summary: s.validation_summary, concerns: s.validation_concerns,
+        cost: s.validation_cost_usd } });
   }
 
   if (s.validation_verdict === 'PASS' || s.merge_ready || s.commit_sha) {
@@ -1083,12 +1166,14 @@ function computeStages(s) {
 
   if (s.commit_sha) {
     stages.push({ id: 'commit', type: 'commit', label: 'Committed',
-      state: 'completed', events: [], meta: { sha: s.commit_sha } });
+      state: 'completed', events: [],
+      meta: { sha: s.commit_sha } });
   }
 
   if (s.validation_verdict === 'FAIL' || (state === 'failed' && !s.validation_verdict)) {
     stages.push({ id: 'failure', type: 'failure', label: 'Failed',
-      state: 'failed', events: [], meta: { errors: s.errors } });
+      state: 'failed', events: [],
+      meta: { errors: s.errors } });
   }
 
   return stages;
@@ -1115,11 +1200,15 @@ function enrichEvent(ev) {
 }
 
 function filterEvents(events) {
+  if (_filterPreset === 'all') return events;
   return events.filter(e => {
     const kind = e.kind || e.type;
-    if (kind === 'thinking' && !_showThinking) return false;
-    if (kind === 'text' && !_showText) return false;
-    return true;
+    switch (_filterPreset) {
+      case 'agent': return ['text', 'thinking', 'supervisor'].includes(kind);
+      case 'tools': return ['tool_call', 'tool_result'].includes(kind);
+      case 'errors': return e.is_error || kind === 'error';
+      default: return true;
+    }
   });
 }
 
@@ -1164,18 +1253,51 @@ function setPipelineView(view) {
   if (_selectedId && _sessions[_selectedId]) renderPipelineView(_selectedId, _sessions[_selectedId]);
 }
 
-function toggleThinking() {
-  _showThinking = !_showThinking;
-  document.getElementById('btn-thinking').classList.toggle('active', _showThinking);
+function setFilterPreset(preset) {
+  _filterPreset = preset;
   _stageFingerprint = '';
+  _liveEventCount = 0;
+  document.querySelectorAll('.lt-filter-pill').forEach(b =>
+    b.classList.toggle('active', b.dataset.filter === preset));
   if (_selectedId && _sessions[_selectedId]) renderPipelineView(_selectedId, _sessions[_selectedId]);
 }
 
-function toggleText() {
-  _showText = !_showText;
-  document.getElementById('btn-text').classList.toggle('active', _showText);
-  _stageFingerprint = '';
-  if (_selectedId && _sessions[_selectedId]) renderPipelineView(_selectedId, _sessions[_selectedId]);
+/* ── Stage Summary Text ────────────────────────────────────── */
+function stageSummaryText(st) {
+  const m = st.meta || {};
+  switch (st.type) {
+    case 'preflight': {
+      const parts = [];
+      if (m.worktree) parts.push(m.worktree.split('/').pop());
+      if (m.depends && m.depends.length) parts.push(m.depends.length + ' deps');
+      return parts.join(' \u00B7 ');
+    }
+    case 'build':
+    case 'execution': {
+      const parts = [];
+      if (m.cost) parts.push(fmtCost(m.cost));
+      if (m.milestones) parts.push(m.milestones + ' events');
+      if (m.isRetry) parts.push('retry');
+      return parts.join(' \u00B7 ');
+    }
+    case 'retry': {
+      const parts = ['retry'];
+      if (m.milestones) parts.push(m.milestones + ' events');
+      return parts.join(' \u00B7 ');
+    }
+    case 'validation': {
+      const parts = [];
+      if (m.verdict) parts.push(m.verdict);
+      if (m.confidence) parts.push(Math.round(m.confidence) + '%');
+      if (m.cost) parts.push(fmtCost(m.cost));
+      if (m.concerns && m.concerns.length) parts.push(m.concerns.length + ' concerns');
+      return parts.join(' \u00B7 ');
+    }
+    case 'commit':
+      return m.sha ? m.sha.slice(0, 7) : '';
+    default:
+      return '';
+  }
 }
 
 /* ── Waterfall Table ───────────────────────────────────────── */
@@ -1241,16 +1363,18 @@ function renderWaterfallTable(stages, session) {
       if (st.meta.cost) costText = fmtCost(st.meta.cost);
       else if (st.meta.result && st.meta.result.cost_usd) costText = fmtCost(st.meta.result.cost_usd);
     }
+    const summaryText = stageSummaryText(st);
 
-    html += `<div class="wf-row${selected}" data-stage-id="${st.id}" onclick="selectWaterfallStage('${st.id}')">
+    html += `<div class="wf-row${selected}" data-stage-id="${st.id}" data-stage-type="${st.type}" onclick="selectWaterfallStage('${st.id}')">
       <div class="wf-name">
         <div class="wf-icon st-${st.state}">${icon}</div>
         <span>${esc(st.label)}</span>
         ${costText ? `<span class="wf-cost">${costText}</span>` : ''}
+        ${summaryText ? `<span class="wf-summary">${esc(summaryText)}</span>` : ''}
       </div>
       <div class="wf-state st-${st.state}">${stateLabel}</div>
       <div class="wf-bar-container">
-        ${barWidth > 0 ? `<div class="wf-bar st-${st.state}" style="left:${barLeft.toFixed(1)}%;width:${barWidth.toFixed(1)}%"></div>` : ''}
+        ${barWidth > 0 ? `<div class="wf-bar st-${st.state}" data-phase="${st.type}" style="left:${barLeft.toFixed(1)}%;width:${barWidth.toFixed(1)}%"></div>` : ''}
         ${durationText ? `<div class="wf-bar-label">${durationText}</div>` : ''}
       </div>
     </div>`;
@@ -1318,28 +1442,52 @@ function renderDetailSummary(st) {
   let html = '';
   const m = st.meta || {};
 
-  if (st.type === 'validation' && m.verdict) {
-    html += '<div class="wf-detail-summary">';
-    html += `<span class="wf-verdict ${m.verdict}">${esc(m.verdict)}</span>`;
-    if (m.confidence != null) html += ` <span style="font-size:0.78rem;color:var(--text-muted)">${(m.confidence * 100).toFixed(0)}%</span>`;
-    if (m.cost) html += ` <span style="font-size:0.78rem;color:var(--text-muted)">${fmtCost(m.cost)}</span>`;
-    if (m.summary) html += `<div style="margin-top:0.3rem">${esc(m.summary)}</div>`;
-    if (m.concerns && m.concerns.length) {
-      html += '<ul class="wf-concerns">' + m.concerns.map(c => `<li>${esc(c)}</li>`).join('') + '</ul>';
+  switch (st.type) {
+    case 'preflight': {
+      if (m.worktree) html += `<div class="wf-detail-line"><span class="wf-dl-label">Worktree</span><code>${esc(m.worktree)}</code></div>`;
+      if (m.depends && m.depends.length) {
+        html += `<div class="wf-detail-line"><span class="wf-dl-label">Dependencies</span>${m.depends.map(d => `<span class="dep-chip" style="border-color:var(--text-muted);color:var(--text-secondary)">#${shortId(d)}</span>`).join(' ')}</div>`;
+      }
+      if (m.mode) html += `<div class="wf-detail-line"><span class="wf-dl-label">Mode</span><span>${esc(m.mode)}</span></div>`;
+      if (!m.worktree && !(m.depends && m.depends.length)) {
+        html += '<div class="wf-detail-line" style="color:var(--text-muted)">Environment ready.</div>';
+      }
+      break;
     }
-    html += '</div>';
-  }
-
-  if (st.type === 'commit' && m.sha) {
-    html += `<div class="wf-detail-summary" style="font-family:var(--font-mono);font-size:0.78rem;word-break:break-all">${esc(m.sha)}</div>`;
-  }
-
-  if (st.type === 'failure' && m.errors) {
-    html += '<div class="wf-detail-summary">' + (m.errors || []).map(e => `<div style="color:var(--red)">${esc(e)}</div>`).join('') + '</div>';
-  }
-
-  if (st.type === 'retry') {
-    html += `<div class="wf-detail-summary">Retry count: ${m.retryCount || 1}. Triggered by PARTIAL verdict.</div>`;
+    case 'validation': {
+      if (m.verdict) {
+        html += '<div class="wf-detail-summary">';
+        html += `<span class="wf-verdict ${m.verdict}">${esc(m.verdict)}</span>`;
+        if (m.confidence != null) html += ` <span style="font-size:0.78rem;color:var(--text-muted)">${(m.confidence * 100).toFixed(0)}%</span>`;
+        if (m.cost) html += ` <span style="font-size:0.78rem;color:var(--text-muted)">${fmtCost(m.cost)}</span>`;
+        if (m.summary) html += `<div style="margin-top:0.3rem">${esc(m.summary)}</div>`;
+        if (m.concerns && m.concerns.length) {
+          html += '<ul class="wf-concerns">' + m.concerns.map(c => `<li>${esc(c)}</li>`).join('') + '</ul>';
+        }
+        html += '</div>';
+      } else {
+        html += '<div class="wf-detail-line" style="color:var(--text-muted)">Validation in progress\u2026</div>';
+      }
+      break;
+    }
+    case 'merge': {
+      html += '<div class="wf-detail-line" style="color:var(--text-muted)">Queued for sequential merge via MergeQueue.</div>';
+      break;
+    }
+    case 'commit': {
+      if (m.sha) html += `<div class="wf-detail-line"><span class="wf-dl-label">Commit</span><code>${esc(m.sha)}</code></div>`;
+      break;
+    }
+    case 'failure': {
+      if (m.errors) {
+        html += '<div class="wf-detail-summary">' + (m.errors || []).map(e => `<div style="color:var(--red)">${esc(e)}</div>`).join('') + '</div>';
+      }
+      break;
+    }
+    case 'retry': {
+      html += `<div class="wf-detail-summary">Retry count: ${m.retryCount || 1}. Triggered by PARTIAL verdict.</div>`;
+      break;
+    }
   }
 
   return html;
@@ -1546,6 +1694,11 @@ function renderLiveTerminal(s) {
   statsHtml += `<span>Total:<span class="lt-stat-val">${filtered.length}</span></span>`;
   if (isRunning) statsHtml += '<span style="color:var(--blue)">\u25CF live</span>';
   statsHtml += `<label class="lt-auto-scroll"><input type="checkbox" ${_liveAutoScroll ? 'checked' : ''} onchange="_liveAutoScroll=this.checked"> Auto-scroll</label>`;
+  statsHtml += '<div class="lt-filter-pills">';
+  for (const f of ['all', 'agent', 'tools', 'errors']) {
+    statsHtml += `<button class="lt-filter-pill${_filterPreset === f ? ' active' : ''}" data-filter="${f}" onclick="setFilterPreset('${f}')">${f}</button>`;
+  }
+  statsHtml += '</div>';
   statsHtml += '</div>';
 
   if (isNewRender) {
@@ -1578,6 +1731,14 @@ function renderLiveTerminal(s) {
     const anchor = container.querySelector('.lt-scroll-anchor');
     if (anchor) anchor.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }
+}
+
+function classifyTool(name) {
+  if (/^(Read|Glob|Grep|LS)$/i.test(name)) return 'read';
+  if (/^(Edit|Write|NotebookEdit)$/i.test(name)) return 'edit';
+  if (/^Bash$/i.test(name)) return 'bash';
+  if (/^(Agent|WebSearch|WebFetch)$/i.test(name)) return 'search';
+  return '';
 }
 
 function renderLiveRow(ev) {
@@ -1648,12 +1809,95 @@ function renderLiveRow(ev) {
       body = text || kind;
   }
 
-  return `<div class="lt-row ${cls}">
+  const evTs = ev.timestamp || 0;
+  const evKind = ev.kind || ev.type || '';
+  const evTool = ev.tool_name || '';
+
+  const toolType = (kind === 'tool_call' && toolName !== 'Agent') ? classifyTool(toolName) : '';
+  const labelAttr = toolType ? ` data-tool-type="${toolType}"` : '';
+
+  return `<div class="lt-row ${cls}" data-event-ts="${evTs}" data-event-kind="${evKind}" data-event-tool="${esc(evTool)}" onclick="toggleLiveDetail(this)">
     <span class="lt-icon">${icon}</span>
-    <span class="lt-label">${esc(label)}</span>
+    <span class="lt-label"${labelAttr}>${esc(label)}</span>
     <span class="lt-body">${esc(body)}</span>
     ${ts ? `<span class="lt-ts">${ts}</span>` : '<span></span>'}
   </div>`;
+}
+
+async function toggleLiveDetail(rowEl) {
+  /* Collapse if already expanded */
+  const existing = rowEl.nextElementSibling;
+  if (existing && existing.classList.contains('lt-detail-panel')) {
+    existing.remove();
+    rowEl.classList.remove('lt-expanded');
+    return;
+  }
+
+  /* Collapse any other expanded row */
+  document.querySelectorAll('.lt-detail-panel').forEach(el => el.remove());
+  document.querySelectorAll('.lt-expanded').forEach(el => el.classList.remove('lt-expanded'));
+
+  rowEl.classList.add('lt-expanded');
+
+  const s = _sessions[_selectedId];
+  if (!s) return;
+  const eventId = 'golem-' + _selectedId;
+
+  /* Show loading */
+  const panel = document.createElement('div');
+  panel.className = 'lt-detail-panel';
+  panel.innerHTML = '<div class="lt-detail-loading">Loading\u2026</div>';
+  rowEl.after(panel);
+
+  const events = await loadTraceTerminal(eventId);
+  if (!events || !events.length) {
+    panel.innerHTML = '<div class="lt-detail-loading">Trace not available.</div>';
+    return;
+  }
+
+  /* Match by timestamp + kind + tool_name */
+  const targetTs = parseFloat(rowEl.dataset.eventTs) || 0;
+  const targetKind = rowEl.dataset.eventKind || '';
+  const targetTool = rowEl.dataset.eventTool || '';
+
+  let fullEvent = null;
+  let bestScore = -1;
+
+  for (const te of events) {
+    let score = 0;
+    const teKind = te.type || te.kind || '';
+    const teTool = te.tool_name || '';
+    const teTs = te.timestamp || 0;
+
+    if (teKind !== targetKind && targetKind) continue;
+    score += 1;
+    if (targetTool && teTool === targetTool) score += 2;
+    if (targetTs > 0 && teTs > 0) {
+      const diff = Math.abs(teTs - targetTs);
+      if (diff < 2) score += 5;
+      else if (diff < 10) score += 3;
+      else if (diff < 60) score += 1;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      fullEvent = te;
+    }
+  }
+
+  if (!fullEvent) {
+    panel.innerHTML = '<div class="lt-detail-loading">Event details not found in trace.</div>';
+    return;
+  }
+
+  const text = fullEvent.text || fullEvent.summary || '';
+  if (!text) {
+    panel.innerHTML = '<div class="lt-detail-loading">No additional detail.</div>';
+    return;
+  }
+
+  /* Render full text */
+  let rendered = esc(text);
+  panel.innerHTML = `<pre>${rendered}</pre>`;
 }
 
 /* ── Accordion / Tree View ─────────────────────────────────── */
