@@ -56,6 +56,23 @@
 }
 .split-handle:hover::after,.split-handle.active::after{background:var(--accent)}
 
+/* Vertical resize wrappers + handles */
+.v-resize-wrapper{display:flex;flex-direction:column;min-height:120px;overflow:hidden}
+.v-resize-wrapper > .dag-panel,
+.v-resize-wrapper > .task-list-panel{flex:1;min-height:0;overflow:hidden}
+.v-resize-handle{
+  height:6px;cursor:row-resize;position:relative;flex-shrink:0;
+  background:transparent;transition:background 0.15s;
+  border-radius:3px;margin:0 0.5rem
+}
+.v-resize-handle:hover,.v-resize-handle.active{background:var(--accent);opacity:0.5}
+.v-resize-handle::after{
+  content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:24px;height:2px;border-radius:1px;background:var(--border-active);
+  transition:background 0.15s
+}
+.v-resize-handle:hover::after,.v-resize-handle.active::after{background:var(--accent)}
+
 /* ── Metrics Row ─────────────────────────────────────────────────── */
 .metrics-row{
   display:grid;grid-template-columns:repeat(auto-fit,minmax(var(--metrics-min),1fr));
@@ -78,9 +95,10 @@
 /* ── DAG Panel ───────────────────────────────────────────────────── */
 .dag-panel{
   border:1px solid var(--border);border-radius:14px;
-  background:var(--bg-surface);overflow:hidden;display:flex;flex-direction:column;
-  margin-right:0.5rem
+  background:var(--bg-surface);overflow:hidden;display:flex;flex-direction:column
 }
+.v-resize-wrapper#dag-v-wrapper{margin-right:0.5rem}
+.v-resize-wrapper#tl-v-wrapper{margin-left:0.5rem}
 .dag-header{
   display:flex;align-items:center;gap:0.5rem;padding:0.65rem 1rem;
   border-bottom:1px solid var(--border);flex-wrap:wrap
@@ -184,8 +202,7 @@
 /* ── Task List Panel ─────────────────────────────────────────────── */
 .task-list-panel{
   border:1px solid var(--border);border-radius:14px;
-  background:var(--bg-surface);overflow:hidden;display:flex;flex-direction:column;
-  margin-left:0.5rem
+  background:var(--bg-surface);overflow:hidden;display:flex;flex-direction:column
 }
 .tl-header{
   display:flex;align-items:center;gap:0.5rem;padding:0.65rem 1rem;
@@ -203,7 +220,7 @@
   padding:0.35rem 0.5rem;border-radius:8px;font-size:0.78rem;cursor:pointer
 }
 .tl-filter:focus{outline:none;border-color:var(--border-focus)}
-.task-list{flex:1;overflow-y:auto;max-height:60vh}
+.task-list{flex:1;overflow-y:auto}
 .task-list::-webkit-scrollbar{width:4px}
 .task-list::-webkit-scrollbar-thumb{background:var(--border-active);border-radius:2px}
 .tl-row{
@@ -611,8 +628,10 @@
 @media(max-width:900px){
   .split-view{grid-template-columns:1fr !important}
   .split-handle{display:none}
-  .dag-panel{margin-right:0}
-  .task-list-panel{margin-left:0;margin-top:1rem}
+  .v-resize-handle{display:none}
+  .v-resize-wrapper#dag-v-wrapper{margin-right:0}
+  .v-resize-wrapper#tl-v-wrapper{margin-left:0;margin-top:1rem}
+  .v-resize-wrapper{height:auto !important}
   .dag-body{max-height:35vh}
 }
 @media(max-width:700px){

@@ -1783,9 +1783,58 @@ function initSplitResize() {
   });
 }
 
+/* ── Vertical Panel Resize ───────────────────────────────────── */
+function initVerticalResize() {
+  document.querySelectorAll('.v-resize-handle').forEach(handle => {
+    const wrapper = handle.parentElement;
+    const key = handle.dataset.key;
+    if (!wrapper || !key) return;
+
+    /* Restore saved height */
+    try {
+      const saved = localStorage.getItem(key);
+      if (saved) {
+        const h = parseInt(saved, 10);
+        if (h >= 120 && h <= 2000) wrapper.style.height = h + 'px';
+      }
+    } catch(e) {}
+
+    let dragging = false;
+    let startY = 0;
+    let startH = 0;
+
+    handle.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      dragging = true;
+      startY = e.clientY;
+      startH = wrapper.getBoundingClientRect().height;
+      handle.classList.add('active');
+      document.body.style.cursor = 'row-resize';
+      document.body.style.userSelect = 'none';
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      const delta = e.clientY - startY;
+      const newH = Math.max(120, startH + delta);
+      wrapper.style.height = newH + 'px';
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (!dragging) return;
+      dragging = false;
+      handle.classList.remove('active');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      try { localStorage.setItem(key, Math.round(wrapper.getBoundingClientRect().height)); } catch(e) {}
+    });
+  });
+}
+
 async function init() {
   initDagPanZoom();
   initSplitResize();
+  initVerticalResize();
   await Promise.all([loadConfig(), fetchSessions(), fetchLive()]);
   if (location.hash) handleHash();
   else renderOverview();

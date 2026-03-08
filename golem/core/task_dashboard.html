@@ -37,51 +37,57 @@
     <!-- Split View: DAG + Task List -->
     <div class="split-view">
       <!-- DAG Panel (left) -->
-      <div class="dag-panel" id="dag-panel">
-        <div class="dag-header">
-          <span class="dag-title">Task Graph</span>
-          <div class="dag-filters" id="dag-filters">
-            <button class="dag-pill active" data-filter="" onclick="setDagFilter('')">All</button>
-            <button class="dag-pill" data-filter="active" onclick="setDagFilter('active')">Active</button>
-            <button class="dag-pill" data-filter="failed" onclick="setDagFilter('failed')">Failed</button>
-            <button class="dag-pill" data-filter="completed" onclick="setDagFilter('completed')">Completed</button>
+      <div class="v-resize-wrapper" id="dag-v-wrapper">
+        <div class="dag-panel" id="dag-panel">
+          <div class="dag-header">
+            <span class="dag-title">Task Graph</span>
+            <div class="dag-filters" id="dag-filters">
+              <button class="dag-pill active" data-filter="" onclick="setDagFilter('')">All</button>
+              <button class="dag-pill" data-filter="active" onclick="setDagFilter('active')">Active</button>
+              <button class="dag-pill" data-filter="failed" onclick="setDagFilter('failed')">Failed</button>
+              <button class="dag-pill" data-filter="completed" onclick="setDagFilter('completed')">Completed</button>
+            </div>
+            <select class="dag-group-filter hidden" id="dag-group-filter" onchange="setDagGroupFilter(this.value)"></select>
+            <div class="dag-controls">
+              <button class="dag-ctrl-btn dag-collapse-btn" onclick="toggleDagCollapse()" title="Toggle DAG">&#9650;</button>
+              <button class="dag-ctrl-btn" onclick="dagZoomFit()" title="Fit">&#8862;</button>
+              <button class="dag-ctrl-btn" onclick="dagZoomIn()" title="Zoom in">+</button>
+              <button class="dag-ctrl-btn" onclick="dagZoomOut()" title="Zoom out">&minus;</button>
+            </div>
           </div>
-          <select class="dag-group-filter hidden" id="dag-group-filter" onchange="setDagGroupFilter(this.value)"></select>
-          <div class="dag-controls">
-            <button class="dag-ctrl-btn dag-collapse-btn" onclick="toggleDagCollapse()" title="Toggle DAG">&#9650;</button>
-            <button class="dag-ctrl-btn" onclick="dagZoomFit()" title="Fit">&#8862;</button>
-            <button class="dag-ctrl-btn" onclick="dagZoomIn()" title="Zoom in">+</button>
-            <button class="dag-ctrl-btn" onclick="dagZoomOut()" title="Zoom out">&minus;</button>
+          <div class="dag-body" id="dag-body">
+            <svg class="dag-svg" id="dag-svg"></svg>
+            <button class="dag-minimap-toggle" id="dag-minimap-toggle" onclick="toggleMinimap()" title="Minimap">&#9638;</button>
+            <div class="dag-minimap" id="dag-minimap"></div>
+            <div class="dag-empty" id="dag-empty">
+              <p>No tasks yet.</p>
+            </div>
           </div>
         </div>
-        <div class="dag-body" id="dag-body">
-          <svg class="dag-svg" id="dag-svg"></svg>
-          <button class="dag-minimap-toggle" id="dag-minimap-toggle" onclick="toggleMinimap()" title="Minimap">&#9638;</button>
-          <div class="dag-minimap" id="dag-minimap"></div>
-          <div class="dag-empty" id="dag-empty">
-            <p>No tasks yet.</p>
-          </div>
-        </div>
+        <div class="v-resize-handle" data-key="golem-dag-height" title="Drag to resize height"></div>
       </div>
 
       <!-- Resize Handle -->
       <div class="split-handle" id="split-handle" title="Drag to resize"></div>
 
       <!-- Task List (right) -->
-      <div class="task-list-panel" id="task-list-panel">
-        <div class="tl-header">
-          <span class="tl-title">Tasks</span>
-          <input type="search" id="table-search" class="tl-search" placeholder="Filter tasks...">
-          <select id="table-state-filter" class="tl-filter">
-            <option value="">All</option>
-            <option value="running">Running</option>
-            <option value="completed">Completed</option>
-            <option value="failed">Failed</option>
-            <option value="validating">Validating</option>
-            <option value="detected">Detected</option>
-          </select>
+      <div class="v-resize-wrapper" id="tl-v-wrapper">
+        <div class="task-list-panel" id="task-list-panel">
+          <div class="tl-header">
+            <span class="tl-title">Tasks</span>
+            <input type="search" id="table-search" class="tl-search" placeholder="Filter tasks...">
+            <select id="table-state-filter" class="tl-filter">
+              <option value="">All</option>
+              <option value="running">Running</option>
+              <option value="completed">Completed</option>
+              <option value="failed">Failed</option>
+              <option value="validating">Validating</option>
+              <option value="detected">Detected</option>
+            </select>
+          </div>
+          <div class="task-list" id="task-list"></div>
         </div>
-        <div class="task-list" id="task-list"></div>
+        <div class="v-resize-handle" data-key="golem-tl-height" title="Drag to resize height"></div>
       </div>
     </div>
   </div>
