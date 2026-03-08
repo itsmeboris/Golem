@@ -164,3 +164,24 @@ function renderMarkdown(md) {
   html = html.replace(/^(?!<[hulo\s]|<pre|<code|<\/|$)(.+)$/gm, '<p>$1</p>');
   return '<div class="markdown-body">' + html + '</div>';
 }
+
+/* ── Theme Toggle ─────────────────────────────────────────── */
+function setTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  try { localStorage.setItem('golem-theme', theme); } catch(e) {}
+  const icon = document.getElementById('theme-icon');
+  if (icon) icon.textContent = theme === 'light' ? '\u2600' : '\u263D';
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  setTheme(current === 'dark' ? 'light' : 'dark');
+}
+
+/* Restore saved theme on load */
+(function() {
+  try {
+    const saved = localStorage.getItem('golem-theme');
+    if (saved) setTheme(saved);
+  } catch(e) {}
+})();
