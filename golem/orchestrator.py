@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 """Durable state-machine orchestrator for golem sessions (v2).
 
 Each ``TaskSession`` progresses through a 6-state lifecycle:
@@ -337,8 +338,15 @@ class TaskOrchestrator:
                 self.session.worktree_path = worktree_path
                 self._slog.info("Using worktree at %s", work_dir)
             except RuntimeError as wt_err:
+                self._slog.error(
+                    "Worktree creation failed: %s. "
+                    "base_dir=%s, branch=agent/%s",
+                    wt_err,
+                    base_work_dir,
+                    issue_id,
+                )
                 raise InfrastructureError(
-                    f"Worktree creation failed: {wt_err}"
+                    f"Worktree creation failed for task #{issue_id}: {wt_err}"
                 ) from wt_err
         return work_dir, worktree_path
 
@@ -733,7 +741,7 @@ class TaskOrchestrator:
             self.session.retry_count,
         )
 
-    def _write_report(self) -> None:
+    def _write_report(self) -> None:  # pylint: disable=too-many-locals
         """Write a Markdown detail report and append to the index."""
         issue_id = self.session.parent_issue_id
         try:

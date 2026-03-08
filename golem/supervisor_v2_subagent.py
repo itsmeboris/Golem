@@ -16,6 +16,7 @@ import time
 from typing import Any
 
 from .committer import commit_changes
+from .errors import InfrastructureError
 from .core.cli_wrapper import CLIConfig, CLIResult, CLIType, invoke_cli_monitored
 from .core.config import PROJECT_ROOT, GolemFlowConfig
 from .core.flow_base import _write_prompt, _write_trace
@@ -108,7 +109,7 @@ class SubagentSupervisor:
 
     # -- Main pipeline ---------------------------------------------------------
 
-    async def run(self) -> None:
+    async def run(self) -> None:  # pylint: disable=too-many-statements
         """Full subagent orchestration pipeline."""
         issue_id = self.session.parent_issue_id
         self.session.execution_mode = "subagent"
@@ -129,7 +130,8 @@ class SubagentSupervisor:
                     project_root=str(PROJECT_ROOT),
                 )
 
-            # Set up isolated worktree
+            # Set up isolated worktree — required when enabled to prevent
+            # agents from corrupting the shared working directory.
             work_dir = self._base_work_dir
             if self.task_config.use_worktrees:
                 try:
@@ -137,10 +139,19 @@ class SubagentSupervisor:
                     work_dir = self._worktree_path
                     self._slog.info("Using worktree at %s", work_dir)
                 except RuntimeError as wt_err:
-                    self._slog.warning(
-                        "Worktree creation failed (%s), using shared dir",
+                    self._slog.error(
+                        "Worktree creation failed for task #%s: %s. "
+                        "base_dir=%s, branch=agent/%s. "
+                        "Refusing to fall back to shared dir to prevent "
+                        "repo corruption.",
+                        issue_id,
                         wt_err,
+                        self._base_work_dir,
+                        issue_id,
                     )
+                    raise InfrastructureError(
+                        f"Worktree creation failed for task #{issue_id}: {wt_err}"
+                    ) from wt_err
             # Phase 1: Build orchestration prompt
             prompt = self._build_prompt(issue_id, description, work_dir)
 

@@ -107,7 +107,14 @@ def create_worktree(
         _cleanup_worktree_impl(base_dir, worktree_path, branch_name)
 
     # Delete stale branch if it exists
-    _run_git(["branch", "-D", branch_name], cwd=base_dir)
+    del_result = _run_git(["branch", "-D", branch_name], cwd=base_dir)
+    if del_result.returncode == 0:
+        logger.info(
+            "Deleted stale branch %s before worktree creation", branch_name
+        )
+
+    # Prune stale worktree references that may block branch creation
+    _run_git(["worktree", "prune"], cwd=base_dir)
 
     # Create the worktree with a new branch based on HEAD
     Path(worktree_root).mkdir(parents=True, exist_ok=True)
@@ -118,7 +125,10 @@ def create_worktree(
 
     if result.returncode != 0:
         raise RuntimeError(
-            f"Failed to create worktree for #{issue_id}: {result.stderr.strip()}"
+            f"Failed to create worktree for #{issue_id}: "
+            f"{result.stderr.strip()}. "
+            f"base_dir={base_dir}, worktree_path={worktree_path}, "
+            f"branch={branch_name}"
         )
 
     logger.info(

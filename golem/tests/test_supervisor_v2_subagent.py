@@ -243,17 +243,19 @@ class TestRunPipeline:
             mock_wt.assert_called_once()
 
     async def test_worktree_creation_failure(self, _patches):
+        """Worktree failure raises InfrastructureError — never falls back to shared dir."""
         session = TaskSession(parent_issue_id=42, parent_subject="Test")
         config = _make_config(use_worktrees=True)
         sup = _make_supervisor(session=session, config=config)
 
         with patch(
             "golem.supervisor_v2_subagent.create_worktree",
-            side_effect=RuntimeError("fail"),
+            side_effect=RuntimeError("branch already exists"),
         ):
             await sup.run()
 
-        assert session.state == TaskSessionState.COMPLETED
+        assert session.state == TaskSessionState.FAILED
+        assert any("Worktree creation failed" in e for e in session.errors)
 
     async def test_exception_sets_failed(self, _patches):
         profile = _make_profile()
