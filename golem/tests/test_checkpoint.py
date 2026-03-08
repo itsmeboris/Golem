@@ -74,6 +74,19 @@ def test_load_corrupt_json_returns_none(caplog: pytest.LogCaptureFixture) -> Non
     assert any("Failed to load checkpoint" in r.message for r in caplog.records)
 
 
+def test_load_non_dict_json_returns_none(caplog: pytest.LogCaptureFixture) -> None:
+    """Valid JSON that is not a dict (e.g. list, null) should be rejected."""
+    checkpoint_path = checkpoint_mod.CHECKPOINTS_DIR / "8" / "checkpoint.json"
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    checkpoint_path.write_text("[1, 2, 3]", encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING, logger="golem.checkpoint"):
+        result = load_checkpoint(8)
+
+    assert result is None
+    assert any("not a JSON object" in r.message for r in caplog.records)
+
+
 # ---------------------------------------------------------------------------
 # is_checkpoint_fresh
 # ---------------------------------------------------------------------------

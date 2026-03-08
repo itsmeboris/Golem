@@ -139,7 +139,9 @@ class MergeQueue:
         )
 
     async def _try_merge(  # pylint: disable=too-many-return-statements
-        self, entry: MergeEntry, attempt: int,
+        self,
+        entry: MergeEntry,
+        attempt: int,
     ) -> MergeResult | None:
         """Single merge attempt.  Returns None to signal 'retry'."""
         try:
@@ -147,6 +149,7 @@ class MergeQueue:
                 entry.base_dir, entry.session_id, entry.worktree_path
             )
             if outcome.sha:
+                final_sha = outcome.sha
                 missing = outcome.missing_additions
                 if missing and self._on_reconcile:
                     logger.warning(
@@ -169,6 +172,9 @@ class MergeQueue:
                             conflict_files=[m.file for m in missing],
                         )
 
+                    # Use reconciliation SHA if available
+                    final_sha = recon.commit_sha or outcome.sha
+
                     # Re-verify after reconciliation
                     still_missing = verify_merge_integrity(
                         entry.base_dir, outcome.agent_diff, entry.changed_files
@@ -183,7 +189,7 @@ class MergeQueue:
                         return MergeResult(
                             session_id=entry.session_id,
                             success=False,
-                            merge_sha=outcome.sha,
+                            merge_sha=final_sha,
                             error="additions still missing after reconciliation",
                             conflict_files=[m.file for m in still_missing],
                         )
@@ -206,10 +212,10 @@ class MergeQueue:
                 logger.info(
                     "Session %d: merged successfully → %s",
                     entry.session_id,
-                    outcome.sha,
+                    final_sha,
                 )
                 return MergeResult(
-                    session_id=entry.session_id, success=True, merge_sha=outcome.sha
+                    session_id=entry.session_id, success=True, merge_sha=final_sha
                 )
 
             if self._on_conflict:

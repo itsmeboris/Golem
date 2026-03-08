@@ -317,7 +317,7 @@ class TestMergeWithReconcileSuccess:
         await q.enqueue(base_entry)
         results = await q.process_all()
         assert results[0].success is True
-        assert results[0].merge_sha == "sha1"
+        assert results[0].merge_sha == "fix1"  # reconciliation SHA, not pre-recon
         handler.assert_called_once()
 
 
@@ -464,3 +464,14 @@ class TestTransientRetry:
         assert "timed out" in results[0].error
         # Should retry INFRA_RETRIES times
         assert mock_sleep.call_count == MergeQueue.INFRA_RETRIES
+
+    @patch("golem.merge_queue.get_changed_files", return_value=[])
+    async def test_all_attempts_return_none_hits_fallback(
+        self, _gcf, queue, base_entry
+    ):
+        """Cover the defensive fallback when _try_merge returns None every time."""
+        with patch.object(queue, "_try_merge", return_value=None):
+            await queue.enqueue(base_entry)
+            results = await queue.process_all()
+        assert results[0].success is False
+        assert results[0].error == "merge retries exhausted"

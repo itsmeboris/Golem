@@ -78,9 +78,13 @@ def load_checkpoint(issue_id: int) -> dict[str, Any] | None:
         return None
 
     try:
-        data: dict[str, Any] = json.loads(path.read_text("utf-8"))
+        data = json.loads(path.read_text("utf-8"))
     except Exception as exc:  # pylint: disable=broad-except
         logger.warning("Failed to load checkpoint for #%s: %s", issue_id, exc)
+        return None
+
+    if not isinstance(data, dict):
+        logger.warning("Checkpoint for #%s is not a JSON object, ignoring", issue_id)
         return None
 
     logger.debug("Checkpoint loaded for #%s", issue_id)

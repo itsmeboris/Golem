@@ -499,9 +499,7 @@ class TestCommitAndComplete:
 
         with patch(
             "golem.supervisor_v2_subagent.commit_changes",
-            return_value=CommitResult(
-                committed=False, error="pre-commit hook failed"
-            ),
+            return_value=CommitResult(committed=False, error="pre-commit hook failed"),
         ):
             sup._commit_and_complete(42, "/wt/42", verdict)
 

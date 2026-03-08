@@ -457,8 +457,11 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
 
     @app.get("/dashboard/shared.css")
     async def shared_css() -> Response:
-        return Response(content=_shared_css_cache.read(), media_type="text/css",
-                        headers=_NO_CACHE_HEADERS)
+        return Response(
+            content=_shared_css_cache.read(),
+            media_type="text/css",
+            headers=_NO_CACHE_HEADERS,
+        )
 
     @app.get("/dashboard/shared.js")
     async def shared_js() -> Response:
@@ -470,8 +473,11 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
 
     @app.get("/dashboard/task.css")
     async def task_css() -> Response:
-        return Response(content=_task_css_cache.read(), media_type="text/css",
-                        headers=_NO_CACHE_HEADERS)
+        return Response(
+            content=_task_css_cache.read(),
+            media_type="text/css",
+            headers=_NO_CACHE_HEADERS,
+        )
 
     @app.get("/dashboard/task.js")
     async def task_js() -> Response:
