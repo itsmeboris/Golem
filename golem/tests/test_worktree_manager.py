@@ -615,3 +615,21 @@ class TestMergeAndCleanupIntegrity:
         assert result.sha != ""
         assert not result.missing_additions
         assert result.agent_diff == ""
+
+
+class TestTaskSessionMergeFields:
+    def test_merge_deferred_default(self):
+        from golem.orchestrator import TaskSession
+        s = TaskSession(parent_issue_id=1)
+        assert s.merge_deferred is False
+        assert s.merge_branch == ""
+
+    def test_round_trip(self):
+        from golem.orchestrator import TaskSession
+        s = TaskSession(parent_issue_id=1, merge_deferred=True, merge_branch="merge-ready/1")
+        d = s.to_dict()
+        assert d["merge_deferred"] is True
+        assert d["merge_branch"] == "merge-ready/1"
+        s2 = TaskSession.from_dict(d)
+        assert s2.merge_deferred is True
+        assert s2.merge_branch == "merge-ready/1"

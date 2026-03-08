@@ -125,6 +125,8 @@ class TaskSession:
     infra_retry_count: int = 0
     cli_session_id: str = ""
     checkpoint_phase: str = ""
+    merge_deferred: bool = False
+    merge_branch: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-safe dictionary."""
@@ -174,6 +176,8 @@ class TaskSession:
             infra_retry_count=data.get("infra_retry_count", 0),
             cli_session_id=data.get("cli_session_id", ""),
             checkpoint_phase=data.get("checkpoint_phase", ""),
+            merge_deferred=data.get("merge_deferred", False),
+            merge_branch=data.get("merge_branch", ""),
         )
 
 
