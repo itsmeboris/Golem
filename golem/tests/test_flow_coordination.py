@@ -312,6 +312,70 @@ class TestEnqueueForMerge:
         assert session.merge_ready is False
 
 
+class TestSaveStateAfterMerge:
+    """Verify _enqueue_for_merge calls _save_state after applying results."""
+
+    async def test_save_state_called_after_merge_results(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path)
+
+        session = TaskSession(
+            parent_issue_id=350,
+            parent_subject="merge save",
+            state=TaskSessionState.COMPLETED,
+            merge_ready=True,
+            worktree_path="/wt/350",
+            base_work_dir="/repo",
+        )
+        flow._sessions[350] = session
+
+        from golem.merge_queue import MergeResult
+
+        mock_queue = MagicMock()
+        mock_queue.enqueue = AsyncMock()
+        mock_queue.process_all = AsyncMock(
+            return_value=[MergeResult(session_id=350, success=True, merge_sha="def")]
+        )
+        flow._merge_queue = mock_queue
+
+        save_calls = []
+        monkeypatch.setattr(flow, "_save_state", lambda: save_calls.append(1))
+
+        await flow._enqueue_for_merge(session)
+
+        assert len(save_calls) == 1, "_save_state must be called once after merge"
+        assert session.commit_sha == "def"
+
+    async def test_save_state_called_after_failed_merge(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path)
+
+        session = TaskSession(
+            parent_issue_id=351,
+            parent_subject="merge fail save",
+            state=TaskSessionState.COMPLETED,
+            merge_ready=True,
+            worktree_path="/wt/351",
+            base_work_dir="/repo",
+        )
+        flow._sessions[351] = session
+
+        from golem.merge_queue import MergeResult
+
+        mock_queue = MagicMock()
+        mock_queue.enqueue = AsyncMock()
+        mock_queue.process_all = AsyncMock(
+            return_value=[MergeResult(session_id=351, success=False, error="conflict")]
+        )
+        flow._merge_queue = mock_queue
+
+        save_calls = []
+        monkeypatch.setattr(flow, "_save_state", lambda: save_calls.append(1))
+
+        await flow._enqueue_for_merge(session)
+
+        assert len(save_calls) == 1, "_save_state must be called even on failure"
+        assert "merge failed: conflict" in session.errors
+
+
 class TestApplyMergeResult:
     def test_success(self, monkeypatch, tmp_path):
         flow = _make_flow(monkeypatch, tmp_path)

@@ -443,6 +443,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         results = await self._merge_queue.process_all()
         for r in results:
             self._apply_merge_result(r)
+        self._save_state()
 
     def _apply_merge_result(self, result: MergeResult) -> None:
         """Update the session with the merge outcome."""

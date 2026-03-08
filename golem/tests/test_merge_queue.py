@@ -475,3 +475,23 @@ class TestTransientRetry:
             results = await queue.process_all()
         assert results[0].success is False
         assert results[0].error == "merge retries exhausted"
+
+
+class TestMergeFailureResultShape:
+    """Verify merge failure produces correct result fields."""
+
+    @patch("golem.merge_queue.merge_and_cleanup", return_value=MergeOutcome(sha=""))
+    @patch("golem.merge_queue.cleanup_worktree")
+    @patch("golem.merge_queue.get_changed_files", return_value=[])
+    async def test_failure_result_has_success_false(self, _gcf, _cw, _mac):
+        """A merge that yields an empty SHA must produce success=False."""
+        q = MergeQueue()
+        entry = MergeEntry(
+            session_id=42, branch_name="agent/42",
+            worktree_path="/wt", base_dir="/repo",
+            changed_files=["x.py"],
+        )
+        await q.enqueue(entry)
+        results = await q.process_all()
+        assert results[0].success is False
+        assert results[0].error == "merge failed or no changes"
