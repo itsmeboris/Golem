@@ -184,7 +184,9 @@ def merge_and_cleanup(
 
     # Remove the worktree first so the branch is no longer "checked out"
     # — git refuses to rebase a branch that is in use by a worktree.
-    _run_git(["worktree", "remove", "--force", worktree_path], cwd=base_dir)
+    # Use a longer timeout: NFS mounts can be slow to release .nfs* files.
+    _run_git(["worktree", "remove", "--force", worktree_path], cwd=base_dir,
+             timeout=120)
 
     # Rebase the agent branch onto the current target so that concurrent
     # tasks whose branches forked from an older HEAD can be fast-forwarded.
@@ -437,8 +439,9 @@ def _cleanup_worktree_impl(
     branch_name: str | None,
 ) -> None:
     """Internal: remove worktree directory and optionally delete branch."""
-    # Remove the worktree
-    result = _run_git(["worktree", "remove", worktree_path, "--force"], cwd=base_dir)
+    # Remove the worktree — use a longer timeout for NFS mounts.
+    result = _run_git(["worktree", "remove", worktree_path, "--force"], cwd=base_dir,
+                      timeout=120)
     if result.returncode != 0:
         # Fallback: prune and try again
         _run_git(["worktree", "prune"], cwd=base_dir)

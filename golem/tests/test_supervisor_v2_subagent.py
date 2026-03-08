@@ -7,11 +7,9 @@ import pytest
 from golem.committer import CommitResult
 from golem.core.cli_wrapper import CLIResult
 from golem.core.config import GolemFlowConfig
-from golem.merge_review import ReconciliationResult
 from golem.orchestrator import TaskSession, TaskSessionState
 from golem.supervisor_v2_subagent import SubagentSupervisor
 from golem.validation import ValidationVerdict
-from golem.worktree_manager import MergeOutcome, MissingAddition
 
 
 def _make_profile():
@@ -137,7 +135,6 @@ class TestRunPipeline:
             ),
             patch("golem.supervisor_v2_subagent.create_worktree"),
             patch("golem.supervisor_v2_subagent.cleanup_worktree"),
-            patch("golem.supervisor_v2_subagent.merge_and_cleanup"),
         ):
             mock_cli.return_value = _make_cli_result(
                 output_result='{"status": "COMPLETE", "summary": "done"}',
@@ -448,7 +445,8 @@ class TestRetryWithResume:
 
 
 class TestCommitAndComplete:
-    def test_merge_called_when_worktree(self):
+    def test_merge_ready_set_when_worktree(self):
+        """Supervisor sets merge_ready instead of merging inline."""
         session = TaskSession(parent_issue_id=42, parent_subject="Test")
         config = _make_config(auto_commit=True)
         sup = _make_supervisor(session=session, config=config)
@@ -459,23 +457,18 @@ class TestCommitAndComplete:
             verdict="PASS", confidence=0.9, summary="ok", task_type="feature"
         )
 
-        with (
-            patch(
-                "golem.supervisor_v2_subagent.commit_changes",
-                return_value=CommitResult(committed=True, sha="abc"),
-            ),
-            patch(
-                "golem.supervisor_v2_subagent.merge_and_cleanup",
-                return_value=MergeOutcome(sha="merge123"),
-            ) as mock_merge,
+        with patch(
+            "golem.supervisor_v2_subagent.commit_changes",
+            return_value=CommitResult(committed=True, sha="abc"),
         ):
             sup._commit_and_complete(42, "/wt/42", verdict)
 
-        mock_merge.assert_called_once_with("/repo", 42, "/wt/42")
-        assert session.commit_sha == "merge123"
-        assert sup._worktree_path == ""
+        assert session.merge_ready is True
+        assert session.worktree_path == "/wt/42"
+        assert session.base_work_dir == "/repo"
+        assert session.state == TaskSessionState.COMPLETED
 
-    def test_no_merge_without_worktree(self):
+    def test_no_merge_ready_without_worktree(self):
         session = TaskSession(parent_issue_id=42, parent_subject="Test")
         config = _make_config(auto_commit=True)
         sup = _make_supervisor(session=session, config=config)
@@ -485,19 +478,16 @@ class TestCommitAndComplete:
             verdict="PASS", confidence=0.9, summary="ok", task_type="feature"
         )
 
-        with (
-            patch(
-                "golem.supervisor_v2_subagent.commit_changes",
-                return_value=CommitResult(committed=True, sha="abc"),
-            ),
-            patch("golem.supervisor_v2_subagent.merge_and_cleanup") as mock_merge,
+        with patch(
+            "golem.supervisor_v2_subagent.commit_changes",
+            return_value=CommitResult(committed=True, sha="abc"),
         ):
             sup._commit_and_complete(42, "/work", verdict)
 
-        mock_merge.assert_not_called()
+        assert session.merge_ready is False
         assert session.commit_sha == "abc"
 
-    def test_commit_error_does_not_merge(self):
+    def test_commit_error_does_not_set_merge_ready(self):
         session = TaskSession(parent_issue_id=42, parent_subject="Test")
         config = _make_config(auto_commit=True)
         sup = _make_supervisor(session=session, config=config)
@@ -507,45 +497,16 @@ class TestCommitAndComplete:
             verdict="PASS", confidence=0.9, summary="ok", task_type="feature"
         )
 
-        with (
-            patch(
-                "golem.supervisor_v2_subagent.commit_changes",
-                return_value=CommitResult(
-                    committed=False, error="pre-commit hook failed"
-                ),
-            ),
-            patch("golem.supervisor_v2_subagent.merge_and_cleanup") as mock_merge,
-        ):
-            sup._commit_and_complete(42, "/wt/42", verdict)
-
-        mock_merge.assert_not_called()
-        assert session.state == TaskSessionState.FAILED
-
-    def test_merge_failure_escalates(self):
-        session = TaskSession(parent_issue_id=42, parent_subject="Test")
-        config = _make_config(auto_commit=True)
-        sup = _make_supervisor(session=session, config=config)
-        sup._base_work_dir = "/repo"
-        sup._worktree_path = "/wt/42"
-
-        verdict = ValidationVerdict(
-            verdict="PASS", confidence=0.9, summary="ok", task_type="feature"
-        )
-
-        with (
-            patch(
-                "golem.supervisor_v2_subagent.commit_changes",
-                return_value=CommitResult(committed=True, sha="abc"),
-            ),
-            patch(
-                "golem.supervisor_v2_subagent.merge_and_cleanup",
-                return_value=MergeOutcome(sha=""),
+        with patch(
+            "golem.supervisor_v2_subagent.commit_changes",
+            return_value=CommitResult(
+                committed=False, error="pre-commit hook failed"
             ),
         ):
             sup._commit_and_complete(42, "/wt/42", verdict)
 
+        assert session.merge_ready is False
         assert session.state == TaskSessionState.FAILED
-        assert any("merge failed" in e for e in session.errors)
 
     def test_no_auto_commit(self):
         session = TaskSession(parent_issue_id=42, parent_subject="Test")
@@ -558,115 +519,6 @@ class TestCommitAndComplete:
         sup._commit_and_complete(42, "/work", verdict)
 
         assert session.state == TaskSessionState.COMPLETED
-
-    def test_missing_additions_triggers_reconciliation(self):
-        session = TaskSession(parent_issue_id=42, parent_subject="Test")
-        config = _make_config(auto_commit=True, merge_review_budget_usd=1.0)
-        sup = _make_supervisor(session=session, config=config)
-        sup._base_work_dir = "/repo"
-        sup._worktree_path = "/wt/42"
-
-        verdict = ValidationVerdict(
-            verdict="PASS", confidence=0.9, summary="ok", task_type="feature"
-        )
-
-        missing = [
-            MissingAddition(file="a.py", expected_lines=["x"], description="1 lost")
-        ]
-
-        with (
-            patch(
-                "golem.supervisor_v2_subagent.commit_changes",
-                return_value=CommitResult(committed=True, sha="abc"),
-            ),
-            patch(
-                "golem.supervisor_v2_subagent.merge_and_cleanup",
-                return_value=MergeOutcome(
-                    sha="merge1", missing_additions=missing, agent_diff="diff"
-                ),
-            ),
-            patch(
-                "golem.merge_review.run_merge_reconciliation",
-                return_value=ReconciliationResult(
-                    resolved=True, commit_sha="fix1", explanation="fixed"
-                ),
-            ) as mock_recon,
-        ):
-            sup._commit_and_complete(42, "/wt/42", verdict)
-
-        mock_recon.assert_called_once()
-        assert session.commit_sha == "fix1"
-        assert session.state == TaskSessionState.COMPLETED
-
-    def test_missing_additions_no_budget_logs_warning(self):
-        session = TaskSession(parent_issue_id=42, parent_subject="Test")
-        config = _make_config(auto_commit=True, merge_review_budget_usd=0)
-        sup = _make_supervisor(session=session, config=config)
-        sup._base_work_dir = "/repo"
-        sup._worktree_path = "/wt/42"
-
-        verdict = ValidationVerdict(
-            verdict="PASS", confidence=0.9, summary="ok", task_type="feature"
-        )
-
-        missing = [
-            MissingAddition(file="a.py", expected_lines=["x"], description="1 lost")
-        ]
-
-        with (
-            patch(
-                "golem.supervisor_v2_subagent.commit_changes",
-                return_value=CommitResult(committed=True, sha="abc"),
-            ),
-            patch(
-                "golem.supervisor_v2_subagent.merge_and_cleanup",
-                return_value=MergeOutcome(
-                    sha="merge1", missing_additions=missing, agent_diff="diff"
-                ),
-            ),
-        ):
-            sup._commit_and_complete(42, "/wt/42", verdict)
-
-        assert session.state == TaskSessionState.COMPLETED
-        assert any("Missing additions" in c for c in session.validation_concerns)
-
-    def test_reconciliation_failure_flags_concerns(self):
-        session = TaskSession(parent_issue_id=42, parent_subject="Test")
-        config = _make_config(auto_commit=True, merge_review_budget_usd=1.0)
-        sup = _make_supervisor(session=session, config=config)
-        sup._base_work_dir = "/repo"
-        sup._worktree_path = "/wt/42"
-
-        verdict = ValidationVerdict(
-            verdict="PASS", confidence=0.9, summary="ok", task_type="feature"
-        )
-
-        missing = [
-            MissingAddition(file="a.py", expected_lines=["x"], description="1 lost")
-        ]
-
-        with (
-            patch(
-                "golem.supervisor_v2_subagent.commit_changes",
-                return_value=CommitResult(committed=True, sha="abc"),
-            ),
-            patch(
-                "golem.supervisor_v2_subagent.merge_and_cleanup",
-                return_value=MergeOutcome(
-                    sha="merge1", missing_additions=missing, agent_diff="diff"
-                ),
-            ),
-            patch(
-                "golem.merge_review.run_merge_reconciliation",
-                return_value=ReconciliationResult(
-                    resolved=False, explanation="cannot fix"
-                ),
-            ),
-        ):
-            sup._commit_and_complete(42, "/wt/42", verdict)
-
-        assert session.state == TaskSessionState.COMPLETED
-        assert any("Missing additions" in c for c in session.validation_concerns)
 
 
 # -- Escalation --------------------------------------------------------------
@@ -790,7 +642,6 @@ class TestWorktreeCleanupBranches:
                 return_value="/wt/42",
             ),
             patch("golem.supervisor_v2_subagent.cleanup_worktree") as mock_cleanup,
-            patch("golem.supervisor_v2_subagent.merge_and_cleanup"),
         ):
             mock_cli.return_value = _make_cli_result(
                 output_result='{"status": "COMPLETE", "summary": "done"}',
@@ -824,7 +675,6 @@ class TestTraceEventsPersistence:
             ),
             patch("golem.supervisor_v2_subagent.create_worktree"),
             patch("golem.supervisor_v2_subagent.cleanup_worktree"),
-            patch("golem.supervisor_v2_subagent.merge_and_cleanup"),
         ):
             mock_cli.return_value = _make_cli_result(
                 output_result='{"status": "COMPLETE", "summary": "done"}',

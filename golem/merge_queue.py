@@ -8,12 +8,13 @@ callback can spawn a reconciliation agent before falling back to manual.
 
 import asyncio
 import logging
+import subprocess
+import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Callable
 
 from .worktree_manager import (
-    MergeOutcome,
     cleanup_worktree,
     get_changed_files,
     merge_and_cleanup,
@@ -54,6 +55,9 @@ class MergeQueue:
     Entries are sorted by priority (lower = higher priority) and processed
     sequentially.  Each merge rebases onto the current HEAD first.
     """
+
+    INFRA_RETRIES = 2
+    INFRA_RETRY_DELAY = 5  # seconds
 
     def __init__(
         self,
@@ -117,7 +121,27 @@ class MergeQueue:
 
         return results
 
+    @staticmethod
+    def _is_transient(exc: Exception) -> bool:
+        """Return True if the exception looks like a transient infra failure."""
+        return isinstance(exc, (subprocess.TimeoutExpired, OSError))
+
     async def _merge_one(self, entry: MergeEntry) -> MergeResult:
+        for attempt in range(1 + self.INFRA_RETRIES):
+            result = await self._try_merge(entry, attempt)
+            if result is not None:
+                return result
+        # Exhausted retries — should not reach here, but be safe
+        return MergeResult(
+            session_id=entry.session_id,
+            success=False,
+            error="merge retries exhausted",
+        )
+
+    async def _try_merge(  # pylint: disable=too-many-return-statements
+        self, entry: MergeEntry, attempt: int,
+    ) -> MergeResult | None:
+        """Single merge attempt.  Returns None to signal 'retry'."""
         try:
             outcome = merge_and_cleanup(
                 entry.base_dir, entry.session_id, entry.worktree_path
@@ -214,6 +238,16 @@ class MergeQueue:
             )
 
         except Exception as exc:  # pylint: disable=broad-exception-caught
+            if self._is_transient(exc) and attempt < self.INFRA_RETRIES:
+                logger.warning(
+                    "Session %d: transient merge error (attempt %d/%d): %s — retrying",
+                    entry.session_id,
+                    attempt + 1,
+                    1 + self.INFRA_RETRIES,
+                    exc,
+                )
+                time.sleep(self.INFRA_RETRY_DELAY)
+                return None  # signal retry
             logger.error("Session %d: merge error: %s", entry.session_id, exc)
             return MergeResult(
                 session_id=entry.session_id,

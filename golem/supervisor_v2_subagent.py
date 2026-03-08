@@ -33,10 +33,8 @@ from .profile import GolemProfile
 from .validation import ValidationVerdict, run_validation
 from .workdir import resolve_work_dir
 from .worktree_manager import (
-    MergeOutcome,
     cleanup_worktree,
     create_worktree,
-    merge_and_cleanup,
 )
 
 logger = logging.getLogger("golem.supervisor_v2_subagent")
@@ -467,72 +465,19 @@ class SubagentSupervisor:
                 return
 
             if self._worktree_path:
-                merge_outcome = merge_and_cleanup(
-                    self._base_work_dir, issue_id, self._worktree_path
+                # Hand off to the flow's merge queue instead of merging
+                # inline.  The merge queue handles retries for transient
+                # infra failures (NFS timeouts, stale handles) and runs
+                # merge-integrity checks + reconciliation.
+                self.session.merge_ready = True
+                self.session.worktree_path = self._worktree_path
+                self.session.base_work_dir = self._base_work_dir
+                self._emit_event("Queued for merge via merge queue")
+                self._slog.info(
+                    "Set merge_ready for #%s (worktree=%s)",
+                    issue_id,
+                    self._worktree_path,
                 )
-                if merge_outcome.sha:
-                    self.session.commit_sha = merge_outcome.sha
-                    self._emit_event(f"Merged worktree branch → {merge_outcome.sha}")
-                    self._slog.info("Merged to base → %s", merge_outcome.sha)
-                    self._worktree_path = ""
-
-                    if merge_outcome.missing_additions:
-                        missing_summary = "; ".join(
-                            m.description for m in merge_outcome.missing_additions
-                        )
-                        if self.task_config.merge_review_budget_usd > 0:
-                            from .merge_review import run_merge_reconciliation
-
-                            recon = run_merge_reconciliation(
-                                self._base_work_dir,
-                                merge_outcome.agent_diff,
-                                merge_outcome.missing_additions,
-                                budget_usd=self.task_config.merge_review_budget_usd,
-                                timeout_seconds=self.task_config.merge_review_timeout,
-                            )
-                            if recon.resolved:
-                                self.session.commit_sha = (
-                                    recon.commit_sha or self.session.commit_sha
-                                )
-                                self._slog.info(
-                                    "Reconciliation resolved missing additions: %s",
-                                    recon.explanation,
-                                )
-                            else:
-                                self._slog.warning(
-                                    "Reconciliation failed: %s — flagging concerns",
-                                    recon.explanation,
-                                )
-                                self.session.validation_concerns.append(
-                                    f"Missing additions after merge: {missing_summary}"
-                                )
-                        else:
-                            self._slog.warning(
-                                "Missing additions after merge (no review budget): %s",
-                                missing_summary,
-                            )
-                            self.session.validation_concerns.append(
-                                f"Missing additions after merge: {missing_summary}"
-                            )
-                else:
-                    self._emit_event(
-                        "Worktree merge failed — branch preserved",
-                        is_error=True,
-                    )
-                    self.session.state = TaskSessionState.FAILED
-                    self.session.errors.append(
-                        "worktree merge failed — branch preserved for manual recovery"
-                    )
-                    self._update_task(
-                        issue_id,
-                        status=TaskStatus.IN_PROGRESS,
-                        comment=(
-                            "Agent work passed validation but worktree merge "
-                            "failed. Branch "
-                            f"agent/{issue_id} preserved for manual recovery."
-                        ),
-                    )
-                    return
 
         self.session.state = TaskSessionState.COMPLETED
         self.session.updated_at = _now_iso()

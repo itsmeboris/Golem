@@ -1,6 +1,7 @@
 # pylint: disable=too-few-public-methods,redefined-outer-name
 """Tests for golem.merge_queue — sequential merge queue for cross-task coordination."""
 
+import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -417,3 +418,49 @@ class TestMergeOutcomeAgentDiffPopulated:
         results = await queue.process_all()
         assert results[0].success is True
         assert results[0].merge_sha == "sha"
+
+
+class TestTransientRetry:
+    def test_timeout_is_transient(self):
+        exc = subprocess.TimeoutExpired(cmd="git", timeout=30)
+        assert MergeQueue._is_transient(exc) is True
+
+    def test_os_error_is_transient(self):
+        assert MergeQueue._is_transient(OSError("NFS stale")) is True
+
+    def test_runtime_error_not_transient(self):
+        assert MergeQueue._is_transient(RuntimeError("bad")) is False
+
+    @patch("golem.merge_queue.time.sleep")
+    @patch(
+        "golem.merge_queue.merge_and_cleanup",
+        side_effect=[
+            subprocess.TimeoutExpired(cmd="git", timeout=30),
+            MergeOutcome(sha="ok_after_retry"),
+        ],
+    )
+    @patch("golem.merge_queue.get_changed_files", return_value=[])
+    async def test_retry_on_timeout_then_succeed(
+        self, _gcf, _mac, mock_sleep, queue, base_entry
+    ):
+        await queue.enqueue(base_entry)
+        results = await queue.process_all()
+        assert results[0].success is True
+        assert results[0].merge_sha == "ok_after_retry"
+        mock_sleep.assert_called_once_with(MergeQueue.INFRA_RETRY_DELAY)
+
+    @patch("golem.merge_queue.time.sleep")
+    @patch(
+        "golem.merge_queue.merge_and_cleanup",
+        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    )
+    @patch("golem.merge_queue.get_changed_files", return_value=[])
+    async def test_retry_exhausted_returns_failure(
+        self, _gcf, _mac, mock_sleep, queue, base_entry
+    ):
+        await queue.enqueue(base_entry)
+        results = await queue.process_all()
+        assert results[0].success is False
+        assert "timed out" in results[0].error
+        # Should retry INFRA_RETRIES times
+        assert mock_sleep.call_count == MergeQueue.INFRA_RETRIES
