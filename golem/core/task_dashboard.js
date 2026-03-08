@@ -161,6 +161,7 @@ function selectTask(id) {
   _selectedStageId = null;
   _liveEventCount = 0;
   _traceTerminalCache = {};
+  _prevFingerprints = {};
   location.hash = '/task/' + id;
 
   document.getElementById('overview').classList.add('hidden');
@@ -1726,7 +1727,7 @@ async function fetchSessions() {
     if (!_selectedId) renderOverview();
     if (_selectedId && _sessions[_selectedId]) {
       const s = _sessions[_selectedId];
-      const fp = s.state + '|' + (s.milestone_count || 0) + '|' + (s.total_cost_usd || 0) + '|' +
+      const fp = _selectedId + '|' + s.state + '|' + (s.milestone_count || 0) + '|' + (s.total_cost_usd || 0) + '|' +
         ((s.event_log || []).length) + '|' + (s.validation_verdict || '');
       if (s.state === 'detected' || _prevFingerprints[_selectedId] !== fp) {
         _prevFingerprints[_selectedId] = fp;
