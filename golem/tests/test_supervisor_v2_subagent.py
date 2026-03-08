@@ -717,3 +717,130 @@ class TestTraceEventsPersistence:
         await sup._retry_with_resume(verdict, "/work", 42)
 
         assert session.retry_trace_file == "/tmp/trace.jsonl"
+
+
+# -- Checkpoint resume (skip-ahead) -----------------------------------------
+
+
+class TestCheckpointResume:
+    @pytest.fixture()
+    def _patches(self):
+        with (
+            patch("golem.supervisor_v2_subagent.invoke_cli_monitored") as mock_cli,
+            patch("golem.supervisor_v2_subagent.run_validation") as mock_val,
+            patch("golem.supervisor_v2_subagent.commit_changes") as mock_commit,
+            patch("golem.supervisor_v2_subagent._write_prompt"),
+            patch("golem.supervisor_v2_subagent._write_trace"),
+            patch(
+                "golem.supervisor_v2_subagent.resolve_work_dir",
+                return_value="/tmp/test",
+            ),
+            patch("golem.supervisor_v2_subagent.create_worktree"),
+            patch("golem.supervisor_v2_subagent.cleanup_worktree"),
+            patch("golem.supervisor_v2_subagent.save_checkpoint"),
+            patch("golem.supervisor_v2_subagent.delete_checkpoint"),
+        ):
+            mock_cli.return_value = _make_cli_result(
+                output_result='{"status": "COMPLETE", "summary": "done"}',
+                session_id="sess-123",
+            )
+            mock_val.return_value = ValidationVerdict(
+                verdict="PASS",
+                confidence=0.95,
+                summary="ok",
+                task_type="feature",
+            )
+            mock_commit.return_value = CommitResult(committed=True, sha="abc123")
+            yield {
+                "cli": mock_cli,
+                "val": mock_val,
+                "commit": mock_commit,
+            }
+
+    async def test_resume_post_execute_skips_cli(self, _patches):
+        """checkpoint_phase='post_execute' skips CLI, runs validation."""
+        session = TaskSession(
+            parent_issue_id=42,
+            parent_subject="Test",
+            checkpoint_phase="post_execute",
+        )
+        sup = _make_supervisor(session=session)
+        await sup.run()
+
+        _patches["cli"].assert_not_called()
+        _patches["val"].assert_called_once()
+        assert session.state == TaskSessionState.COMPLETED
+        assert session.checkpoint_phase == ""
+
+    async def test_resume_post_validate_pass_skips_to_commit(self, _patches):
+        """checkpoint_phase='post_validate' + PASS verdict skips to commit."""
+        session = TaskSession(
+            parent_issue_id=42,
+            parent_subject="Test",
+            checkpoint_phase="post_validate",
+            validation_verdict="PASS",
+            validation_confidence=0.9,
+            validation_summary="ok",
+        )
+        sup = _make_supervisor(session=session)
+        await sup.run()
+
+        _patches["cli"].assert_not_called()
+        _patches["val"].assert_not_called()
+        assert session.state == TaskSessionState.COMPLETED
+
+    async def test_resume_post_validate_partial_retries(self, _patches):
+        """checkpoint_phase='post_validate' + PARTIAL verdict goes to retry."""
+        session = TaskSession(
+            parent_issue_id=42,
+            parent_subject="Test",
+            checkpoint_phase="post_validate",
+            validation_verdict="PARTIAL",
+            validation_confidence=0.5,
+            validation_summary="partial",
+            validation_concerns=["issue"],
+        )
+        config = _make_config(max_retries=1)
+        sup = _make_supervisor(session=session, config=config)
+
+        _patches["val"].return_value = ValidationVerdict(
+            verdict="PASS", confidence=0.9, summary="ok", task_type="feature"
+        )
+
+        await sup.run()
+
+        # CLI called once for retry, not for initial execution
+        assert _patches["cli"].call_count == 1
+        assert session.retry_count == 1
+        assert session.state == TaskSessionState.COMPLETED
+
+    async def test_checkpoint_phase_cleared_after_use(self, _patches):
+        """checkpoint_phase is consumed (set to '') at start of run."""
+        session = TaskSession(
+            parent_issue_id=42,
+            parent_subject="Test",
+            checkpoint_phase="post_execute",
+        )
+        sup = _make_supervisor(session=session)
+        await sup.run()
+        assert session.checkpoint_phase == ""
+
+
+class TestCheckpointHelpers:
+    def test_save_checkpoint_error_swallowed(self):
+        session = TaskSession(parent_issue_id=42, parent_subject="Test")
+        sup = _make_supervisor(session=session)
+        with patch(
+            "golem.supervisor_v2_subagent.save_checkpoint",
+            side_effect=OSError("disk full"),
+        ):
+            sup._save_checkpoint(42, "test_phase")  # should not raise
+
+    def test_delete_checkpoint_error_swallowed(self):
+        session = TaskSession(parent_issue_id=42, parent_subject="Test")
+        sup = _make_supervisor(session=session)
+        with patch(
+            "golem.supervisor_v2_subagent.delete_checkpoint",
+            side_effect=OSError("disk full"),
+        ):
+            sup._delete_checkpoint(42)  # should not raise

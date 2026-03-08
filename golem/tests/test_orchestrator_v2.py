@@ -1395,6 +1395,245 @@ class TestInfraErrorReraised:
                 await orch._run_agent_monolithic()
 
 
+class TestCheckpointIntegration:
+    """Tests for checkpoint save/delete calls in orchestrator pipeline."""
+
+    def _mock_deps(self):
+        """Shared patches for _run_agent_monolithic."""
+        patches = {
+            "resolve": patch(
+                "golem.orchestrator.resolve_work_dir", return_value="/work"
+            ),
+            "invoke": patch(
+                "golem.orchestrator.invoke_cli_monitored",
+                return_value=CLIResult(
+                    output={"result": "done"},
+                    cost_usd=0.5,
+                    trace_events=[{"e": 1}],
+                ),
+            ),
+            "run_val": patch(
+                "golem.orchestrator.run_validation",
+                return_value=ValidationVerdict(
+                    verdict="PASS",
+                    confidence=0.95,
+                    summary="ok",
+                    task_type="feature",
+                ),
+            ),
+            "commit": patch(
+                "golem.orchestrator.commit_changes",
+                return_value=CommitResult(committed=True, sha="def456"),
+            ),
+            "write_prompt": patch("golem.orchestrator._write_prompt"),
+            "write_trace": patch(
+                "golem.orchestrator._write_trace", return_value="/trace"
+            ),
+            "preflight": patch.object(TaskOrchestrator, "_preflight_check"),
+        }
+        return patches
+
+    async def test_monolithic_saves_checkpoint_before_execution(self):
+        """save_checkpoint called with phase='executing' at pipeline start."""
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        profile = MagicMock()
+        profile.task_source.get_task_description.return_value = "desc"
+        profile.prompt_provider.format.return_value = "prompt"
+        profile.tool_provider.servers_for_subject.return_value = []
+        orch = _make_orch(session, profile=profile)
+
+        deps = self._mock_deps()
+        with patch("golem.orchestrator.save_checkpoint") as m_save, patch(
+            "golem.orchestrator.delete_checkpoint"
+        ), deps["resolve"], deps["invoke"], deps["run_val"], deps["commit"], deps[
+            "write_prompt"
+        ], deps[
+            "write_trace"
+        ], deps[
+            "preflight"
+        ], patch.object(
+            orch, "_write_report"
+        ), patch.object(
+            orch, "_record_run"
+        ):
+            await orch._run_agent_monolithic()
+
+        # First call should be phase="executing"
+        assert m_save.call_count >= 1
+        assert m_save.call_args_list[0].kwargs["phase"] == "executing"
+
+    async def test_validation_saves_checkpoint(self):
+        """save_checkpoint called with phase='validated' after validation."""
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        profile = MagicMock()
+        profile.task_source.get_task_description.return_value = "desc"
+        orch = _make_orch(session, profile=profile)
+
+        verdict = ValidationVerdict(
+            verdict="PASS", confidence=0.9, summary="good", cost_usd=0.1
+        )
+        with patch("golem.orchestrator.save_checkpoint") as m_save, patch(
+            "golem.orchestrator.delete_checkpoint"
+        ), patch.object(orch, "_run_validation_in_executor", return_value=verdict):
+            await orch._run_validation(42, "/work")
+
+        phases = [c.kwargs["phase"] for c in m_save.call_args_list]
+        assert "validated" in phases
+
+    async def test_retry_saves_checkpoint(self):
+        """save_checkpoint called with phase='retrying' in _retry_agent."""
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        profile = MagicMock()
+        profile.task_source.get_task_description.return_value = "desc"
+        profile.prompt_provider.format.return_value = "retry prompt"
+        orch = _make_orch(session, profile=profile)
+
+        retry_verdict = ValidationVerdict(
+            verdict="PASS", confidence=0.9, summary="fixed"
+        )
+        initial_verdict = ValidationVerdict(
+            verdict="PARTIAL", confidence=0.5, summary="needs work"
+        )
+
+        with patch("golem.orchestrator.save_checkpoint") as m_save, patch(
+            "golem.orchestrator.invoke_cli_monitored",
+            return_value=CLIResult(cost_usd=0.3, trace_events=[]),
+        ), patch("golem.orchestrator._write_prompt"), patch(
+            "golem.orchestrator._write_trace"
+        ), patch(
+            "golem.orchestrator.run_validation", return_value=retry_verdict
+        ):
+            await orch._retry_agent(initial_verdict, "/work", [])
+
+        phases = [c.kwargs["phase"] for c in m_save.call_args_list]
+        assert "retrying" in phases
+
+    async def test_monolithic_deletes_checkpoint_on_complete(self):
+        """delete_checkpoint called in finally when session COMPLETED."""
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        profile = MagicMock()
+        profile.task_source.get_task_description.return_value = "desc"
+        profile.prompt_provider.format.return_value = "prompt"
+        profile.tool_provider.servers_for_subject.return_value = []
+        orch = _make_orch(session, profile=profile)
+
+        deps = self._mock_deps()
+        with patch("golem.orchestrator.save_checkpoint"), patch(
+            "golem.orchestrator.delete_checkpoint"
+        ) as m_del:
+            with (
+                deps["resolve"],
+                deps["invoke"],
+                deps["run_val"],
+                deps["commit"],
+                deps["write_prompt"],
+                deps["write_trace"],
+                deps["preflight"],
+                patch.object(orch, "_write_report"),
+                patch.object(orch, "_record_run"),
+            ):
+                await orch._run_agent_monolithic()
+
+        assert session.state == TaskSessionState.COMPLETED
+        assert m_del.called
+
+    async def test_checkpoint_save_error_swallowed(self):
+        """save_checkpoint errors don't crash the pipeline."""
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        profile = MagicMock()
+        profile.task_source.get_task_description.return_value = "desc"
+        profile.prompt_provider.format.return_value = "prompt"
+        profile.tool_provider.servers_for_subject.return_value = []
+        orch = _make_orch(session, profile=profile)
+
+        deps = self._mock_deps()
+        with patch(
+            "golem.orchestrator.save_checkpoint",
+            side_effect=OSError("disk full"),
+        ), patch("golem.orchestrator.delete_checkpoint"), deps["resolve"], deps[
+            "invoke"
+        ], deps[
+            "run_val"
+        ], deps[
+            "commit"
+        ], deps[
+            "write_prompt"
+        ], deps[
+            "write_trace"
+        ], deps[
+            "preflight"
+        ], patch.object(
+            orch, "_write_report"
+        ), patch.object(
+            orch, "_record_run"
+        ):
+            # Should not raise despite save_checkpoint failing
+            await orch._run_agent_monolithic()
+
+        assert session.state == TaskSessionState.COMPLETED
+
+    async def test_checkpoint_delete_error_swallowed(self):
+        """delete_checkpoint errors don't crash the pipeline."""
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        profile = MagicMock()
+        profile.task_source.get_task_description.return_value = "desc"
+        profile.prompt_provider.format.return_value = "prompt"
+        profile.tool_provider.servers_for_subject.return_value = []
+        orch = _make_orch(session, profile=profile)
+
+        deps = self._mock_deps()
+        with patch("golem.orchestrator.save_checkpoint"), patch(
+            "golem.orchestrator.delete_checkpoint",
+            side_effect=OSError("disk full"),
+        ), deps["resolve"], deps["invoke"], deps["run_val"], deps["commit"], deps[
+            "write_prompt"
+        ], deps[
+            "write_trace"
+        ], deps[
+            "preflight"
+        ], patch.object(
+            orch, "_write_report"
+        ), patch.object(
+            orch, "_record_run"
+        ):
+            # Should not raise despite delete_checkpoint failing
+            await orch._run_agent_monolithic()
+
+        assert session.state == TaskSessionState.COMPLETED
+
+    async def test_retry_save_error_swallowed(self):
+        """save_checkpoint error in _retry_agent doesn't propagate."""
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        profile = MagicMock()
+        profile.task_source.get_task_description.return_value = "desc"
+        profile.prompt_provider.format.return_value = "retry prompt"
+        orch = _make_orch(session, profile=profile)
+
+        retry_verdict = ValidationVerdict(
+            verdict="PASS", confidence=0.9, summary="fixed"
+        )
+        initial_verdict = ValidationVerdict(
+            verdict="PARTIAL", confidence=0.5, summary="needs work"
+        )
+
+        with patch(
+            "golem.orchestrator.save_checkpoint",
+            side_effect=OSError("disk full"),
+        ), patch(
+            "golem.orchestrator.invoke_cli_monitored",
+            return_value=CLIResult(cost_usd=0.3, trace_events=[]),
+        ), patch(
+            "golem.orchestrator._write_prompt"
+        ), patch(
+            "golem.orchestrator._write_trace"
+        ), patch(
+            "golem.orchestrator.run_validation", return_value=retry_verdict
+        ):
+            await orch._retry_agent(initial_verdict, "/work", [])
+
+        assert session.retry_count == 1
+
+
 class TestTaskSessionNewFields:
     def test_round_trip_with_new_fields(self):
         session = TaskSession(
@@ -1405,11 +1644,13 @@ class TestTaskSessionNewFields:
             worktree_path="/wt/42",
             base_work_dir="/repo",
             infra_retry_count=1,
+            checkpoint_phase="post_execute",
         )
         d = session.to_dict()
         assert d["depends_on"] == [10, 20]
         assert d["group_id"] == "batch-1"
         assert d["merge_ready"] is True
+        assert d["checkpoint_phase"] == "post_execute"
 
         restored = TaskSession.from_dict(d)
         assert restored.depends_on == [10, 20]
@@ -1418,6 +1659,7 @@ class TestTaskSessionNewFields:
         assert restored.worktree_path == "/wt/42"
         assert restored.base_work_dir == "/repo"
         assert restored.infra_retry_count == 1
+        assert restored.checkpoint_phase == "post_execute"
 
     def test_from_dict_defaults_for_new_fields(self):
         session = TaskSession.from_dict({"parent_issue_id": 1, "state": "detected"})
@@ -1427,3 +1669,4 @@ class TestTaskSessionNewFields:
         assert session.worktree_path == ""
         assert session.base_work_dir == ""
         assert session.infra_retry_count == 0
+        assert session.checkpoint_phase == ""

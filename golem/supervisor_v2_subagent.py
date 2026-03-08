@@ -15,6 +15,7 @@ import logging
 import time
 from typing import Any
 
+from .checkpoint import delete_checkpoint, save_checkpoint
 from .committer import commit_changes
 from .errors import InfrastructureError
 from .core.cli_wrapper import CLIConfig, CLIResult, CLIType, invoke_cli_monitored
@@ -113,69 +114,39 @@ class SubagentSupervisor:
     # -- Main pipeline ---------------------------------------------------------
 
     async def run(self) -> None:  # pylint: disable=too-many-statements
-        """Full subagent orchestration pipeline."""
+        """Full subagent orchestration pipeline.
+
+        When ``self.session.checkpoint_phase`` is set (from a previous crash),
+        the pipeline skips phases that have already completed:
+        - ``post_execute`` → skip CLI execution, jump to validation
+        - ``post_validate`` + PASS verdict → skip to commit
+        - ``post_validate`` + PARTIAL verdict → skip to retry
+        """
         issue_id = self.session.parent_issue_id
         self.session.execution_mode = "subagent"
+        resume_phase = self.session.checkpoint_phase
+        self.session.checkpoint_phase = ""  # consumed
 
         start = time.time()
 
         try:
             description = self._get_description(issue_id)
+            work_dir = self._setup_work_dir(issue_id, description)
 
-            if self._work_dir_override:
-                self._base_work_dir = self._work_dir_override
-            else:
-                self._base_work_dir = resolve_work_dir(
-                    subject=self.session.parent_subject,
-                    description=description,
-                    work_dirs=self.task_config.work_dirs,
-                    default_work_dir=self.task_config.default_work_dir,
-                    project_root=str(PROJECT_ROOT),
+            skip_execute = resume_phase in ("post_execute", "post_validate")
+            skip_validate = resume_phase == "post_validate"
+
+            if skip_execute:
+                self._slog.info(
+                    "Resuming from checkpoint phase=%s, skipping CLI execution",
+                    resume_phase,
                 )
+                self._emit_event(f"Resumed from checkpoint (phase={resume_phase})")
+            else:
+                await self._execute_phases(issue_id, description, work_dir, start)
 
-            # Set up isolated worktree — required when enabled to prevent
-            # agents from corrupting the shared working directory.
-            work_dir = self._base_work_dir
-            if self.task_config.use_worktrees:
-                try:
-                    self._worktree_path = create_worktree(self._base_work_dir, issue_id)
-                    work_dir = self._worktree_path
-                    self._slog.info("Using worktree at %s", work_dir)
-                except RuntimeError as wt_err:
-                    self._slog.error(
-                        "Worktree creation failed for task #%s: %s. "
-                        "base_dir=%s, branch=agent/%s. "
-                        "Refusing to fall back to shared dir to prevent "
-                        "repo corruption.",
-                        issue_id,
-                        wt_err,
-                        self._base_work_dir,
-                        issue_id,
-                    )
-                    raise InfrastructureError(
-                        f"Worktree creation failed for task #{issue_id}: {wt_err}"
-                    ) from wt_err
-            # Phase 1: Build orchestration prompt
-            prompt = self._build_prompt(issue_id, description, work_dir)
-
-            # Phase 2: Single invoke_cli_monitored() call
-            result = await self._invoke_orchestrator(prompt, work_dir, issue_id, start)
-
-            # Phase 3: Parse structured JSON report
-            report = self._parse_report(result)
-            self.session.result_summary = report.get("summary", "")[:1000]
-            self._emit_event(
-                f"Orchestrator finished: {report.get('status', 'unknown')}"
-            )
-            self._update_task(issue_id, status=TaskStatus.FIXED, progress=80)
-
-            # Phase 4: External validation
-            self.session.supervisor_phase = "validating"
-            self._emit_event("Running external validation...")
-            verdict = self._run_overall_validation(issue_id, description, work_dir)
-            self._emit_event(
-                f"Validation: {verdict.verdict} "
-                f"(confidence {verdict.confidence:.0%})"
+            verdict = self._resolve_verdict(
+                skip_validate, issue_id, description, work_dir
             )
 
             # Phase 5: Handle verdict
@@ -203,6 +174,7 @@ class SubagentSupervisor:
             self._slog.error("Supervisor failed: %s", exc)
 
         finally:
+            self._delete_checkpoint(issue_id)
             if self._worktree_path:
                 if self.session.state == TaskSessionState.FAILED:
                     cleanup_worktree(
@@ -211,6 +183,97 @@ class SubagentSupervisor:
                 elif not self.session.commit_sha:
                     cleanup_worktree(self._base_work_dir, self._worktree_path)
             self._checkpoint()
+
+    def _setup_work_dir(self, issue_id: int, description: str) -> str:
+        """Resolve base work dir and optionally create worktree."""
+        if self._work_dir_override:
+            self._base_work_dir = self._work_dir_override
+        else:
+            self._base_work_dir = resolve_work_dir(
+                subject=self.session.parent_subject,
+                description=description,
+                work_dirs=self.task_config.work_dirs,
+                default_work_dir=self.task_config.default_work_dir,
+                project_root=str(PROJECT_ROOT),
+            )
+
+        work_dir = self._base_work_dir
+        if self.task_config.use_worktrees:
+            try:
+                self._worktree_path = create_worktree(self._base_work_dir, issue_id)
+                work_dir = self._worktree_path
+                self._slog.info("Using worktree at %s", work_dir)
+            except RuntimeError as wt_err:
+                self._slog.error(
+                    "Worktree creation failed for task #%s: %s. "
+                    "base_dir=%s, branch=agent/%s. "
+                    "Refusing to fall back to shared dir to prevent "
+                    "repo corruption.",
+                    issue_id,
+                    wt_err,
+                    self._base_work_dir,
+                    issue_id,
+                )
+                raise InfrastructureError(
+                    f"Worktree creation failed for task #{issue_id}: {wt_err}"
+                ) from wt_err
+        return work_dir
+
+    async def _execute_phases(
+        self, issue_id: int, description: str, work_dir: str, start: float
+    ) -> None:
+        """Phases 1-3: build prompt, invoke CLI, parse report."""
+        prompt = self._build_prompt(issue_id, description, work_dir)
+        result = await self._invoke_orchestrator(prompt, work_dir, issue_id, start)
+        report = self._parse_report(result)
+        self.session.result_summary = report.get("summary", "")[:1000]
+        self._emit_event(f"Orchestrator finished: {report.get('status', 'unknown')}")
+        self._update_task(issue_id, status=TaskStatus.FIXED, progress=80)
+        self._save_checkpoint(issue_id, "post_execute")
+
+    def _resolve_verdict(
+        self,
+        skip_validate: bool,
+        issue_id: int,
+        description: str,
+        work_dir: str,
+    ) -> ValidationVerdict:
+        """Run validation or reconstruct verdict from checkpoint."""
+        if skip_validate:
+            verdict = ValidationVerdict(
+                verdict=self.session.validation_verdict or "PASS",
+                confidence=self.session.validation_confidence,
+                summary=self.session.validation_summary,
+                concerns=self.session.validation_concerns,
+            )
+            self._slog.info(
+                "Skipping validation (checkpoint), using stored verdict=%s",
+                verdict.verdict,
+            )
+            return verdict
+
+        self.session.supervisor_phase = "validating"
+        self._emit_event("Running external validation...")
+        verdict = self._run_overall_validation(issue_id, description, work_dir)
+        self._emit_event(
+            f"Validation: {verdict.verdict} " f"(confidence {verdict.confidence:.0%})"
+        )
+        self._save_checkpoint(issue_id, "post_validate")
+        return verdict
+
+    # -- Checkpoint helpers ----------------------------------------------------
+
+    def _save_checkpoint(self, issue_id: int, phase: str) -> None:
+        try:
+            save_checkpoint(issue_id, self.session, phase=phase)
+        except Exception:  # pylint: disable=broad-exception-caught
+            self._slog.debug("save_checkpoint failed", exc_info=True)
+
+    def _delete_checkpoint(self, issue_id: int) -> None:
+        try:
+            delete_checkpoint(issue_id)
+        except Exception:  # pylint: disable=broad-exception-caught
+            self._slog.debug("delete_checkpoint failed", exc_info=True)
 
     # -- Prompt building -------------------------------------------------------
 
@@ -417,6 +480,7 @@ class SubagentSupervisor:
             self.session.retry_trace_file = _write_trace(
                 "golem", f"golem-{issue_id}-retry", retry_result.trace_events
             )
+        self._save_checkpoint(issue_id, "post_execute")
 
         # Re-validate
         description = self._get_description(issue_id)
@@ -425,6 +489,7 @@ class SubagentSupervisor:
             f"Retry validation: {retry_verdict.verdict} "
             f"(confidence {retry_verdict.confidence:.0%})"
         )
+        self._save_checkpoint(issue_id, "post_validate")
 
         if retry_verdict.verdict == "PASS":
             self.session.supervisor_phase = "committing"
