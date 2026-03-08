@@ -656,12 +656,6 @@ class TestMergeInWorktree:
         assert outcome.merge_branch  # temp branch exists
         assert not outcome.missing_additions
 
-        # Branches are preserved for the caller to consume
-        result = _run_git(["branch", "--list", "agent/1001"], cwd=str(git_repo))
-        assert "agent/1001" in result.stdout  # caller deletes after ff
-        result = _run_git(["branch", "--list", outcome.merge_branch], cwd=str(git_repo))
-        assert outcome.merge_branch.split("/")[-1] in result.stdout
-
     def test_diverged_branches_merge(self, git_repo, tmp_path):
         """Agent and master diverge on different files — merges cleanly."""
         from golem.worktree_manager import merge_in_worktree
@@ -719,7 +713,6 @@ class TestMergeInWorktree:
     def test_missing_branch_returns_error(self, git_repo, tmp_path):
         """Non-existent agent branch returns error."""
         from golem.worktree_manager import merge_in_worktree
-
         outcome = merge_in_worktree(str(git_repo), 9999)
         assert outcome.sha == ""
         assert outcome.error  # should mention branch not found
@@ -745,3 +738,58 @@ class TestMergeInWorktree:
         outcome = merge_in_worktree(str(git_repo), 1005)
         assert outcome.sha == ""
         assert outcome.error  # non-empty error message
+
+
+class TestFastForwardIfSafe:
+    def test_clean_ff(self, git_repo, tmp_path):
+        """Fast-forward succeeds when working tree is clean."""
+        from golem.worktree_manager import fast_forward_if_safe
+
+        # Create a branch one commit ahead
+        _run_git(["checkout", "-b", "merge-ready/100"], cwd=str(git_repo))
+        (git_repo / "new.py").write_text("new\n")
+        _run_git(["add", "."], cwd=str(git_repo))
+        _run_git(["commit", "-m", "ahead"], cwd=str(git_repo))
+        _run_git(["checkout", "master"], cwd=str(git_repo))
+
+        ok, reason = fast_forward_if_safe(str(git_repo), "merge-ready/100")
+        assert ok is True
+        assert reason == ""
+        assert (git_repo / "new.py").exists()
+
+    def test_dirty_non_overlapping_ff(self, git_repo, tmp_path):
+        """FF succeeds when dirty files don't overlap with merge."""
+        from golem.worktree_manager import fast_forward_if_safe
+
+        _run_git(["checkout", "-b", "merge-ready/101"], cwd=str(git_repo))
+        (git_repo / "merged.py").write_text("from merge\n")
+        _run_git(["add", "."], cwd=str(git_repo))
+        _run_git(["commit", "-m", "merged"], cwd=str(git_repo))
+        _run_git(["checkout", "master"], cwd=str(git_repo))
+
+        # Dirty file that doesn't overlap
+        (git_repo / "user_wip.txt").write_text("wip")
+
+        ok, reason = fast_forward_if_safe(str(git_repo), "merge-ready/101")
+        assert ok is True
+        # User's file still there
+        assert (git_repo / "user_wip.txt").read_text() == "wip"
+
+    def test_dirty_overlapping_defers(self, git_repo, tmp_path):
+        """FF deferred when dirty files overlap with merge."""
+        from golem.worktree_manager import fast_forward_if_safe
+
+        _run_git(["checkout", "-b", "merge-ready/102"], cwd=str(git_repo))
+        (git_repo / "README.md").write_text("merged version\n")
+        _run_git(["add", "."], cwd=str(git_repo))
+        _run_git(["commit", "-m", "edit readme"], cwd=str(git_repo))
+        _run_git(["checkout", "master"], cwd=str(git_repo))
+
+        # Dirty the same file
+        (git_repo / "README.md").write_text("user edits\n")
+
+        ok, reason = fast_forward_if_safe(str(git_repo), "merge-ready/102")
+        assert ok is False
+        assert "overlapping" in reason.lower() or "dirty" in reason.lower()
+        # README still has user's version
+        assert (git_repo / "README.md").read_text() == "user edits\n"

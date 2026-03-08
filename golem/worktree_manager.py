@@ -390,6 +390,38 @@ def merge_in_worktree(
         _run_git(["worktree", "prune"], cwd=base_dir)
 
 
+def fast_forward_if_safe(
+    base_dir: str,
+    source_branch: str,
+) -> tuple[bool, str]:
+    """Attempt to fast-forward the current branch to *source_branch*.
+
+    Returns ``(True, "")`` on success.  Returns ``(False, reason)`` if the
+    fast-forward would overwrite dirty files — the working tree is left
+    untouched in that case.
+    """
+    merge_result = _run_git(
+        ["merge", "--ff-only", source_branch],
+        cwd=base_dir,
+    )
+    if merge_result.returncode == 0:
+        return True, ""
+
+    stderr = merge_result.stderr.strip()
+    if "overwritten by merge" in stderr or "local changes" in stderr.lower():
+        logger.info(
+            "Fast-forward deferred — dirty working tree overlaps with %s",
+            source_branch,
+        )
+        return False, f"dirty working tree overlaps with {source_branch}"
+
+    if "not possible to fast-forward" in stderr.lower():
+        logger.warning("Fast-forward not possible for %s: %s", source_branch, stderr)
+        return False, f"branches diverged: {stderr}"
+
+    return False, f"ff-only failed: {stderr}"
+
+
 def _stash_if_dirty(base_dir: str, issue_id: int) -> bool:
     """Stash uncommitted changes in *base_dir*.  Returns True if stashed."""
     status = _run_git(["status", "--porcelain"], cwd=base_dir)
