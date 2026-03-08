@@ -36,7 +36,6 @@ from .core.report import ReportWriter
 from .core.run_log import RunRecord, format_duration, record_run
 from .core.flow_base import _write_prompt, _write_trace
 
-from .checkpoint import delete_checkpoint, save_checkpoint
 from .committer import commit_changes
 from .core.log_context import SessionLogAdapter
 from .errors import InfrastructureError
@@ -357,11 +356,6 @@ class TaskOrchestrator:
         work_dir, worktree_path = self._resolve_workdir(issue_id, description)
         base_work_dir = self.session.base_work_dir
 
-        try:
-            save_checkpoint(issue_id, self.session, phase="executing")
-        except Exception:  # pylint: disable=broad-exception-caught
-            self._slog.debug("save_checkpoint failed", exc_info=True)
-
         self._preflight_check(work_dir)
 
         start = time.time()
@@ -419,14 +413,6 @@ class TaskOrchestrator:
             self._handle_agent_failure(issue_id, exc, start, tracker, result, prompt)
 
         finally:
-            if self.session.state in (
-                TaskSessionState.COMPLETED,
-                TaskSessionState.FAILED,
-            ):
-                try:
-                    delete_checkpoint(issue_id)
-                except Exception:  # pylint: disable=broad-exception-caught
-                    self._slog.debug("delete_checkpoint failed", exc_info=True)
             if worktree_path:
                 cleanup_worktree(
                     base_work_dir,
@@ -503,11 +489,6 @@ class TaskOrchestrator:
         )
         self._apply_verdict(verdict)
 
-        try:
-            save_checkpoint(issue_id, self.session, phase="validated")
-        except Exception:  # pylint: disable=broad-exception-caught
-            self._slog.debug("save_checkpoint failed", exc_info=True)
-
         self._slog.info(
             "Validation verdict=%s confidence=%.2f",
             verdict.verdict,
@@ -555,11 +536,6 @@ class TaskOrchestrator:
 
         self.session.state = TaskSessionState.COMPLETED
         self.session.updated_at = _now_iso()
-
-        try:
-            delete_checkpoint(issue_id)
-        except Exception:  # pylint: disable=broad-exception-caught
-            self._slog.debug("delete_checkpoint failed", exc_info=True)
 
         extras = ""
         if self.session.commit_sha:
@@ -629,11 +605,6 @@ class TaskOrchestrator:
         self.session.state = TaskSessionState.RETRYING
         self.session.retry_count += 1
         self.session.updated_at = _now_iso()
-
-        try:
-            save_checkpoint(issue_id, self.session, phase="retrying")
-        except Exception:  # pylint: disable=broad-exception-caught
-            self._slog.debug("save_checkpoint failed", exc_info=True)
 
         self._slog.info("Retrying (attempt %d)", self.session.retry_count)
 
