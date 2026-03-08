@@ -284,6 +284,14 @@
   font-size:0.65rem;padding:0.15rem 0.5rem;border-radius:8px;
   background:var(--bg-elevated);color:var(--text-secondary);border:1px solid var(--border)
 }
+.task-header .th-cancel-btn{
+  margin-left:auto;font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;
+  padding:0.2rem 0.6rem;border-radius:8px;cursor:pointer;
+  background:transparent;color:var(--red);border:1px solid var(--red-bg);
+  transition:background 0.15s,border-color 0.15s
+}
+.task-header .th-cancel-btn:hover:not(:disabled){background:var(--red-bg);border-color:var(--red)}
+.task-header .th-cancel-btn:disabled{opacity:0.4;pointer-events:none;cursor:default}
 .task-header .th-subject{font-size:0.95rem;color:var(--text-secondary);line-height:1.4}
 
 /* ── Phase Banner ────────────────────────────────────────────────── */

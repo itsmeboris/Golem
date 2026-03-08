@@ -891,6 +891,32 @@ function pulseDagNode(id) {
   setTimeout(() => node.classList.remove('dag-node-pulse'), 800);
 }
 
+/* ── Cancel task ───────────────────────────────────────────── */
+const _cancelInFlight = new Set();
+
+async function cancelTask(taskId) {
+  if (!/^\d+$/.test(String(taskId))) return;
+  if (_cancelInFlight.has(taskId)) return;
+  if (!confirm(`Cancel task #${shortId(taskId)}? This will stop the running task.`)) return;
+  _cancelInFlight.add(taskId);
+  if (_selectedId && _sessions[_selectedId]) renderHeader(_selectedId, _sessions[_selectedId]);
+  let ok = false;
+  try {
+    const res = await fetch(`/api/cancel/${encodeURIComponent(taskId)}`, { method: 'POST' });
+    if (res.ok) {
+      ok = true;
+      if (_selectedId && _sessions[_selectedId]) renderTaskDetail(_selectedId, _sessions[_selectedId]);
+    } else {
+      let detail = `HTTP ${res.status}`;
+      try { const body = await res.json(); detail = body.detail || detail; } catch (_) {}
+      alert(`Failed to cancel task: ${detail}`);
+    }
+  } finally {
+    _cancelInFlight.delete(taskId);
+    if (!ok && _selectedId && _sessions[_selectedId]) renderHeader(_selectedId, _sessions[_selectedId]);
+  }
+}
+
 /* ── Task Detail rendering ─────────────────────────────────── */
 function renderTaskDetail(id, s) {
   renderHeader(id, s);
@@ -912,6 +938,11 @@ function renderHeader(id, s) {
   if (mergeFailed) mergeHeaderBadge = '<span class="th-badge" style="background:#450a0a;color:#f87171">merge failed</span>';
   else if (s.merge_ready) mergeHeaderBadge = '<span class="th-badge" style="background:#172554;color:#60a5fa">merge queued</span>';
 
+  const cancelable = ['detected', 'running', 'validating', 'retrying'].includes(state);
+  const cancelBtn = cancelable
+    ? `<button class="th-cancel-btn" onclick="cancelTask('${esc(id)}')"${_cancelInFlight.has(id) ? ' disabled' : ''}>&times; Cancel</button>`
+    : '';
+
   $('#task-back').innerHTML = '<button class="back-btn" onclick="deselectTask()">&larr; Dashboard</button>';
   $('#task-header').innerHTML = `
     <div class="th-top">
@@ -921,6 +952,7 @@ function renderHeader(id, s) {
       ${sha ? `<span class="th-mode" title="${esc(sha)}">&#10003; ${esc(sha.slice(0, 7))}</span>` : ''}
       ${groupId ? `<span class="th-mode" title="Batch group">\u2B21 ${esc(groupId)}</span>` : ''}
       ${mergeHeaderBadge}
+      ${cancelBtn}
     </div>
     <div class="th-subject">${subject}</div>`;
 }
