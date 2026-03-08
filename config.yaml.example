@@ -26,20 +26,20 @@ flows:
     tick_interval: 30              # seconds between ticks
 
     # Execution
-    task_model: opus               # model for task execution
+    task_model: sonnet             # model for single-agent & Builder subagents
     task_timeout_seconds: 1800     # 30 min max per task
     budget_per_task_usd: 10.0      # 0 = unlimited
     max_active_sessions: 3
 
-    # Validation (separate cheap model reviews the work)
-    validation_model: opus
+    # Validation (strong reasoning model reviews the work)
+    validation_model: opus         # opus for strongest review
     validation_budget_usd: 0.50
     max_retries: 1                 # retry once on PARTIAL verdict
     auto_commit: true              # commit on PASS verdict
 
     # Subagent orchestration: single Claude session with Agent tool delegation
     supervisor_mode: true
-    orchestrate_model: ""              # empty = use task_model
+    orchestrate_model: opus            # orchestrator needs strong planning
     orchestrate_budget_usd: 15.0
     orchestrate_timeout_seconds: 2400
     inner_retry_max: 3

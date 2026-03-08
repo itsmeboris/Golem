@@ -111,10 +111,10 @@ flowchart TB
         flow["Flow Engine"] --> preflight["Preflight Checks"]
         preflight --> orch["Orchestrator<br/>(single Claude session)"]
 
-        orch -- "Agent tool" --> explorer["Explorer"]
-        orch -- "Agent tool" --> implementer["Implementer"]
-        orch -- "Agent tool" --> reviewer["Reviewer"]
-        orch -- "Agent tool" --> tester["Tester"]
+        orch -- "Agent tool" --> scout["Scout<br/>(haiku)"]
+        orch -- "Agent tool" --> builder["Builder<br/>(sonnet)"]
+        orch -- "Agent tool" --> reviewer["Reviewer<br/>(opus)"]
+        orch -- "Agent tool" --> verifier["Verifier<br/>(haiku)"]
 
         orch --> val["Validation Agent"]
 
@@ -296,10 +296,10 @@ See [`config.yaml.example`](config.yaml.example) for the full annotated template
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `profile` | `local` | Backend profile (`local`, `redmine`, or custom) |
-| `task_model` | `sonnet` | Claude model for execution |
+| `task_model` | `sonnet` | Claude model for single-agent execution and Builder subagents |
 | `budget_per_task_usd` | `10.0` | Max spend per task (0 = unlimited) |
 | `supervisor_mode` | `true` | Enable subagent orchestration (Agent tool delegation) |
-| `orchestrate_model` | `""` | Model for orchestration (empty = use task_model) |
+| `orchestrate_model` | `opus` | Model for orchestration and review |
 | `orchestrate_budget_usd` | `15.0` | Budget for orchestration session |
 | `orchestrate_timeout_seconds` | `2400` | Timeout for orchestration session |
 | `max_retries` | `1` | Retries on PARTIAL validation verdict |
