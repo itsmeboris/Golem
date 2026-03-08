@@ -1781,6 +1781,12 @@ function initSplitResize() {
       try { localStorage.setItem('golem-split-ratio', match[1]); } catch(e) {}
     }
   });
+
+  /* Double-click resets to 50/50 */
+  handle.addEventListener('dblclick', () => {
+    splitView.style.gridTemplateColumns = '';
+    try { localStorage.removeItem('golem-split-ratio'); } catch(e) {}
+  });
 }
 
 /* ── Vertical Panel Resize ───────────────────────────────────── */
@@ -1827,6 +1833,12 @@ function initVerticalResize() {
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
       try { localStorage.setItem(key, Math.round(wrapper.getBoundingClientRect().height)); } catch(e) {}
+    });
+
+    /* Double-click resets to default height */
+    handle.addEventListener('dblclick', () => {
+      wrapper.style.height = '';
+      try { localStorage.removeItem(key); } catch(e) {}
     });
   });
 }
