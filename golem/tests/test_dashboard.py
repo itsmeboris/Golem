@@ -929,41 +929,47 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         assert resp.media_type == "application/javascript"
 
     def test_dashboard_html_has_new_layout(self):
-        """Verify the actual HTML file has the new DAG/table layout."""
+        """Verify the HTML file has the Warm Mono layout structure."""
         html = Path(__file__).resolve().parent.parent / "core" / "task_dashboard.html"
         body = html.read_text(encoding="utf-8")
-        assert "dag-container" in body
-        assert "live-bar" in body
-        assert "task-table" in body
-        assert "sidebar" not in body
+        # Core layout elements
+        assert "top-bar" in body, "Missing top-bar"
+        assert "split-view" in body, "Missing split-view (DAG + task list)"
+        assert "dag-panel" in body, "Missing dag-panel"
+        assert "task-list" in body, "Missing task-list"
+        assert "metrics-row" in body, "Missing metrics-row"
+        # No old sidebar
+        assert "sidebar" not in body, "Old sidebar should be removed"
 
-    def test_dashboard_html_has_dag_filters(self):
+    def test_dashboard_html_has_theme_toggle(self):
+        """Theme toggle button should exist in the top bar."""
         html = Path(__file__).resolve().parent.parent / "core" / "task_dashboard.html"
         body = html.read_text(encoding="utf-8")
-        assert "dag-filter-btn" in body
-        assert 'data-filter="active"' in body
-        assert 'data-filter="failed"' in body
+        assert "theme-toggle" in body, "Missing theme toggle button"
 
-    def test_dashboard_html_has_dag_collapse(self):
+    def test_dashboard_html_has_nav_tabs(self):
+        """Navigation tabs should exist in the top bar."""
         html = Path(__file__).resolve().parent.parent / "core" / "task_dashboard.html"
         body = html.read_text(encoding="utf-8")
-        assert "dag-collapse-btn" in body
+        assert "nav-tab" in body, "Missing nav tabs"
 
-    def test_css_responsive_hides_header_columns(self):
-        """Mobile responsive rule hides duration/deps in both header and rows."""
+    def test_css_has_theme_tokens(self):
+        """Shared CSS should define both dark and light theme tokens."""
+        css = Path(__file__).resolve().parent.parent / "core" / "dashboard_shared.css"
+        body = css.read_text(encoding="utf-8")
+        assert "data-theme" in body, "Missing data-theme attribute selector"
+        assert "--accent" in body, "Missing --accent CSS variable"
+
+    def test_css_has_split_view(self):
+        """Task dashboard CSS should have the split-view layout."""
         css = Path(__file__).resolve().parent.parent / "core" / "task_dashboard.css"
         body = css.read_text(encoding="utf-8")
+        assert "split-view" in body, "Missing split-view CSS"
+
+    def test_shared_js_has_theme_toggle(self):
+        """Shared JS should have theme toggle function."""
+        js = Path(__file__).resolve().parent.parent / "core" / "dashboard_shared.js"
+        body = js.read_text(encoding="utf-8")
         assert (
-            ".tt-header span:nth-child(6)" in body or ".tt-header .hide-mobile" in body
-        ), "Responsive CSS should hide duration column in header too"
-
-    def test_css_task_header_sticky(self):
-        """Task detail header should be sticky so it's always visible."""
-        css = Path(__file__).resolve().parent.parent / "core" / "task_dashboard.css"
-        body = css.read_text(encoding="utf-8")
-        # Find the .task-header rule and check it contains sticky
-        import re
-
-        match = re.search(r"\.task-header\{[^}]*\}", body)
-        assert match, ".task-header rule not found in CSS"
-        assert "sticky" in match.group(), "Task header should use sticky positioning"
+            "toggleTheme" in body or "setTheme" in body
+        ), "Missing theme toggle in shared JS"
