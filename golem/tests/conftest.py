@@ -34,6 +34,10 @@ def _isolate_data_dir(tmp_path, monkeypatch):
     monkeypatch.setattr("golem.flow.DATA_DIR", data_dir)
     monkeypatch.setattr("golem.flow.SUBMISSIONS_DIR", data_dir / "submissions")
     monkeypatch.setattr("golem.cli.DATA_DIR", data_dir)
+    monkeypatch.setattr(
+        "golem.checkpoint.CHECKPOINTS_DIR",
+        data_dir / "state" / "checkpoints",
+    )
 
 
 @pytest.fixture

@@ -51,6 +51,10 @@ flows:
     work_dirs: {}                  # tag -> directory mapping
     #   MYPROJECT: /path/to/project
 
+    # Checkpoint persistence (crash recovery)
+    checkpoint_interval_seconds: 300   # seconds between checkpoint saves
+    checkpoint_max_age_minutes: 10     # max age before checkpoint is stale
+
     # Prompt templates (override built-in prompts/ directory)
     # prompts_dir: ""
 

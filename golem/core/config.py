@@ -75,6 +75,9 @@ class GolemFlowConfig(FlowConfig):
     # Merge review (agent-assisted reconciliation / conflict resolution)
     merge_review_budget_usd: float = 1.0
     merge_review_timeout: int = 120
+    # Checkpoint persistence for crash recovery
+    checkpoint_interval_seconds: int = 300
+    checkpoint_max_age_minutes: int = 10
 
 
 @dataclass
@@ -258,6 +261,8 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
         max_infra_retries=data.get("max_infra_retries", 2),
         merge_review_budget_usd=data.get("merge_review_budget_usd", 1.0),
         merge_review_timeout=data.get("merge_review_timeout", 120),
+        checkpoint_interval_seconds=data.get("checkpoint_interval_seconds", 300),
+        checkpoint_max_age_minutes=data.get("checkpoint_max_age_minutes", 10),
     )
 
 
