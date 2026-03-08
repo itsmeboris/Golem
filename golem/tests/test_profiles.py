@@ -493,6 +493,18 @@ class TestFilePromptProvider:
         with pytest.raises(FileNotFoundError):
             pp.format("nonexistent.txt")
 
+    def test_empty_description_fallback(self, tmp_path):
+        from golem.prompts import FilePromptProvider
+
+        tpl = tmp_path / "test.txt"
+        tpl.write_text("Desc: {task_description}", encoding="utf-8")
+        provider = FilePromptProvider(tmp_path)
+        result = provider.format(
+            "test.txt", task_description="", parent_subject="Fix Y"
+        )
+        assert "Fix Y" in result
+        assert "{task_description}" not in result
+
     def test_prompts_exist(self):
         """Verify the prompts directory has all required templates."""
         prompts_dir = Path(__file__).parent.parent / "prompts"

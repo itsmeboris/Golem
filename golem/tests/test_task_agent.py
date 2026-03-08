@@ -770,6 +770,27 @@ class TestPrompts:
         assert "#100" in text
         assert "Test task" in text
 
+    def test_orchestrate_prompt_has_new_roles(self):
+        text = load_prompt("orchestrate_task.txt")
+        for role in ("Scout", "Builder", "Reviewer", "Verifier"):
+            assert role in text, f"Missing role: {role}"
+        # Old roles should not appear
+        for old_role in ("Explorer", "Implementer", "Tester"):
+            assert old_role not in text, f"Old role still present: {old_role}"
+
+    def test_format_prompt_empty_description_guard(self):
+        """Empty task_description gets a fallback."""
+        result = format_prompt(
+            "orchestrate_task.txt",
+            issue_id=42,
+            parent_subject="Add feature X",
+            task_description="",
+            work_dir="/work",
+            inner_retry_max=3,
+        )
+        assert "Add feature X" in result
+        assert "task_description" not in result  # placeholder should not remain
+
 
 # -- Flow -------------------------------------------------------------------
 

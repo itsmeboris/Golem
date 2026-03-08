@@ -61,7 +61,7 @@ class GolemFlowConfig(FlowConfig):
     supervisor_mode: bool = True
     orchestrate_budget_usd: float = 15.0
     orchestrate_timeout_seconds: int = 2400
-    orchestrate_model: str = ""  # empty = use task_model
+    orchestrate_model: str = "opus"
     inner_retry_max: int = 3  # circuit breaker for inner test-fix loops
     resume_on_partial: bool = True  # use --resume instead of cold retry
     # Worktree isolation (prevents concurrent sessions from conflicting)
@@ -231,7 +231,7 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
         supervisor_mode=data.get("supervisor_mode", True),
         orchestrate_budget_usd=data.get("orchestrate_budget_usd", 15.0),
         orchestrate_timeout_seconds=data.get("orchestrate_timeout_seconds", 2400),
-        orchestrate_model=data.get("orchestrate_model", ""),
+        orchestrate_model=data.get("orchestrate_model", "opus"),
         inner_retry_max=data.get("inner_retry_max", 3),
         resume_on_partial=data.get("resume_on_partial", True),
         use_worktrees=data.get("use_worktrees", True),
