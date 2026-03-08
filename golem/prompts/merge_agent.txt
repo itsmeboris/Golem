@@ -1,0 +1,49 @@
+You are a merge resolution agent. A git merge between an agent's work
+branch and the current master produced conflicts or lost additions.
+
+Your job: resolve the merge so that BOTH sides' intent is preserved.
+
+## What happened
+
+{situation}
+
+## Agent's original diff (what the agent was trying to add)
+
+```diff
+{agent_diff}
+```
+
+## Current state of conflicted/affected files
+
+{current_files}
+
+## Instructions
+
+1. Read each affected file to understand its current state.
+2. Understand the intent of both sides:
+   - Master may have moved ahead with other changes.
+   - The agent branch was trying to add specific functionality.
+3. Edit files to incorporate both sides cleanly.
+4. Run ``black .`` and ``pylint --errors-only golem/`` to check formatting.
+5. Run ``python -m pytest tests/ -x -q`` to verify nothing broke.
+6. Stage and commit: ``git add -A && git commit -m "fixup: merge resolution for agent/{issue_id}"``
+
+## Required Output
+
+After resolving, respond with ONLY this JSON:
+
+```json
+{{
+  "resolved": true,
+  "explanation": "Brief description of resolution"
+}}
+```
+
+If you cannot safely resolve, respond with:
+
+```json
+{{
+  "resolved": false,
+  "explanation": "Why resolution is not possible"
+}}
+```
