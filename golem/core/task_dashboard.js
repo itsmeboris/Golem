@@ -1071,10 +1071,10 @@ function enrichEvent(ev) {
 
   switch (kind) {
     case 'tool_call': return { icon: '\u2699', cls: 'ev-tool-call', chip: toolName, body: text || toolName, ts };
-    case 'tool_result': return { icon: isError ? '\u2717' : '\u2192', cls: 'ev-tool-result' + (isError ? ' ev-error' : ''), chip: '', body: truncText(text, 150), ts };
-    case 'text': return { icon: '\u2026', cls: 'ev-text', chip: '', body: truncText(text, 250), ts };
-    case 'thinking': return { icon: '~', cls: 'ev-thinking', chip: '', body: truncText(text, 120), ts };
-    case 'error': return { icon: '\u2717', cls: 'ev-error', chip: '', body: truncText(text, 200), ts };
+    case 'tool_result': return { icon: isError ? '\u2717' : '\u2192', cls: 'ev-tool-result' + (isError ? ' ev-error' : ''), chip: '', body: text, ts };
+    case 'text': return { icon: '\u2026', cls: 'ev-text', chip: '', body: text, ts };
+    case 'thinking': return { icon: '~', cls: 'ev-thinking', chip: '', body: text, ts };
+    case 'error': return { icon: '\u2717', cls: 'ev-error', chip: '', body: text, ts };
     case 'result': return { icon: '\u2501', cls: 'ev-result', chip: '', body: text, ts };
     case 'supervisor': return { icon: isError ? '\u2717' : '\u25C6', cls: 'ev-supervisor' + (isError ? ' ev-error' : ''), chip: '', body: text, ts };
     case 'system_init': return { icon: '\u25B6', cls: 'ev-system', chip: '', body: text, ts };
