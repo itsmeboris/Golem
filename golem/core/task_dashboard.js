@@ -121,11 +121,14 @@ function renderTaskList() {
     const cost = s.total_cost_usd ? fmtCost(s.total_cost_usd) : '-';
     const stateLabel = STATE_LABELS[state] || state;
 
+    const dur = fmtDuration(liveDuration(s));
+
     html += `<div class="tl-row st-${state}" data-id="${id}" onclick="pulseDagNode('${id}');selectTask('${id}')"
       onmouseenter="highlightDagNode('${id}')" onmouseleave="unhighlightDagNode()">
       <span class="tl-id" title="#${id}">#${shortId(id)}</span>
       <span class="tl-subject">${subject}</span>
       <span class="tl-badge" style="${stateBadgeStyle(state)}">${stateLabel}</span>
+      <span class="tl-dur">${dur}</span>
       <span class="tl-cost">${cost}</span>
     </div>`;
   }
@@ -400,8 +403,8 @@ function buildElkGraph(sessions) {
   for (const [id, s] of entries) {
     children.push({
       id: 'n' + id,
-      width: 180,
-      height: 72,
+      width: 230,
+      height: 88,
       labels: [{ text: id }],
       _session: s,
       _taskId: id,
@@ -663,11 +666,16 @@ function renderDagSvg(layout) {
     /* Apply DAG filter */
     const dimmed = isDagFiltered(state, s, taskId);
 
-    const subject = truncText((s.parent_subject || '').replace(/^\[AGENT\]\s*/, ''), 18);
+    const subject = truncText((s.parent_subject || '').replace(/^\[AGENT\]\s*/, ''), 28);
     const cost = s.total_cost_usd ? fmtCost(s.total_cost_usd) : '';
-    const dur = fmtDuration(s.duration_seconds);
+    const dur = fmtDuration(liveDuration(s));
     const stateLabel = STATE_LABELS[state] || state;
     const subInfo = [dur, cost].filter(Boolean).join(' \u00B7 ');
+
+    /* Phase / last activity line */
+    const phase = s.supervisor_phase || '';
+    const activity = s.last_activity || '';
+    const phaseText = phase ? phase : (activity ? truncText(activity, 30) : '');
 
     const dragOff = _dragOffsets.get(taskId) || { dx: 0, dy: 0 };
     const txAttr = (dragOff.dx || dragOff.dy) ? ` transform="translate(${dragOff.dx},${dragOff.dy})"` : '';
@@ -688,7 +696,7 @@ function renderDagSvg(layout) {
 
     /* ID + state label */
     const textX = node.x + 12;
-    const labelY = node.y + 20;
+    const labelY = node.y + 18;
     svg += `<text x="${textX}" y="${labelY}" fill="${colors.text}" font-size="11" font-weight="700"
       font-family="system-ui,sans-serif">#${shortId(taskId)}</text>`;
     svg += `<text x="${node.x + node.w - 10}" y="${labelY}" fill="${colors.stroke}" font-size="8"
@@ -696,12 +704,18 @@ function renderDagSvg(layout) {
       font-family="system-ui,sans-serif">${stateLabel}</text>`;
 
     /* Subject */
-    svg += `<text x="${textX}" y="${node.y + 36}" fill="${colors.text}" font-size="10" opacity="0.65"
+    svg += `<text x="${textX}" y="${node.y + 33}" fill="${colors.text}" font-size="10" opacity="0.65"
       font-family="system-ui,sans-serif">${esc(subject)}</text>`;
+
+    /* Phase / last activity */
+    if (phaseText) {
+      svg += `<text x="${textX}" y="${node.y + 48}" fill="${colors.stroke}" font-size="9" opacity="0.55"
+        font-family="system-ui,sans-serif" font-style="italic">${esc(phaseText)}</text>`;
+    }
 
     /* Sub-info (duration · cost) */
     if (subInfo) {
-      svg += `<text x="${textX}" y="${node.y + 52}" fill="${colors.text}" font-size="9" opacity="0.4"
+      svg += `<text x="${textX}" y="${node.y + 63}" fill="${colors.text}" font-size="9" opacity="0.4"
         font-family="system-ui,sans-serif">${esc(subInfo)}</text>`;
     }
 

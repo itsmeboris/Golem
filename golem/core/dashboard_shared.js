@@ -26,6 +26,17 @@ function fmtDuration(s) {
   return (s / 60).toFixed(1) + 'm';
 }
 
+/** Compute live elapsed seconds for a session.
+ *  Uses duration_seconds if already set (completed), otherwise computes from created_at. */
+function liveDuration(session) {
+  if (session.duration_seconds) return session.duration_seconds;
+  if (session.created_at) {
+    const start = new Date(session.created_at).getTime();
+    if (!isNaN(start)) return (Date.now() - start) / 1000;
+  }
+  return 0;
+}
+
 function fmtTime(iso) {
   if (!iso) return '-';
   try { return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
@@ -60,10 +71,9 @@ function truncText(s, n) {
   return s.length > n ? s.slice(0, n) + '\u2026' : s;
 }
 
-/** Shorten a numeric task ID for display (e.g. 1772720007620 → "…7620"). */
+/** Display a task ID — show the full number for clarity. */
 function shortId(id) {
-  const s = String(id);
-  return s.length > 6 ? '\u2026' + s.slice(-4) : s;
+  return String(id);
 }
 
 /* ── JSON formatting & highlighting ────────────────────────── */

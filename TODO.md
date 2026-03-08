@@ -17,5 +17,6 @@
 | 12  | [x]    | **Pipeline flow graph for task dashboard** — replaced sidebar + flat list with ELK.js dependency DAG, live monitoring bar, sortable task table, and expandable event detail with full trace data                                                                         | Low    | P3       |
 | 13  | [ ]    | **Prompt versioning & A/B testing** — track which prompt version produced which results, enabling systematic comparison of prompt changes rather than eyeballing outcomes                                                                                                | Low    | P3       |
 | 14  | [x]    | **Task prompt template** — instruct agents to use `@pytest.mark.parametrize` instead of duplicating test methods that differ by one variable                                                                                                                             | Low    | P4       |
+| 15  | [ ]    | **Stop task from dashboard** — add a stop/cancel button to the task detail view and DAG node context, wiring it to the existing `POST /api/cancel/{task_id}` endpoint so users can kill running tasks without the CLI                                                    | Medium | P2       |
 
 

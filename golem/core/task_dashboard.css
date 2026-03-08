@@ -236,6 +236,7 @@
   font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;
   padding:0.15rem 0.5rem;border-radius:8px;flex-shrink:0
 }
+.tl-row .tl-dur{font-size:0.75rem;color:var(--text-muted);flex-shrink:0;font-family:var(--font-mono);min-width:3.5em;text-align:right}
 .tl-row .tl-cost{font-size:0.75rem;color:var(--text-secondary);flex-shrink:0;font-family:var(--font-mono)}
 
 /* Task list row state borders */

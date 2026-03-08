@@ -109,9 +109,7 @@ def create_worktree(
     # Delete stale branch if it exists
     del_result = _run_git(["branch", "-D", branch_name], cwd=base_dir)
     if del_result.returncode == 0:
-        logger.info(
-            "Deleted stale branch %s before worktree creation", branch_name
-        )
+        logger.info("Deleted stale branch %s before worktree creation", branch_name)
 
     # Prune stale worktree references that may block branch creation
     _run_git(["worktree", "prune"], cwd=base_dir)

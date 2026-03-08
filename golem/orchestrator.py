@@ -339,8 +339,7 @@ class TaskOrchestrator:
                 self._slog.info("Using worktree at %s", work_dir)
             except RuntimeError as wt_err:
                 self._slog.error(
-                    "Worktree creation failed: %s. "
-                    "base_dir=%s, branch=agent/%s",
+                    "Worktree creation failed: %s. " "base_dir=%s, branch=agent/%s",
                     wt_err,
                     base_work_dir,
                     issue_id,
