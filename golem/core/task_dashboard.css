@@ -355,7 +355,7 @@
 }
 .wf-row:last-child{border-bottom:none}
 .wf-row:hover{background:var(--bg-hover)}
-.wf-row.selected{background:var(--bg-hover);border-left:3px solid var(--accent)}
+.wf-row.selected{background:var(--bg-hover);box-shadow:inset 0 0 0 1px var(--accent)}
 .wf-row.wf-child{padding-left:2.5rem}
 .wf-row.wf-child .wf-name{font-size:0.8rem;color:var(--text-secondary)}
 .wf-row.wf-child .wf-name::before{

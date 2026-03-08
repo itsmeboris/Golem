@@ -1034,7 +1034,8 @@ function renderPhaseBanner(s) {
 
 const STAGE_ICONS = {
   task: '\uD83D\uDCCB', preflight: '\u2714', orchestration: '\u2699',
-  build: '\u2699', execution: '\u25B6', validation: '\uD83D\uDD0D',
+  scout: '\uD83D\uDD0D', build: '\u2699', review: '\uD83D\uDCDD',
+  verify: '\u2611', execution: '\u25B6', validation: '\uD83D\uDD0D',
   merge: '\u2B06', commit: '\u2714', retry: '\u21BA', failure: '\u2717'
 };
 
@@ -1049,6 +1050,7 @@ function detectOrchestraPhases(events) {
     const summary = ev.summary || ev.text || '';
     const ts = ev.timestamp || 0;
 
+    /* Detect phase transitions from supervisor events */
     if (kind === 'supervisor') {
       const newPhase = detectPhaseTransition(summary);
       if (newPhase) {
@@ -1066,6 +1068,19 @@ function detectOrchestraPhases(events) {
       }
     }
 
+    /* Detect phase transitions from Agent subagent_type in tool_call events */
+    if (kind === 'tool_call' && ev.tool_name === 'Agent') {
+      const agentPhase = detectAgentPhase(summary);
+      if (agentPhase && agentPhase !== current.phase) {
+        if (current.events.length > 0) {
+          current.endTs = ts;
+          phases.push(current);
+        }
+        current = { phase: agentPhase, events: [ev], startTs: ts, endTs: ts };
+        continue;
+      }
+    }
+
     current.events.push(ev);
     if (ts > 0 && current.startTs === 0) current.startTs = ts;
     if (ts > 0) current.endTs = ts;
@@ -1073,6 +1088,18 @@ function detectOrchestraPhases(events) {
 
   if (current.events.length > 0) phases.push(current);
   return phases;
+}
+
+function detectAgentPhase(summary) {
+  /* Agent summaries follow: "Agent: [subagent_type] description" */
+  const m = summary.match(/^Agent:\s*\[(\w+)\]/);
+  if (!m) return null;
+  const sub = m[1].toLowerCase();
+  if (sub === 'scout' || sub === 'explore') return 'scout';
+  if (sub === 'builder' || sub === 'implementer') return 'build_agent';
+  if (sub === 'reviewer') return 'review';
+  if (sub === 'verifier' || sub === 'tester') return 'verify';
+  return null;
 }
 
 function detectPhaseTransition(summary) {
@@ -1110,18 +1137,41 @@ function computeStages(s) {
     const phases = detectOrchestraPhases(allEvents);
     let buildIdx = 0;
 
+    let phaseIdx = 0;
     for (const ph of phases) {
       if (ph.phase.startsWith('_end') || ph.phase === 'setup') continue;
       if (ph.phase === 'ext_validation' || ph.phase === 'committing' || ph.phase === 'merge_queue') continue;
 
-      if (ph.phase.startsWith('build')) {
+      const execState = ['completed','failed','validating','retrying'].includes(state) ? 'completed'
+        : state === 'running' ? 'running' : 'pending';
+
+      if (ph.phase === 'scout') {
+        phaseIdx++;
+        stages.push({
+          id: 'scout_' + phaseIdx, type: 'scout', label: 'Scout',
+          state: execState, events: ph.events,
+          meta: { milestones: ph.events.length, startTs: ph.startTs, endTs: ph.endTs }
+        });
+      } else if (ph.phase === 'review') {
+        phaseIdx++;
+        stages.push({
+          id: 'review_' + phaseIdx, type: 'review', label: 'Review',
+          state: execState, events: ph.events,
+          meta: { milestones: ph.events.length, startTs: ph.startTs, endTs: ph.endTs }
+        });
+      } else if (ph.phase === 'verify') {
+        phaseIdx++;
+        stages.push({
+          id: 'verify_' + phaseIdx, type: 'verify', label: 'Verify',
+          state: execState, events: ph.events,
+          meta: { milestones: ph.events.length, startTs: ph.startTs, endTs: ph.endTs }
+        });
+      } else if (ph.phase.startsWith('build') || ph.phase === 'build_agent') {
         buildIdx++;
         const isRetry = buildIdx > 1;
         const phaseType = isRetry ? 'retry' : 'build';
         const suffix = buildIdx > 1 ? '\u2082' : '';
         const label = 'Build' + suffix;
-        const execState = ['completed','failed','validating','retrying'].includes(state) ? 'completed'
-          : state === 'running' ? 'running' : 'pending';
         stages.push({
           id: 'build_' + buildIdx, type: phaseType, label: label,
           state: execState, events: ph.events,
@@ -1266,10 +1316,22 @@ function setFilterPreset(preset) {
 function stageSummaryText(st) {
   const m = st.meta || {};
   switch (st.type) {
+    case 'task': {
+      const parts = [];
+      if (m.mode) parts.push(m.mode);
+      return parts.join(' \u00B7 ');
+    }
     case 'preflight': {
       const parts = [];
       if (m.worktree) parts.push(m.worktree.split('/').pop());
       if (m.depends && m.depends.length) parts.push(m.depends.length + ' deps');
+      return parts.join(' \u00B7 ');
+    }
+    case 'scout':
+    case 'review':
+    case 'verify': {
+      const parts = [];
+      if (m.milestones) parts.push(m.milestones + ' events');
       return parts.join(' \u00B7 ');
     }
     case 'build':
@@ -1288,7 +1350,7 @@ function stageSummaryText(st) {
     case 'validation': {
       const parts = [];
       if (m.verdict) parts.push(m.verdict);
-      if (m.confidence) parts.push(Math.round(m.confidence) + '%');
+      if (m.confidence) parts.push(Math.round(m.confidence * 100) + '%');
       if (m.cost) parts.push(fmtCost(m.cost));
       if (m.concerns && m.concerns.length) parts.push(m.concerns.length + ' concerns');
       return parts.join(' \u00B7 ');
@@ -1895,8 +1957,11 @@ async function toggleLiveDetail(rowEl) {
     return;
   }
 
-  /* Render full text */
+  /* Render full text with basic code block handling */
   let rendered = esc(text);
+  /* Convert ```...``` fenced code blocks to styled sections */
+  rendered = rendered.replace(/```(\w*)\n([\s\S]*?)```/g,
+    '<code style="background:var(--bg-surface);padding:2px 6px;border-radius:3px;display:block;margin:0.5em 0">$2</code>');
   panel.innerHTML = `<pre>${rendered}</pre>`;
 }
 
