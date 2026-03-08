@@ -270,6 +270,126 @@ def merge_and_cleanup(
     return MergeOutcome(sha=sha, missing_additions=missing, agent_diff=agent_diff)
 
 
+def merge_in_worktree(
+    base_dir: str,
+    issue_id: int,
+    target_branch: str | None = None,
+) -> "MergeOutcome":
+    """Merge agent branch into target using a temporary merge worktree.
+
+    All git operations happen in a disposable worktree — the user's
+    working tree is never touched.
+
+    Returns
+    -------
+    MergeOutcome
+        ``sha`` is the merge commit SHA (empty if merge failed).
+        ``merge_branch`` is the temp branch name with the merge result.
+        ``error`` is non-empty on failure.
+
+    Note: the caller is responsible for deleting ``agent/{issue_id}`` and
+    ``merge_branch`` after the result has been consumed (e.g. after
+    fast-forwarding into the main branch).
+    """
+    branch_name = f"agent/{issue_id}"
+    if target_branch is None:
+        target_branch = _current_branch(base_dir)
+
+    # Verify the agent branch actually exists before proceeding
+    verify = _run_git(["rev-parse", "--verify", branch_name], cwd=base_dir)
+    if verify.returncode != 0:
+        return MergeOutcome(sha="", error=f"branch {branch_name} not found")
+
+    # Check if agent branch has commits beyond target
+    result = _run_git(
+        ["log", f"{target_branch}..{branch_name}", "--oneline"],
+        cwd=base_dir,
+    )
+    if not result.stdout.strip():
+        logger.info("Session #%s: no new commits to merge", issue_id)
+        sha_result = _run_git(["rev-parse", "--short", "HEAD"], cwd=base_dir)
+        sha = sha_result.stdout.strip()
+        _run_git(["branch", "-D", branch_name], cwd=base_dir)
+        return MergeOutcome(sha=sha)
+
+    # Capture agent diff and changed files before merge
+    agent_diff = get_agent_diff(base_dir, branch_name, target_branch)
+    changed_files = get_changed_files(base_dir, branch_name, target_branch)
+
+    # Create a temporary merge worktree from the target branch HEAD
+    merge_branch = f"merge-ready/{issue_id}"
+    # Delete stale merge branch if exists
+    _run_git(["branch", "-D", merge_branch], cwd=base_dir)
+    _run_git(["worktree", "prune"], cwd=base_dir)
+
+    merge_wt_root = str(Path(base_dir) / "data" / "agent" / "merge-worktrees")
+    merge_wt_path = str(Path(merge_wt_root) / str(issue_id))
+
+    # Clean up stale merge worktree
+    if Path(merge_wt_path).exists():
+        shutil.rmtree(merge_wt_path, ignore_errors=True)
+
+    Path(merge_wt_root).mkdir(parents=True, exist_ok=True)
+    wt_result = _run_git(
+        ["worktree", "add", "-b", merge_branch, merge_wt_path, target_branch],
+        cwd=base_dir,
+    )
+    if wt_result.returncode != 0:
+        logger.error(
+            "Session #%s: failed to create merge worktree: %s",
+            issue_id, wt_result.stderr.strip(),
+        )
+        return MergeOutcome(
+            sha="", agent_diff=agent_diff,
+            error=f"merge worktree creation failed: {wt_result.stderr.strip()}",
+        )
+
+    try:
+        # Merge agent branch into the merge worktree
+        merge_result = _run_git(
+            ["merge", branch_name, "--no-edit",
+             "-m", f"Merge agent/{issue_id} session work"],
+            cwd=merge_wt_path,
+        )
+
+        if merge_result.returncode != 0:
+            logger.warning(
+                "Session #%s: merge conflict in worktree: %s",
+                issue_id, merge_result.stderr.strip(),
+            )
+            # Abort the failed merge in the worktree
+            _run_git(["merge", "--abort"], cwd=merge_wt_path)
+            return MergeOutcome(
+                sha="", agent_diff=agent_diff, merge_branch=merge_branch,
+                error=f"merge conflict: {merge_result.stderr.strip()}",
+            )
+
+        # Merge succeeded — get SHA and verify integrity
+        sha_result = _run_git(["rev-parse", "--short", "HEAD"], cwd=merge_wt_path)
+        sha = sha_result.stdout.strip()
+
+        missing = verify_merge_integrity(merge_wt_path, agent_diff, changed_files)
+        if missing:
+            logger.warning(
+                "Session #%s: %d file(s) have missing additions after merge",
+                issue_id, len(missing),
+            )
+
+        logger.info("Session #%s: merged in worktree → %s", issue_id, sha)
+        return MergeOutcome(
+            sha=sha, missing_additions=missing,
+            agent_diff=agent_diff, merge_branch=merge_branch,
+        )
+
+    finally:
+        # Always clean up the merge worktree
+        _run_git(
+            ["worktree", "remove", "--force", merge_wt_path],
+            cwd=base_dir, timeout=120,
+        )
+        _run_git(["worktree", "prune"], cwd=base_dir)
+
+
 def _stash_if_dirty(base_dir: str, issue_id: int) -> bool:
     """Stash uncommitted changes in *base_dir*.  Returns True if stashed."""
     status = _run_git(["status", "--porcelain"], cwd=base_dir)
@@ -325,11 +445,13 @@ class MissingAddition:
 
 @dataclass
 class MergeOutcome:
-    """Return type of merge_and_cleanup with integrity information."""
+    """Return type of merge operations with integrity information."""
 
     sha: str
     missing_additions: list[MissingAddition] = field(default_factory=list)
     agent_diff: str = ""
+    error: str = ""
+    merge_branch: str = ""  # branch name with the merge result
 
 
 _TRIVIAL_LINE = re.compile(
@@ -341,13 +463,22 @@ _TRIVIAL_LINE = re.compile(
 )
 
 
-def get_agent_diff(base_dir: str, branch_name: str) -> str:
+def get_agent_diff(
+    base_dir: str, branch_name: str, target_branch: str | None = None
+) -> str:
     """Capture ``git diff target..branch`` before merge.
+
+    Parameters
+    ----------
+    target_branch
+        Explicit base branch for the diff.  Falls back to the current
+        branch of *base_dir* when ``None``.
 
     Returns the raw unified diff string (empty on failure).
     """
-    target = _current_branch(base_dir)
-    result = _run_git(["diff", f"{target}..{branch_name}"], cwd=base_dir)
+    if target_branch is None:
+        target_branch = _current_branch(base_dir)
+    result = _run_git(["diff", f"{target_branch}..{branch_name}"], cwd=base_dir)
     if result.returncode != 0:
         return ""
     return result.stdout

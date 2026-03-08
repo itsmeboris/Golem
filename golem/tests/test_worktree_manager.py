@@ -633,3 +633,115 @@ class TestTaskSessionMergeFields:
         s2 = TaskSession.from_dict(d)
         assert s2.merge_deferred is True
         assert s2.merge_branch == "merge-ready/1"
+
+
+class TestMergeInWorktree:
+    def test_clean_merge(self, git_repo, tmp_path):
+        """Agent branch merges cleanly into master via temp worktree."""
+        from golem.worktree_manager import merge_in_worktree
+
+        wt_root = str(tmp_path / "worktrees")
+        wt_path = create_worktree(str(git_repo), 1001, worktree_root=wt_root)
+
+        (Path(wt_path) / "agent_file.py").write_text("agent code\n")
+        _run_git(["add", "."], cwd=wt_path)
+        _run_git(["commit", "-m", "Agent work"], cwd=wt_path)
+
+        # Remove agent worktree (simulating normal flow)
+        _run_git(["worktree", "remove", "--force", wt_path], cwd=str(git_repo))
+
+        outcome = merge_in_worktree(str(git_repo), 1001)
+        assert outcome.sha
+        assert outcome.error == ""
+        assert outcome.merge_branch  # temp branch exists
+        assert not outcome.missing_additions
+
+        # Branches are preserved for the caller to consume
+        result = _run_git(["branch", "--list", "agent/1001"], cwd=str(git_repo))
+        assert "agent/1001" in result.stdout  # caller deletes after ff
+        result = _run_git(["branch", "--list", outcome.merge_branch], cwd=str(git_repo))
+        assert outcome.merge_branch.split("/")[-1] in result.stdout
+
+    def test_diverged_branches_merge(self, git_repo, tmp_path):
+        """Agent and master diverge on different files — merges cleanly."""
+        from golem.worktree_manager import merge_in_worktree
+
+        wt_root = str(tmp_path / "worktrees")
+        wt_path = create_worktree(str(git_repo), 1002, worktree_root=wt_root)
+
+        (Path(wt_path) / "agent_file.py").write_text("agent\n")
+        _run_git(["add", "."], cwd=wt_path)
+        _run_git(["commit", "-m", "Agent"], cwd=wt_path)
+
+        # Advance master
+        (git_repo / "main_file.py").write_text("main\n")
+        _run_git(["add", "."], cwd=str(git_repo))
+        _run_git(["commit", "-m", "Main"], cwd=str(git_repo))
+
+        _run_git(["worktree", "remove", "--force", wt_path], cwd=str(git_repo))
+
+        outcome = merge_in_worktree(str(git_repo), 1002)
+        assert outcome.sha
+        assert outcome.error == ""
+
+    def test_no_commits_returns_head(self, git_repo, tmp_path):
+        """No new commits on agent branch — returns current HEAD."""
+        from golem.worktree_manager import merge_in_worktree
+
+        wt_root = str(tmp_path / "worktrees")
+        wt_path = create_worktree(str(git_repo), 1003, worktree_root=wt_root)
+        _run_git(["worktree", "remove", "--force", wt_path], cwd=str(git_repo))
+
+        outcome = merge_in_worktree(str(git_repo), 1003)
+        assert outcome.sha  # HEAD sha
+        assert outcome.error == ""
+
+    def test_dirty_main_not_touched(self, git_repo, tmp_path):
+        """User's dirty working tree is untouched during merge."""
+        from golem.worktree_manager import merge_in_worktree
+
+        wt_root = str(tmp_path / "worktrees")
+        wt_path = create_worktree(str(git_repo), 1004, worktree_root=wt_root)
+
+        (Path(wt_path) / "shared.py").write_text("agent version\n")
+        _run_git(["add", "."], cwd=wt_path)
+        _run_git(["commit", "-m", "Agent"], cwd=wt_path)
+        _run_git(["worktree", "remove", "--force", wt_path], cwd=str(git_repo))
+
+        # Make main dirty with different file
+        (git_repo / "user_wip.py").write_text("user work in progress\n")
+
+        outcome = merge_in_worktree(str(git_repo), 1004)
+        assert outcome.sha
+        # User's dirty file still there, untouched
+        assert (git_repo / "user_wip.py").read_text() == "user work in progress\n"
+
+    def test_missing_branch_returns_error(self, git_repo, tmp_path):
+        """Non-existent agent branch returns error."""
+        from golem.worktree_manager import merge_in_worktree
+
+        outcome = merge_in_worktree(str(git_repo), 9999)
+        assert outcome.sha == ""
+        assert outcome.error  # should mention branch not found
+
+    def test_conflict_returns_empty_sha(self, git_repo, tmp_path):
+        """Conflicting changes on same file return empty sha + error."""
+        from golem.worktree_manager import merge_in_worktree
+
+        wt_root = str(tmp_path / "worktrees")
+        wt_path = create_worktree(str(git_repo), 1005, worktree_root=wt_root)
+
+        # Both sides modify README.md
+        (Path(wt_path) / "README.md").write_text("agent version\n")
+        _run_git(["add", "."], cwd=wt_path)
+        _run_git(["commit", "-m", "Agent edits README"], cwd=wt_path)
+
+        (git_repo / "README.md").write_text("main version\n")
+        _run_git(["add", "."], cwd=str(git_repo))
+        _run_git(["commit", "-m", "Main edits README"], cwd=str(git_repo))
+
+        _run_git(["worktree", "remove", "--force", wt_path], cwd=str(git_repo))
+
+        outcome = merge_in_worktree(str(git_repo), 1005)
+        assert outcome.sha == ""
+        assert outcome.error  # non-empty error message
