@@ -78,6 +78,7 @@ class GolemFlowConfig(FlowConfig):
     # Checkpoint persistence for crash recovery
     checkpoint_interval_seconds: int = 300
     checkpoint_max_age_minutes: int = 10
+    flaky_tests_file: str = ""  # path to known-flaky tests JSON; empty = disabled
 
 
 @dataclass
@@ -263,6 +264,7 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
         merge_review_timeout=data.get("merge_review_timeout", 600),
         checkpoint_interval_seconds=data.get("checkpoint_interval_seconds", 300),
         checkpoint_max_age_minutes=data.get("checkpoint_max_age_minutes", 10),
+        flaky_tests_file=data.get("flaky_tests_file", ""),
     )
 
 
