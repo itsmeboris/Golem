@@ -677,6 +677,77 @@ def format_status_text(since_hours: int = 24, flow: str | None = None) -> str:
     return "\n".join(lines)
 
 
+def format_task_detail_text(task_id: int) -> str:
+    """Build a plain-text detailed view for a single task."""
+    sessions = load_sessions()
+    if task_id not in sessions:
+        return f"Task #{task_id} not found."
+
+    sess = sessions[task_id]
+
+    lines = [f"=== Task #{task_id} ==="]
+    lines.append(f"  Subject:      {sess.parent_subject}")
+    lines.append(f"  State:        {sess.state.value}")
+    lines.append(f"  Priority:     {sess.priority}")
+    lines.append(f"  Created:      {sess.created_at}")
+    lines.append(f"  Updated:      {sess.updated_at}")
+    lines.append(f"  Duration:     {format_duration(sess.duration_seconds)}")
+    lines.append(
+        f"  Cost:         ${sess.total_cost_usd:.2f} / ${sess.budget_usd:.2f} budget"
+    )
+
+    lines += [
+        "",
+        "  EXECUTION:",
+        f"    Mode:         {sess.execution_mode}",
+        f"    Phase:        {sess.supervisor_phase}",
+        f"    Retry:        {sess.retry_count}",
+        f"    Worktree:     {sess.worktree_path}",
+    ]
+
+    if sess.validation_verdict:
+        concerns = (
+            ", ".join(sess.validation_concerns) if sess.validation_concerns else "none"
+        )
+        lines += [
+            "",
+            "  VALIDATION:",
+            f"    Verdict:      {sess.validation_verdict}"
+            f" (confidence: {sess.validation_confidence})",
+            f"    Summary:      {sess.validation_summary}",
+            f"    Concerns:     {concerns}",
+        ]
+
+    lines += [
+        "",
+        "  RESULT:",
+        f"    Summary:      {sess.result_summary}",
+    ]
+    if sess.commit_sha:
+        lines.append(f"    Commit:       {sess.commit_sha}")
+    if sess.files_changed:
+        lines.append(f"    Files:        {len(sess.files_changed)} changed")
+        for f in sess.files_changed:
+            lines.append(f"      - {f}")
+
+    lines += ["", "  ERRORS:"]
+    if sess.errors:
+        for err in sess.errors:
+            lines.append(f"    {err}")
+    else:
+        lines.append("    (none)")
+
+    if sess.event_log:
+        lines += ["", f"  EVENT LOG (last {min(10, len(sess.event_log))})"]
+        for ev in sess.event_log[-10:]:
+            ts = ev.get("timestamp", "")
+            ev_type = ev.get("type", "")
+            msg = ev.get("message", "")
+            lines.append(f"    {ts}  {ev_type:<10s}  {msg}")
+
+    return "\n".join(lines)
+
+
 def _format_recent_runs(runs: list[dict], sessions: dict[int, Any]) -> list[str]:
     """Format the recent runs section for CLI status output."""
     if not runs:

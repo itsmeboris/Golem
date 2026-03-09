@@ -1154,6 +1154,39 @@ class TestCmdStatus:
         cmd_status(args)
         mock_format.assert_called_once_with(since_hours=48, flow="golem")
 
+    @patch(
+        "golem.core.dashboard.format_task_detail_text", return_value="Task #5 detail"
+    )
+    def test_task_detail(self, mock_detail, capsys):
+        args = SimpleNamespace(hours=24, task=5, watch=None, config=None)
+        result = cmd_status(args)
+        assert result == 0
+        mock_detail.assert_called_once_with(5)
+        assert "Task #5 detail" in capsys.readouterr().out
+
+    @patch("golem.core.dashboard.format_status_text", return_value="watch output")
+    def test_watch_mode(self, mock_format, capsys):
+        """Watch mode prints with ANSI clear, then exits on KeyboardInterrupt."""
+        import time
+
+        with patch.object(time, "sleep", side_effect=KeyboardInterrupt):
+            args = SimpleNamespace(hours=24, task=None, watch=2.0, config=None)
+            result = cmd_status(args)
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "watch output" in out
+        assert "\033[2J\033[H" in out
+
+    @patch("golem.core.dashboard.format_status_text", return_value="clamp test")
+    def test_watch_clamps_interval(self, mock_format, capsys):
+        """Watch interval is clamped to minimum 0.5s."""
+        import time
+
+        with patch.object(time, "sleep", side_effect=KeyboardInterrupt) as mock_sleep:
+            args = SimpleNamespace(hours=24, task=None, watch=0.1, config=None)
+            cmd_status(args)
+        mock_sleep.assert_called_once_with(0.5)
+
 
 class TestCmdDashboard:
     @patch("golem.cli.FASTAPI_AVAILABLE", False)
@@ -1301,6 +1334,31 @@ class TestMainArgparseExtended:
             main()
         call_args = mock_stop.call_args[0][0]
         assert call_args.dashboard is True
+
+    @patch("golem.cli.cmd_status", return_value=0)
+    def test_status_watch(self, mock_status):
+        with patch("sys.argv", ["golem", "status", "--watch"]):
+            result = main()
+        assert result == 0
+        # Verify watch arg was parsed (const=2.0)
+        call_args = mock_status.call_args[0][0]
+        assert call_args.watch == 2.0
+
+    @patch("golem.cli.cmd_status", return_value=0)
+    def test_status_watch_custom(self, mock_status):
+        with patch("sys.argv", ["golem", "status", "--watch", "5"]):
+            result = main()
+        assert result == 0
+        call_args = mock_status.call_args[0][0]
+        assert call_args.watch == 5.0
+
+    @patch("golem.cli.cmd_status", return_value=0)
+    def test_status_task(self, mock_status):
+        with patch("sys.argv", ["golem", "status", "--task", "42"]):
+            result = main()
+        assert result == 0
+        call_args = mock_status.call_args[0][0]
+        assert call_args.task == 42
 
 
 class TestControlApiWiring:

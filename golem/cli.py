@@ -791,11 +791,31 @@ def cmd_cancel(args) -> int:
 
 def cmd_status(args) -> int:
     """Handler for the 'status' subcommand — show recent run history."""
-    from .core.dashboard import format_status_text
+    from .core.dashboard import format_status_text, format_task_detail_text
+
+    task_id = getattr(args, "task", None)
+    if task_id is not None:
+        print(format_task_detail_text(task_id))
+        return 0
 
     since = getattr(args, "hours", 24)
-    print(format_status_text(since_hours=since, flow="golem"))
-    return 0
+    watch = getattr(args, "watch", None)
+
+    if watch is None:
+        print(format_status_text(since_hours=since, flow="golem"))
+        return 0
+
+    # Watch mode: clear screen and re-render in a loop
+    import time
+
+    interval = max(0.5, watch)
+    try:
+        while True:
+            output = format_status_text(since_hours=since, flow="golem")
+            print("\033[2J\033[H" + output, flush=True)
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        return 0
 
 
 def cmd_dashboard(args) -> int:
@@ -960,6 +980,22 @@ def _build_parser() -> argparse.ArgumentParser:
     # status
     status_p = sub.add_parser("status", help="Show run stats")
     status_p.add_argument("--hours", type=int, default=24)
+    status_p.add_argument(
+        "--watch",
+        type=float,
+        nargs="?",
+        const=2.0,
+        default=None,
+        metavar="SECS",
+        help="Auto-refresh every SECS seconds (default: 2)",
+    )
+    status_p.add_argument(
+        "--task",
+        type=int,
+        default=None,
+        metavar="ID",
+        help="Show detail for a specific task ID",
+    )
     status_p.set_defaults(func=cmd_status)
 
     # dashboard

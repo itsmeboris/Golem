@@ -24,8 +24,10 @@ from golem.core.dashboard import (
     _term_ev,
     config_to_snapshot,
     format_status_text,
+    format_task_detail_text,
     mount_dashboard,
 )
+from golem.orchestrator import TaskSession, TaskSessionState
 
 
 # ---------------------------------------------------------------------------
@@ -941,6 +943,184 @@ class TestFormatStatusText:
         text = format_status_text()
         assert "..." in text
         assert "BBB" in text
+
+
+# ---------------------------------------------------------------------------
+# format_task_detail_text
+# ---------------------------------------------------------------------------
+
+
+def _make_session(**kwargs) -> TaskSession:
+    """Helper to build a TaskSession with sensible defaults."""
+    defaults = dict(
+        parent_issue_id=12345,
+        parent_subject="Test task subject",
+        state=TaskSessionState.RUNNING,
+        priority=5,
+        created_at="2026-03-09T10:00:00",
+        updated_at="2026-03-09T10:30:00",
+        duration_seconds=330.0,
+        total_cost_usd=1.23,
+        budget_usd=10.0,
+        execution_mode="subagent",
+        supervisor_phase="orchestrating",
+        retry_count=0,
+        worktree_path="/path/to/worktree",
+        validation_verdict="",
+        validation_confidence=0.0,
+        validation_summary="",
+        validation_concerns=[],
+        errors=[],
+        event_log=[],
+        result_summary="",
+        commit_sha="",
+        files_changed=[],
+    )
+    defaults.update(kwargs)
+    return TaskSession(**defaults)
+
+
+class TestFormatTaskDetailText:
+    @patch("golem.core.dashboard.load_sessions", return_value={})
+    def test_task_not_found(self, _mock_sessions):
+        result = format_task_detail_text(999)
+        assert result == "Task #999 not found."
+
+    @patch("golem.core.dashboard.load_sessions")
+    def test_basic_detail(self, mock_sessions):
+        sess = _make_session()
+        mock_sessions.return_value = {12345: sess}
+        result = format_task_detail_text(12345)
+        assert "=== Task #12345 ===" in result
+        assert "Test task subject" in result
+        assert "running" in result
+        assert "5m 30s" in result
+        assert "$1.23" in result
+        assert "$10.00" in result
+        assert "subagent" in result
+        assert "orchestrating" in result
+        assert "EXECUTION:" in result
+        assert "ERRORS:" in result
+        assert "(none)" in result
+
+    @patch("golem.core.dashboard.load_sessions")
+    def test_detail_with_validation(self, mock_sessions):
+        sess = _make_session(
+            validation_verdict="PASS",
+            validation_confidence=0.95,
+            validation_summary="All tests pass",
+            validation_concerns=[],
+        )
+        mock_sessions.return_value = {12345: sess}
+        result = format_task_detail_text(12345)
+        assert "VALIDATION:" in result
+        assert "PASS" in result
+        assert "0.95" in result
+        assert "All tests pass" in result
+        assert "none" in result  # no concerns
+
+    @patch("golem.core.dashboard.load_sessions")
+    def test_detail_with_validation_concerns(self, mock_sessions):
+        sess = _make_session(
+            validation_verdict="FAIL",
+            validation_confidence=0.4,
+            validation_summary="Some tests failed",
+            validation_concerns=["Missing coverage", "Lint error"],
+        )
+        mock_sessions.return_value = {12345: sess}
+        result = format_task_detail_text(12345)
+        assert "VALIDATION:" in result
+        assert "FAIL" in result
+        assert "Missing coverage" in result
+        assert "Lint error" in result
+
+    @patch("golem.core.dashboard.load_sessions")
+    def test_detail_with_errors(self, mock_sessions):
+        sess = _make_session(errors=["Connection timeout", "Build failed"])
+        mock_sessions.return_value = {12345: sess}
+        result = format_task_detail_text(12345)
+        assert "ERRORS:" in result
+        assert "Connection timeout" in result
+        assert "Build failed" in result
+
+    @patch("golem.core.dashboard.load_sessions")
+    def test_detail_with_files(self, mock_sessions):
+        sess = _make_session(
+            files_changed=["path/to/file1.py", "path/to/file2.py"],
+            result_summary="Implemented feature X",
+            commit_sha="abc1234",
+        )
+        mock_sessions.return_value = {12345: sess}
+        result = format_task_detail_text(12345)
+        assert "RESULT:" in result
+        assert "Implemented feature X" in result
+        assert "abc1234" in result
+        assert "2 changed" in result
+        assert "path/to/file1.py" in result
+        assert "path/to/file2.py" in result
+
+    @patch("golem.core.dashboard.load_sessions")
+    def test_detail_no_validation(self, mock_sessions):
+        sess = _make_session(validation_verdict="")
+        mock_sessions.return_value = {12345: sess}
+        result = format_task_detail_text(12345)
+        assert "VALIDATION:" not in result
+
+    @patch("golem.core.dashboard.load_sessions")
+    def test_detail_with_event_log(self, mock_sessions):
+        events = [
+            {
+                "timestamp": "2026-03-09 10:00:00",
+                "type": "milestone",
+                "message": "Phase 1 done",
+            },
+            {
+                "timestamp": "2026-03-09 10:05:00",
+                "type": "error",
+                "message": "Retry triggered",
+            },
+        ]
+        sess = _make_session(event_log=events)
+        mock_sessions.return_value = {12345: sess}
+        result = format_task_detail_text(12345)
+        assert "EVENT LOG" in result
+        assert "milestone" in result
+        assert "Phase 1 done" in result
+        assert "Retry triggered" in result
+
+    @patch("golem.core.dashboard.load_sessions")
+    def test_detail_event_log_capped_at_10(self, mock_sessions):
+        events = [
+            {
+                "timestamp": f"2026-03-09 10:{i:02d}:00",
+                "type": "milestone",
+                "message": f"m{i}",
+            }
+            for i in range(15)
+        ]
+        sess = _make_session(event_log=events)
+        mock_sessions.return_value = {12345: sess}
+        result = format_task_detail_text(12345)
+        # Last 10 entries are shown (m5..m14), not the first 5
+        assert "m14" in result
+        assert "m5" in result
+        assert "m4" not in result
+
+    @patch("golem.core.dashboard.load_sessions")
+    def test_detail_result_section_no_commit_or_files(self, mock_sessions):
+        sess = _make_session(result_summary="Done", commit_sha="", files_changed=[])
+        mock_sessions.return_value = {12345: sess}
+        result = format_task_detail_text(12345)
+        assert "RESULT:" in result
+        assert "Done" in result
+
+    @patch("golem.core.dashboard.load_sessions")
+    def test_detail_result_section_empty(self, mock_sessions):
+        sess = _make_session(result_summary="", commit_sha="", files_changed=[])
+        mock_sessions.return_value = {12345: sess}
+        result = format_task_detail_text(12345)
+        # RESULT section still rendered but empty summary is blank
+        assert "RESULT:" in result
 
 
 # ---------------------------------------------------------------------------
