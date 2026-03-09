@@ -392,6 +392,7 @@ class SubagentSupervisor:
             model=self.task_config.validation_model,
             budget_usd=self.task_config.validation_budget_usd,
             timeout_seconds=self.task_config.validation_timeout_seconds,
+            ast_analysis=self.task_config.ast_analysis,
         )
         self.session.validation_verdict = verdict.verdict
         self.session.validation_confidence = verdict.confidence
@@ -506,8 +507,7 @@ class SubagentSupervisor:
             self.session.supervisor_phase = "committing"
             self._commit_and_complete(issue_id, work_dir, retry_verdict)
         elif (
-            retry_verdict.verdict != "PASS"
-            and self.task_config.ensemble_on_second_retry
+            self.task_config.ensemble_on_second_retry
             and self.session.retry_count < self.task_config.max_retries + 1
         ):
             # Ensemble mode: spawn parallel candidates with different strategies

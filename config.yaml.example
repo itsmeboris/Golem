@@ -64,6 +64,13 @@ flows:
     checkpoint_interval_seconds: 300   # seconds between checkpoint saves
     checkpoint_max_age_minutes: 10     # max age before checkpoint is stale
 
+    # AST-based validation (requires ast-grep / sg on PATH)
+    ast_analysis: true             # run ast-grep structural rules during validation
+
+    # Ensemble retry: spawn parallel attempts on hard tasks
+    ensemble_on_second_retry: false  # enable parallel candidate strategy
+    ensemble_candidates: 2           # number of parallel attempts
+
     # Prompt templates (override built-in prompts/ directory)
     # prompts_dir: ""
 
