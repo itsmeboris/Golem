@@ -37,27 +37,15 @@ Submit a prompt. Walk away. It's done.
 
 - [Why Golem](#why-golem)
 - [Quick Start](#quick-start)
-  - [Prerequisites](#prerequisites)
-  - [Install](#1-install)
-  - [Configure](#2-configure)
-  - [Run](#3-run)
 - [How It Works](#how-it-works)
-  - [Daemon-Centric Architecture](#daemon-centric-architecture)
-  - [Submitting Tasks](#submitting-tasks)
+  - [Daemon Architecture](#daemon-centric-architecture)
   - [Task Lifecycle](#task-lifecycle)
   - [Parallel Tasks & Git Worktrees](#parallel-tasks--git-worktrees)
 - [Agent Intelligence](#agent-intelligence)
-  - [5-Phase Workflow](#5-phase-workflow)
-  - [Specialized Subagents](#specialized-subagents)
-  - [Skill Discovery](#skill-discovery)
 - [Architecture](#architecture)
-  - [Profile System](#profile-system)
-  - [Project Layout](#project-layout)
 - [Configuration](#configuration)
-- [Custom Profiles](#custom-profiles)
 - [HTTP API](#http-api)
 - [Development](#development)
-- [License](#license)
 
 </details>
 
@@ -69,15 +57,13 @@ Most AI coding tools wait for you to invoke them. Golem runs the other way aroun
 
 **Daemon-centric** — Everything runs through the daemon. Submit a prompt from the CLI, drop a file, or hit the HTTP API — the daemon picks it up, executes it in the background, and reports back. If the daemon isn't running, `golem run` starts it automatically.
 
-**Parallel execution** — Multiple Claude instances run simultaneously, each on a different task. Every task gets its own git worktree, so concurrent work never collides. When tasks complete, changes merge cleanly back into your branch.
+**Parallel execution** — Multiple Claude instances run simultaneously, each in its own git worktree. Infrastructure failures auto-retry without consuming the task's retry budget. When tasks complete, changes merge cleanly back into your branch.
 
-**Three-layer quality pipeline** — Every task passes through a deterministic verifier (`black`, `pylint`, `pytest` with 100% coverage) before a separate validation agent reviews the work. Shared TypedDict contracts (`golem/types.py`) enforce structural correctness across modules. If verification fails, the task retries immediately with structured feedback — no LLM review wasted on code that doesn't compile or pass tests. A static antipattern scanner also checks the diff for traceback leaks, cross-module private access, untyped dict access, and string-matching control flow. Only fully validated work gets committed and pushed.
+**Three-layer quality pipeline** — Every task passes through deterministic verification (`black`, `pylint`, `pytest`), then a separate validation agent reviews the work. Failures retry immediately with structured feedback — no LLM review wasted on broken code. Only fully validated work gets committed.
 
 **Skill-driven agents** — Agents discover and invoke relevant skills at each phase of execution — workspace knowledge, test-driven development, debugging workflows, code review criteria, and domain-specific tooling. Skills prevent unfocused exploration and enforce structured workflows.
 
 **Pluggable everything** — The profile system decouples Golem from any specific tracker, notifier, or tool provider. Swap Redmine for GitHub Issues, Teams for Slack, or write your own backend — without touching core logic.
-
-**Resilient** — Infrastructure failures (e.g. worktree creation, filesystem issues) are retried automatically without consuming the task's retry budget. A structured error taxonomy distinguishes infra failures from task-level errors, so transient problems don't kill your session.
 
 **Batch orchestration** — Submit multiple tasks as a batch with explicit dependency ordering. Task B can declare it depends on Task A — Golem schedules them accordingly and runs post-merge integration validation on the whole group.
 
@@ -163,37 +149,21 @@ The daemon is the single execution engine. All task execution flows through it, 
 
 ```mermaid
 flowchart TB
-    cli["golem run -p / -f"] -- "POST /api/submit" --> daemon
-    api["External Tool / AI"] -- "POST /api/submit" --> daemon
-    batch["Batch Submit"] -- "POST /api/submit/batch" --> daemon
-    drop["File Drop<br/>data/submissions/*.json"] --> daemon
-    tracker["Issue Tracker<br/>(plugin)"] -. "poll" .-> daemon
+    cli["golem run -p / -f"] -- submit --> daemon
+    api["HTTP API"] -- submit --> daemon
+    tracker["Issue Tracker<br/>(plugin)"] -. poll .-> daemon
 
     subgraph daemon ["Golem Daemon"]
-        flow["Flow Engine"] --> preflight["Preflight Checks"]
-        preflight --> orch["Orchestrator<br/>(single Claude session)"]
-
-        orch -- "Agent tool" --> scout["Scout<br/>(haiku)"]
-        orch -- "Agent tool" --> builder["Builder<br/>(sonnet)"]
-        orch -- "Agent tool" --> reviewer["Reviewer<br/>(opus)"]
-        orch -- "Agent tool" --> verifier["Verifier<br/>(haiku)"]
-
+        flow["Flow Engine"] --> orch["Orchestrator"]
         orch --> vfy["Deterministic Verifier<br/>(black + pylint + pytest)"]
-
-        vfy -- FAIL --> retry["Retry<br/>(structured feedback)"]
-        retry --> orch
-        vfy -- PASS --> val["Validation Agent"]
-
+        vfy -- fail --> retry["Retry"] --> orch
+        vfy -- pass --> val["Validation Agent"]
         val -- PASS --> mq["Merge Queue"]
         val -- PARTIAL --> retry
     end
 
-    mq -- "rebase + merge" --> verify["Integrity Check"]
-    verify -- "clean" --> commit["Git Commit<br/>+ Notify Team"]
-    verify -- "conflict / lost additions" --> magent["Merge Agent"]
-    magent -- "resolved" --> commit
-    magent -- "failed" --> report
-    val -- FAIL --> report["Report Failure<br/>+ Notify Team"]
+    mq -- "rebase + merge" --> commit["Commit + Notify"]
+    val -- FAIL --> report["Report Failure"]
 ```
 
 ### Submitting Tasks
@@ -255,15 +225,11 @@ flowchart LR
     mq -- "sequential<br/>rebase + merge" --> main
 ```
 
-No locks, no conflicts between tasks. Each instance has full read-write access to its own copy. Validated work enters a sequential **merge queue** that rebases each branch onto the latest HEAD before merging — all in a **temporary merge worktree** that never touches the user's working tree. If dirty files overlap, the merge is deferred and retried automatically.
-
-All merge operations happen in a **temporary isolated worktree** — the user's working tree is never touched. After merging in the worktree, a **post-merge integrity check** compares the agent's original diff against the merged result. If git silently dropped additions during rebase, or a traditional merge conflict occurs, a unified **merge agent** reads both sides and produces a clean merge. The result is fast-forwarded onto the main branch. If the user's working tree has dirty files that overlap with the merge, the result is **deferred** on a `merge-ready/{id}` branch and retried automatically on each detection tick until the overlap clears.
+No locks, no conflicts between tasks. Each instance has full read-write access to its own copy. Validated work enters a sequential **merge queue** that rebases onto HEAD and merges in a temporary worktree — the user's working tree is never touched. A post-merge integrity check catches silently dropped additions; a **merge agent** resolves conflicts automatically.
 
 ---
 
 ## Agent Intelligence
-
-Golem doesn't just dispatch Claude and hope for the best. Each task runs through a structured workflow with specialized subagents and skill discovery.
 
 ### 5-Phase Workflow
 
@@ -308,8 +274,7 @@ Every prompt template instructs agents to check for relevant skills before start
 
 - **Workspace skills** — codebase layout, module conventions, verification commands
 - **Process skills** — test-driven development, systematic debugging, code review criteria
-- **Domain skills** — register access patterns, RTL analysis, CI/CD, MCP server usage
-- **Search skills** — AST-based structural search, diagram generation
+- **Domain skills** — project-specific tooling, CI/CD integration, MCP server usage
 
 Skills are discovered dynamically via the Skill tool. When new skills are added to `.claude/skills/`, agents pick them up automatically — no prompt changes needed.
 
@@ -356,108 +321,27 @@ profile: github    # GitHub Issues via gh CLI + Slack/Teams
 | `ToolProvider` | Select MCP servers per task | Keyword-based scoping | None (or keyword-based if `mcp_enabled`) | None (or keyword-based if `mcp_enabled`) |
 | `PromptProvider` | Load prompt templates | `prompts/` directory | `prompts/` | `prompts/` |
 
-The `local` profile is the recommended starting point for prompt-based workflows. Submitted prompts (via CLI, HTTP API, or file drop) are always handled through the daemon's submission pipeline regardless of which profile is active.
-
-<details>
-<summary><strong>Project Layout</strong></summary>
-
-```
-golem/
-├── cli.py                 # CLI entry point (daemon auto-start, submit)
-├── flow.py                # Tick-driven poll → detect → orchestrate loop
-├── orchestrator.py        # State-machine session lifecycle
-├── supervisor_v2_subagent.py  # Subagent orchestrator (Agent tool delegation)
-├── types.py               # Shared TypedDict contracts for all cross-module data shapes
-├── verifier.py            # Deterministic verifier (black + pylint + pytest) — hard gate before reviewer
-├── validation.py          # Validation agent (PASS/PARTIAL/FAIL) + antipattern scanner
-├── committer.py           # Structured git commits
-├── errors.py              # Error taxonomy (Infrastructure/Task/Validation)
-├── merge_queue.py         # Sequential merge queue for cross-task coordination
-├── merge_review.py        # Unified merge agent (conflict resolution + lost-addition recovery)
-├── batch_monitor.py       # Batch-level state aggregation and persistence
-├── batch_cli.py           # Batch API status formatting
-├── checkpoint.py          # Crash recovery via atomic JSON checkpoints
-├── health.py              # Daemon health monitoring with threshold alerts
-├── priority_gate.py       # Async concurrency gate with priority scheduling
-├── event_tracker.py       # Stream event processing & milestones
-├── poller.py              # Task detection from trackers
-├── notifications.py       # Teams / Slack notification card builders
-├── prompts.py             # Prompt template loading and formatting
-├── mcp_scope.py           # Dynamic MCP server selection
-├── workdir.py             # Per-task working directory resolution
-├── worktree_manager.py    # Git worktree isolation + isolated merge worktrees
-├── interfaces.py          # Protocol definitions
-├── profile.py             # Profile registry
-│
-├── backends/              # Pluggable backend implementations
-│   ├── redmine.py         #   Redmine TaskSource + StateBackend
-│   ├── slack_notifier.py  #   Slack Block Kit notifier
-│   ├── teams_notifier.py  #   Teams Adaptive Card notifier
-│   ├── mcp_tools.py       #   Keyword-based MCP tool provider
-│   ├── github.py          #   GitHub Issues via gh CLI
-│   ├── local.py           #   File-drop task source + null backends
-│   └── profiles.py        #   Built-in profile factories (local, redmine, github)
-│
-├── prompts/               # Prompt templates (run, validate, retry, orchestrate, merge)
-├── core/                  # Shared utilities
-│   ├── cli_wrapper.py     #   Claude CLI subprocess wrapper
-│   ├── config.py          #   YAML config with env expansion
-│   ├── control_api.py     #   REST API (health, submit, flow control)
-│   ├── dashboard.py       #   Web dashboard
-│   ├── flow_base.py       #   BaseFlow / PollableFlow / WebhookableFlow
-│   ├── log_context.py     #   Session-aware logging adapter
-│   ├── daemon_utils.py    #   Daemonization and PID management
-│   ├── live_state.py      #   Real-time state tracking for dashboard
-│   ├── json_extract.py    #   JSON extraction from agent output
-│   ├── commit_format.py   #   Commit message format template loader
-│   ├── service_clients.py #   Shared REST client utilities
-│   ├── triggers/          #   Webhook trigger handlers
-│   └── ...                #   defaults, report, run_log, slack, teams, stream_printer
-│
-├── data/
-│   ├── submissions/       # File-drop directory (daemon watches this)
-│   ├── state/             # Session state persistence (JSON)
-│   ├── traces/            # Agent execution traces (prompts + JSONL events)
-│   └── logs/              # Daemon and agent logs
-│
-└── tests/                 # Test suite (100% coverage required)
-```
-
-</details>
+The `local` profile is the recommended starting point. Prompts submitted via CLI, HTTP API, or file drop are handled through the daemon regardless of which profile is active.
 
 ---
 
 ## Configuration
 
-### config.yaml
-
-See [`config.yaml.example`](config.yaml.example) for the full annotated template.
-
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `profile` | `redmine` | Backend profile (`local`, `redmine`, `github`, or custom) |
-| `task_model` | `sonnet` | Claude model for single-agent execution and Builder subagents |
-| `budget_per_task_usd` | `10.0` | Max spend per task (0 = unlimited) |
-| `supervisor_mode` | `true` | Enable subagent orchestration (Agent tool delegation) |
+| `task_model` | `sonnet` | Claude model for task execution and Builder subagents |
 | `orchestrate_model` | `opus` | Model for orchestration and review |
-| `orchestrate_budget_usd` | `15.0` | Budget for orchestration session (0 = unlimited) |
-| `task_timeout_seconds` | `3600` | Timeout for single-agent execution (0 = unlimited) |
-| `orchestrate_timeout_seconds` | `3600` | Timeout for orchestration session (0 = unlimited) |
+| `supervisor_mode` | `true` | Enable subagent orchestration (Agent tool delegation) |
+| `budget_per_task_usd` | `10.0` | Max spend per task (0 = unlimited) |
+| `task_timeout_seconds` | `3600` | Timeout per task (0 = unlimited) |
 | `max_retries` | `1` | Retries on PARTIAL validation verdict |
-| `auto_commit` | `true` | Git commit on PASS |
-| `use_worktrees` | `true` | Isolate tasks in separate git worktrees |
 | `max_active_sessions` | `3` | Concurrent tasks running in parallel |
-| `max_infra_retries` | `2` | Auto-retries for infrastructure failures without consuming task retry budget |
-| `validation_model` | `opus` | Model for validation agent (strong reasoning recommended) |
-| `validation_budget_usd` | `0.0` | Budget for validation agent (0 = unlimited) |
-| `validation_timeout_seconds` | `600` | Timeout for validation agent |
-| `retry_budget_usd` | `5.0` | Budget for retry agent (0 = unlimited) |
-| `merge_review_budget_usd` | `1.0` | Budget for the unified merge agent (conflicts + lost additions) |
-| `merge_review_timeout` | `600` | Timeout (seconds) for merge review agent invocations |
-| `checkpoint_interval_seconds` | `300` | Seconds between checkpoint saves for crash recovery |
-| `checkpoint_max_age_minutes` | `10` | Max age before a checkpoint is considered stale |
-| `inner_retry_max` | `3` | Circuit breaker for inner test-fix loops in subagent mode |
-| `resume_on_partial` | `true` | Use `--resume` for warm retries instead of cold-starting |
+| `use_worktrees` | `true` | Isolate tasks in separate git worktrees |
+| `auto_commit` | `true` | Git commit on PASS |
+| `validation_model` | `opus` | Model for the validation agent |
+
+See [`config.yaml.example`](config.yaml.example) for the full list including budget limits, timeouts, checkpoint intervals, and merge settings.
 
 ### Environment Variables
 
@@ -470,7 +354,8 @@ SLACK_GOLEM_WEBHOOK_URL=https://hooks.slack.com/services/T/B/X  # optional
 
 ---
 
-## Custom Profiles
+<details>
+<summary><strong>Custom Profiles</strong></summary>
 
 Three profiles ship built-in: `local`, `redmine`, and `github`. To create your own, implement the five protocols from `interfaces.py` and register:
 
@@ -480,16 +365,12 @@ from golem.backends.local import LogNotifier, NullToolProvider
 from golem.prompts import FilePromptProvider
 
 class JiraTaskSource:
-    def poll_tasks(self, projects, detection_tag, timeout=30):
-        ...
-    def get_task_description(self, task_id):
-        ...
+    def poll_tasks(self, projects, detection_tag, timeout=30): ...
+    def get_task_description(self, task_id): ...
 
 class JiraStateBackend:
-    def update_status(self, task_id, status):
-        ...
-    def post_comment(self, task_id, text):
-        ...
+    def update_status(self, task_id, status): ...
+    def post_comment(self, task_id, text): ...
 
 def _build_jira_profile(config):
     return GolemProfile(
@@ -504,11 +385,9 @@ def _build_jira_profile(config):
 register_profile("jira", _build_jira_profile)
 ```
 
-Then in `config.yaml`:
+Then set `profile: jira` in `config.yaml`.
 
-```yaml
-profile: jira
-```
+</details>
 
 ---
 
@@ -525,29 +404,10 @@ The daemon exposes a REST API (served on the dashboard port, default `8081`).
 | `/api/flow/start` | POST | Admin | Start flows by name |
 | `/api/flow/stop` | POST | Admin | Stop flows by name |
 
-**Submit examples:**
-
 ```bash
-# Inline prompt
 curl -X POST http://localhost:8081/api/submit \
   -H "Content-Type: application/json" \
   -d '{"prompt": "Add retry logic to the HTTP client"}'
-
-# From a file on the daemon host
-curl -X POST http://localhost:8081/api/submit \
-  -H "Content-Type: application/json" \
-  -d '{"file": "/home/user/plan.md", "subject": "Refactor auth module"}'
-
-# Batch with dependencies — task B waits for task A to complete
-curl -X POST http://localhost:8081/api/submit/batch \
-  -H "Content-Type: application/json" \
-  -d '{
-    "group_id": "refactor-v2",
-    "tasks": [
-      {"prompt": "Extract helper functions", "subject": "Task A"},
-      {"prompt": "Update callers to use new helpers", "subject": "Task B", "depends_on": [0]}
-    ]
-  }'
 ```
 
 ---
@@ -576,14 +436,6 @@ A [pre-push hook](.githooks/pre-push) runs all three automatically. Enable it wi
 ```bash
 git config core.hooksPath .githooks
 ```
-
----
-
-## Built With
-
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — AI backbone (CLI subprocess)
-- [Python 3.11+](https://www.python.org/) — async orchestration
-- [Git Worktrees](https://git-scm.com/docs/git-worktree) — parallel task isolation
 
 ---
 
