@@ -21,6 +21,8 @@ import subprocess
 from dataclasses import dataclass, field
 from typing import Any
 
+from .types import MilestoneDict
+
 from .core.cli_wrapper import (
     CLIConfig,
     CLIType,
@@ -280,7 +282,7 @@ def scan_diff_antipatterns(diff_text: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def _format_event_log(event_log: list[dict]) -> str:
+def _format_event_log(event_log: list[MilestoneDict]) -> str:
     """Format the event log into a human-readable summary."""
     if not event_log:
         return "(no events recorded)"

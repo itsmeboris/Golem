@@ -29,6 +29,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from .types import MilestoneDict
+
 from .core.cli_wrapper import CLIConfig, CLIResult, CLIType, invoke_cli_monitored
 from .core.config import DATA_DIR, PROJECT_ROOT, GolemFlowConfig
 from .core.defaults import _now_iso  # re-exported for backward compat (flow.py)
@@ -95,7 +97,7 @@ class TaskSession:
     last_activity: str = ""
     errors: list[str] = field(default_factory=list)
     milestone_count: int = 0
-    event_log: list[dict] = field(default_factory=list)
+    event_log: list[MilestoneDict] = field(default_factory=list)
     # Result
     result_summary: str = ""
     duration_seconds: float = 0.0
@@ -919,7 +921,7 @@ class TaskOrchestrator:
         self.session.errors = list(tracker_state.errors)
 
         # Append milestone to session event_log for live trace view.
-        entry: dict = {
+        entry: MilestoneDict = {
             "kind": milestone.kind,
             "tool_name": milestone.tool_name,
             "summary": milestone.summary,

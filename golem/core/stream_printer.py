@@ -3,6 +3,8 @@
 import json
 import logging
 
+from golem.types import StreamEventDict
+
 logger = logging.getLogger("golem.core.stream_printer")
 
 
@@ -25,7 +27,7 @@ class StreamPrinter:
         self._seen: set[str] = set()
         self._tool_names_seen: set[str] = set()
 
-    def handle(self, event: dict) -> None:
+    def handle(self, event: StreamEventDict) -> None:
         """Process a single stream-json event and print readable output."""
         etype = event.get("type", "")
 

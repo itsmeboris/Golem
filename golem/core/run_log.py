@@ -10,6 +10,8 @@ from pathlib import Path
 
 from typing import Any
 
+from golem.types import RunRecordDict
+
 from .config import DATA_DIR
 
 logger: logging.Logger = logging.getLogger("golem.core.run_log")
@@ -86,7 +88,7 @@ def read_runs(
     flow: str | None = None,
     limit: int = 100,
     since: datetime | None = None,
-) -> list[dict[str, Any]]:
+) -> list[RunRecordDict]:
     """Read run records from *log_file*, applying optional filters.
 
     Returns the most recent *limit* matching entries (newest first).
@@ -96,7 +98,7 @@ def read_runs(
     if not log_file.exists():
         return []
 
-    records: list[dict[str, Any]] = []
+    records: list[RunRecordDict] = []
     with open(log_file, encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()

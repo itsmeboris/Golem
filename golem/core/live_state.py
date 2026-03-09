@@ -13,6 +13,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from golem.types import LiveSnapshotDict
+
 logger = logging.getLogger("golem.core.live_state")
 
 DEFAULT_LIVE_STATE_FILE = (
@@ -44,7 +46,7 @@ class CompletedTask:
     cost_usd: float = 0.0
 
 
-def read_live_snapshot(path: Path | None = None) -> dict:
+def read_live_snapshot(path: Path | None = None) -> LiveSnapshotDict:
     """Read a live-state snapshot from a JSON file on disk.
 
     Returns an empty-state dict if the file is missing or corrupt.
@@ -212,7 +214,7 @@ class LiveState:
             except OSError:
                 pass
 
-    def snapshot(self) -> dict:  # pylint: disable=too-many-locals
+    def snapshot(self) -> LiveSnapshotDict:  # pylint: disable=too-many-locals
         """Return a JSON-serialisable dict of the current live state."""
         now = time.time()
         with self._mu:

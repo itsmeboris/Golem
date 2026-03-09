@@ -13,6 +13,7 @@ import time
 from typing import Any, Protocol, runtime_checkable
 
 from .core.config import HealthConfig
+from .types import AlertDict
 from .core.live_state import LiveState
 
 logger = logging.getLogger("golem.health")
@@ -105,9 +106,9 @@ class HealthMonitor:
         """Record a successful poll cycle."""
         self._last_activity = time.time()
 
-    def _compute_alerts(self) -> list[dict[str, Any]]:
+    def _compute_alerts(self) -> list[AlertDict]:
         """Compute all active alerts without side effects."""
-        alerts: list[dict[str, Any]] = []
+        alerts: list[AlertDict] = []
         now = time.time()
 
         if self._consecutive_failures >= self._config.consecutive_failure_threshold:
@@ -196,7 +197,7 @@ class HealthMonitor:
 
         return alerts
 
-    def check(self) -> list[dict[str, Any]]:
+    def check(self) -> list[AlertDict]:
         """Run all health checks and return any triggered alerts.
 
         Also sends notifications for new alerts (respecting cooldown).
@@ -212,7 +213,7 @@ class HealthMonitor:
 
         return alerts
 
-    def _maybe_notify(self, alert: dict[str, Any], now: float) -> None:
+    def _maybe_notify(self, alert: AlertDict, now: float) -> None:
         """Send a notification if cooldown has elapsed for this alert type."""
         if self._notifier is None:
             return
@@ -265,7 +266,7 @@ class HealthMonitor:
         }
 
 
-def _compute_status(alerts: list[dict[str, Any]]) -> str:
+def _compute_status(alerts: list[AlertDict]) -> str:
     """Derive three-tier status from active alerts.
 
     - healthy: no alerts
