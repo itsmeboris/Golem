@@ -588,50 +588,140 @@ class TestCheckDaemonStatus:
 
 
 class TestFormatLiveSection:
-    def test_empty_state(self):
+    def test_empty_state_shows_idle(self):
         snap = {
+            "uptime_s": 3600,
             "active_count": 0,
             "queue_depth": 0,
             "active_tasks": [],
             "models_active": {},
+            "recently_completed": [],
         }
-        assert not _format_live_section(snap)
+        lines = _format_live_section(snap, sessions={})
+        joined = "\n".join(lines)
+        assert "No active tasks" in joined
+        assert "1h 0m" in joined
 
-    def test_active_tasks(self):
+    def test_active_with_session_subject(self):
         snap = {
+            "uptime_s": 120,
             "active_count": 1,
             "queue_depth": 0,
+            "active_tasks": [
+                {
+                    "event_id": "golem-42-20260309",
+                    "flow": "golem",
+                    "model": "opus",
+                    "phase": "running",
+                    "elapsed_s": 65.0,
+                }
+            ],
+            "models_active": {"opus": 1},
+            "recently_completed": [],
+        }
+        sessions = {
+            42: SimpleNamespace(
+                parent_subject="Fix login bug",
+                total_cost_usd=1.23,
+            )
+        }
+        lines = _format_live_section(snap, sessions=sessions)
+        joined = "\n".join(lines)
+        assert "Fix login bug" in joined
+        assert "opus" in joined
+        assert "1m 5s" in joined
+
+    def test_recently_completed_shown(self):
+        snap = {
+            "uptime_s": 60,
+            "active_count": 0,
+            "queue_depth": 0,
+            "active_tasks": [],
+            "models_active": {},
+            "recently_completed": [
+                {
+                    "event_id": "golem-10-20260309",
+                    "flow": "golem",
+                    "success": True,
+                    "duration_s": 90.0,
+                    "cost_usd": 0.55,
+                    "finished_ago_s": 120,
+                }
+            ],
+        }
+        lines = _format_live_section(snap, sessions={})
+        joined = "\n".join(lines)
+        assert "OK" in joined
+        assert "$0.55" in joined
+
+    def test_queue_depth_shown(self):
+        snap = {
+            "uptime_s": 60,
+            "active_count": 1,
+            "queue_depth": 3,
             "active_tasks": [
                 {
                     "event_id": "golem-1",
                     "flow": "golem",
+                    "model": "sonnet",
                     "phase": "running",
                     "elapsed_s": 5.0,
                 }
             ],
-            "models_active": {"opus": 1},
+            "models_active": {},
+            "recently_completed": [],
         }
-        lines = _format_live_section(snap)
-        assert any("Running now:" in ln for ln in lines)
-        assert any("opus" in ln for ln in lines)
+        lines = _format_live_section(snap, sessions={})
+        joined = "\n".join(lines)
+        assert "3 waiting" in joined
 
-    def test_long_event_id_truncated(self):
+    def test_long_subject_truncated(self):
         snap = {
+            "uptime_s": 0,
             "active_count": 1,
             "queue_depth": 0,
             "active_tasks": [
                 {
-                    "event_id": "A" * 50,
+                    "event_id": "golem-99-20260309",
                     "flow": "golem",
+                    "model": "opus",
                     "phase": "running",
                     "elapsed_s": 1.0,
                 }
             ],
             "models_active": {},
+            "recently_completed": [],
         }
-        lines = _format_live_section(snap)
-        task_line = [ln for ln in lines if "..." in ln]
-        assert task_line  # long ID was truncated
+        sessions = {
+            99: SimpleNamespace(
+                parent_subject="A" * 60,
+                total_cost_usd=0.0,
+            )
+        }
+        lines = _format_live_section(snap, sessions=sessions)
+        joined = "\n".join(lines)
+        assert "..." in joined
+
+    def test_no_session_falls_back_to_event_id(self):
+        snap = {
+            "uptime_s": 0,
+            "active_count": 1,
+            "queue_depth": 0,
+            "active_tasks": [
+                {
+                    "event_id": "golem-5-20260309",
+                    "flow": "golem",
+                    "model": "sonnet",
+                    "phase": "validating",
+                    "elapsed_s": 10.0,
+                }
+            ],
+            "models_active": {},
+            "recently_completed": [],
+        }
+        lines = _format_live_section(snap, sessions={})
+        joined = "\n".join(lines)
+        assert "golem-5-20260309" in joined
 
 
 # ---------------------------------------------------------------------------
