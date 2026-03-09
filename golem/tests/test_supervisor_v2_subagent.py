@@ -758,9 +758,7 @@ class TestStreamingCallbackWiring:
                 callback(
                     {
                         "type": "assistant",
-                        "message": {
-                            "content": [{"type": "text", "text": "hello"}]
-                        },
+                        "message": {"content": [{"type": "text", "text": "hello"}]},
                     }
                 )
             return _make_cli_result(
