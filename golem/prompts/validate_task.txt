@@ -58,6 +58,10 @@ successfully completed task #{issue_id}.
      contract (circular validation — the bug class this criterion prevents)
    - For cross-module features, verify at least one test exercises the real
      producer -> consumer path end-to-end
+9. **Specification Fidelity** (when specs are present in the agent's report):
+    If the agent's completion report includes `specs_satisfied`, verify each claim
+    by checking the diff. Specs that are claimed as satisfied but not evidenced in
+    the diff should be flagged in concerns.
 
 9. **Reproduction Test** (bug-fix tasks only): If the task subject contains words
    like "fix", "bug", "error", "crash", "regression", or "broken", check the diff

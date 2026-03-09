@@ -84,6 +84,13 @@ class GolemFlowConfig(FlowConfig):
     # Task clarity pre-check (opt-in): LLM pre-check on task description clarity
     clarity_check: bool = False
     clarity_threshold: int = 3  # minimum clarity score (1-5) to proceed
+    # AST-based validation
+    ast_analysis: bool = (
+        True  # run ast-grep rules during validation (if sg is installed)
+    )
+    # Ensemble retry
+    ensemble_on_second_retry: bool = False  # spawn parallel attempts on 2nd retry
+    ensemble_candidates: int = 2  # number of parallel candidates
 
 
 @dataclass
@@ -273,6 +280,9 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
         preflight_verify=data.get("preflight_verify", True),
         clarity_check=data.get("clarity_check", False),
         clarity_threshold=data.get("clarity_threshold", 3),
+        ast_analysis=data.get("ast_analysis", True),
+        ensemble_on_second_retry=data.get("ensemble_on_second_retry", False),
+        ensemble_candidates=data.get("ensemble_candidates", 2),
     )
 
 

@@ -1,0 +1,6 @@
+id: bare-except
+language: python
+rule:
+  pattern: "except:"
+message: "Bare except clause — use specific exception type"
+severity: warning

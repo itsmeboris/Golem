@@ -325,6 +325,20 @@ def scan_diff_antipatterns(diff_text: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Diff file extraction
+# ---------------------------------------------------------------------------
+
+
+def _extract_changed_files(diff_text: str) -> list[str]:
+    """Extract file paths from a unified diff."""
+    files: list[str] = []
+    for line in diff_text.splitlines():
+        if line.startswith("+++ b/"):
+            files.append(line[6:])
+    return files
+
+
+# ---------------------------------------------------------------------------
 # Prompt formatting
 # ---------------------------------------------------------------------------
 
@@ -453,6 +467,7 @@ def run_validation(  # pylint: disable=too-many-locals
     timeout_seconds: int = 600,
     callback: ProgressCallback | None = None,
     verification_result: Any = None,
+    ast_analysis: bool = True,
 ) -> ValidationVerdict:
     """Run the validation agent and return a structured verdict.
 
@@ -479,6 +494,8 @@ def run_validation(  # pylint: disable=too-many-locals
         Optional stream-json event callback for real-time dashboard output.
     verification_result
         Optional VerificationResult from the deterministic verifier.
+    ast_analysis
+        Whether to run ast-grep structural analysis (default: True).
     """
     prompt = _build_validation_prompt(
         issue_id,
@@ -514,6 +531,17 @@ def run_validation(  # pylint: disable=too-many-locals
                 len(antipatterns),
                 penalty,
             )
+
+    # AST-based analysis (structural, more accurate than regex)
+    if ast_analysis and (
+        verdict.task_type == "code_change" or diff_text.startswith("###")
+    ):
+        from .ast_analysis import run_ast_analysis
+
+        changed = verdict.files_to_fix or _extract_changed_files(diff_text)
+        ast_concerns = run_ast_analysis(work_dir, changed)
+        if ast_concerns:
+            verdict.concerns.extend(ast_concerns)
 
     return verdict
 

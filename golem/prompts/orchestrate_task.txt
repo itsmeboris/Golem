@@ -100,6 +100,26 @@ approach — for example, a brainstorming skill for tasks with unclear requireme
 or a test-driven-development skill to enforce red-green-refactor. When dispatching
 Builders, include in their prompts which skills they should invoke.
 
+### Phase 2.5: Specify (for Standard/Complex tasks)
+
+After planning, write 3-7 **specification statements** that describe the expected behavior:
+
+````
+## Specification
+- SPEC-1: When X happens, the system should Y
+- SPEC-2: Function foo(a, b) returns Z when a > 0, raises ValueError when a <= 0
+- SPEC-3: The new config field `bar` defaults to True and is read in _parse_golem_config
+...
+````
+
+These specs serve three purposes:
+1. **Builders** use them to verify their implementation is correct
+2. **Reviewers** check the implementation against each spec statement
+3. **You** (the orchestrator) verify all specs are satisfied before reporting completion
+
+Include the specification block in every Builder prompt under a "## Specification" section.
+In the final JSON report, add a "specs_satisfied" field listing each SPEC and whether it was met.
+
 ### Phase 3: Build
 Dispatch Builder agents. Each Builder prompt MUST include:
 
@@ -158,6 +178,11 @@ block as your final message in a ```json code fence:
     "black": "pass",
     "pylint": "pass",
     "pytest": "pass"
+  }},
+  "specs_satisfied": {{
+    "SPEC-1": true,
+    "SPEC-2": true,
+    "SPEC-3": "partial — edge case not covered"
   }},
   "concerns": []
 }}
