@@ -19,6 +19,10 @@ but your work was reviewed and found PARTIALLY complete.
 **Specific concerns**:
 {concerns}
 
+## Verification Failures (if applicable)
+
+{verification_feedback}
+
 ## Before Retrying
 
 Check if any debugging or workspace skills are available using the Skill tool.

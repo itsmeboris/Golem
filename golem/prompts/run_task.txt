@@ -56,6 +56,25 @@ passing output from all three.
 - If the task description references a TODO item (e.g. "TODO #16"), update TODO.md
   to mark that item as done (change ``[ ]`` to ``[x]``) before reporting completion
 
+## Data Contracts
+
+When accessing shared data structures that cross module boundaries (event log
+entries, session dicts, live state snapshots, run records, etc.), import and use
+the TypedDict definitions from ``golem/types.py``. Do not use raw string keys
+for cross-module data — this prevents key-mismatch bugs where producer and
+consumer disagree on field names.
+
+When writing tests that construct these data structures, use the same TypedDict
+types to ensure test fixtures match the real data shapes.
+
+## Independent Verification
+
+Your output will be independently verified by a separate process after you
+finish. It will run ``black --check .``, ``pylint --errors-only golem/``, and
+``pytest --cov=golem --cov-fail-under=100`` on your final work directory.
+You should still run these during development for your own feedback loop, but
+the independent verifier is the source of truth.
+
 ## Output
 
 When you are done, your final message should be a brief summary of what was accomplished.
