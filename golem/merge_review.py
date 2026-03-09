@@ -69,7 +69,7 @@ def _get_short_sha(base_dir: str) -> str:
     return result.stdout.strip()
 
 
-def run_merge_agent(
+def run_merge_agent(  # pylint: disable=too-many-locals
     work_dir: str,
     issue_id: int,
     agent_diff: str,

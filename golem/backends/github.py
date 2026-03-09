@@ -112,7 +112,6 @@ class GitHubTaskSource:
     ) -> int | str | None:
         """Not supported for GitHub Issues."""
         del parent_id, subject, description
-        return None
 
 
 # ---------------------------------------------------------------------------

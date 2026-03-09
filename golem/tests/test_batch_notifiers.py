@@ -1,8 +1,9 @@
 # pylint: disable=too-few-public-methods
 """Tests for batch notification backends and flow-level batch integration."""
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 from golem.core.config import Config, GolemFlowConfig
 from golem.orchestrator import TaskSessionState

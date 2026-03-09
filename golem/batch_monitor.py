@@ -85,7 +85,9 @@ class BatchMonitor:
         self._batches[group_id] = batch
         return batch
 
-    def update(self, group_id: str, sessions: dict[int, Any]) -> BatchState:
+    def update(  # pylint: disable=too-many-locals,too-many-branches,too-many-statements
+        self, group_id: str, sessions: dict[int, Any]
+    ) -> BatchState:
         """Refresh batch state from live session objects.
 
         Parameters

@@ -9,7 +9,7 @@ class TestSessionLogAdapter:
     def test_process_prepends_task_prefix(self):
         base = logging.getLogger("test.log_context.prefix")
         adapter = SessionLogAdapter(base, session_id=42, subject="Fix bug")
-        msg, kwargs = adapter.process("hello", {})
+        msg, _kwargs = adapter.process("hello", {})
         assert msg == "[task-42] hello"
 
     def test_process_injects_extra_fields(self):

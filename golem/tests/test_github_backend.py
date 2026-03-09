@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, call, patch
 from golem.backends.github import (
     GitHubStateBackend,
     GitHubTaskSource,
-    _STATUS_LABELS,
     _gh,
 )
 
@@ -78,28 +77,28 @@ class TestGitHubTaskSource:
         mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="error")
         source = GitHubTaskSource()
         tasks = source.poll_tasks(["owner/repo"], "agent")
-        assert tasks == []
+        assert not tasks
 
     @patch("golem.backends.github.subprocess.run")
     def test_poll_tasks_empty_stdout(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0, stdout="  ", stderr="")
         source = GitHubTaskSource()
         tasks = source.poll_tasks(["owner/repo"], "agent")
-        assert tasks == []
+        assert not tasks
 
     @patch("golem.backends.github.subprocess.run")
     def test_poll_tasks_json_error(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0, stdout="not json", stderr="")
         source = GitHubTaskSource()
         tasks = source.poll_tasks(["owner/repo"], "agent")
-        assert tasks == []
+        assert not tasks
 
     @patch("golem.backends.github.subprocess.run")
     def test_poll_tasks_os_error(self, mock_run):
         mock_run.side_effect = OSError("no gh")
         source = GitHubTaskSource()
         tasks = source.poll_tasks(["owner/repo"], "agent")
-        assert tasks == []
+        assert not tasks
 
     @patch("golem.backends.github.subprocess.run")
     def test_get_task_subject_success(self, mock_run):
@@ -151,7 +150,7 @@ class TestGitHubTaskSource:
 
     def test_get_child_tasks_returns_empty(self):
         source = GitHubTaskSource()
-        assert source.get_child_tasks(42) == []
+        assert not source.get_child_tasks(42)
 
     def test_create_child_task_returns_none(self):
         source = GitHubTaskSource()
@@ -258,7 +257,7 @@ class TestBuildGitHubProfile:
     """Tests for the github profile registration."""
 
     def test_github_in_available_profiles(self):
-        import golem.backends.profiles  # noqa: F401
+        import golem.backends.profiles  # noqa: F401  # pylint: disable=unused-import
         from golem.profile import available_profiles
 
         assert "github" in available_profiles()

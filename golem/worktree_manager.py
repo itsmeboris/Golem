@@ -139,7 +139,7 @@ def create_worktree(
     return worktree_path
 
 
-def merge_in_worktree(
+def merge_in_worktree(  # pylint: disable=too-many-locals
     base_dir: str,
     issue_id: int,
     target_branch: str | None = None,
