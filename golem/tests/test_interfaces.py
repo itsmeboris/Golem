@@ -34,6 +34,9 @@ class DummyTaskSource:
     def get_task_subject(self, task_id):
         return ""
 
+    def get_task_comments(self, task_id, *, since=""):
+        return []
+
 
 class DummyStateBackend:
     def update_status(self, task_id, status):

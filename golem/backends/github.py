@@ -113,6 +113,38 @@ class GitHubTaskSource:
         """Not supported for GitHub Issues."""
         del parent_id, subject, description
 
+    def get_task_comments(
+        self, task_id: int | str, *, since: str = ""
+    ) -> list[dict[str, Any]]:
+        """Fetch comments on a GitHub issue via ``gh`` CLI."""
+        try:
+            raw = subprocess.run(
+                ["gh", "issue", "view", str(task_id), "--json", "comments"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            if raw.returncode != 0:
+                return []
+            data = json.loads(raw.stdout)
+            comments: list[dict[str, Any]] = []
+            for c in data.get("comments", []):
+                created = c.get("createdAt", "")
+                if since and created <= since:
+                    continue
+                comments.append(
+                    {
+                        "author": c.get("author", {}).get("login", ""),
+                        "body": c.get("body", ""),
+                        "created_at": created,
+                    }
+                )
+            return comments
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("Failed to fetch comments for #%s: %s", task_id, exc)
+            return []
+
 
 # ---------------------------------------------------------------------------
 # GitHubStateBackend

@@ -78,6 +78,16 @@ class TaskSource(Protocol):
         """Create a child task under *parent_id*.  Returns new task ID or ``None``."""
         ...  # pragma: no cover
 
+    def get_task_comments(
+        self, task_id: int | str, *, since: str = ""
+    ) -> list[dict[str, Any]]:
+        """Return comments posted on the task.
+
+        Each dict has keys: author, body, created_at.
+        If *since* is provided, only return comments after that ISO timestamp.
+        """
+        return []  # default: no comments
+
 
 # ---------------------------------------------------------------------------
 # StateBackend — task state persistence in an external tracker

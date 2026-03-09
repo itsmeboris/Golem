@@ -260,6 +260,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         while self._running:
             try:
                 self._detect_new_issues()
+                self._check_human_feedback()
                 await self._retry_deferred_merges()
                 self._health.record_poll_success()
             except Exception:  # pylint: disable=broad-exception-caught
@@ -295,6 +296,39 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             self._spawn_session_task(iid)
 
         self._scan_submissions()
+
+    def _check_human_feedback(self) -> None:
+        """Check for human feedback on escalated (FAILED) tasks."""
+        for sid, session in list(self._sessions.items()):
+            if session.state != TaskSessionState.FAILED:
+                continue
+            try:
+                comments = self._profile.task_source.get_task_comments(
+                    sid, since=session.updated_at
+                )
+            except Exception:  # pylint: disable=broad-exception-caught
+                continue
+
+            human_comments = [
+                c
+                for c in comments
+                if c.get("author", "").lower() != "golem"
+                and c.get("created_at", "") > session.updated_at
+            ]
+            if not human_comments:
+                continue
+
+            session.human_feedback = "\n\n".join(
+                f"**{c['author']}**: {c['body']}" for c in human_comments
+            )
+            session.human_feedback_at = human_comments[-1].get("created_at", "")
+            session.state = TaskSessionState.HUMAN_REVIEW
+            session.retry_count = 0
+            self._save_state()
+            logger.info(
+                "Human feedback detected on #%s, queuing re-attempt", sid
+            )
+            self._spawn_session_task(sid)
 
     # -- Per-session task lifecycle -----------------------------------------
 

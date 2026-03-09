@@ -125,6 +125,13 @@ class LocalFileTaskSource:
         logger.info("Created local child task: %s", out_file)
         return child_id
 
+    def get_task_comments(
+        self, task_id: int | str, *, since: str = ""
+    ) -> list[dict[str, Any]]:
+        """Local backend has no comment support."""
+        del task_id, since
+        return []
+
     def _find_task(self, task_id: str) -> dict[str, Any] | None:
         for ext in (".yaml", ".yml", ".json"):
             candidate = self._tasks_dir / f"{task_id}{ext}"

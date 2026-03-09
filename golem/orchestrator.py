@@ -66,6 +66,7 @@ class TaskSessionState(str, Enum):
     DETECTED → RUNNING → VERIFYING → VALIDATING ─── PASS ──→ COMPLETED
                                                   ├── PARTIAL → RETRYING → ...
                                                   └── FAIL ──→ FAILED (escalate)
+                                                                └── human feedback → HUMAN_REVIEW → RUNNING
     """
 
     DETECTED = "detected"
@@ -75,6 +76,7 @@ class TaskSessionState(str, Enum):
     RETRYING = "retrying"
     COMPLETED = "completed"
     FAILED = "failed"
+    HUMAN_REVIEW = "human_review"
 
 
 @dataclass
@@ -137,6 +139,9 @@ class TaskSession:
     started_at: str = ""
     files_changed: list[str] = field(default_factory=list)
     merge_queued_at: str = ""
+    # Human feedback re-attempt
+    human_feedback: str = ""
+    human_feedback_at: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-safe dictionary."""
@@ -192,6 +197,8 @@ class TaskSession:
             started_at=data.get("started_at", ""),
             files_changed=data.get("files_changed", []),
             merge_queued_at=data.get("merge_queued_at", ""),
+            human_feedback=data.get("human_feedback", ""),
+            human_feedback_at=data.get("human_feedback_at", ""),
         )
 
 
@@ -285,6 +292,8 @@ class TaskOrchestrator:
 
         if self.session.state == TaskSessionState.DETECTED:
             await self._tick_detected()
+        elif self.session.state == TaskSessionState.HUMAN_REVIEW:
+            await self._tick_human_review()
         # RUNNING is handled within _tick_detected (blocks until agent finishes)
         # COMPLETED and FAILED are terminal — no action
 
@@ -317,6 +326,14 @@ class TaskOrchestrator:
         self.session.updated_at = _now_iso()
         self.session.started_at = self.session.updated_at
 
+        await self._run_agent()
+
+    async def _tick_human_review(self) -> None:
+        """Re-attempt a task using human feedback as guidance."""
+        self._slog.info("Processing human feedback re-attempt")
+        self.session.state = TaskSessionState.RUNNING
+        self.session.updated_at = _now_iso()
+        self.session.started_at = self.session.updated_at
         await self._run_agent()
 
     async def _run_agent(self) -> None:
@@ -1145,6 +1162,7 @@ _RESTARTABLE_STATES = frozenset(
         TaskSessionState.VERIFYING,
         TaskSessionState.VALIDATING,
         TaskSessionState.RETRYING,
+        TaskSessionState.HUMAN_REVIEW,
     }
 )
 

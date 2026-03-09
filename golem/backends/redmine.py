@@ -118,6 +118,40 @@ class RedmineTaskSource:
             logger.warning("Failed to create child issue under #%d: %s", parent_id, exc)
             return None
 
+    def get_task_comments(
+        self, task_id: int | str, *, since: str = ""
+    ) -> list[dict[str, Any]]:
+        """Fetch journal notes (comments) from a Redmine issue."""
+        url = f"{REDMINE_ISSUES_URL}/{task_id}.json?include=journals"
+        try:
+            resp = _request_with_retry(
+                _requests.get,
+                url,
+                headers=get_redmine_headers(),
+                timeout=15,
+            )
+            resp.raise_for_status()
+            journals = resp.json().get("issue", {}).get("journals", [])
+            comments: list[dict[str, Any]] = []
+            for j in journals:
+                notes = j.get("notes", "").strip()
+                if not notes:
+                    continue
+                created = j.get("created_on", "")
+                if since and created <= since:
+                    continue
+                comments.append(
+                    {
+                        "author": j.get("user", {}).get("name", ""),
+                        "body": notes,
+                        "created_at": created,
+                    }
+                )
+            return comments
+        except _requests.RequestException as exc:
+            logger.warning("Failed to fetch comments for #%s: %s", task_id, exc)
+            return []
+
 
 # ---------------------------------------------------------------------------
 # RedmineStateBackend
