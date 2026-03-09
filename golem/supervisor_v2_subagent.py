@@ -242,7 +242,39 @@ class SubagentSupervisor:
     async def _execute_phases(
         self, issue_id: int, description: str, work_dir: str, start: float
     ) -> None:
-        """Phases 1-3: build prompt, invoke CLI, parse report."""
+        """Phases 0-3: clarity gate, build prompt, invoke CLI, parse report."""
+        # Phase 0: clarity gate (opt-in)
+        if self.task_config.clarity_check:
+            from .clarity import check_clarity
+
+            cr = check_clarity(self.session.parent_subject, description)
+            self.session.total_cost_usd += cr.cost_usd
+            if not cr.is_clear(self.task_config.clarity_threshold):
+                self._slog.warning(
+                    "Task clarity too low (%d/5): %s", cr.score, cr.reason
+                )
+                self._emit_event(
+                    f"Task too vague (clarity {cr.score}/5: {cr.reason}). "
+                    f"Escalating for human clarification."
+                )
+                self._update_task(
+                    issue_id,
+                    comment=(
+                        f"**Golem: task description too vague for autonomous execution**\n\n"
+                        f"Clarity score: {cr.score}/5 "
+                        f"(threshold: {self.task_config.clarity_threshold})\n"
+                        f"Reason: {cr.reason}\n\n"
+                        f"Please add more detail to the task description and re-assign."
+                    ),
+                )
+                self.session.state = TaskSessionState.FAILED
+                self.session.errors.append(f"Clarity too low: {cr.score}/5")
+                from .errors import TaskExecutionError
+
+                raise TaskExecutionError(
+                    f"Task clarity below threshold: {cr.score}/5"
+                )
+
         prompt = self._build_prompt(issue_id, description, work_dir)
         result = await self._invoke_orchestrator(prompt, work_dir, issue_id, start)
         report = self._parse_report(result)

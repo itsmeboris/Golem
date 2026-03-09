@@ -81,6 +81,9 @@ class GolemFlowConfig(FlowConfig):
     flaky_tests_file: str = ""  # path to known-flaky tests JSON; empty = disabled
     # Pre-flight verification: run verifier on base branch before agent starts
     preflight_verify: bool = True
+    # Task clarity pre-check (opt-in): LLM pre-check on task description clarity
+    clarity_check: bool = False
+    clarity_threshold: int = 3  # minimum clarity score (1-5) to proceed
 
 
 @dataclass
@@ -268,6 +271,8 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
         checkpoint_max_age_minutes=data.get("checkpoint_max_age_minutes", 10),
         flaky_tests_file=data.get("flaky_tests_file", ""),
         preflight_verify=data.get("preflight_verify", True),
+        clarity_check=data.get("clarity_check", False),
+        clarity_threshold=data.get("clarity_threshold", 3),
     )
 
 
