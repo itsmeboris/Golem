@@ -35,6 +35,9 @@ pyrightconfig.json
 *.swo
 *~
 
+# Worktrees
+.worktrees/
+
 # Testing
 .coverage
 htmlcov/
