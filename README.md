@@ -71,7 +71,7 @@ Most AI coding tools wait for you to invoke them. Golem runs the other way aroun
 
 **Parallel execution** — Multiple Claude instances run simultaneously, each on a different task. Every task gets its own git worktree, so concurrent work never collides. When tasks complete, changes merge cleanly back into your branch.
 
-**Closed-loop validation** — Every task goes through a separate validation agent before anything is committed. If the result is partial, Golem retries with structured feedback (specific files to fix, test failures, and actionable concerns). A static antipattern scanner also checks the diff for traceback leaks, cross-module private access, and string-matching control flow. Only fully validated work gets committed and pushed.
+**Three-layer quality pipeline** — Every task passes through a deterministic verifier (`black`, `pylint`, `pytest` with 100% coverage) before a separate validation agent reviews the work. Shared TypedDict contracts (`golem/types.py`) enforce structural correctness across modules. If verification fails, the task retries immediately with structured feedback — no LLM review wasted on code that doesn't compile or pass tests. A static antipattern scanner also checks the diff for traceback leaks, cross-module private access, untyped dict access, and string-matching control flow. Only fully validated work gets committed and pushed.
 
 **Skill-driven agents** — Agents discover and invoke relevant skills at each phase of execution — workspace knowledge, test-driven development, debugging workflows, code review criteria, and domain-specific tooling. Skills prevent unfocused exploration and enforce structured workflows.
 
@@ -178,11 +178,14 @@ flowchart TB
         orch -- "Agent tool" --> reviewer["Reviewer<br/>(opus)"]
         orch -- "Agent tool" --> verifier["Verifier<br/>(haiku)"]
 
-        orch --> val["Validation Agent"]
+        orch --> vfy["Deterministic Verifier<br/>(black + pylint + pytest)"]
+
+        vfy -- FAIL --> retry["Retry<br/>(structured feedback)"]
+        retry --> orch
+        vfy -- PASS --> val["Validation Agent"]
 
         val -- PASS --> mq["Merge Queue"]
-        val -- PARTIAL --> retry["Retry"]
-        retry --> orch
+        val -- PARTIAL --> retry
     end
 
     mq -- "rebase + merge" --> verify["Integrity Check"]
@@ -215,10 +218,12 @@ flowchart LR
     D -- FAIL --> F(["FAILED"])
     A(["Task Received"]) --> B["DETECTED"]
     B -- "deps met /<br/>grace elapsed" --> C["RUNNING"]
-    C --> D["VALIDATING"]
+    C --> VFY["VERIFYING"]
+    VFY -- "fail" --> R["RETRYING"]
+    VFY -- "pass" --> D["VALIDATING"]
     D -- PASS --> MQ["Merge Queue"]
     MQ --> E(["COMPLETED"])
-    D -- PARTIAL --> R["RETRYING"]
+    D -- PARTIAL --> R
     R --> C
     C -- "timeout /<br/>budget" --> F
     C -. "infra error" .-> C
@@ -228,7 +233,8 @@ flowchart LR
 |-------|-------------|
 | **DETECTED** | Task received; waits for dependency resolution and grace deadline |
 | **RUNNING** | Claude instances execute in isolated worktrees (infra failures auto-retry) |
-| **VALIDATING** | A separate validation agent reviews the work |
+| **VERIFYING** | Deterministic checks — `black`, `pylint`, `pytest` with 100% coverage. Failure skips the reviewer and retries immediately with structured feedback |
+| **VALIDATING** | A separate validation agent reviews the work with verification evidence and shared type contracts |
 | **RETRYING** | Partial result — agent retries with validation feedback |
 | **COMPLETED** | Validated, merged via merge queue, and team notified |
 | **FAILED** | Budget exceeded, timeout hit, or validation failed after retries |
@@ -361,6 +367,8 @@ golem/
 ├── flow.py                # Tick-driven poll → detect → orchestrate loop
 ├── orchestrator.py        # State-machine session lifecycle
 ├── supervisor_v2_subagent.py  # Subagent orchestrator (Agent tool delegation)
+├── types.py               # Shared TypedDict contracts for all cross-module data shapes
+├── verifier.py            # Deterministic verifier (black + pylint + pytest) — hard gate before reviewer
 ├── validation.py          # Validation agent (PASS/PARTIAL/FAIL) + antipattern scanner
 ├── committer.py           # Structured git commits
 ├── errors.py              # Error taxonomy (Infrastructure/Task/Validation)
