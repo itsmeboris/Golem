@@ -111,10 +111,10 @@ flowchart TB
         flow["Flow Engine"] --> preflight["Preflight Checks"]
         preflight --> orch["Orchestrator<br/>(single Claude session)"]
 
-        orch -- "Agent tool" --> scout["Scout<br/>(haiku)"]
-        orch -- "Agent tool" --> builder["Builder<br/>(sonnet)"]
-        orch -- "Agent tool" --> reviewer["Reviewer<br/>(opus)"]
-        orch -- "Agent tool" --> verifier["Verifier<br/>(haiku)"]
+        orch -- "Agent tool" --> explorer["Explorer"]
+        orch -- "Agent tool" --> impl["Implementer"]
+        orch -- "Agent tool" --> reviewer["Reviewer"]
+        orch -- "Agent tool" --> tester["Tester"]
 
         orch --> val["Validation Agent"]
 
@@ -245,14 +245,20 @@ golem/
 ├── flow.py                # Tick-driven poll → detect → orchestrate loop
 ├── orchestrator.py        # State-machine session lifecycle
 ├── supervisor_v2_subagent.py  # Subagent orchestrator (Agent tool delegation)
-├── validation.py          # Validation agent (PASS/PARTIAL/FAIL)
+├── validation.py          # Validation agent (PASS/PARTIAL/FAIL) + antipattern scanner
 ├── committer.py           # Structured git commits
 ├── errors.py              # Error taxonomy (Infrastructure/Task/Validation)
 ├── merge_queue.py         # Sequential merge queue for cross-task coordination
 ├── merge_review.py        # Unified merge agent (conflict resolution + lost-addition recovery)
+├── batch_monitor.py       # Batch-level state aggregation and persistence
+├── batch_cli.py           # Batch API status formatting
+├── checkpoint.py          # Crash recovery via atomic JSON checkpoints
+├── health.py              # Daemon health monitoring with threshold alerts
+├── priority_gate.py       # Async concurrency gate with priority scheduling
 ├── event_tracker.py       # Stream event processing & milestones
 ├── poller.py              # Task detection from trackers
-├── notifications.py       # Teams Adaptive Card builders
+├── notifications.py       # Teams / Slack notification card builders
+├── prompts.py             # Prompt template loading and formatting
 ├── mcp_scope.py           # Dynamic MCP server selection
 ├── workdir.py             # Per-task working directory resolution
 ├── worktree_manager.py    # Git worktree isolation + isolated merge worktrees
@@ -268,17 +274,27 @@ golem/
 │   ├── local.py           #   File-drop task source + null backends
 │   └── profiles.py        #   Built-in profile factories (local, redmine, github)
 │
-├── prompts/               # Prompt templates
+├── prompts/               # Prompt templates (run, validate, retry, orchestrate, merge)
 ├── core/                  # Shared utilities
 │   ├── cli_wrapper.py     #   Claude CLI subprocess wrapper
 │   ├── config.py          #   YAML config with env expansion
 │   ├── control_api.py     #   REST API (health, submit, flow control)
 │   ├── dashboard.py       #   Web dashboard
-│   ├── flow_base.py       #   BaseFlow / PollableFlow
-│   └── ...
+│   ├── flow_base.py       #   BaseFlow / PollableFlow / WebhookableFlow
+│   ├── log_context.py     #   Session-aware logging adapter
+│   ├── daemon_utils.py    #   Daemonization and PID management
+│   ├── live_state.py      #   Real-time state tracking for dashboard
+│   ├── json_extract.py    #   JSON extraction from agent output
+│   ├── commit_format.py   #   Commit message format template loader
+│   ├── service_clients.py #   Shared REST client utilities
+│   ├── triggers/          #   Webhook trigger handlers
+│   └── ...                #   defaults, report, run_log, slack, teams, stream_printer
 │
 ├── data/
-│   └── submissions/       # File-drop directory (daemon watches this)
+│   ├── submissions/       # File-drop directory (daemon watches this)
+│   ├── state/             # Session state persistence (JSON)
+│   ├── traces/            # Agent execution traces (prompts + JSONL events)
+│   └── logs/              # Daemon and agent logs
 │
 └── tests/                 # Test suite
 ```
@@ -295,7 +311,7 @@ See [`config.yaml.example`](config.yaml.example) for the full annotated template
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `profile` | `local` | Backend profile (`local`, `redmine`, `github`, or custom) |
+| `profile` | `redmine` | Backend profile (`local`, `redmine`, `github`, or custom) |
 | `task_model` | `sonnet` | Claude model for single-agent execution and Builder subagents |
 | `budget_per_task_usd` | `10.0` | Max spend per task (0 = unlimited) |
 | `supervisor_mode` | `true` | Enable subagent orchestration (Agent tool delegation) |
