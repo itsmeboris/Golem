@@ -10,6 +10,7 @@ import pytest
 from golem.validation import (
     ValidationVerdict,
     _build_validation_prompt,
+    _extract_changed_files,
     _format_event_log,
     _format_verification_evidence,
     _parse_validation_output,
@@ -545,6 +546,81 @@ class TestRunValidationWithAntipatterns:
             work_dir="/work",
         )
         assert any("traceback" in c for c in v.concerns)
+
+
+class TestExtractChangedFiles:
+    def test_extracts_files_from_diff(self):
+        diff = "+++ b/golem/foo.py\n+++ b/golem/bar.py\n"
+        assert _extract_changed_files(diff) == ["golem/foo.py", "golem/bar.py"]
+
+    def test_empty_diff(self):
+        assert not _extract_changed_files("")
+
+    def test_ignores_non_file_lines(self):
+        diff = "--- a/golem/foo.py\n+++ b/golem/foo.py\n+ added line\n"
+        assert _extract_changed_files(diff) == ["golem/foo.py"]
+
+    def test_handles_markdown_wrapped_diff(self):
+        diff = "### Uncommitted changes\n```diff\n+++ b/golem/x.py\n```\n"
+        assert _extract_changed_files(diff) == ["golem/x.py"]
+
+
+class TestRunValidationAstAnalysisFlag:
+    @patch("golem.ast_analysis.run_ast_analysis")
+    @patch("golem.validation.invoke_cli")
+    @patch("golem.validation.get_git_diff")
+    def test_ast_analysis_called_when_enabled(
+        self, mock_diff, mock_invoke, mock_ast
+    ):
+        mock_diff.return_value = "+++ b/golem/foo.py\n+ x = 1\n"
+        mock_invoke.return_value = SimpleNamespace(
+            output={
+                "result": {
+                    "verdict": "PASS",
+                    "confidence": 0.90,
+                    "task_type": "code_change",
+                }
+            },
+            cost_usd=0.05,
+        )
+        mock_ast.return_value = ["AST: issue in golem/foo.py:1"]
+        v = run_validation(
+            issue_id=1,
+            subject="test",
+            description="desc",
+            session_data={},
+            work_dir="/work",
+            ast_analysis=True,
+        )
+        mock_ast.assert_called_once()
+        assert any("AST:" in c for c in v.concerns)
+
+    @patch("golem.ast_analysis.run_ast_analysis")
+    @patch("golem.validation.invoke_cli")
+    @patch("golem.validation.get_git_diff")
+    def test_ast_analysis_skipped_when_disabled(
+        self, mock_diff, mock_invoke, mock_ast
+    ):
+        mock_diff.return_value = "+++ b/golem/foo.py\n+ x = 1\n"
+        mock_invoke.return_value = SimpleNamespace(
+            output={
+                "result": {
+                    "verdict": "PASS",
+                    "confidence": 0.90,
+                    "task_type": "code_change",
+                }
+            },
+            cost_usd=0.05,
+        )
+        run_validation(
+            issue_id=1,
+            subject="test",
+            description="desc",
+            session_data={},
+            work_dir="/work",
+            ast_analysis=False,
+        )
+        mock_ast.assert_not_called()
 
 
 class TestFindMergeBase:
