@@ -422,16 +422,17 @@ class TestTextMilestoneTruncation:
         assert m.kind == "text"
         assert m.summary == "First line of analysis."
         assert "\n" not in m.summary
-        assert m.full_text == "First line of analysis.\nSecond line with details.\nThird line."
+        assert (
+            m.full_text
+            == "First line of analysis.\nSecond line with details.\nThird line."
+        )
 
     def test_text_milestone_full_text_untruncated(self):
         tracker = TaskEventTracker(session_id=1)
         long_text = "a" * 200
         event = {
             "type": "assistant",
-            "message": {
-                "content": [{"type": "text", "text": long_text}]
-            },
+            "message": {"content": [{"type": "text", "text": long_text}]},
         }
         m = tracker.handle_event(event)
         assert m is not None

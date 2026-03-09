@@ -741,11 +741,7 @@ def format_task_detail_text(task_id: int) -> str:
         lines += ["", f"  EVENT LOG (last {min(10, len(sess.event_log))})"]
         for ev in sess.event_log[-10:]:
             raw_ts = ev.get("timestamp", 0)
-            ts = (
-                datetime.fromtimestamp(raw_ts).strftime("%H:%M:%S")
-                if raw_ts
-                else ""
-            )
+            ts = datetime.fromtimestamp(raw_ts).strftime("%H:%M:%S") if raw_ts else ""
             ev_kind = ev.get("kind", "")
             msg = ev.get("summary", "")
             lines.append(f"    {ts}  {ev_kind:<10s}  {msg}")

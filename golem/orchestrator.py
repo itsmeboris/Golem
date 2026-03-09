@@ -395,7 +395,10 @@ class TaskOrchestrator:
                 task_description=description,
             )
             result, trace_writer, mcp_servers = await self._invoke_agent(
-                issue_id, prompt, work_dir, tracker,
+                issue_id,
+                prompt,
+                work_dir,
+                tracker,
             )
             self._populate_session_from_tracker(tracker, result, time.time() - start)
             self._update_task(issue_id, status=TaskStatus.FIXED, progress=80)

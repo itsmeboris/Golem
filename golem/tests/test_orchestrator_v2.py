@@ -470,7 +470,9 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
             "run_val"
         ], deps["commit"], deps["write_prompt"], deps["write_trace"], deps[
             "streaming_trace"
-        ], deps["preflight"], patch.object(
+        ], deps[
+            "preflight"
+        ], patch.object(
             orch, "_write_report"
         ), patch.object(
             orch, "_record_run"
@@ -675,7 +677,9 @@ class TestStreamingTraceWriter:
             writer.append({"type": "assistant", "msg": "hello"})
             writer.append({"type": "tool_use", "name": "Read"})
             # File should have content before close (flushed)
-            lines = (tmp_path / "golem" / "golem-42.jsonl").read_text().strip().split("\n")
+            lines = (
+                (tmp_path / "golem" / "golem-42.jsonl").read_text().strip().split("\n")
+            )
             assert len(lines) == 2
             assert json.loads(lines[0])["msg"] == "hello"
             writer.close()
@@ -746,7 +750,11 @@ class TestStreamingCallbackWiring:
         ), patch(
             "golem.orchestrator.commit_changes",
             return_value=CommitResult(committed=True, sha="abc"),
-        ), patch.object(orch, "_write_report"), patch.object(orch, "_record_run"):
+        ), patch.object(
+            orch, "_write_report"
+        ), patch.object(
+            orch, "_record_run"
+        ):
             await orch._run_agent_monolithic()
 
         # The streaming writer's append should have been called via the callback
@@ -927,7 +935,9 @@ class TestRetryAgent:
             "golem.orchestrator.invoke_cli_monitored", return_value=retry_result
         ), patch("golem.orchestrator._write_prompt"), patch(
             "golem.orchestrator._write_trace", return_value="/rt"
-        ), patch("golem.orchestrator._StreamingTraceWriter"), patch(
+        ), patch(
+            "golem.orchestrator._StreamingTraceWriter"
+        ), patch(
             "golem.orchestrator.run_validation", return_value=retry_verdict
         ):
             await orch._retry_agent(initial_verdict, "/work", [])
@@ -959,7 +969,9 @@ class TestRetryAgent:
             "golem.orchestrator.invoke_cli_monitored", return_value=retry_result
         ), patch("golem.orchestrator._write_prompt"), patch(
             "golem.orchestrator._write_trace"
-        ), patch("golem.orchestrator._StreamingTraceWriter"), patch(
+        ), patch(
+            "golem.orchestrator._StreamingTraceWriter"
+        ), patch(
             "golem.orchestrator.run_validation", return_value=retry_verdict
         ):
             await orch._retry_agent(initial_verdict, "/work", [])
@@ -1018,7 +1030,9 @@ class TestRetryAgent:
             "golem.orchestrator.invoke_cli_monitored", return_value=retry_result
         ), patch("golem.orchestrator._write_prompt"), patch(
             "golem.orchestrator._write_trace"
-        ), patch("golem.orchestrator._StreamingTraceWriter"), patch(
+        ), patch(
+            "golem.orchestrator._StreamingTraceWriter"
+        ), patch(
             "golem.orchestrator.run_validation", return_value=retry_verdict
         ):
             await orch._retry_agent(initial_verdict, "/work", ["mcp1"])
@@ -1554,7 +1568,9 @@ class TestCheckpointIntegration:
             return_value=CLIResult(cost_usd=0.3, trace_events=[]),
         ), patch("golem.orchestrator._write_prompt"), patch(
             "golem.orchestrator._write_trace"
-        ), patch("golem.orchestrator._StreamingTraceWriter"), patch(
+        ), patch(
+            "golem.orchestrator._StreamingTraceWriter"
+        ), patch(
             "golem.orchestrator.run_validation", return_value=retry_verdict
         ):
             await orch._retry_agent(initial_verdict, "/work", [])
