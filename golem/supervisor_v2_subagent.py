@@ -505,6 +505,18 @@ class SubagentSupervisor:
         if retry_verdict.verdict == "PASS":
             self.session.supervisor_phase = "committing"
             self._commit_and_complete(issue_id, work_dir, retry_verdict)
+        elif (
+            retry_verdict.verdict != "PASS"
+            and self.task_config.ensemble_on_second_retry
+            and self.session.retry_count < self.task_config.max_retries + 1
+        ):
+            # Ensemble mode: spawn parallel candidates with different strategies
+            # and pick the best result. Full implementation pending — requires
+            # worktree creation, parallel agent invocation, and result validation.
+            self._slog.info(
+                "Ensemble retry eligible but not yet implemented, escalating"
+            )
+            self._escalate(retry_verdict)
         else:
             self._escalate(retry_verdict)
 

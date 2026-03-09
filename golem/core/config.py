@@ -78,6 +78,13 @@ class GolemFlowConfig(FlowConfig):
     # Checkpoint persistence for crash recovery
     checkpoint_interval_seconds: int = 300
     checkpoint_max_age_minutes: int = 10
+    # AST-based validation
+    ast_analysis: bool = (
+        True  # run ast-grep rules during validation (if sg is installed)
+    )
+    # Ensemble retry
+    ensemble_on_second_retry: bool = False  # spawn parallel attempts on 2nd retry
+    ensemble_candidates: int = 2  # number of parallel candidates
 
 
 @dataclass
@@ -263,6 +270,9 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
         merge_review_timeout=data.get("merge_review_timeout", 600),
         checkpoint_interval_seconds=data.get("checkpoint_interval_seconds", 300),
         checkpoint_max_age_minutes=data.get("checkpoint_max_age_minutes", 10),
+        ast_analysis=data.get("ast_analysis", True),
+        ensemble_on_second_retry=data.get("ensemble_on_second_retry", False),
+        ensemble_candidates=data.get("ensemble_candidates", 2),
     )
 
 
