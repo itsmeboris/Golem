@@ -207,6 +207,11 @@ _STRING_CONTROL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Raw dict key access via .get("key" or ["key"] — heuristic soft signal
+_RAW_DICT_ACCESS_RE = re.compile(
+    r'\.get\(\s*["\'][a-z_]+["\']\s*' r"|" r'\[["\'][a-z_]+["\']\]'
+)
+
 
 def _check_line_antipatterns(
     content: str,
@@ -214,6 +219,7 @@ def _check_line_antipatterns(
     traceback_hits: list[str],
     private_hits: list[str],
     string_hits: list[str],
+    dict_access_hits: list[str],
 ) -> None:
     """Check a single added line for antipatterns and append to hit lists."""
     loc = current_file or "unknown file"
@@ -225,6 +231,8 @@ def _check_line_antipatterns(
             private_hits.append(loc)
     if _STRING_CONTROL_RE.search(content):
         string_hits.append(loc)
+    if _RAW_DICT_ACCESS_RE.search(content):
+        dict_access_hits.append(loc)
 
 
 def scan_diff_antipatterns(diff_text: str) -> list[str]:
@@ -240,6 +248,7 @@ def scan_diff_antipatterns(diff_text: str) -> list[str]:
     traceback_hits: list[str] = []
     private_hits: list[str] = []
     string_hits: list[str] = []
+    dict_access_hits: list[str] = []
 
     for line in diff_text.splitlines():
         if line.startswith("+++ b/"):
@@ -250,15 +259,22 @@ def scan_diff_antipatterns(diff_text: str) -> list[str]:
         content = line[1:]
 
         # Skip test files and comment lines
-        if current_file and (
-            "/test_" in current_file or current_file.startswith("test_")
-        ):
+        is_test_file = bool(
+            current_file
+            and ("/test_" in current_file or current_file.startswith("test_"))
+        )
+        if is_test_file:
             continue
         if content.strip().startswith("#"):
             continue
 
         _check_line_antipatterns(
-            content, current_file, traceback_hits, private_hits, string_hits
+            content,
+            current_file,
+            traceback_hits,
+            private_hits,
+            string_hits,
+            dict_access_hits,
         )
 
     concerns: list[str] = []
@@ -274,6 +290,12 @@ def scan_diff_antipatterns(diff_text: str) -> list[str]:
         files = sorted(set(string_hits))
         concerns.append(
             f"Antipattern: string-matching control flow in {', '.join(files)}"
+        )
+    if dict_access_hits:
+        files = sorted(set(dict_access_hits))
+        concerns.append(
+            f"Antipattern: untyped dict access in {', '.join(files)} "
+            f"— verify keys match golem/types.py contracts"
         )
     return concerns
 

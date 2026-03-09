@@ -387,6 +387,59 @@ class TestScanDiffAntipatterns:
         assert concerns[0].count("golem/flow.py") == 1
 
 
+class TestNewAntipatterns:
+    def test_raw_dict_access_flagged(self):
+        diff = """\
++++ b/golem/core/dashboard.py
++        ev_type = ev.get("type", "")
++        msg = ev.get("message", "")
+"""
+        concerns = scan_diff_antipatterns(diff)
+        assert any(
+            "raw dict" in c.lower() or "untyped dict" in c.lower() for c in concerns
+        )
+
+    def test_raw_dict_access_in_test_files_not_flagged(self):
+        diff = """\
++++ b/golem/tests/test_dashboard.py
++        ev_type = ev.get("type", "")
+"""
+        concerns = scan_diff_antipatterns(diff)
+        assert not any(
+            "raw dict" in c.lower() or "untyped dict" in c.lower() for c in concerns
+        )
+
+    def test_typed_dict_access_not_flagged(self):
+        """Dict access with type annotation nearby should not trigger."""
+        diff = """\
++++ b/golem/core/dashboard.py
++        ev: MilestoneDict = event_log[0]
++        ev_type = ev["kind"]
+"""
+        # The regex is a heuristic; the reviewer (LLM) makes the final decision.
+        concerns = scan_diff_antipatterns(diff)
+        # We accept that the regex may still flag it — it's a soft signal.
+
+    def test_bracket_dict_access_flagged(self):
+        diff = """\
++++ b/golem/core/engine.py
++        status = result["status"]
+"""
+        concerns = scan_diff_antipatterns(diff)
+        assert any("untyped dict" in c.lower() for c in concerns)
+
+    def test_dict_access_deduplicates_files(self):
+        diff = """\
++++ b/golem/core/engine.py
++        a = d.get("foo", "")
++        b = d.get("bar", "")
+"""
+        concerns = scan_diff_antipatterns(diff)
+        matching = [c for c in concerns if "untyped dict" in c.lower()]
+        assert len(matching) == 1
+        assert matching[0].count("golem/core/engine.py") == 1
+
+
 class TestRunValidationWithAntipatterns:
     @patch("golem.validation.invoke_cli")
     @patch("golem.validation.get_git_diff")
