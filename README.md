@@ -18,8 +18,8 @@
   <a href="#quick-start">Quick Start</a>&nbsp;&nbsp;·&nbsp;&nbsp;
   <a href="#why-golem">Why Golem</a>&nbsp;&nbsp;·&nbsp;&nbsp;
   <a href="#how-it-works">How It Works</a>&nbsp;&nbsp;·&nbsp;&nbsp;
+  <a href="#agent-intelligence">Agent Intelligence</a>&nbsp;&nbsp;·&nbsp;&nbsp;
   <a href="#configuration">Configuration</a>&nbsp;&nbsp;·&nbsp;&nbsp;
-  <a href="#custom-profiles">Custom Profiles</a>&nbsp;&nbsp;·&nbsp;&nbsp;
   <a href="#http-api">HTTP API</a>
 </p>
 
@@ -28,6 +28,38 @@
 Golem runs as a daemon, picks up work from your issue tracker or direct prompts, spins up Claude agents, validates the output, commits the results, and notifies your team — in a continuous loop.
 
 Submit a prompt. Walk away. It's done.
+
+---
+
+<!-- TABLE OF CONTENTS -->
+<details>
+<summary><strong>Table of Contents</strong></summary>
+
+- [Why Golem](#why-golem)
+- [Quick Start](#quick-start)
+  - [Prerequisites](#prerequisites)
+  - [Install](#1-install)
+  - [Configure](#2-configure)
+  - [Run](#3-run)
+- [How It Works](#how-it-works)
+  - [Daemon-Centric Architecture](#daemon-centric-architecture)
+  - [Submitting Tasks](#submitting-tasks)
+  - [Task Lifecycle](#task-lifecycle)
+  - [Parallel Tasks & Git Worktrees](#parallel-tasks--git-worktrees)
+- [Agent Intelligence](#agent-intelligence)
+  - [5-Phase Workflow](#5-phase-workflow)
+  - [Specialized Subagents](#specialized-subagents)
+  - [Skill Discovery](#skill-discovery)
+- [Architecture](#architecture)
+  - [Profile System](#profile-system)
+  - [Project Layout](#project-layout)
+- [Configuration](#configuration)
+- [Custom Profiles](#custom-profiles)
+- [HTTP API](#http-api)
+- [Development](#development)
+- [License](#license)
+
+</details>
 
 ---
 
@@ -40,6 +72,8 @@ Most AI coding tools wait for you to invoke them. Golem runs the other way aroun
 **Parallel execution** — Multiple Claude instances run simultaneously, each on a different task. Every task gets its own git worktree, so concurrent work never collides. When tasks complete, changes merge cleanly back into your branch.
 
 **Closed-loop validation** — Every task goes through a separate validation agent before anything is committed. If the result is partial, Golem retries with structured feedback (specific files to fix, test failures, and actionable concerns). A static antipattern scanner also checks the diff for traceback leaks, cross-module private access, and string-matching control flow. Only fully validated work gets committed and pushed.
+
+**Skill-driven agents** — Agents discover and invoke relevant skills at each phase of execution — workspace knowledge, test-driven development, debugging workflows, code review criteria, and domain-specific tooling. Skills prevent unfocused exploration and enforce structured workflows.
 
 **Pluggable everything** — The profile system decouples Golem from any specific tracker, notifier, or tool provider. Swap Redmine for GitHub Issues, Teams for Slack, or write your own backend — without touching core logic.
 
@@ -54,6 +88,12 @@ Most AI coding tools wait for you to invoke them. Golem runs the other way aroun
 ---
 
 ## Quick Start
+
+### Prerequisites
+
+- **Python 3.11+**
+- **[Claude CLI](https://docs.anthropic.com/en/docs/claude-code)** — Golem wraps Claude Code as a subprocess. Install it first and verify `claude --version` works.
+- **Git** — for worktree isolation and merge operations.
 
 ### 1. Install
 
@@ -111,10 +151,10 @@ flowchart TB
         flow["Flow Engine"] --> preflight["Preflight Checks"]
         preflight --> orch["Orchestrator<br/>(single Claude session)"]
 
-        orch -- "Agent tool" --> explorer["Explorer"]
-        orch -- "Agent tool" --> impl["Implementer"]
-        orch -- "Agent tool" --> reviewer["Reviewer"]
-        orch -- "Agent tool" --> tester["Tester"]
+        orch -- "Agent tool" --> scout["Scout<br/>(haiku)"]
+        orch -- "Agent tool" --> builder["Builder<br/>(sonnet)"]
+        orch -- "Agent tool" --> reviewer["Reviewer<br/>(opus)"]
+        orch -- "Agent tool" --> verifier["Verifier<br/>(haiku)"]
 
         orch --> val["Validation Agent"]
 
@@ -193,6 +233,60 @@ All merge operations happen in a **temporary isolated worktree** — the user's 
 
 ---
 
+## Agent Intelligence
+
+Golem doesn't just dispatch Claude and hope for the best. Each task runs through a structured workflow with specialized subagents and skill discovery.
+
+### 5-Phase Workflow
+
+When `supervisor_mode` is enabled (the default), the orchestrator coordinates subagents through five phases:
+
+```mermaid
+flowchart LR
+    O["Orient<br/>(skills)"] --> S["Scout<br/>(haiku)"]
+    S --> P["Plan"]
+    P --> B["Build<br/>(sonnet)"]
+    B --> R["Review<br/>(opus)"]
+    R --> V["Verify<br/>(haiku)"]
+    V -- "fail" --> B
+    V -- "pass" --> Done(["Report"])
+```
+
+| Phase | What happens |
+|-------|-------------|
+| **Orient** | Invoke workspace and domain skills to understand the codebase layout before touching anything. Assess task complexity (trivial / standard / complex). |
+| **Scout** | Dispatch fast read-only agents with specific research questions. Returns structured findings with `file:line` references. |
+| **Plan** | Using Scout findings, decide what files change, whether subtasks can parallelize, and which skills Builders should use. |
+| **Build** | Dispatch code-writing agents with Scout context and skill guidance. Follows TDD when applicable. Independent subtasks run in parallel. |
+| **Review** | Adversarial code review by an opus-class agent. Only reports issues with >= 80% confidence. Builders fix flagged issues and re-review. |
+| **Verify** | Run `black`, `pylint`, `pytest`. Circuit breaker stops after 3 identical failures. |
+
+### Specialized Subagents
+
+Each subagent role is defined in `.claude/agents/` with a specific model, toolset, and turn limit:
+
+| Agent | Model | Tools | Purpose |
+|-------|-------|-------|---------|
+| **Scout** | haiku | Read, Grep, Glob | Focused codebase research — answers specific questions fast |
+| **Builder** | sonnet | All | Writes code, tests, fixes issues. TDD with `pytest.mark.parametrize` |
+| **Reviewer** | opus | Read, Grep, Glob, Bash | Adversarial code review with confidence-based filtering |
+| **Verifier** | haiku | Bash | Runs linters and tests, returns structured pass/fail |
+
+### Skill Discovery
+
+Agents have access to **skills** — reusable packages of domain knowledge, structured workflows, and search techniques. Skills are stored in `.claude/skills/` and automatically propagated to child agent sessions.
+
+Every prompt template instructs agents to check for relevant skills before starting work:
+
+- **Workspace skills** — codebase layout, module conventions, verification commands
+- **Process skills** — test-driven development, systematic debugging, code review criteria
+- **Domain skills** — register access patterns, RTL analysis, CI/CD, MCP server usage
+- **Search skills** — AST-based structural search, diagram generation
+
+Skills are discovered dynamically via the Skill tool. When new skills are added to `.claude/skills/`, agents pick them up automatically — no prompt changes needed.
+
+---
+
 ## Architecture
 
 ### Profile System
@@ -234,7 +328,7 @@ profile: github    # GitHub Issues via gh CLI + Slack/Teams
 | `ToolProvider` | Select MCP servers per task | Keyword-based scoping | None (or keyword-based if `mcp_enabled`) | None (or keyword-based if `mcp_enabled`) |
 | `PromptProvider` | Load prompt templates | `prompts/` directory | `prompts/` | `prompts/` |
 
-The `local` profile is the default for prompt-based workflows. Submitted prompts (via CLI, HTTP API, or file drop) are always handled through the daemon's submission pipeline regardless of which profile is active.
+The `local` profile is the recommended starting point for prompt-based workflows. Submitted prompts (via CLI, HTTP API, or file drop) are always handled through the daemon's submission pipeline regardless of which profile is active.
 
 <details>
 <summary><strong>Project Layout</strong></summary>
@@ -296,7 +390,7 @@ golem/
 │   ├── traces/            # Agent execution traces (prompts + JSONL events)
 │   └── logs/              # Daemon and agent logs
 │
-└── tests/                 # Test suite
+└── tests/                 # Test suite (100% coverage required)
 ```
 
 </details>
@@ -430,13 +524,21 @@ curl -X POST http://localhost:8081/api/submit/batch \
 
 ## Development
 
+### Prerequisites
+
 ```bash
 pip install -e ".[dashboard]"
 pip install pytest black pylint
+```
 
-pytest golem/tests/ -x -q        # run tests
-black golem/                      # format
-pylint --errors-only golem/       # lint
+### Verification
+
+All three must pass before pushing:
+
+```bash
+black --check .                             # formatting
+pylint --errors-only golem/                 # lint
+pytest --cov=golem --cov-fail-under=100     # tests (100% coverage required)
 ```
 
 A [pre-push hook](.githooks/pre-push) runs all three automatically. Enable it with:
@@ -444,6 +546,14 @@ A [pre-push hook](.githooks/pre-push) runs all three automatically. Enable it wi
 ```bash
 git config core.hooksPath .githooks
 ```
+
+---
+
+## Built With
+
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — AI backbone (CLI subprocess)
+- [Python 3.11+](https://www.python.org/) — async orchestration
+- [Git Worktrees](https://git-scm.com/docs/git-worktree) — parallel task isolation
 
 ---
 
