@@ -11,6 +11,7 @@ from golem.event_tracker import (
     _summarize_task_update,
     _summarize_todo_write,
     _summarize_tool_input,
+    _truncate_summary,
 )
 
 
@@ -362,3 +363,62 @@ class TestSummarizeTaskUpdate:
 
     def test_empty(self):
         assert _summarize_task_update("TaskUpdate", {}) == ""
+
+
+class TestTruncateSummary:
+    def test_short_text_unchanged(self):
+        assert _truncate_summary("Hello world.") == "Hello world."
+
+    def test_first_line_only(self):
+        text = "First line.\nSecond line.\nThird line."
+        assert _truncate_summary(text) == "First line."
+
+    def test_long_text_truncated_at_sentence(self):
+        text = "This is a sentence. " + "x" * 200
+        result = _truncate_summary(text, max_len=60)
+        assert result == "This is a sentence."
+
+    def test_long_text_truncated_with_ellipsis(self):
+        text = "a" * 200
+        result = _truncate_summary(text, max_len=120)
+        assert len(result) == 121  # 120 + ellipsis char
+        assert result.endswith("\u2026")
+
+    def test_empty_first_line_uses_next(self):
+        text = "\n\nActual content here."
+        assert _truncate_summary(text) == "Actual content here."
+
+    def test_all_empty(self):
+        assert _truncate_summary("") == ""
+        assert _truncate_summary("\n\n\n") == ""
+
+    def test_sentence_boundary_too_early_ignored(self):
+        # Period at position 2 is too early (< 10), so just truncate
+        text = "Hi. " + "x" * 200
+        result = _truncate_summary(text, max_len=50)
+        assert result == "Hi. " + "x" * 46 + "\u2026"
+
+    def test_whitespace_stripped(self):
+        text = "  Hello world.  \n  More text.  "
+        assert _truncate_summary(text) == "Hello world."
+
+
+class TestTextMilestoneTruncation:
+    def test_multiline_text_produces_truncated_summary(self):
+        tracker = TaskEventTracker(session_id=1)
+        event = {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "First line of analysis.\nSecond line with details.\nThird line.",
+                    }
+                ]
+            },
+        }
+        m = tracker.handle_event(event)
+        assert m is not None
+        assert m.kind == "text"
+        assert m.summary == "First line of analysis."
+        assert "\n" not in m.summary

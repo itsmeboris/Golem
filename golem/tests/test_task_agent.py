@@ -394,11 +394,8 @@ class TestTaskEventTracker:
         assert milestone is not None
         assert milestone.kind == "text"
         assert tracker.state.milestone_count == 1
-        # last_text is also updated (whitespace cleaned)
-        assert (
-            tracker.state.last_text
-            == "Now updating config.yaml with improved comments..."
-        )
+        # last_text is a truncated summary (first line)
+        assert tracker.state.last_text == "Now updating  config.yaml"
 
     def test_assistant_text_does_not_overwrite_with_empty(self):
         tracker = TaskEventTracker(session_id=1)

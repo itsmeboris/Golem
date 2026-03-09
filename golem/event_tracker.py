@@ -54,6 +54,35 @@ def _short_path(path: str) -> str:
     return path
 
 
+def _truncate_summary(text: str, max_len: int = 120) -> str:
+    """Create a short single-line summary from potentially multi-line text.
+
+    Truncates at the first sentence boundary (period followed by space or
+    end-of-string) or newline, whichever comes first, capped at *max_len*.
+    """
+    # Take up to first newline
+    first_line = text.split("\n", 1)[0].strip()
+    if not first_line:
+        # All on later lines — take first non-empty line
+        for line in text.split("\n"):
+            stripped = line.strip()
+            if stripped:
+                first_line = stripped
+                break
+        if not first_line:
+            return ""
+
+    # Try to cut at sentence boundary within max_len
+    if len(first_line) > max_len:
+        # Look for a period followed by space within the limit
+        dot = first_line.rfind(". ", 0, max_len)
+        if dot > 10:
+            return first_line[: dot + 1]
+        return first_line[:max_len] + "\u2026"
+
+    return first_line
+
+
 def _summarize_tool_input(name: str, tool_input: dict) -> str:
     """Create a human-readable one-line summary from a tool_use block."""
     summary = _TOOL_SUMMARIZERS.get(name, _summarize_default)(name, tool_input)
@@ -274,17 +303,16 @@ class TaskEventTracker:
                 return self._handle_tool_result(block)
             if btype == "text":
                 text = block.get("text", "")
-                cleaned = " ".join(text.split()).strip()
-                if cleaned:
-                    text_parts.append(cleaned)
-                    self.state.last_text = cleaned
+                if text.strip():
+                    text_parts.append(text.strip())
+                    self.state.last_text = _truncate_summary(text)
 
         # Emit text milestones so the dashboard shows agent messages.
         if text_parts:
-            combined = " ".join(text_parts)
+            combined = "\n\n".join(text_parts)
             return Milestone(
                 kind="text",
-                summary=combined,
+                summary=_truncate_summary(combined),
                 timestamp=time.time(),
             )
         return None
