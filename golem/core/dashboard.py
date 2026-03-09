@@ -595,7 +595,7 @@ def format_status_text(since_hours: int = 24, flow: str | None = None) -> str:
         f"=== Golem Status (last {since_hours}h{scope}) ===",
     ]
 
-    lines += _format_live_section(LiveState.get().snapshot())
+    lines += _format_live_section(read_live_snapshot())
 
     lines += [
         "",

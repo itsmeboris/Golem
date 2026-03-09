@@ -608,9 +608,9 @@ class TestFormatLiveSection:
 
 
 class TestFormatStatusText:
-    @patch("golem.core.dashboard.LiveState")
+    @patch("golem.core.dashboard.read_live_snapshot")
     @patch("golem.core.dashboard.read_runs")
-    def test_basic_output(self, mock_read_runs, mock_ls):
+    def test_basic_output(self, mock_read_runs, mock_snap):
         mock_read_runs.return_value = [
             {
                 "success": True,
@@ -623,33 +623,37 @@ class TestFormatStatusText:
                 "event_id": "golem-1",
             }
         ]
-        mock_ls.get.return_value.snapshot.return_value = {
+        mock_snap.return_value = {
+            "uptime_s": 0,
             "active_count": 0,
             "queue_depth": 0,
             "active_tasks": [],
             "models_active": {},
+            "recently_completed": [],
         }
         text = format_status_text(since_hours=24)
         assert "Golem Status" in text
         assert "Total runs:" in text
         assert "golem" in text
 
-    @patch("golem.core.dashboard.LiveState")
+    @patch("golem.core.dashboard.read_live_snapshot")
     @patch("golem.core.dashboard.read_runs")
-    def test_with_flow_filter(self, mock_read_runs, mock_ls):
+    def test_with_flow_filter(self, mock_read_runs, mock_snap):
         mock_read_runs.return_value = []
-        mock_ls.get.return_value.snapshot.return_value = {
+        mock_snap.return_value = {
+            "uptime_s": 0,
             "active_count": 0,
             "queue_depth": 0,
             "active_tasks": [],
             "models_active": {},
+            "recently_completed": [],
         }
         text = format_status_text(since_hours=12, flow="golem")
         assert "golem" in text
 
-    @patch("golem.core.dashboard.LiveState")
+    @patch("golem.core.dashboard.read_live_snapshot")
     @patch("golem.core.dashboard.read_runs")
-    def test_truncates_long_event_id(self, mock_read_runs, mock_ls):
+    def test_truncates_long_event_id(self, mock_read_runs, mock_snap):
         mock_read_runs.return_value = [
             {
                 "success": False,
@@ -661,11 +665,13 @@ class TestFormatStatusText:
                 "event_id": "X" * 60,
             }
         ]
-        mock_ls.get.return_value.snapshot.return_value = {
+        mock_snap.return_value = {
+            "uptime_s": 0,
             "active_count": 0,
             "queue_depth": 0,
             "active_tasks": [],
             "models_active": {},
+            "recently_completed": [],
         }
         text = format_status_text()
         assert "..." in text
