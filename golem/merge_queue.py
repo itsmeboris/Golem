@@ -2,8 +2,8 @@
 
 Completed sessions enter the queue instead of merging immediately.
 The queue processes one merge at a time, rebasing each onto the latest
-HEAD so every merge sees the freshest state.  On conflict, an optional
-callback can spawn a reconciliation agent before falling back to manual.
+HEAD so every merge sees the freshest state.  On conflict or missing
+additions, an optional merge-agent callback can attempt resolution.
 """
 
 import asyncio
@@ -15,10 +15,11 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from .worktree_manager import (
-    cleanup_worktree,
+    MergeOutcome,
+    _run_git,
+    fast_forward_if_safe,
     get_changed_files,
-    merge_and_cleanup,
-    verify_merge_integrity,
+    merge_in_worktree,
 )
 from .merge_review import ReconciliationResult
 
@@ -44,10 +45,11 @@ class MergeResult:
     conflict_files: list[str] = field(default_factory=list)
     error: str = ""
     changed_files: list[str] = field(default_factory=list)
+    deferred: bool = False
+    merge_branch: str = ""
 
 
-OnConflict = Callable[["MergeEntry", list[str]], bool] | None
-OnReconcile = Callable[["MergeEntry", str, list], ReconciliationResult] | None
+OnMergeAgent = Callable[[str, int, str, list[str], list], ReconciliationResult] | None
 
 
 class MergeQueue:
@@ -60,15 +62,10 @@ class MergeQueue:
     INFRA_RETRIES = 2
     INFRA_RETRY_DELAY = 5  # seconds
 
-    def __init__(
-        self,
-        on_conflict: OnConflict = None,
-        on_reconcile: OnReconcile = None,
-    ):
+    def __init__(self, on_merge_agent: OnMergeAgent = None):
         self._queue: list[MergeEntry] = []
         self._lock = asyncio.Lock()
-        self._on_conflict = on_conflict
-        self._on_reconcile = on_reconcile
+        self._on_merge_agent = on_merge_agent
         self._results: list[MergeResult] = []
 
     @property
@@ -106,9 +103,8 @@ class MergeQueue:
         """Sort by priority, then merge sequentially.
 
         Each merge rebases onto current HEAD.  On conflict, invokes
-        ``_on_conflict`` if set — if it returns True the conflict was
-        resolved and merge proceeds; otherwise the entry is flagged
-        for manual review.
+        ``_on_merge_agent`` if set — if it resolves the merge proceeds;
+        otherwise the entry is flagged for manual review.
         """
         async with self._lock:
             entries = sorted(self._queue, key=lambda e: e.priority)
@@ -146,19 +142,60 @@ class MergeQueue:
     ) -> MergeResult | None:
         """Single merge attempt.  Returns None to signal 'retry'."""
         try:
-            outcome = merge_and_cleanup(
-                entry.base_dir, entry.session_id, entry.worktree_path
-            )
-            if outcome.sha:
-                final_sha = outcome.sha
-                missing = outcome.missing_additions
-                if missing and self._on_reconcile:
+            outcome = merge_in_worktree(entry.base_dir, entry.session_id)
+
+            # --- Merge failed (empty sha + error) ---
+            if not outcome.sha and outcome.error:
+                if self._on_merge_agent and outcome.merge_branch:
+                    recon = self._on_merge_agent(
+                        entry.base_dir, entry.session_id,
+                        outcome.agent_diff, entry.changed_files, [],
+                    )
+                    if recon.resolved:
+                        # Agent resolved — retry merge
+                        outcome2 = merge_in_worktree(
+                            entry.base_dir, entry.session_id,
+                        )
+                        if outcome2.sha:
+                            return self._try_ff(entry, outcome2)
+                        # Retry still failed
+                        logger.warning(
+                            "Session %d: merge still fails after agent resolution",
+                            entry.session_id,
+                        )
+                        return MergeResult(
+                            session_id=entry.session_id,
+                            success=False,
+                            error=outcome2.error or "merge failed after agent resolution",
+                            conflict_files=entry.changed_files,
+                        )
+
+                # No agent or agent didn't resolve
+                logger.warning(
+                    "Session %d: merge failed, branch preserved for manual review",
+                    entry.session_id,
+                )
+                return MergeResult(
+                    session_id=entry.session_id,
+                    success=False,
+                    error=outcome.error or "merge failed or no changes",
+                    conflict_files=entry.changed_files,
+                )
+
+            # --- Merge succeeded but has missing_additions ---
+            if outcome.sha and outcome.missing_additions:
+                if self._on_merge_agent:
                     logger.warning(
                         "Session %d: %d file(s) lost additions after merge",
                         entry.session_id,
-                        len(missing),
+                        len(outcome.missing_additions),
                     )
-                    recon = self._on_reconcile(entry, outcome.agent_diff, missing)
+                    recon = self._on_merge_agent(
+                        entry.base_dir, entry.session_id,
+                        outcome.agent_diff,
+                        [m.file for m in outcome.missing_additions],
+                        outcome.missing_additions,
+                    )
                     if not recon.resolved:
                         logger.warning(
                             "Session %d: reconciliation failed — %s",
@@ -170,82 +207,38 @@ class MergeQueue:
                             success=False,
                             merge_sha=outcome.sha,
                             error=f"reconciliation failed: {recon.explanation}",
-                            conflict_files=[m.file for m in missing],
+                            conflict_files=[m.file for m in outcome.missing_additions],
                         )
-
-                    # Use reconciliation SHA if available
-                    final_sha = recon.commit_sha or outcome.sha
-
-                    # Re-verify after reconciliation
-                    still_missing = verify_merge_integrity(
-                        entry.base_dir, outcome.agent_diff, entry.changed_files
-                    )
-                    if still_missing:
-                        logger.warning(
-                            "Session %d: reconciliation committed but "
-                            "%d file(s) still missing additions",
-                            entry.session_id,
-                            len(still_missing),
-                        )
-                        return MergeResult(
-                            session_id=entry.session_id,
-                            success=False,
-                            merge_sha=final_sha,
-                            error="additions still missing after reconciliation",
-                            conflict_files=[m.file for m in still_missing],
-                        )
-
-                elif missing:
+                    # Reconciliation succeeded — proceed to ff
+                else:
                     logger.warning(
                         "Session %d: %d file(s) lost additions after merge, "
                         "no reconciler configured",
                         entry.session_id,
-                        len(missing),
+                        len(outcome.missing_additions),
                     )
                     return MergeResult(
                         session_id=entry.session_id,
                         success=False,
                         merge_sha=outcome.sha,
                         error="agent additions lost during merge",
-                        conflict_files=[m.file for m in missing],
+                        conflict_files=[m.file for m in outcome.missing_additions],
                     )
 
-                logger.info(
-                    "Session %d: merged successfully → %s",
-                    entry.session_id,
-                    final_sha,
-                )
-                return MergeResult(
-                    session_id=entry.session_id,
-                    success=True,
-                    merge_sha=final_sha,
-                    changed_files=entry.changed_files,
-                )
+            # --- Merge succeeded (no missing or reconciliation passed) ---
+            if outcome.sha:
+                return self._try_ff(entry, outcome)
 
-            if self._on_conflict:
-                resolved = self._on_conflict(entry, entry.changed_files)
-                if resolved:
-                    outcome_retry = merge_and_cleanup(
-                        entry.base_dir, entry.session_id, entry.worktree_path
-                    )
-                    if outcome_retry.sha:
-                        return MergeResult(
-                            session_id=entry.session_id,
-                            success=True,
-                            merge_sha=outcome_retry.sha,
-                            changed_files=entry.changed_files,
-                        )
-
-            cleanup_worktree(entry.base_dir, entry.worktree_path, keep_branch=True)
-            logger.warning(
-                "Session %d: merge failed, branch preserved for manual review",
+            # Empty sha with no error — no changes to merge
+            logger.info(
+                "Session %d: no changes to merge",
                 entry.session_id,
             )
             return MergeResult(
                 session_id=entry.session_id,
-                success=False,
-                error="merge failed or no changes",
-                conflict_files=entry.changed_files,
+                success=True,
+                merge_sha=outcome.sha,
+                changed_files=entry.changed_files,
             )
 
         except Exception as exc:  # pylint: disable=broad-exception-caught
@@ -265,3 +258,27 @@ class MergeQueue:
                 success=False,
                 error=str(exc),
             )
+
+    @staticmethod
+    def _try_ff(entry: MergeEntry, outcome: MergeOutcome) -> MergeResult:
+        ok, reason = fast_forward_if_safe(entry.base_dir, outcome.merge_branch)
+        if ok:
+            # Clean up both branches
+            _run_git(["branch", "-D", f"agent/{entry.session_id}"], cwd=entry.base_dir)
+            _run_git(["branch", "-D", outcome.merge_branch], cwd=entry.base_dir)
+            logger.info("Session %d: merged → %s", entry.session_id, outcome.sha)
+            return MergeResult(
+                session_id=entry.session_id,
+                success=True,
+                merge_sha=outcome.sha,
+                changed_files=entry.changed_files,
+            )
+        return MergeResult(
+            session_id=entry.session_id,
+            success=False,
+            deferred=True,
+            merge_branch=outcome.merge_branch,
+            merge_sha=outcome.sha,
+            error=reason,
+            changed_files=entry.changed_files,
+        )
