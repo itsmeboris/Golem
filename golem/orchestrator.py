@@ -66,7 +66,7 @@ class TaskSessionState(str, Enum):
     DETECTED → RUNNING → VERIFYING → VALIDATING ─── PASS ──→ COMPLETED
                                                   ├── PARTIAL → RETRYING → ...
                                                   └── FAIL ──→ FAILED (escalate)
-                                                                └── human feedback → HUMAN_REVIEW → RUNNING
+                                                                └── feedback → HUMAN_REVIEW
     """
 
     DETECTED = "detected"

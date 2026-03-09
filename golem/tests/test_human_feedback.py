@@ -76,7 +76,7 @@ class TestTaskSourceComments:
         from golem.interfaces import TaskSource
 
         result = TaskSource.get_task_comments(TaskSource, 1)
-        assert result == []
+        assert not result
 
 
 class TestLocalBackendComments:
@@ -84,13 +84,13 @@ class TestLocalBackendComments:
         from golem.backends.local import LocalFileTaskSource
 
         src = LocalFileTaskSource(tmp_path)
-        assert src.get_task_comments(1) == []
+        assert not src.get_task_comments(1)
 
     def test_returns_empty_with_since(self, tmp_path):
         from golem.backends.local import LocalFileTaskSource
 
         src = LocalFileTaskSource(tmp_path)
-        assert src.get_task_comments(1, since="2026-01-01T00:00:00Z") == []
+        assert not src.get_task_comments(1, since="2026-01-01T00:00:00Z")
 
 
 class TestRedmineBackendComments:
@@ -159,7 +159,7 @@ class TestRedmineBackendComments:
             "golem.backends.redmine._request_with_retry",
             side_effect=requests.RequestException("timeout"),
         ):
-            assert src.get_task_comments(42) == []
+            assert not src.get_task_comments(42)
 
 
 class TestGitHubBackendComments:
@@ -224,14 +224,14 @@ class TestGitHubBackendComments:
         run_result = MagicMock()
         run_result.returncode = 1
         with patch("subprocess.run", return_value=run_result):
-            assert src.get_task_comments(99) == []
+            assert not src.get_task_comments(99)
 
     def test_handles_os_error(self):
         from golem.backends.github import GitHubTaskSource
 
         src = GitHubTaskSource()
         with patch("subprocess.run", side_effect=OSError("no gh")):
-            assert src.get_task_comments(99) == []
+            assert not src.get_task_comments(99)
 
 
 # ---------------------------------------------------------------------------
@@ -308,7 +308,7 @@ class TestCheckHumanFeedback:
         )
         spawned = []
         monkeypatch.setattr(
-            flow, "_spawn_session_task", lambda sid: spawned.append(sid)
+            flow, "_spawn_session_task", spawned.append
         )
 
         flow._check_human_feedback()
