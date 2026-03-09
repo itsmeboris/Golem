@@ -20,5 +20,6 @@
 | 15  | [x]    | **Stop task from dashboard** — add a stop/cancel button to the task detail view and DAG node context, wiring it to the existing `POST /api/cancel/{task_id}` endpoint so users can kill running tasks without the CLI                                                    | Medium | P2       |
 | 16  | [ ]    | **First-run config wizard** — interactive `golem init` command that guides new users through configuration: profile selection, model/budget choices, notification setup, work directory mapping, and generates a ready-to-use `config.yaml` with recommendations           | High   | P2       |
 | 17  | [x]    | **Isolated merge worktree** — redesigned merge pipeline to use a temporary worktree for all merge operations, never touching the user's working tree; unified merge agent for conflict resolution; deferred merge support when dirty files overlap                        | High   | P1       |
+| 18  | [ ]    | **Live status watch mode** — add `golem status --watch` for auto-refreshing terminal output and `golem status --task <id>` for per-task detail view, turning CLI status into a lightweight monitoring tool                                                                | Medium | P3       |
 
 
