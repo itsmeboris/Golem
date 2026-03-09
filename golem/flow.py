@@ -38,7 +38,7 @@ from .errors import (
 from .event_tracker import Milestone, TaskEventTracker
 from .merge_queue import MergeEntry, MergeQueue, MergeResult
 from .merge_review import ReconciliationResult, run_merge_agent
-from .worktree_manager import MissingAddition, _run_git, fast_forward_if_safe
+from .worktree_manager import _run_git, fast_forward_if_safe
 from .batch_monitor import BatchMonitor
 from .orchestrator import (
     TaskOrchestrator,
@@ -501,7 +501,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         for session in list(self._sessions.values()):
             if not session.merge_deferred or not session.merge_branch:
                 continue
-            ok, reason = fast_forward_if_safe(
+            ok, _reason = fast_forward_if_safe(
                 session.base_work_dir, session.merge_branch
             )
             if ok:
