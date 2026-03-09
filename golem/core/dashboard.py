@@ -17,6 +17,7 @@ from .daemon_utils import read_pid
 from .live_state import LiveState, read_live_snapshot
 from .run_log import format_duration, read_runs
 from ..event_tracker import _summarize_tool_input
+from ..orchestrator import load_sessions
 
 logger = logging.getLogger("golem.core.dashboard")
 
@@ -643,20 +644,22 @@ def format_status_text(since_hours: int = 24, flow: str | None = None) -> str:
     daemon_label, _ = _check_daemon_status()
     lines.append(f"  Daemon:       {daemon_label}")
 
-    lines += _format_live_section(read_live_snapshot())
+    snap = read_live_snapshot()
+    sessions = load_sessions()
+    lines += _format_live_section(snap, sessions=sessions)
 
+    # Compact history summary
     lines += [
         "",
-        f"  Total runs:    {stats['total_runs']}",
-        f"  Success rate:  {stats['success_rate']}%",
-        f"  Failures:      {stats['failure_count']}",
-        f"  Avg duration:  {stats['avg_duration_s']}s",
-        f"  Total cost:    ${stats['total_cost_usd']:.4f}",
-        f"  Tokens used:   {stats['total_tokens']:,}",
+        "  HISTORY:",
+        f"    Total: {stats['total_runs']}  "
+        f"Success: {stats['success_rate']}%  "
+        f"Avg: {format_duration(stats['avg_duration_s'])}  "
+        f"Cost: ${stats['total_cost_usd']:.2f}",
     ]
 
     if stats["by_flow"]:
-        lines += ["", "  By flow:"]
+        lines.append("")
         for flow_name, data in stats["by_flow"].items():
             lines.append(
                 f"    {flow_name:12s}  "
@@ -669,11 +672,19 @@ def format_status_text(since_hours: int = 24, flow: str | None = None) -> str:
         lines += ["", "  Recent runs:"]
         for r in recent:
             status = "OK" if r.get("success") else "FAIL"
-            t = r.get("started_at", "")[:19]
-            flow = r.get("flow", "?")
+            t = r.get("started_at", "")[:16].replace("T", " ")
+            flow_name = r.get("flow", "?")
             eid = r.get("event_id", "")
-            if len(eid) > 50:
-                eid = eid[:47] + "..."
-            lines.append(f"    [{status:4s}] {t}  {flow:10s}  {eid}")
+            _, num = _extract_numeric_id(eid)
+            sess = sessions.get(int(num)) if num else None
+            subject = getattr(sess, "parent_subject", "")
+            if len(subject) > 30:
+                subject = subject[:27] + "..."
+            cost = r.get("cost_usd", 0.0)
+            dur = format_duration(r.get("duration_s", 0))
+            lines.append(
+                f"    [{status:4s}] {t}  {flow_name:6s}  "
+                f"#{num or '?':>5s}  {subject:<30s}  ${cost:.2f}  {dur}"
+            )
 
     return "\n".join(lines)
