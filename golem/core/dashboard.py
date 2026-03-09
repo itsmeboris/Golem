@@ -580,33 +580,40 @@ def _check_daemon_status(
         return "stopped (stale PID)", False
 
 
+def _resolve_subject(eid: str, sessions: dict, max_len: int = 50) -> tuple[str, str]:
+    """Extract numeric ID and resolve subject from sessions, with truncation."""
+    _, num = _extract_numeric_id(eid)
+    sess = sessions.get(int(num)) if num else None
+    subject = getattr(sess, "parent_subject", "") or eid
+    if len(subject) > max_len:
+        subject = subject[: max_len - 3] + "..."
+    return num or "?", subject
+
+
+def _format_active_task(task: dict, sessions: dict) -> list[str]:
+    """Format a single active task as two display lines."""
+    num, subject = _resolve_subject(task["event_id"], sessions, max_len=50)
+    elapsed = format_duration(task.get("elapsed_s", 0))
+    sess = sessions.get(int(num)) if num != "?" else None
+    cost = getattr(sess, "total_cost_usd", 0.0)
+    return [
+        f"    #{num:>5s}  {subject}",
+        f"           Phase: {task.get('phase', '?')}  Model: {task.get('model', '?')}"
+        f"  Elapsed: {elapsed}  Cost: ${cost:.2f}",
+    ]
+
+
 def _format_live_section(
     snap: dict, sessions: dict[int, Any] | None = None
 ) -> list[str]:
     """Build the LIVE block for CLI status output."""
     sessions = sessions if sessions is not None else {}
-    uptime = format_duration(snap.get("uptime_s", 0))
-    lines = ["", f"  Uptime:       {uptime}"]
+    lines = ["", f"  Uptime:       {format_duration(snap.get('uptime_s', 0))}"]
 
     if snap["active_count"]:
-        lines.append("")
-        lines.append("  ACTIVE:")
+        lines += ["", "  ACTIVE:"]
         for t in snap["active_tasks"]:
-            eid = t["event_id"]
-            _, num = _extract_numeric_id(eid)
-            sess = sessions.get(int(num)) if num else None
-            subject = getattr(sess, "parent_subject", "") or eid
-            if len(subject) > 50:
-                subject = subject[:47] + "..."
-            model = t.get("model", "?")
-            phase = t.get("phase", "?")
-            elapsed = format_duration(t.get("elapsed_s", 0))
-            cost = getattr(sess, "total_cost_usd", 0.0)
-            lines.append(f"    #{num or '?':>5s}  {subject}")
-            lines.append(
-                f"           Phase: {phase}  Model: {model}"
-                f"  Elapsed: {elapsed}  Cost: ${cost:.2f}"
-            )
+            lines += _format_active_task(t, sessions)
     else:
         lines.append("  Active:       No active tasks")
 
@@ -618,17 +625,11 @@ def _format_live_section(
         for c in recent[:5]:
             status = "OK" if c.get("success") else "FAIL"
             ago = format_duration(c.get("finished_ago_s", 0))
-            eid = c.get("event_id", "")
-            _, num = _extract_numeric_id(eid)
-            sess = sessions.get(int(num)) if num else None
-            subject = getattr(sess, "parent_subject", "") or eid
-            if len(subject) > 30:
-                subject = subject[:27] + "..."
-            dur = format_duration(c.get("duration_s", 0))
-            cost = c.get("cost_usd", 0.0)
+            num, subject = _resolve_subject(c.get("event_id", ""), sessions, max_len=30)
             lines.append(
                 f"    [{status:4s}]  {ago:>8s} ago  "
-                f"#{num or '?':>5s}  {subject:<30s}  ${cost:.2f}  {dur}"
+                f"#{num:>5s}  {subject:<30s}  ${c.get('cost_usd', 0.0):.2f}"
+                f"  {format_duration(c.get('duration_s', 0))}"
             )
 
     return lines
@@ -671,24 +672,23 @@ def format_status_text(since_hours: int = 24, flow: str | None = None) -> str:
                 f"({data['success_rate']}%)"
             )
 
-    recent = runs[:10]
-    if recent:
-        lines += ["", "  Recent runs:"]
-        for r in recent:
-            status = "OK" if r.get("success") else "FAIL"
-            t = r.get("started_at", "")[:16].replace("T", " ")
-            flow_name = r.get("flow", "?")
-            eid = r.get("event_id", "")
-            _, num = _extract_numeric_id(eid)
-            sess = sessions.get(int(num)) if num else None
-            subject = getattr(sess, "parent_subject", "")
-            if len(subject) > 30:
-                subject = subject[:27] + "..."
-            cost = r.get("cost_usd", 0.0)
-            dur = format_duration(r.get("duration_s", 0))
-            lines.append(
-                f"    [{status:4s}] {t}  {flow_name:6s}  "
-                f"#{num or '?':>5s}  {subject:<30s}  ${cost:.2f}  {dur}"
-            )
+    lines += _format_recent_runs(runs[:10], sessions)
 
     return "\n".join(lines)
+
+
+def _format_recent_runs(runs: list[dict], sessions: dict[int, Any]) -> list[str]:
+    """Format the recent runs section for CLI status output."""
+    if not runs:
+        return []
+    lines = ["", "  Recent runs:"]
+    for r in runs:
+        status = "OK" if r.get("success") else "FAIL"
+        started = r.get("started_at", "")[:16].replace("T", " ")
+        num, subject = _resolve_subject(r.get("event_id", ""), sessions, max_len=30)
+        lines.append(
+            f"    [{status:4s}] {started}  {r.get('flow', '?'):6s}  "
+            f"#{num:>5s}  {subject:<30s}  ${r.get('cost_usd', 0.0):.2f}"
+            f"  {format_duration(r.get('duration_s', 0))}"
+        )
+    return lines
