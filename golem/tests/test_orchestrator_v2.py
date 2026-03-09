@@ -2116,6 +2116,7 @@ class TestVerificationInPipeline:
             duration_s=5.0,
         )
         deps = self._mock_deps()
+        # pylint: disable-next=confusing-with-statement
         with (
             deps["resolve"],
             deps["invoke"],

@@ -372,9 +372,8 @@ class TaskOrchestrator:
                 ) from wt_err
         return work_dir, worktree_path
 
-    async def _run_agent_monolithic(
-        self,
-    ) -> None:  # pylint: disable=too-many-locals,too-many-branches,too-many-statements
+    # pylint: disable-next=too-many-locals,too-many-branches,too-many-statements
+    async def _run_agent_monolithic(self) -> None:
         """Single-agent 5-phase pipeline."""
         issue_id = self.session.parent_issue_id
         description = self._get_description(issue_id)
