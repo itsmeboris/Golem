@@ -1,19 +1,20 @@
 # pylint: disable=too-many-lines
 """Durable state-machine orchestrator for golem sessions (v2).
 
-Each ``TaskSession`` progresses through a 6-state lifecycle:
-DETECTED → RUNNING → VALIDATING → COMPLETED / RETRYING → COMPLETED / FAILED.
+Each ``TaskSession`` progresses through a 7-state lifecycle:
+DETECTED → RUNNING → VERIFYING → VALIDATING → COMPLETED / RETRYING → COMPLETED / FAILED.
 
 The orchestrator spawns one Claude agent per task (not per subtask).  Real-time
 visibility comes from ``TaskEventTracker`` which processes stream-json events
 into structured ``Milestone`` objects.
 
-After execution the orchestrator runs a 5-phase pipeline:
+After execution the orchestrator runs a 6-phase pipeline:
   1. Execute — invoke the agent with event-stream monitoring
   2. Persist — write JSONL traces and prompt files to disk
-  3. Validate — spawn a cheap (opus) validation agent to review the work
-  4. Retry or Escalate — retry once on PARTIAL, escalate on FAIL
-  5. Commit — deterministic git commit for PASS verdicts with code changes
+  3. Verify — run deterministic checks (black, pylint, pytest) as a hard gate
+  4. Validate — spawn a cheap (opus) validation agent to review the work
+  5. Retry or Escalate — retry once on PARTIAL, escalate on FAIL
+  6. Commit — deterministic git commit for PASS verdicts with code changes
 
 State is checkpointed to disk after every tick so the system survives daemon
 restarts.  On restart, in-flight sessions are reset to DETECTED for re-spawn.
@@ -46,6 +47,7 @@ from .event_tracker import Milestone, TaskEventTracker, TrackerState
 from .interfaces import TaskStatus
 from .profile import GolemProfile
 from .validation import ValidationVerdict, run_validation
+from .verifier import VerificationResult, run_verification
 from .workdir import resolve_work_dir
 from .worktree_manager import cleanup_worktree, create_worktree
 
@@ -61,13 +63,14 @@ _REPORT_INDEX = DATA_DIR / "reports" / "golem_report.md"
 class TaskSessionState(str, Enum):
     """Lifecycle states for a golem session (v2).
 
-    DETECTED → RUNNING → VALIDATING ─── PASS ──→ COMPLETED
-                                     ├── PARTIAL → RETRYING → VALIDATING → ...
-                                     └── FAIL ──→ FAILED (escalate)
+    DETECTED → RUNNING → VERIFYING → VALIDATING ─── PASS ──→ COMPLETED
+                                                  ├── PARTIAL → RETRYING → ...
+                                                  └── FAIL ──→ FAILED (escalate)
     """
 
     DETECTED = "detected"
     RUNNING = "running"
+    VERIFYING = "verifying"
     VALIDATING = "validating"
     RETRYING = "retrying"
     COMPLETED = "completed"
@@ -109,6 +112,7 @@ class TaskSession:
     validation_files_to_fix: list[str] = field(default_factory=list)
     validation_test_failures: list[str] = field(default_factory=list)
     validation_cost_usd: float = 0.0
+    verification_result: dict | None = None  # VerificationResultDict
     retry_count: int = 0
     commit_sha: str = ""
     trace_file: str = ""
@@ -168,6 +172,7 @@ class TaskSession:
             validation_files_to_fix=data.get("validation_files_to_fix", []),
             validation_test_failures=data.get("validation_test_failures", []),
             validation_cost_usd=data.get("validation_cost_usd", 0.0),
+            verification_result=data.get("verification_result"),
             retry_count=data.get("retry_count", 0),
             commit_sha=data.get("commit_sha", ""),
             trace_file=data.get("trace_file", ""),
@@ -405,6 +410,34 @@ class TaskOrchestrator:
             self._populate_session_from_tracker(tracker, result, time.time() - start)
             self._update_task(issue_id, status=TaskStatus.FIXED, progress=80)
 
+            # Phase 3: Deterministic verification (hard gate before reviewer)
+            verification = await self._run_verification(work_dir)
+            if not verification.passed:
+                feedback = self._format_verification_feedback(verification)
+                if self.session.retry_count < self.task_config.max_retries:
+                    # Build a synthetic PARTIAL verdict from verification failure
+                    synth_verdict = ValidationVerdict(
+                        verdict="PARTIAL",
+                        confidence=0.0,
+                        summary=f"Verification failed: {feedback[:200]}",
+                        concerns=[feedback],
+                    )
+                    self._apply_verdict(synth_verdict)
+                    await self._retry_agent(synth_verdict, work_dir, mcp_servers)
+                    # _retry_agent re-validates internally; commit if PASS
+                    if self.session.state != TaskSessionState.FAILED:
+                        self._commit_and_complete(issue_id, work_dir, synth_verdict)
+                    return
+                synth_verdict = ValidationVerdict(
+                    verdict="FAIL",
+                    confidence=0.0,
+                    summary=f"Verification failed after retries: {feedback[:200]}",
+                    concerns=[feedback],
+                )
+                self._apply_verdict(synth_verdict)
+                self._escalate(synth_verdict)
+                return
+
             verdict = await self._run_validation(issue_id, work_dir)
 
             if (
@@ -559,6 +592,49 @@ class TaskOrchestrator:
         return await asyncio.get_running_loop().run_in_executor(
             None, partial(run_validation, **kwargs)
         )
+
+    async def _run_verification(self, work_dir: str) -> VerificationResult:
+        """Phase 3: Run deterministic verification (black, pylint, pytest)."""
+        self.session.state = TaskSessionState.VERIFYING
+        self.session.updated_at = _now_iso()
+
+        self._slog.info("Running deterministic verification")
+        result = await asyncio.get_running_loop().run_in_executor(
+            None, run_verification, work_dir
+        )
+        self.session.verification_result = result.to_dict()
+
+        try:
+            save_checkpoint(
+                self.session.parent_issue_id, self.session, phase="verified"
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            self._slog.debug("save_checkpoint failed", exc_info=True)
+
+        self._slog.info(
+            "Verification %s: black=%s pylint=%s pytest=%s (%.1fs)",
+            "PASSED" if result.passed else "FAILED",
+            result.black_ok,
+            result.pylint_ok,
+            result.pytest_ok,
+            result.duration_s,
+        )
+        return result
+
+    def _format_verification_feedback(self, result: VerificationResult) -> str:
+        """Format verification failures into structured feedback for retry."""
+        parts = ["Independent verification failed:"]
+        if not result.black_ok:
+            parts.append(f"\nblack --check: FAILED\n{result.black_output}")
+        if not result.pylint_ok:
+            parts.append(f"\npylint: FAILED\n{result.pylint_output}")
+        if not result.pytest_ok:
+            parts.append(f"\npytest: FAILED ({len(result.failures)} failures)")
+            for f in result.failures:
+                parts.append(f"  - {f}")
+            if result.pytest_output:
+                parts.append(f"\n{result.pytest_output[-2000:]}")
+        return "\n".join(parts)
 
     def _commit_and_complete(
         self, issue_id: int, work_dir: str, verdict: ValidationVerdict
@@ -1047,6 +1123,7 @@ def save_sessions(sessions: dict[int, TaskSession], path: Path | None = None) ->
 _RESTARTABLE_STATES = frozenset(
     {
         TaskSessionState.RUNNING,
+        TaskSessionState.VERIFYING,
         TaskSessionState.VALIDATING,
         TaskSessionState.RETRYING,
     }

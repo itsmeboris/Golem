@@ -91,13 +91,15 @@ class TestRecoverSessions:
             2: TaskSession(parent_issue_id=2, state=TaskSessionState.VALIDATING),
             3: TaskSession(parent_issue_id=3, state=TaskSessionState.COMPLETED),
             4: TaskSession(parent_issue_id=4, state=TaskSessionState.RETRYING),
+            5: TaskSession(parent_issue_id=5, state=TaskSessionState.VERIFYING),
         }
         count = recover_sessions(sessions)
-        assert count == 3
+        assert count == 4
         assert sessions[1].state == TaskSessionState.DETECTED
         assert sessions[2].state == TaskSessionState.DETECTED
         assert sessions[3].state == TaskSessionState.COMPLETED
         assert sessions[4].state == TaskSessionState.DETECTED
+        assert sessions[5].state == TaskSessionState.DETECTED
 
     def test_no_in_flight(self):
         sessions = {
@@ -387,6 +389,18 @@ class TestRunAgent:
 
 class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
     def _mock_deps(self):
+        from golem.verifier import VerificationResult
+
+        _pass_verification = VerificationResult(
+            passed=True,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="10 passed",
+            duration_s=1.0,
+        )
         patches = {
             "resolve": patch(
                 "golem.orchestrator.resolve_work_dir", return_value="/work"
@@ -402,6 +416,10 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
                     cost_usd=0.5,
                     trace_events=[{"e": 1}],
                 ),
+            ),
+            "run_verification": patch(
+                "golem.orchestrator.run_verification",
+                return_value=_pass_verification,
             ),
             "run_val": patch(
                 "golem.orchestrator.run_validation",
@@ -422,6 +440,8 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
             ),
             "streaming_trace": patch("golem.orchestrator._StreamingTraceWriter"),
             "preflight": patch.object(TaskOrchestrator, "_preflight_check"),
+            "save_cp": patch("golem.orchestrator.save_checkpoint"),
+            "del_cp": patch("golem.orchestrator.delete_checkpoint"),
         }
         return patches
 
@@ -434,9 +454,15 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
         orch = _make_orch(session, profile=profile)
 
         deps = self._mock_deps()
-        with deps["resolve"], deps["invoke"], deps["run_val"], deps["commit"], deps[
-            "write_prompt"
-        ], deps["write_trace"], deps["preflight"], patch.object(
+        with deps["resolve"], deps["invoke"], deps["run_verification"], deps[
+            "run_val"
+        ], deps["commit"], deps["write_prompt"], deps["write_trace"], deps[
+            "preflight"
+        ], deps[
+            "save_cp"
+        ], deps[
+            "del_cp"
+        ], patch.object(
             orch, "_write_report"
         ), patch.object(
             orch, "_record_run"
@@ -467,11 +493,17 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
 
         deps = self._mock_deps()
         with deps["resolve"], deps["create_wt"] as m_create, deps["invoke"], deps[
-            "run_val"
-        ], deps["commit"], deps["write_prompt"], deps["write_trace"], deps[
+            "run_verification"
+        ], deps["run_val"], deps["commit"], deps["write_prompt"], deps[
+            "write_trace"
+        ], deps[
             "streaming_trace"
         ], deps[
             "preflight"
+        ], deps[
+            "save_cp"
+        ], deps[
+            "del_cp"
         ], patch.object(
             orch, "_write_report"
         ), patch.object(
@@ -520,9 +552,13 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
         orch = _make_orch(session, profile=profile, work_dir_override="/custom")
 
         deps = self._mock_deps()
-        with deps["invoke"], deps["run_val"], deps["commit"], deps[
-            "write_prompt"
-        ], deps["write_trace"], deps["preflight"], patch(
+        with deps["invoke"], deps["run_verification"], deps["run_val"], deps[
+            "commit"
+        ], deps["write_prompt"], deps["write_trace"], deps["preflight"], deps[
+            "save_cp"
+        ], deps[
+            "del_cp"
+        ], patch(
             "golem.orchestrator.resolve_work_dir"
         ) as m_resolve, patch.object(
             orch, "_write_report"
@@ -548,9 +584,17 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
             confidence=0.5,
             summary="needs work",
         )
-        with deps["resolve"], deps["invoke"], deps["preflight"], patch(
+        with deps["resolve"], deps["invoke"], deps["run_verification"], deps[
+            "preflight"
+        ], deps["save_cp"], deps["del_cp"], patch(
             "golem.orchestrator.run_validation", return_value=partial_verdict
-        ), deps["commit"], deps["write_prompt"], deps["write_trace"], patch.object(
+        ), deps[
+            "commit"
+        ], deps[
+            "write_prompt"
+        ], deps[
+            "write_trace"
+        ], patch.object(
             orch, "_write_report"
         ), patch.object(
             orch, "_record_run"
@@ -573,9 +617,15 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
             confidence=0.3,
             summary="still bad",
         )
-        with deps["resolve"], deps["invoke"], deps["preflight"], patch(
+        with deps["resolve"], deps["invoke"], deps["run_verification"], deps[
+            "preflight"
+        ], deps["save_cp"], deps["del_cp"], patch(
             "golem.orchestrator.run_validation", return_value=partial_verdict
-        ), deps["write_prompt"], deps["write_trace"], patch.object(
+        ), deps[
+            "write_prompt"
+        ], deps[
+            "write_trace"
+        ], patch.object(
             orch, "_write_report"
         ), patch.object(
             orch, "_record_run"
@@ -594,9 +644,15 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
 
         deps = self._mock_deps()
         fail_verdict = ValidationVerdict(verdict="FAIL", confidence=0.1, summary="bad")
-        with deps["resolve"], deps["invoke"], deps["preflight"], patch(
+        with deps["resolve"], deps["invoke"], deps["run_verification"], deps[
+            "preflight"
+        ], deps["save_cp"], deps["del_cp"], patch(
             "golem.orchestrator.run_validation", return_value=fail_verdict
-        ), deps["write_prompt"], deps["write_trace"], patch.object(
+        ), deps[
+            "write_prompt"
+        ], deps[
+            "write_trace"
+        ], patch.object(
             orch, "_write_report"
         ), patch.object(
             orch, "_record_run"
@@ -614,7 +670,7 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
         orch = _make_orch(session, profile=profile)
 
         deps = self._mock_deps()
-        with deps["resolve"], deps["preflight"], patch(
+        with deps["resolve"], deps["preflight"], deps["save_cp"], deps["del_cp"], patch(
             "golem.orchestrator.invoke_cli_monitored", side_effect=RuntimeError("boom")
         ), deps["write_prompt"], deps["write_trace"], patch.object(
             orch, "_write_report"
@@ -732,6 +788,18 @@ class TestStreamingCallbackWiring:
                 )
             return CLIResult(cost_usd=0.1, trace_events=[])
 
+        from golem.verifier import VerificationResult
+
+        _pass_vr = VerificationResult(
+            passed=True,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="",
+            duration_s=1.0,
+        )
         with patch(
             "golem.orchestrator.resolve_work_dir", return_value="/work"
         ), patch.object(orch, "_preflight_check"), patch(
@@ -743,6 +811,8 @@ class TestStreamingCallbackWiring:
         ), patch(
             "golem.orchestrator._StreamingTraceWriter"
         ) as mock_sw, patch(
+            "golem.orchestrator.run_verification", return_value=_pass_vr
+        ), patch(
             "golem.orchestrator.run_validation",
             return_value=ValidationVerdict(
                 verdict="PASS", confidence=0.9, summary="ok", task_type="f"
@@ -750,6 +820,10 @@ class TestStreamingCallbackWiring:
         ), patch(
             "golem.orchestrator.commit_changes",
             return_value=CommitResult(committed=True, sha="abc"),
+        ), patch(
+            "golem.orchestrator.save_checkpoint"
+        ), patch(
+            "golem.orchestrator.delete_checkpoint"
         ), patch.object(
             orch, "_write_report"
         ), patch.object(
@@ -1467,6 +1541,18 @@ class TestCheckpointIntegration:
 
     def _mock_deps(self):
         """Shared patches for _run_agent_monolithic."""
+        from golem.verifier import VerificationResult
+
+        _pass_verification = VerificationResult(
+            passed=True,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="10 passed",
+            duration_s=1.0,
+        )
         patches = {
             "resolve": patch(
                 "golem.orchestrator.resolve_work_dir", return_value="/work"
@@ -1478,6 +1564,10 @@ class TestCheckpointIntegration:
                     cost_usd=0.5,
                     trace_events=[{"e": 1}],
                 ),
+            ),
+            "run_verification": patch(
+                "golem.orchestrator.run_verification",
+                return_value=_pass_verification,
             ),
             "run_val": patch(
                 "golem.orchestrator.run_validation",
@@ -1513,7 +1603,11 @@ class TestCheckpointIntegration:
         deps = self._mock_deps()
         with patch("golem.orchestrator.save_checkpoint") as m_save, patch(
             "golem.orchestrator.delete_checkpoint"
-        ), deps["resolve"], deps["invoke"], deps["run_val"], deps["commit"], deps[
+        ), deps["resolve"], deps["invoke"], deps["run_verification"], deps[
+            "run_val"
+        ], deps[
+            "commit"
+        ], deps[
             "write_prompt"
         ], deps[
             "write_trace"
@@ -1594,6 +1688,7 @@ class TestCheckpointIntegration:
             with (
                 deps["resolve"],
                 deps["invoke"],
+                deps["run_verification"],
                 deps["run_val"],
                 deps["commit"],
                 deps["write_prompt"],
@@ -1622,6 +1717,8 @@ class TestCheckpointIntegration:
             side_effect=OSError("disk full"),
         ), patch("golem.orchestrator.delete_checkpoint"), deps["resolve"], deps[
             "invoke"
+        ], deps[
+            "run_verification"
         ], deps[
             "run_val"
         ], deps[
@@ -1655,7 +1752,11 @@ class TestCheckpointIntegration:
         with patch("golem.orchestrator.save_checkpoint"), patch(
             "golem.orchestrator.delete_checkpoint",
             side_effect=OSError("disk full"),
-        ), deps["resolve"], deps["invoke"], deps["run_val"], deps["commit"], deps[
+        ), deps["resolve"], deps["invoke"], deps["run_verification"], deps[
+            "run_val"
+        ], deps[
+            "commit"
+        ], deps[
             "write_prompt"
         ], deps[
             "write_trace"
@@ -1742,3 +1843,374 @@ class TestTaskSessionNewFields:
         assert session.base_work_dir == ""
         assert session.infra_retry_count == 0
         assert session.checkpoint_phase == ""
+
+
+class TestVerifyingState:
+    """Tests for the VERIFYING state and verification_result field."""
+
+    def test_verifying_state_exists(self):
+        assert TaskSessionState.VERIFYING == "verifying"
+        assert TaskSessionState("verifying") == TaskSessionState.VERIFYING
+
+    def test_verification_result_field_default(self):
+        session = TaskSession(parent_issue_id=1)
+        assert session.verification_result is None
+
+    def test_verification_result_round_trip(self):
+        vr = {
+            "passed": False,
+            "black_ok": True,
+            "black_output": "",
+            "pylint_ok": True,
+            "pylint_output": "",
+            "pytest_ok": False,
+            "pytest_output": "FAILED test_foo",
+            "test_count": 10,
+            "failures": ["test_foo.py::test_bar"],
+            "coverage_pct": 95.0,
+            "duration_s": 12.5,
+        }
+        session = TaskSession(parent_issue_id=42, verification_result=vr)
+        d = session.to_dict()
+        assert d["verification_result"] == vr
+
+        restored = TaskSession.from_dict(d)
+        assert restored.verification_result == vr
+        assert restored.verification_result["passed"] is False
+        assert restored.verification_result["failures"] == ["test_foo.py::test_bar"]
+
+    def test_verification_result_none_round_trip(self):
+        session = TaskSession(parent_issue_id=1)
+        d = session.to_dict()
+        assert d["verification_result"] is None
+        restored = TaskSession.from_dict(d)
+        assert restored.verification_result is None
+
+    def test_from_dict_missing_verification_result(self):
+        session = TaskSession.from_dict({"parent_issue_id": 1, "state": "detected"})
+        assert session.verification_result is None
+
+
+class TestFormatVerificationFeedback:
+    """Tests for _format_verification_feedback helper."""
+
+    def test_all_failures(self):
+        from golem.verifier import VerificationResult
+
+        result = VerificationResult(
+            passed=False,
+            black_ok=False,
+            black_output="would reformat foo.py",
+            pylint_ok=False,
+            pylint_output="E0001: syntax error",
+            pytest_ok=False,
+            pytest_output="FAILED test_a.py::test_x",
+            failures=["test_a.py::test_x", "test_b.py::test_y"],
+        )
+        orch = _make_orch()
+        feedback = orch._format_verification_feedback(result)
+
+        assert "Independent verification failed:" in feedback
+        assert "black --check: FAILED" in feedback
+        assert "would reformat foo.py" in feedback
+        assert "pylint: FAILED" in feedback
+        assert "E0001: syntax error" in feedback
+        assert "pytest: FAILED (2 failures)" in feedback
+        assert "test_a.py::test_x" in feedback
+        assert "test_b.py::test_y" in feedback
+
+    def test_only_black_failure(self):
+        from golem.verifier import VerificationResult
+
+        result = VerificationResult(
+            passed=False,
+            black_ok=False,
+            black_output="would reformat bar.py",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="5 passed",
+        )
+        orch = _make_orch()
+        feedback = orch._format_verification_feedback(result)
+
+        assert "black --check: FAILED" in feedback
+        assert "pylint" not in feedback.split("black --check")[0]
+        assert "pytest: FAILED" not in feedback
+
+    def test_only_pytest_failure(self):
+        from golem.verifier import VerificationResult
+
+        result = VerificationResult(
+            passed=False,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=False,
+            pytest_output="FAILED test_z.py::test_q\n1 failed",
+            failures=["test_z.py::test_q"],
+        )
+        orch = _make_orch()
+        feedback = orch._format_verification_feedback(result)
+
+        assert "black" not in feedback.lower().replace("independent", "")
+        assert "pylint" not in feedback.lower()
+        assert "pytest: FAILED (1 failures)" in feedback
+
+    def test_all_pass_minimal_output(self):
+        from golem.verifier import VerificationResult
+
+        result = VerificationResult(
+            passed=True,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="10 passed",
+        )
+        orch = _make_orch()
+        feedback = orch._format_verification_feedback(result)
+        assert feedback == "Independent verification failed:"
+
+
+class TestRunVerification:
+    """Tests for _run_verification method."""
+
+    async def test_run_verification_passes(self):
+        from golem.verifier import VerificationResult
+
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        orch = _make_orch(session)
+
+        vr = VerificationResult(
+            passed=True,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="10 passed",
+            test_count=10,
+            coverage_pct=100.0,
+            duration_s=5.0,
+        )
+        with patch("golem.orchestrator.run_verification", return_value=vr), patch(
+            "golem.orchestrator.save_checkpoint"
+        ):
+            result = await orch._run_verification("/work")
+
+        assert result.passed is True
+        assert session.state == TaskSessionState.VERIFYING
+        assert session.verification_result is not None
+        assert session.verification_result["passed"] is True
+
+    async def test_run_verification_fails(self):
+        from golem.verifier import VerificationResult
+
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        orch = _make_orch(session)
+
+        vr = VerificationResult(
+            passed=False,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=False,
+            pytest_output="1 failed",
+            test_count=5,
+            failures=["test_foo.py::test_bar"],
+            duration_s=3.0,
+        )
+        with patch("golem.orchestrator.run_verification", return_value=vr), patch(
+            "golem.orchestrator.save_checkpoint"
+        ):
+            result = await orch._run_verification("/work")
+
+        assert result.passed is False
+        assert session.verification_result["pytest_ok"] is False
+
+    async def test_run_verification_checkpoint_error_swallowed(self):
+        from golem.verifier import VerificationResult
+
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        orch = _make_orch(session)
+
+        vr = VerificationResult(
+            passed=True,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="",
+            duration_s=1.0,
+        )
+        with patch("golem.orchestrator.run_verification", return_value=vr), patch(
+            "golem.orchestrator.save_checkpoint",
+            side_effect=OSError("disk full"),
+        ):
+            result = await orch._run_verification("/work")
+
+        assert result.passed is True
+
+
+class TestVerificationInPipeline:
+    """Tests for verification wiring in _run_agent_monolithic."""
+
+    def _mock_deps(self):
+        patches = {
+            "resolve": patch(
+                "golem.orchestrator.resolve_work_dir", return_value="/work"
+            ),
+            "invoke": patch(
+                "golem.orchestrator.invoke_cli_monitored",
+                return_value=CLIResult(
+                    output={"result": "done"},
+                    cost_usd=0.5,
+                    trace_events=[{"e": 1}],
+                ),
+            ),
+            "run_val": patch(
+                "golem.orchestrator.run_validation",
+                return_value=ValidationVerdict(
+                    verdict="PASS",
+                    confidence=0.95,
+                    summary="ok",
+                    task_type="feature",
+                ),
+            ),
+            "commit": patch(
+                "golem.orchestrator.commit_changes",
+                return_value=CommitResult(committed=True, sha="def456"),
+            ),
+            "write_prompt": patch("golem.orchestrator._write_prompt"),
+            "write_trace": patch(
+                "golem.orchestrator._write_trace", return_value="/trace"
+            ),
+            "streaming_trace": patch("golem.orchestrator._StreamingTraceWriter"),
+            "preflight": patch.object(TaskOrchestrator, "_preflight_check"),
+        }
+        return patches
+
+    async def test_verification_pass_proceeds_to_validation(self):
+        from golem.verifier import VerificationResult
+
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        profile = MagicMock()
+        profile.task_source.get_task_description.return_value = "desc"
+        profile.prompt_provider.format.return_value = "prompt"
+        profile.tool_provider.servers_for_subject.return_value = []
+        orch = _make_orch(session, profile=profile)
+
+        vr = VerificationResult(
+            passed=True,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="10 passed",
+            duration_s=5.0,
+        )
+        deps = self._mock_deps()
+        with deps["resolve"], deps["invoke"], deps["run_val"] as m_val, deps[
+            "commit"
+        ], deps["write_prompt"], deps["write_trace"], deps["preflight"], patch(
+            "golem.orchestrator.run_verification", return_value=vr
+        ), patch(
+            "golem.orchestrator.save_checkpoint"
+        ), patch(
+            "golem.orchestrator.delete_checkpoint"
+        ), patch.object(
+            orch, "_write_report"
+        ), patch.object(
+            orch, "_record_run"
+        ):
+            await orch._run_agent_monolithic()
+
+        assert session.state == TaskSessionState.COMPLETED
+        m_val.assert_called_once()
+
+    async def test_verification_fail_triggers_retry(self):
+        from golem.verifier import VerificationResult
+
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        profile = MagicMock()
+        profile.task_source.get_task_description.return_value = "desc"
+        profile.prompt_provider.format.return_value = "prompt"
+        profile.tool_provider.servers_for_subject.return_value = []
+        orch = _make_orch(session, profile=profile)
+        orch._retry_agent = AsyncMock()
+
+        vr = VerificationResult(
+            passed=False,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=False,
+            pytest_output="1 failed",
+            failures=["test_x.py::test_y"],
+            duration_s=3.0,
+        )
+        deps = self._mock_deps()
+        with deps["resolve"], deps["invoke"], deps["preflight"], deps[
+            "write_prompt"
+        ], deps["write_trace"], deps["commit"], patch(
+            "golem.orchestrator.run_verification", return_value=vr
+        ), patch(
+            "golem.orchestrator.save_checkpoint"
+        ), patch(
+            "golem.orchestrator.delete_checkpoint"
+        ), patch.object(
+            orch, "_write_report"
+        ), patch.object(
+            orch, "_record_run"
+        ):
+            await orch._run_agent_monolithic()
+
+        orch._retry_agent.assert_awaited_once()
+        # Validation should NOT have been called (verification gate blocks it)
+        assert session.verification_result is not None
+        assert session.verification_result["passed"] is False
+
+    async def test_verification_fail_exhausted_retries_escalates(self):
+        from golem.verifier import VerificationResult
+
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix", retry_count=1)
+        profile = MagicMock()
+        profile.task_source.get_task_description.return_value = "desc"
+        profile.prompt_provider.format.return_value = "prompt"
+        profile.tool_provider.servers_for_subject.return_value = []
+        orch = _make_orch(session, profile=profile)
+
+        vr = VerificationResult(
+            passed=False,
+            black_ok=False,
+            black_output="reformat needed",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="",
+            duration_s=2.0,
+        )
+        deps = self._mock_deps()
+        with deps["resolve"], deps["invoke"], deps["preflight"], deps[
+            "write_prompt"
+        ], deps["write_trace"], patch(
+            "golem.orchestrator.run_verification", return_value=vr
+        ), patch(
+            "golem.orchestrator.save_checkpoint"
+        ), patch(
+            "golem.orchestrator.delete_checkpoint"
+        ), patch.object(
+            orch, "_write_report"
+        ), patch.object(
+            orch, "_record_run"
+        ):
+            await orch._run_agent_monolithic()
+
+        assert session.state == TaskSessionState.FAILED
