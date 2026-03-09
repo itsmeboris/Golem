@@ -191,9 +191,7 @@ class TestMergeOneSuccess:
         ),
     )
     @patch("golem.merge_queue.get_changed_files", return_value=[])
-    async def test_successful_merge(
-        self, _gcf, mock_miw, _ff, _rg, queue, base_entry
-    ):
+    async def test_successful_merge(self, _gcf, mock_miw, _ff, _rg, queue, base_entry):
         await queue.enqueue(base_entry)
         results = await queue.process_all()
         assert len(results) == 1
@@ -207,14 +205,13 @@ class TestMergeOneFailureNoHandler:
     @patch(
         "golem.merge_queue.merge_in_worktree",
         return_value=MergeOutcome(
-            sha="", error="merge conflict: conflicting changes",
+            sha="",
+            error="merge conflict: conflicting changes",
             merge_branch="merge-ready/1",
         ),
     )
     @patch("golem.merge_queue.get_changed_files", return_value=[])
-    async def test_no_sha_no_conflict_handler(
-        self, _gcf, _miw, queue, base_entry
-    ):
+    async def test_no_sha_no_conflict_handler(self, _gcf, _miw, queue, base_entry):
         await queue.enqueue(base_entry)
         results = await queue.process_all()
         assert results[0].success is False
@@ -229,27 +226,31 @@ class TestMergeAgentResolvesConflict:
         "golem.merge_queue.merge_in_worktree",
         side_effect=[
             MergeOutcome(
-                sha="", error="merge conflict: conflicting changes",
+                sha="",
+                error="merge conflict: conflicting changes",
                 merge_branch="merge-ready/1",
             ),
             MergeOutcome(
-                sha="resolved_sha", agent_diff="diff",
+                sha="resolved_sha",
+                agent_diff="diff",
                 merge_branch="merge-ready/1",
             ),
         ],
     )
     @patch("golem.merge_queue.get_changed_files", return_value=[])
     async def test_on_merge_agent_resolves(self, _gcf, _miw, _ff, _rg, base_entry):
-        handler = MagicMock(
-            return_value=ReconciliationResult(resolved=True)
-        )
+        handler = MagicMock(return_value=ReconciliationResult(resolved=True))
         q = MergeQueue(on_merge_agent=handler)
         await q.enqueue(base_entry)
         results = await q.process_all()
         assert results[0].success is True
         assert results[0].merge_sha == "resolved_sha"
         handler.assert_called_once_with(
-            "/repo", 1, "", ["a.py", "b.py"], [],
+            "/repo",
+            1,
+            "",
+            ["a.py", "b.py"],
+            [],
         )
 
 
@@ -257,15 +258,14 @@ class TestMergeAgentFailsConflict:
     @patch(
         "golem.merge_queue.merge_in_worktree",
         return_value=MergeOutcome(
-            sha="", error="merge conflict: conflicting changes",
+            sha="",
+            error="merge conflict: conflicting changes",
             merge_branch="merge-ready/1",
         ),
     )
     @patch("golem.merge_queue.get_changed_files", return_value=[])
     async def test_on_merge_agent_returns_false(self, _gcf, _miw, base_entry):
-        handler = MagicMock(
-            return_value=ReconciliationResult(resolved=False)
-        )
+        handler = MagicMock(return_value=ReconciliationResult(resolved=False))
         q = MergeQueue(on_merge_agent=handler)
         await q.enqueue(base_entry)
         results = await q.process_all()
@@ -278,11 +278,13 @@ class TestMergeAgentResolvesButRetryFails:
         "golem.merge_queue.merge_in_worktree",
         side_effect=[
             MergeOutcome(
-                sha="", error="merge conflict: conflicting changes",
+                sha="",
+                error="merge conflict: conflicting changes",
                 merge_branch="merge-ready/1",
             ),
             MergeOutcome(
-                sha="", error="merge conflict: still broken",
+                sha="",
+                error="merge conflict: still broken",
                 merge_branch="merge-ready/1",
             ),
         ],
@@ -291,9 +293,7 @@ class TestMergeAgentResolvesButRetryFails:
     async def test_on_merge_agent_true_but_retry_fails(
         self, _gcf, mock_miw, base_entry
     ):
-        handler = MagicMock(
-            return_value=ReconciliationResult(resolved=True)
-        )
+        handler = MagicMock(return_value=ReconciliationResult(resolved=True))
         q = MergeQueue(on_merge_agent=handler)
         await q.enqueue(base_entry)
         results = await q.process_all()
@@ -327,14 +327,13 @@ class TestMergeWithVerifyClean:
     @patch(
         "golem.merge_queue.merge_in_worktree",
         return_value=MergeOutcome(
-            sha="clean123", agent_diff="some diff",
+            sha="clean123",
+            agent_diff="some diff",
             merge_branch="merge-ready/1",
         ),
     )
     @patch("golem.merge_queue.get_changed_files", return_value=[])
-    async def test_clean_verify_succeeds(
-        self, _gcf, _miw, _ff, _rg, queue, base_entry
-    ):
+    async def test_clean_verify_succeeds(self, _gcf, _miw, _ff, _rg, queue, base_entry):
         await queue.enqueue(base_entry)
         results = await queue.process_all()
         assert results[0].success is True
@@ -423,7 +422,8 @@ class TestMergeOutcomeAgentDiffPopulated:
     @patch(
         "golem.merge_queue.merge_in_worktree",
         return_value=MergeOutcome(
-            sha="sha", agent_diff="the diff",
+            sha="sha",
+            agent_diff="the diff",
             merge_branch="merge-ready/1",
         ),
     )
@@ -456,7 +456,8 @@ class TestTransientRetry:
         side_effect=[
             subprocess.TimeoutExpired(cmd="git", timeout=30),
             MergeOutcome(
-                sha="ok_after_retry", merge_branch="merge-ready/1",
+                sha="ok_after_retry",
+                merge_branch="merge-ready/1",
             ),
         ],
     )
@@ -504,7 +505,8 @@ class TestMergeFailureResultShape:
     @patch(
         "golem.merge_queue.merge_in_worktree",
         return_value=MergeOutcome(
-            sha="", error="merge conflict: failed",
+            sha="",
+            error="merge conflict: failed",
             merge_branch="merge-ready/42",
         ),
     )
@@ -513,8 +515,10 @@ class TestMergeFailureResultShape:
         """A merge that yields an empty SHA must produce success=False."""
         q = MergeQueue()
         entry = MergeEntry(
-            session_id=42, branch_name="agent/42",
-            worktree_path="/wt", base_dir="/repo",
+            session_id=42,
+            branch_name="agent/42",
+            worktree_path="/wt",
+            base_dir="/repo",
             changed_files=["x.py"],
         )
         await q.enqueue(entry)
@@ -533,7 +537,8 @@ class TestDeferredMerge:
     @patch(
         "golem.merge_queue.merge_in_worktree",
         return_value=MergeOutcome(
-            sha="abc123", agent_diff="diff",
+            sha="abc123",
+            agent_diff="diff",
             merge_branch="merge-ready/1",
         ),
     )
@@ -548,3 +553,19 @@ class TestDeferredMerge:
         assert results[0].merge_sha == "abc123"
         assert "dirty" in results[0].error
         assert results[0].changed_files == ["a.py", "b.py"]
+
+
+class TestMergeNoNewCommits:
+    """When merge_in_worktree finds no new commits, return success without ff."""
+
+    @patch(
+        "golem.merge_queue.merge_in_worktree",
+        return_value=MergeOutcome(sha="head123"),
+    )
+    @patch("golem.merge_queue.get_changed_files", return_value=[])
+    async def test_no_commits_returns_success(self, _gcf, _miw, queue, base_entry):
+        await queue.enqueue(base_entry)
+        results = await queue.process_all()
+        assert results[0].success is True
+        assert results[0].merge_sha == "head123"
+        assert results[0].deferred is False

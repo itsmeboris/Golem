@@ -148,13 +148,17 @@ class MergeQueue:
             if not outcome.sha and outcome.error:
                 if self._on_merge_agent and outcome.merge_branch:
                     recon = self._on_merge_agent(
-                        entry.base_dir, entry.session_id,
-                        outcome.agent_diff, entry.changed_files, [],
+                        entry.base_dir,
+                        entry.session_id,
+                        outcome.agent_diff,
+                        entry.changed_files,
+                        [],
                     )
                     if recon.resolved:
                         # Agent resolved — retry merge
                         outcome2 = merge_in_worktree(
-                            entry.base_dir, entry.session_id,
+                            entry.base_dir,
+                            entry.session_id,
                         )
                         if outcome2.sha:
                             return self._try_ff(entry, outcome2)
@@ -166,7 +170,8 @@ class MergeQueue:
                         return MergeResult(
                             session_id=entry.session_id,
                             success=False,
-                            error=outcome2.error or "merge failed after agent resolution",
+                            error=outcome2.error
+                            or "merge failed after agent resolution",
                             conflict_files=entry.changed_files,
                         )
 
@@ -191,7 +196,8 @@ class MergeQueue:
                         len(outcome.missing_additions),
                     )
                     recon = self._on_merge_agent(
-                        entry.base_dir, entry.session_id,
+                        entry.base_dir,
+                        entry.session_id,
                         outcome.agent_diff,
                         [m.file for m in outcome.missing_additions],
                         outcome.missing_additions,
@@ -227,6 +233,15 @@ class MergeQueue:
 
             # --- Merge succeeded (no missing or reconciliation passed) ---
             if outcome.sha:
+                # No merge branch means no-new-commits (already on HEAD)
+                if not outcome.merge_branch:
+                    return MergeResult(
+                        session_id=entry.session_id,
+                        success=True,
+                        merge_sha=outcome.sha,
+                        changed_files=entry.changed_files,
+                    )
+
                 return self._try_ff(entry, outcome)
 
             # Empty sha with no error — no changes to merge
