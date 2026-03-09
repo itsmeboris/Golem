@@ -414,6 +414,13 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
     async def api_config() -> JSONResponse:
         return JSONResponse(content=config_snapshot)
 
+    @app.get("/api/analytics")
+    async def api_analytics() -> JSONResponse:
+        from ..analytics import compute_analytics
+
+        runs = await asyncio.to_thread(read_runs, limit=1000)
+        return JSONResponse(content=compute_analytics(runs))
+
     @app.get("/api/trace/{event_id:path}")
     async def api_trace(event_id: str) -> JSONResponse:
         paths = _resolve_paths(event_id)
