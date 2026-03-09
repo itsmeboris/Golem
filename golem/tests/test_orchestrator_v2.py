@@ -1935,7 +1935,7 @@ class TestFormatVerificationFeedback:
         feedback = orch._format_verification_feedback(result)
 
         assert "black --check: FAILED" in feedback
-        assert "pylint" not in feedback.split("black --check")[0]
+        assert "pylint" not in feedback.split("black --check", maxsplit=1)[0]
         assert "pytest: FAILED" not in feedback
 
     def test_only_pytest_failure(self):
@@ -2116,18 +2116,19 @@ class TestVerificationInPipeline:
             duration_s=5.0,
         )
         deps = self._mock_deps()
-        with deps["resolve"], deps["invoke"], deps["run_val"] as m_val, deps[
-            "commit"
-        ], deps["write_prompt"], deps["write_trace"], deps["preflight"], patch(
-            "golem.orchestrator.run_verification", return_value=vr
-        ), patch(
-            "golem.orchestrator.save_checkpoint"
-        ), patch(
-            "golem.orchestrator.delete_checkpoint"
-        ), patch.object(
-            orch, "_write_report"
-        ), patch.object(
-            orch, "_record_run"
+        with (
+            deps["resolve"],
+            deps["invoke"],
+            deps["run_val"] as m_val,
+            deps["commit"],
+            deps["write_prompt"],
+            deps["write_trace"],
+            deps["preflight"],
+            patch("golem.orchestrator.run_verification", return_value=vr),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch("golem.orchestrator.delete_checkpoint"),
+            patch.object(orch, "_write_report"),
+            patch.object(orch, "_record_run"),
         ):
             await orch._run_agent_monolithic()
 

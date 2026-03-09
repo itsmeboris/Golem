@@ -129,7 +129,7 @@ class TestRunVerification:
     @patch("golem.verifier.subprocess.run")
     def test_all_three_run_even_if_first_fails(self, mock_run):
         mock_run.return_value = MagicMock(returncode=1, stdout="error", stderr="")
-        result = run_verification("/tmp/workdir")
+        _ = run_verification("/tmp/workdir")
         assert mock_run.call_count == 3  # all three still run
 
     @patch("golem.verifier.subprocess.run")

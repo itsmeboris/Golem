@@ -417,7 +417,7 @@ class TestNewAntipatterns:
 +        ev_type = ev["kind"]
 """
         # The regex is a heuristic; the reviewer (LLM) makes the final decision.
-        concerns = scan_diff_antipatterns(diff)
+        _ = scan_diff_antipatterns(diff)
         # We accept that the regex may still flag it — it's a soft signal.
 
     def test_bracket_dict_access_flagged(self):

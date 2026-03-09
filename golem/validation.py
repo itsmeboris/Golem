@@ -209,7 +209,7 @@ _STRING_CONTROL_RE = re.compile(
 
 # Raw dict key access via .get("key" or ["key"] — heuristic soft signal
 _RAW_DICT_ACCESS_RE = re.compile(
-    r'\.get\(\s*["\'][a-z_]+["\']\s*' r"|" r'\[["\'][a-z_]+["\']\]'
+    r'\.get\(\s*["\'][a-z_]+["\']\s*' + r"|" + r'\[["\'][a-z_]+["\']\]'
 )
 
 
@@ -417,7 +417,7 @@ def _parse_validation_output(result: Any) -> ValidationVerdict:
     )
 
 
-def run_validation(
+def run_validation(  # pylint: disable=too-many-locals
     issue_id: int,
     subject: str,
     description: str,
