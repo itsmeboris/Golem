@@ -1329,12 +1329,17 @@ function stageSummaryText(st) {
       if (m.depends && m.depends.length) parts.push(m.depends.length + ' deps');
       return parts.join(' \u00B7 ');
     }
-    case 'scout':
-    case 'review':
+    case 'scout': {
+      const reads = (st.events || []).filter(e => (e.kind || e.type) === 'tool_call' && /^(Read|Glob|Grep|LS)$/i.test(e.tool_name)).length;
+      return reads ? reads + ' files examined' : (m.milestones ? m.milestones + ' events' : '');
+    }
+    case 'review': {
+      const texts = (st.events || []).filter(e => (e.kind || e.type) === 'text').length;
+      return texts ? texts + ' findings' : (m.milestones ? m.milestones + ' events' : '');
+    }
     case 'verify': {
-      const parts = [];
-      if (m.milestones) parts.push(m.milestones + ' events');
-      return parts.join(' \u00B7 ');
+      const tools = (st.events || []).filter(e => (e.kind || e.type) === 'tool_call' && /^Bash$/i.test(e.tool_name)).length;
+      return tools ? tools + ' checks' : (m.milestones ? m.milestones + ' events' : '');
     }
     case 'build':
     case 'execution': {
@@ -1977,12 +1982,19 @@ async function toggleLiveDetail(rowEl) {
     return;
   }
 
-  /* Render full text with basic code block handling */
-  let rendered = esc(text);
-  /* Convert ```...``` fenced code blocks to styled sections */
-  rendered = rendered.replace(/```(\w*)\n([\s\S]*?)```/g,
-    '<code style="background:var(--bg-surface);padding:2px 6px;border-radius:3px;display:block;margin:0.5em 0">$2</code>');
-  panel.innerHTML = `<pre>${rendered}</pre>`;
+  /* Render full text with basic code block handling.
+     Split on fenced code blocks BEFORE escaping so <> inside code blocks survive. */
+  const parts = text.split(/(```\w*\n[\s\S]*?```)/g);
+  let rendered = '';
+  for (const part of parts) {
+    const m = part.match(/^```\w*\n([\s\S]*?)```$/);
+    if (m) {
+      rendered += '<code style="background:var(--bg-surface);padding:2px 6px;border-radius:3px;display:block;margin:0.5em 0;white-space:pre">' + esc(m[1]) + '</code>';
+    } else {
+      rendered += esc(part);
+    }
+  }
+  panel.innerHTML = `<pre style="white-space:pre-wrap">${rendered}</pre>`;
 }
 
 /* ── Accordion / Tree View ─────────────────────────────────── */
