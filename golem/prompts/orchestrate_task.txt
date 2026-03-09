@@ -76,6 +76,17 @@ Tell Scouts to invoke any relevant skills before searching. Skills can provide
 codebase maps, structural search techniques (e.g., AST-based search), or domain
 knowledge that makes scouting targeted instead of brute-force.
 
+### Bug-Fix Tasks: Reproduction Test First
+
+If the task subject or description describes a **bug**, **error**, **crash**, or **regression**:
+
+1. Before fixing the code, write a **minimal reproduction test** that demonstrates the bug
+2. Run it — it MUST fail on the current code (this proves the test catches the bug)
+3. Then fix the code and verify the test passes
+
+This ensures the fix actually addresses the reported issue, not just a guess about what's wrong.
+Name the test descriptively: `test_repro_<brief_description>` or `test_regression_<brief_description>`.
+
 ### Phase 2: Plan
 Using Scout findings (and optionally reading files yourself), decide:
 - What files need to change

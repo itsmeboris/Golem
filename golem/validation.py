@@ -182,6 +182,30 @@ def get_git_diff(work_dir: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Reproduction test detection
+# ---------------------------------------------------------------------------
+
+_NEW_TEST_RE = re.compile(r"^\+\s*def (test_\w+)", re.MULTILINE)
+_TEST_FILE_RE = re.compile(r"^\+\+\+ b/.*/test_\w+\.py", re.MULTILINE)
+
+
+def detect_reproduction_test(diff_text: str) -> bool:
+    """Check whether a diff adds at least one new test function in a test file.
+
+    Returns True if the diff contains a new ``def test_*`` line within a
+    file matching ``*/test_*.py``. This is a lightweight heuristic — the
+    reviewer performs deeper analysis.
+    """
+    if not diff_text:
+        return False
+    # Check if any test file was modified
+    if not _TEST_FILE_RE.search(diff_text):
+        return False
+    # Check if a new test function was added
+    return bool(_NEW_TEST_RE.search(diff_text))
+
+
+# ---------------------------------------------------------------------------
 # Static antipattern detection
 # ---------------------------------------------------------------------------
 

@@ -59,6 +59,12 @@ successfully completed task #{issue_id}.
    - For cross-module features, verify at least one test exercises the real
      producer -> consumer path end-to-end
 
+9. **Reproduction Test** (bug-fix tasks only): If the task subject contains words
+   like "fix", "bug", "error", "crash", "regression", or "broken", check the diff
+   for at least one new test function. Bug fixes without reproduction tests have
+   lower confidence that the fix addresses the actual issue. If no reproduction test
+   is found, flag in concerns and lower confidence by 0.10.
+
 ## Required Output
 
 Respond with ONLY this JSON structure (no other text):
