@@ -395,9 +395,6 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
                 "golem.orchestrator.create_worktree", return_value="/wt"
             ),
             "cleanup_wt": patch("golem.orchestrator.cleanup_worktree"),
-            "merge_wt": patch(
-                "golem.orchestrator.merge_and_cleanup", return_value="abc123"
-            ),
             "invoke": patch(
                 "golem.orchestrator.invoke_cli_monitored",
                 return_value=CLIResult(

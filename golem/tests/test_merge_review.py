@@ -10,11 +10,8 @@ from golem.merge_review import (
     _format_current_files,
     _format_missing_summary,
     _get_short_sha,
-    _read_conflict_content,
     _read_file_content,
-    run_conflict_resolution,
     run_merge_agent,
-    run_merge_reconciliation,
 )
 from golem.worktree_manager import MissingAddition
 
@@ -92,17 +89,6 @@ class TestFormatCurrentFiles:
         assert "foo.py" in result
 
 
-class TestReadConflictContent:
-    def test_reads_files(self, tmp_path):
-        (tmp_path / "a.py").write_text("<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>>")
-        result = _read_conflict_content(str(tmp_path), ["a.py"])
-        assert "<<<<<<< HEAD" in result
-
-    def test_missing_file(self, tmp_path):
-        result = _read_conflict_content(str(tmp_path), ["gone.py"])
-        assert "does not exist" in result
-
-
 class TestGetShortSha:
     def test_returns_sha(self, monkeypatch):
         mock_result = MagicMock()
@@ -113,101 +99,11 @@ class TestGetShortSha:
         assert _get_short_sha("/repo") == "abc1234"
 
 
-class TestRunMergeReconciliation:
-    def test_nothing_missing_returns_resolved(self):
-        result = run_merge_reconciliation("/repo", "diff", [])
-        assert result.resolved is True
-        assert result.explanation == "nothing missing"
-
-    @patch("golem.merge_review._get_short_sha", return_value="fix123")
-    @patch("golem.merge_review.invoke_cli")
-    def test_resolved(self, mock_cli, _sha, tmp_path, sample_missing, sample_diff):
-        (tmp_path / "foo.py").write_text("existing")
-        mock_cli.return_value = MagicMock(
-            output={"result": {"resolved": True, "explanation": "re-applied"}}
-        )
-        result = run_merge_reconciliation(
-            str(tmp_path), sample_diff, sample_missing, budget_usd=0.5
-        )
-        assert result.resolved is True
-        assert result.commit_sha == "fix123"
-        assert result.explanation == "re-applied"
-        mock_cli.assert_called_once()
-
-    @patch("golem.merge_review.invoke_cli")
-    def test_not_resolved(self, mock_cli, tmp_path, sample_missing, sample_diff):
-        (tmp_path / "foo.py").write_text("existing")
-        mock_cli.return_value = MagicMock(
-            output={"result": {"resolved": False, "explanation": "diverged too far"}}
-        )
-        result = run_merge_reconciliation(str(tmp_path), sample_diff, sample_missing)
-        assert result.resolved is False
-        assert "diverged" in result.explanation
-
-    @patch("golem.merge_review.invoke_cli")
-    def test_string_output_parsed(
-        self, mock_cli, tmp_path, sample_missing, sample_diff
-    ):
-        (tmp_path / "foo.py").write_text("existing")
-        mock_cli.return_value = MagicMock(
-            output={"result": '{"resolved": false, "explanation": "nope"}'}
-        )
-        result = run_merge_reconciliation(str(tmp_path), sample_diff, sample_missing)
-        assert result.resolved is False
-
-    @patch("golem.merge_review.invoke_cli", side_effect=RuntimeError("boom"))
-    def test_agent_error(self, _cli, tmp_path, sample_missing, sample_diff):
-        (tmp_path / "foo.py").write_text("existing")
-        result = run_merge_reconciliation(str(tmp_path), sample_diff, sample_missing)
-        assert result.resolved is False
-        assert "agent error" in result.explanation
-
-
-class TestRunConflictResolution:
-    def test_no_conflicts_returns_resolved(self):
-        result = run_conflict_resolution("/repo", [])
-        assert result.resolved is True
-        assert result.explanation == "no conflicts"
-
-    @patch("golem.merge_review.invoke_cli")
-    def test_resolved(self, mock_cli, tmp_path):
-        (tmp_path / "c.py").write_text("conflict content")
-        mock_cli.return_value = MagicMock(
-            output={"result": {"resolved": True, "explanation": "merged both sides"}}
-        )
-        result = run_conflict_resolution(str(tmp_path), ["c.py"], budget_usd=0.5)
-        assert result.resolved is True
-        assert "merged" in result.explanation
-
-    @patch("golem.merge_review.invoke_cli")
-    def test_not_resolved(self, mock_cli, tmp_path):
-        (tmp_path / "c.py").write_text("conflict content")
-        mock_cli.return_value = MagicMock(
-            output={"result": {"resolved": False, "explanation": "too complex"}}
-        )
-        result = run_conflict_resolution(str(tmp_path), ["c.py"])
-        assert result.resolved is False
-
-    @patch("golem.merge_review.invoke_cli")
-    def test_string_output_parsed(self, mock_cli, tmp_path):
-        (tmp_path / "c.py").write_text("conflict content")
-        mock_cli.return_value = MagicMock(
-            output={"result": '{"resolved": true, "explanation": "ok"}'}
-        )
-        result = run_conflict_resolution(str(tmp_path), ["c.py"])
-        assert result.resolved is True
-
-    @patch("golem.merge_review.invoke_cli", side_effect=RuntimeError("crash"))
-    def test_agent_error(self, _cli, tmp_path):
-        (tmp_path / "c.py").write_text("conflict content")
-        result = run_conflict_resolution(str(tmp_path), ["c.py"])
-        assert result.resolved is False
-        assert "agent error" in result.explanation
-
-
 class TestRunMergeAgent:
     def test_no_conflicts_or_missing_returns_resolved(self):
-        result = run_merge_agent("/repo", 123, agent_diff="diff", conflict_files=[], missing=[])
+        result = run_merge_agent(
+            "/repo", 123, agent_diff="diff", conflict_files=[], missing=[]
+        )
         assert result.resolved is True
         assert result.explanation == "nothing to resolve"
 
@@ -219,8 +115,11 @@ class TestRunMergeAgent:
             output={"result": {"resolved": True, "explanation": "merged both sides"}}
         )
         result = run_merge_agent(
-            str(tmp_path), 123, agent_diff="diff",
-            conflict_files=["c.py"], missing=[],
+            str(tmp_path),
+            123,
+            agent_diff="diff",
+            conflict_files=["c.py"],
+            missing=[],
         )
         assert result.resolved is True
         assert result.commit_sha == "fix123"
@@ -232,8 +131,11 @@ class TestRunMergeAgent:
             output={"result": {"resolved": False, "explanation": "too complex"}}
         )
         result = run_merge_agent(
-            str(tmp_path), 123, agent_diff="diff",
-            conflict_files=["c.py"], missing=[],
+            str(tmp_path),
+            123,
+            agent_diff="diff",
+            conflict_files=["c.py"],
+            missing=[],
         )
         assert result.resolved is False
 
@@ -241,8 +143,11 @@ class TestRunMergeAgent:
     def test_agent_error(self, _cli, tmp_path):
         (tmp_path / "c.py").write_text("content")
         result = run_merge_agent(
-            str(tmp_path), 123, agent_diff="diff",
-            conflict_files=["c.py"], missing=[],
+            str(tmp_path),
+            123,
+            agent_diff="diff",
+            conflict_files=["c.py"],
+            missing=[],
         )
         assert result.resolved is False
         assert "agent error" in result.explanation
@@ -255,8 +160,17 @@ class TestRunMergeAgent:
             output={"result": {"resolved": True, "explanation": "re-applied additions"}}
         )
         result = run_merge_agent(
-            str(tmp_path), 123, agent_diff="diff",
-            conflict_files=[], missing=[MissingAddition(file="m.py", expected_lines=["+code"], description="missing addition")],
+            str(tmp_path),
+            123,
+            agent_diff="diff",
+            conflict_files=[],
+            missing=[
+                MissingAddition(
+                    file="m.py",
+                    expected_lines=["+code"],
+                    description="missing addition",
+                )
+            ],
         )
         assert result.resolved is True
 
@@ -268,7 +182,10 @@ class TestRunMergeAgent:
             output={"result": '{"resolved": true, "explanation": "fixed"}'}
         )
         result = run_merge_agent(
-            str(tmp_path), 123, agent_diff="diff",
-            conflict_files=["c.py"], missing=[],
+            str(tmp_path),
+            123,
+            agent_diff="diff",
+            conflict_files=["c.py"],
+            missing=[],
         )
         assert result.resolved is True

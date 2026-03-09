@@ -8,13 +8,14 @@ Lifecycle:
     1. ``create_worktree(base_dir, issue_id)`` → creates a worktree + branch
     2. Agent works in the worktree directory
     3. Committer commits changes in the worktree (on the agent branch)
-    4. ``merge_and_cleanup(base_dir, issue_id, worktree_path)`` → merges the
-       branch back to the original HEAD and removes the worktree
+    4. ``merge_in_worktree(base_dir, issue_id)`` → merges the branch in a
+       temporary worktree; ``fast_forward_if_safe()`` lands the result.
 
 Key exports:
-    create_worktree  — set up an isolated worktree for a session
-    merge_and_cleanup — merge the worktree branch back and clean up
-    cleanup_worktree — remove a worktree without merging (for failures)
+    create_worktree      — set up an isolated worktree for a session
+    merge_in_worktree    — merge the agent branch in a disposable worktree
+    fast_forward_if_safe — land the merge result onto the current branch
+    cleanup_worktree     — remove a worktree without merging (for failures)
 """
 
 import logging
@@ -138,138 +139,6 @@ def create_worktree(
     return worktree_path
 
 
-def merge_and_cleanup(
-    base_dir: str,
-    issue_id: int,
-    worktree_path: str,
-) -> "MergeOutcome":
-    """Merge the worktree branch back to the base branch and clean up.
-
-    Parameters
-    ----------
-    base_dir
-        Path to the main git repository.
-    issue_id
-        Redmine issue ID.
-    worktree_path
-        Path to the worktree directory.
-
-    Returns
-    -------
-    MergeOutcome
-        ``sha`` contains the merge commit SHA (short), or the current HEAD if
-        no changes to merge, or empty string if merge failed.
-        ``missing_additions`` lists any agent additions lost during the merge.
-        ``agent_diff`` is the raw unified diff captured before the merge.
-    """
-    branch_name = f"agent/{issue_id}"
-    target_branch = _current_branch(base_dir)
-
-    # Check if the agent branch has any commits beyond the base
-    result = _run_git(
-        ["log", f"{target_branch}..{branch_name}", "--oneline"],
-        cwd=base_dir,
-    )
-    if not result.stdout.strip():
-        logger.info("Session #%s: no new commits to merge", issue_id)
-        # Return current HEAD — "nothing to merge" is a success, not a failure.
-        sha_result = _run_git(["rev-parse", "--short", "HEAD"], cwd=base_dir)
-        sha = sha_result.stdout.strip()
-        _cleanup_worktree_impl(base_dir, worktree_path, branch_name)
-        return MergeOutcome(sha=sha)
-
-    # Capture the agent diff and changed files before removing the worktree.
-    agent_diff = get_agent_diff(base_dir, branch_name)
-    changed_files = get_changed_files(base_dir, branch_name, target_branch)
-
-    # Remove the worktree first so the branch is no longer "checked out"
-    # — git refuses to rebase a branch that is in use by a worktree.
-    # Use a longer timeout: NFS mounts can be slow to release .nfs* files.
-    _run_git(
-        ["worktree", "remove", "--force", worktree_path], cwd=base_dir, timeout=120
-    )
-
-    # Rebase the agent branch onto the current target so that concurrent
-    # tasks whose branches forked from an older HEAD can be fast-forwarded.
-    # This handles the common case where two tasks modify non-overlapping
-    # files.  On genuine conflicts the rebase fails and we preserve the
-    # branch for manual recovery.
-    rebase_result = _run_git(["rebase", target_branch, branch_name], cwd=base_dir)
-    if rebase_result.returncode != 0:
-        logger.warning(
-            "Session #%s: rebase onto %s failed — %s",
-            issue_id,
-            target_branch,
-            rebase_result.stderr.strip(),
-        )
-        _run_git(["rebase", "--abort"], cwd=base_dir)
-
-    # `git rebase target branch` leaves us on `branch` — switch back to
-    # the target so that the merge operates on the correct base.
-    _run_git(["checkout", target_branch], cwd=base_dir)
-
-    # Stash local changes in the base repo if needed.
-    stashed = _stash_if_dirty(base_dir, issue_id)
-
-    # Try fast-forward merge first (will succeed after a clean rebase)
-    merge_result = _run_git(
-        ["merge", "--ff-only", branch_name],
-        cwd=base_dir,
-    )
-    if merge_result.returncode != 0:
-        # Fast-forward failed — try a regular merge
-        logger.info(
-            "Session #%s: fast-forward failed, attempting regular merge",
-            issue_id,
-        )
-        merge_result = _run_git(
-            [
-                "merge",
-                branch_name,
-                "--no-edit",
-                "-m",
-                f"Merge agent/{issue_id} session work",
-            ],
-            cwd=base_dir,
-        )
-
-    sha = ""
-    if merge_result.returncode == 0:
-        sha_result = _run_git(["rev-parse", "--short", "HEAD"], cwd=base_dir)
-        sha = sha_result.stdout.strip()
-        logger.info(
-            "Session #%s: merged branch %s → %s",
-            issue_id,
-            branch_name,
-            sha,
-        )
-        missing = verify_merge_integrity(base_dir, agent_diff, changed_files)
-        if missing:
-            logger.warning(
-                "Session #%s: %d file(s) have missing additions after merge",
-                issue_id,
-                len(missing),
-            )
-            for m in missing:
-                logger.warning("  %s: %s", m.file, m.description)
-    else:
-        logger.error(
-            "Session #%s: merge failed: %s",
-            issue_id,
-            merge_result.stderr.strip(),
-        )
-        cleanup_worktree(base_dir, worktree_path, keep_branch=True)
-        _unstash(base_dir, stashed, issue_id)
-        return MergeOutcome(sha="", agent_diff=agent_diff)
-
-    _unstash(base_dir, stashed, issue_id)
-    # Worktree was removed before rebase; just prune stale entries and
-    # delete the branch now that the merge is complete.
-    _run_git(["worktree", "prune"], cwd=base_dir)
-    _run_git(["branch", "-D", branch_name], cwd=base_dir)
-    return MergeOutcome(sha=sha, missing_additions=missing, agent_diff=agent_diff)
-
-
 def merge_in_worktree(
     base_dir: str,
     issue_id: int,
@@ -337,30 +206,40 @@ def merge_in_worktree(
     if wt_result.returncode != 0:
         logger.error(
             "Session #%s: failed to create merge worktree: %s",
-            issue_id, wt_result.stderr.strip(),
+            issue_id,
+            wt_result.stderr.strip(),
         )
         return MergeOutcome(
-            sha="", agent_diff=agent_diff,
+            sha="",
+            agent_diff=agent_diff,
             error=f"merge worktree creation failed: {wt_result.stderr.strip()}",
         )
 
     try:
         # Merge agent branch into the merge worktree
         merge_result = _run_git(
-            ["merge", branch_name, "--no-edit",
-             "-m", f"Merge agent/{issue_id} session work"],
+            [
+                "merge",
+                branch_name,
+                "--no-edit",
+                "-m",
+                f"Merge agent/{issue_id} session work",
+            ],
             cwd=merge_wt_path,
         )
 
         if merge_result.returncode != 0:
             logger.warning(
                 "Session #%s: merge conflict in worktree: %s",
-                issue_id, merge_result.stderr.strip(),
+                issue_id,
+                merge_result.stderr.strip(),
             )
             # Abort the failed merge in the worktree
             _run_git(["merge", "--abort"], cwd=merge_wt_path)
             return MergeOutcome(
-                sha="", agent_diff=agent_diff, merge_branch=merge_branch,
+                sha="",
+                agent_diff=agent_diff,
+                merge_branch=merge_branch,
                 error=f"merge conflict: {merge_result.stderr.strip()}",
             )
 
@@ -372,20 +251,24 @@ def merge_in_worktree(
         if missing:
             logger.warning(
                 "Session #%s: %d file(s) have missing additions after merge",
-                issue_id, len(missing),
+                issue_id,
+                len(missing),
             )
 
         logger.info("Session #%s: merged in worktree → %s", issue_id, sha)
         return MergeOutcome(
-            sha=sha, missing_additions=missing,
-            agent_diff=agent_diff, merge_branch=merge_branch,
+            sha=sha,
+            missing_additions=missing,
+            agent_diff=agent_diff,
+            merge_branch=merge_branch,
         )
 
     finally:
         # Always clean up the merge worktree
         _run_git(
             ["worktree", "remove", "--force", merge_wt_path],
-            cwd=base_dir, timeout=120,
+            cwd=base_dir,
+            timeout=120,
         )
         _run_git(["worktree", "prune"], cwd=base_dir)
 
@@ -420,31 +303,6 @@ def fast_forward_if_safe(
         return False, f"branches diverged: {output}"
 
     return False, f"ff-only failed: {output}"
-
-
-def _stash_if_dirty(base_dir: str, issue_id: int) -> bool:
-    """Stash uncommitted changes in *base_dir*.  Returns True if stashed."""
-    status = _run_git(["status", "--porcelain"], cwd=base_dir)
-    if not (status.stdout or "").strip():
-        return False
-    logger.info("Session #%s: stashing dirty working tree before merge", issue_id)
-    sr = _run_git(
-        ["stash", "push", "-m", f"auto-stash for agent/{issue_id} merge"],
-        cwd=base_dir,
-    )
-    return sr.returncode == 0 and "No local changes" not in (sr.stdout or "")
-
-
-def _unstash(base_dir: str, stashed: bool, issue_id: int) -> None:
-    """Pop the stash if we stashed earlier."""
-    if not stashed:
-        return
-    pop = _run_git(["stash", "pop"], cwd=base_dir)
-    if pop.returncode != 0:
-        logger.warning(
-            "Session #%s: stash pop had conflicts — resolve manually",
-            issue_id,
-        )
 
 
 def get_changed_files(
