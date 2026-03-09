@@ -124,11 +124,33 @@ golem run 12345
 # Start the daemon in the foreground (for debugging/monitoring)
 golem daemon --foreground
 
-# Check what's running
+# Check what's running — daemon health, active tasks, queue, recent history
 golem status
 
 # Launch the web dashboard
 golem dashboard --port 8081
+```
+
+**`golem status` output:**
+
+```
+=== Golem Status (last 24h — golem) ===
+  Daemon:       running (PID 48201)
+
+  Uptime:       1h 23m 0s
+
+  ACTIVE:
+    # 1001  First-run config wizard (golem init)
+           Phase: orchestrating  Model: opus  Elapsed: 4m 12s  Cost: $1.24
+
+  Queue:        0 waiting
+
+  RECENT:
+    [OK  ]  2m 0s ago  #  998  Fix login bug                     $0.82  1m 45s
+    [FAIL]  18m 0s ago #  997  Add retry logic                   $2.10  5m 30s
+
+  HISTORY:
+    Total: 47  Success: 89.4%  Avg: 2m 22s  Cost: $15.82
 ```
 
 ---
