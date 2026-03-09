@@ -2,6 +2,8 @@
 
 # pylint: disable=missing-class-docstring,missing-function-docstring
 
+from golem.types import MilestoneDict, TrackerExportDict
+
 from golem.event_tracker import (
     TaskEventTracker,
     _short_path,
@@ -475,3 +477,38 @@ class TestTextMilestoneTruncation:
         tool_events = [e for e in data["event_log"] if e["kind"] == "tool_call"]
         assert len(tool_events) == 1
         assert "full_text" not in tool_events[0]
+
+
+class TestTrackerExportContract:
+    """Verify that to_dict() output matches the TrackerExportDict contract."""
+
+    def test_to_dict_matches_tracker_export_dict(self):
+        tracker = TaskEventTracker(session_id=1)
+        event = {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "Read",
+                        "id": "x",
+                        "input": {"file_path": "/tmp/foo.py"},
+                    }
+                ]
+            },
+        }
+        tracker.handle_event(event)
+        result = tracker.to_dict()
+
+        # Verify all TrackerExportDict required keys are present
+        # pylint: disable=no-member
+        required_keys = TrackerExportDict.__required_keys__
+        for key in required_keys:
+            assert key in result, f"Missing key: {key}"
+        assert isinstance(result["session_id"], int)
+
+        # Verify event_log entries match MilestoneDict
+        assert len(result["event_log"]) == 1
+        entry = result["event_log"][0]
+        for key in MilestoneDict.__required_keys__:
+            assert key in entry, f"Missing event_log key: {key}"

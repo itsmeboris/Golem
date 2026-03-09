@@ -11,6 +11,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from .core.run_log import format_duration
+from .types import MilestoneDict, TrackerExportDict
 
 logger = logging.getLogger("golem.event_tracker")
 
@@ -380,8 +381,21 @@ class TaskEventTracker:
                 return [blocks]
         return []
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> TrackerExportDict:
         """Serialize tracker state for persistence."""
+
+        def _milestone_to_dict(m: Milestone) -> MilestoneDict:
+            entry: MilestoneDict = {
+                "kind": m.kind,
+                "tool_name": m.tool_name,
+                "summary": m.summary,
+                "timestamp": m.timestamp,
+                "is_error": m.is_error,
+            }
+            if m.full_text:
+                entry["full_text"] = m.full_text
+            return entry
+
         return {
             "session_id": self.session_id,
             "tools_called": self.state.tools_called,
@@ -392,15 +406,5 @@ class TaskEventTracker:
             "cost_usd": self.state.cost_usd,
             "milestone_count": self.state.milestone_count,
             "finished": self.state.finished,
-            "event_log": [
-                {
-                    "kind": m.kind,
-                    "tool_name": m.tool_name,
-                    "summary": m.summary,
-                    **({"full_text": m.full_text} if m.full_text else {}),
-                    "timestamp": m.timestamp,
-                    "is_error": m.is_error,
-                }
-                for m in self.state.event_log
-            ],
+            "event_log": [_milestone_to_dict(m) for m in self.state.event_log],
         }
