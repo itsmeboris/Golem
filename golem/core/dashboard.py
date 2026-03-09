@@ -18,6 +18,12 @@ from .live_state import LiveState, read_live_snapshot
 from .run_log import format_duration, read_runs
 from ..event_tracker import _summarize_tool_input
 from ..orchestrator import load_sessions
+from ..types import (
+    ActiveTaskDict,
+    ConfigSnapshotDict,
+    LiveSnapshotDict,
+    RunRecordDict,
+)
 
 logger = logging.getLogger("golem.core.dashboard")
 
@@ -247,7 +253,7 @@ def _parse_trace_terminal(trace_path: Path) -> tuple[list[dict], dict]:
     return events, stats
 
 
-def _aggregate_stats(runs: list[dict]) -> dict[str, Any]:
+def _aggregate_stats(runs: list[RunRecordDict]) -> dict[str, Any]:
     total = len(runs)
     if total == 0:
         return {
@@ -301,7 +307,7 @@ def _aggregate_stats(runs: list[dict]) -> dict[str, Any]:
     }
 
 
-def config_to_snapshot(config: Any) -> dict:
+def config_to_snapshot(config: Any) -> ConfigSnapshotDict | dict:
     """Extract a JSON-safe snapshot of Config for the dashboard.
 
     Accepts the Config dataclass or None.  Returns a plain dict with
@@ -590,7 +596,7 @@ def _resolve_subject(eid: str, sessions: dict, max_len: int = 50) -> tuple[str, 
     return num or "?", subject
 
 
-def _format_active_task(task: dict, sessions: dict) -> list[str]:
+def _format_active_task(task: ActiveTaskDict, sessions: dict) -> list[str]:
     """Format a single active task as two display lines."""
     num, subject = _resolve_subject(task["event_id"], sessions, max_len=50)
     elapsed = format_duration(task.get("elapsed_s", 0))
@@ -604,7 +610,7 @@ def _format_active_task(task: dict, sessions: dict) -> list[str]:
 
 
 def _format_live_section(
-    snap: dict, sessions: dict[int, Any] | None = None
+    snap: LiveSnapshotDict, sessions: dict[int, Any] | None = None
 ) -> list[str]:
     """Build the LIVE block for CLI status output."""
     sessions = sessions if sessions is not None else {}
@@ -749,7 +755,9 @@ def format_task_detail_text(task_id: int) -> str:
     return "\n".join(lines)
 
 
-def _format_recent_runs(runs: list[dict], sessions: dict[int, Any]) -> list[str]:
+def _format_recent_runs(
+    runs: list[RunRecordDict], sessions: dict[int, Any]
+) -> list[str]:
     """Format the recent runs section for CLI status output."""
     if not runs:
         return []

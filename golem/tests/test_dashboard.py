@@ -28,6 +28,7 @@ from golem.core.dashboard import (
     mount_dashboard,
 )
 from golem.orchestrator import TaskSession, TaskSessionState
+from golem.types import MilestoneDict
 
 
 # ---------------------------------------------------------------------------
@@ -1127,6 +1128,31 @@ class TestFormatTaskDetailText:
         result = format_task_detail_text(12345)
         # RESULT section still rendered but empty summary is blank
         assert "RESULT:" in result
+
+
+# ---------------------------------------------------------------------------
+# Event log contract integration
+# ---------------------------------------------------------------------------
+
+
+class TestEventLogContractIntegration:
+    """Verify dashboard reads event log entries using the correct contract keys."""
+
+    @patch("golem.core.dashboard.load_sessions")
+    def test_format_task_detail_reads_milestone_dict_keys(self, mock_sessions):
+        """Build event log entries from MilestoneDict and verify dashboard reads them."""
+        event: MilestoneDict = {
+            "kind": "tool_call",
+            "tool_name": "Read",
+            "summary": "reading /tmp/foo.py",
+            "timestamp": 1741510800.0,
+            "is_error": False,
+        }
+        sess = _make_session(event_log=[event])
+        mock_sessions.return_value = {12345: sess}
+        result = format_task_detail_text(12345)
+        assert "tool_call" in result
+        assert "reading /tmp/foo.py" in result
 
 
 # ---------------------------------------------------------------------------
