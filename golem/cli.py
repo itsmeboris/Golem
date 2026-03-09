@@ -842,6 +842,15 @@ def cmd_batch(args: argparse.Namespace) -> int:
     return _cmd_batch(args)
 
 
+def cmd_init(args) -> int:
+    """Handler for the 'init' subcommand — generate starter config."""
+    from .init_wizard import run_wizard  # pylint: disable=import-outside-toplevel
+
+    output = Path(getattr(args, "output", "config.yaml"))
+    defaults = getattr(args, "defaults", False)
+    return run_wizard(output, use_defaults=defaults)
+
+
 # ---------------------------------------------------------------------------
 # Argparse
 # ---------------------------------------------------------------------------
@@ -971,6 +980,18 @@ def _build_parser() -> argparse.ArgumentParser:
     batch_status_p.add_argument("group_id", help="Batch group ID")
     batch_sub.add_parser("list", help="List all batches")
     batch_p.set_defaults(func=cmd_batch)
+
+    # init
+    init_p = sub.add_parser("init", help="Generate a starter config.yaml")
+    init_p.add_argument(
+        "-o", "--output", default="config.yaml", help="Output file path"
+    )
+    init_p.add_argument(
+        "--defaults",
+        action="store_true",
+        help="Use defaults without prompting",
+    )
+    init_p.set_defaults(func=cmd_init)
 
     return parser
 
