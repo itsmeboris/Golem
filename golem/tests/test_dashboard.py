@@ -814,7 +814,7 @@ class TestFormatStatusText:
     @patch("golem.core.dashboard._check_daemon_status", return_value=("stopped", False))
     @patch("golem.core.dashboard.read_live_snapshot")
     @patch("golem.core.dashboard.read_runs")
-    def test_truncates_long_event_id(
+    def test_non_golem_event_id_renders(
         self, mock_read_runs, mock_snap, _mock_daemon, _mock_sessions
     ):
         mock_read_runs.return_value = [
@@ -845,7 +845,9 @@ class TestFormatStatusText:
     @patch("golem.core.dashboard._check_daemon_status", return_value=("stopped", False))
     @patch("golem.core.dashboard.read_live_snapshot")
     @patch("golem.core.dashboard.read_runs")
-    def test_session_enrichment(self, mock_runs, mock_snap, mock_daemon, mock_sessions):
+    def test_session_enrichment(
+        self, mock_runs, mock_snap, _mock_daemon, mock_sessions
+    ):
         mock_runs.return_value = []
         mock_snap.return_value = {
             "uptime_s": 300,

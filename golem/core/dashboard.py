@@ -565,7 +565,9 @@ _elk_js_cache = _FileCache(Path(__file__).parent / "elk.min.js")
 _PID_FILE = DATA_DIR / "daemon.pid"
 
 
-def _check_daemon_status(pid_file=None):
+def _check_daemon_status(
+    pid_file: Path | None = None,
+) -> tuple[str, bool]:
     """Check if the golem daemon is running. Returns (label, is_running)."""
     pid_file = pid_file or _PID_FILE
     pid = read_pid(pid_file)
@@ -573,14 +575,16 @@ def _check_daemon_status(pid_file=None):
         return "stopped", False
     try:
         os.kill(pid, 0)
-        return "running (PID %d)" % pid, True
+        return f"running (PID {pid})", True
     except OSError:
         return "stopped (stale PID)", False
 
 
-def _format_live_section(snap: dict, sessions=None) -> list[str]:
+def _format_live_section(
+    snap: dict, sessions: dict[int, Any] | None = None
+) -> list[str]:
     """Build the LIVE block for CLI status output."""
-    sessions = sessions or {}
+    sessions = sessions if sessions is not None else {}
     uptime = format_duration(snap.get("uptime_s", 0))
     lines = ["", f"  Uptime:       {uptime}"]
 
