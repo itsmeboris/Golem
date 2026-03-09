@@ -152,7 +152,7 @@ class SubagentSupervisor:
             # Phase 5: Handle verdict
             if verdict.verdict == "PASS":
                 self.session.supervisor_phase = "committing"
-                self._emit_event("Committing and merging changes...")
+                self._emit_event("Finalizing task...")
                 self._commit_and_complete(issue_id, work_dir, verdict)
             elif (
                 verdict.verdict == "PARTIAL"
@@ -539,8 +539,11 @@ class SubagentSupervisor:
                     ),
                 )
                 return
+            else:
+                self._slog.info("No file changes to commit")
+                self._emit_event("No file changes — skipping commit and merge")
 
-            if self._worktree_path:
+            if self._worktree_path and cr.committed:
                 # Hand off to the flow's merge queue instead of merging
                 # inline.  The merge queue handles retries for transient
                 # infra failures (NFS timeouts, stale handles) and runs

@@ -508,6 +508,28 @@ class TestCommitAndComplete:
         assert session.merge_ready is False
         assert session.state == TaskSessionState.FAILED
 
+    def test_no_changes_skips_merge(self):
+        """When commit_changes reports no changes, merge_ready stays False."""
+        session = TaskSession(parent_issue_id=42, parent_subject="Test")
+        config = _make_config(auto_commit=True)
+        sup = _make_supervisor(session=session, config=config)
+        sup._worktree_path = "/wt/42"
+        sup._base_work_dir = "/repo"
+
+        verdict = ValidationVerdict(
+            verdict="PASS", confidence=0.9, summary="ok", task_type="review"
+        )
+
+        with patch(
+            "golem.supervisor_v2_subagent.commit_changes",
+            return_value=CommitResult(committed=False, message="No changes to commit"),
+        ):
+            sup._commit_and_complete(42, "/wt/42", verdict)
+
+        assert session.merge_ready is False
+        assert session.state == TaskSessionState.COMPLETED
+        assert not session.errors
+
     def test_no_auto_commit(self):
         session = TaskSession(parent_issue_id=42, parent_subject="Test")
         config = _make_config(auto_commit=False)
