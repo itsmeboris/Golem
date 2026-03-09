@@ -33,6 +33,7 @@ from .orchestrator import (
 from .profile import GolemProfile
 from .validation import ValidationVerdict, run_validation
 from .workdir import resolve_work_dir
+from .verifier import run_verification
 from .worktree_manager import (
     cleanup_worktree,
     create_worktree,
@@ -217,6 +218,25 @@ class SubagentSupervisor:
                 raise InfrastructureError(
                     f"Worktree creation failed for task #{issue_id}: {wt_err}"
                 ) from wt_err
+
+        # Pre-flight verification: ensure base branch is healthy before spending budget
+        if self.task_config.preflight_verify:
+            self._slog.info("Running pre-flight verification on base branch...")
+            vr = run_verification(work_dir, timeout=120)
+            if not vr.passed:
+                failures = []
+                if not vr.black_ok:
+                    failures.append(f"black: {vr.black_output[:200]}")
+                if not vr.pylint_ok:
+                    failures.append(f"pylint: {vr.pylint_output[:200]}")
+                if not vr.pytest_ok:
+                    failures.append(f"pytest: {vr.pytest_output[:200]}")
+                detail = "; ".join(failures)
+                raise InfrastructureError(
+                    f"Base branch verification failed — aborting to save budget. {detail}"
+                )
+            self._slog.info("Pre-flight verification passed (%.1fs)", vr.duration_s)
+
         return work_dir
 
     async def _execute_phases(

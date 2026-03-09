@@ -136,6 +136,10 @@ class TestRunPipeline:
             ),
             patch("golem.supervisor_v2_subagent.create_worktree"),
             patch("golem.supervisor_v2_subagent.cleanup_worktree"),
+            patch(
+                "golem.supervisor_v2_subagent.run_verification",
+                return_value=MagicMock(passed=True, duration_s=0.1),
+            ),
         ):
             mock_cli.return_value = _make_cli_result(
                 output_result='{"status": "COMPLETE", "summary": "done"}',
@@ -664,6 +668,10 @@ class TestWorktreeCleanupBranches:
                 return_value="/wt/42",
             ),
             patch("golem.supervisor_v2_subagent.cleanup_worktree") as mock_cleanup,
+            patch(
+                "golem.supervisor_v2_subagent.run_verification",
+                return_value=MagicMock(passed=True, duration_s=0.1),
+            ),
         ):
             mock_cli.return_value = _make_cli_result(
                 output_result='{"status": "COMPLETE", "summary": "done"}',
@@ -697,6 +705,10 @@ class TestTraceEventsPersistence:
             ),
             patch("golem.supervisor_v2_subagent.create_worktree"),
             patch("golem.supervisor_v2_subagent.cleanup_worktree"),
+            patch(
+                "golem.supervisor_v2_subagent.run_verification",
+                return_value=MagicMock(passed=True, duration_s=0.1),
+            ),
         ):
             mock_cli.return_value = _make_cli_result(
                 output_result='{"status": "COMPLETE", "summary": "done"}',
@@ -791,6 +803,10 @@ class TestStreamingCallbackWiring:
             ),
             patch("golem.supervisor_v2_subagent.create_worktree"),
             patch("golem.supervisor_v2_subagent.cleanup_worktree"),
+            patch(
+                "golem.supervisor_v2_subagent.run_verification",
+                return_value=MagicMock(passed=True, duration_s=0.1),
+            ),
         ):
             session = TaskSession(parent_issue_id=42, parent_subject="Test")
             sup = _make_supervisor(session=session)
@@ -819,6 +835,10 @@ class TestCheckpointResume:
             patch("golem.supervisor_v2_subagent.cleanup_worktree"),
             patch("golem.supervisor_v2_subagent.save_checkpoint"),
             patch("golem.supervisor_v2_subagent.delete_checkpoint"),
+            patch(
+                "golem.supervisor_v2_subagent.run_verification",
+                return_value=MagicMock(passed=True, duration_s=0.1),
+            ),
         ):
             mock_cli.return_value = _make_cli_result(
                 output_result='{"status": "COMPLETE", "summary": "done"}',

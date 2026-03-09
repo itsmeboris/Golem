@@ -299,6 +299,7 @@ def _make_orch(session=None, *, profile=None, task_config=None, **kwargs):
         task_config.max_retries = 1
         task_config.auto_commit = True
         task_config.retry_budget_usd = 5.0
+        task_config.preflight_verify = False
     config = MagicMock()
     return TaskOrchestrator(
         session,

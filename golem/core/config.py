@@ -79,6 +79,8 @@ class GolemFlowConfig(FlowConfig):
     checkpoint_interval_seconds: int = 300
     checkpoint_max_age_minutes: int = 10
     flaky_tests_file: str = ""  # path to known-flaky tests JSON; empty = disabled
+    # Pre-flight verification: run verifier on base branch before agent starts
+    preflight_verify: bool = True
 
 
 @dataclass
@@ -265,6 +267,7 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
         checkpoint_interval_seconds=data.get("checkpoint_interval_seconds", 300),
         checkpoint_max_age_minutes=data.get("checkpoint_max_age_minutes", 10),
         flaky_tests_file=data.get("flaky_tests_file", ""),
+        preflight_verify=data.get("preflight_verify", True),
     )
 
 
