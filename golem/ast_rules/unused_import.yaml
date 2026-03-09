@@ -1,0 +1,6 @@
+id: unused-import
+language: python
+rule:
+  pattern: import $MOD
+message: "Potentially unused import: $MOD"
+severity: warning

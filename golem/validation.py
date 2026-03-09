@@ -491,6 +491,14 @@ def run_validation(  # pylint: disable=too-many-locals
                 penalty,
             )
 
+    # AST-based analysis (structural, more accurate than regex)
+    if verdict.task_type == "code_change" or diff_text.startswith("###"):
+        from .ast_analysis import run_ast_analysis
+
+        ast_concerns = run_ast_analysis(work_dir, verdict.files_to_fix)
+        if ast_concerns:
+            verdict.concerns.extend(ast_concerns)
+
     return verdict
 
 
