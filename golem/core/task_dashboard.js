@@ -1775,12 +1775,12 @@ function renderLiveTerminal(s) {
   if (errors) statsHtml += `<span style="color:var(--red)">\u2717 Errors:<span class="lt-stat-val">${errors}</span></span>`;
   statsHtml += `<span>Total:<span class="lt-stat-val">${filtered.length}</span></span>`;
   if (isRunning) statsHtml += '<span style="color:var(--blue)">\u25CF live</span>';
-  statsHtml += `<label class="lt-auto-scroll"><input type="checkbox" ${_liveAutoScroll ? 'checked' : ''} onchange="_liveAutoScroll=this.checked"> Auto-scroll</label>`;
   statsHtml += '<div class="lt-filter-pills">';
   for (const f of ['all', 'agent', 'tools', 'errors']) {
     statsHtml += `<button class="lt-filter-pill${_filterPreset === f ? ' active' : ''}" data-filter="${f}" onclick="setFilterPreset('${f}')">${f}</button>`;
   }
   statsHtml += '</div>';
+  statsHtml += `<label class="lt-auto-scroll"><input type="checkbox" ${_liveAutoScroll ? 'checked' : ''} onchange="_liveAutoScroll=this.checked"> Auto-scroll</label>`;
   statsHtml += '</div>';
 
   if (isNewRender) {
