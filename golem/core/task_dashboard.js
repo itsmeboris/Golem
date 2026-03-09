@@ -12,17 +12,23 @@ function fmtTermTs(ts) {
 let _sessions = {};
 let _selectedId = null;
 let _traceCache = {};
+let _traceTerminalCache = {};
 let _filterPreset = 'all'; /* 'all' | 'agent' | 'tools' | 'errors' */
 let _prevFingerprints = {};
 let _liveSnap = {};
 
 /* Pipeline view state */
-let _pipelineView = 'waterfall'; /* 'waterfall' | 'log' | 'live' */
+let _pipelineView = 'waterfall'; /* 'waterfall' | 'trace' | 'live' */
 let _expandedStages = new Set();
 let _stageFingerprint = '';
 let _selectedStageId = null;
 let _liveAutoScroll = true;
 let _liveEventCount = 0;
+
+/* Trace accordion state */
+let _traceAccordionCache = {}; /* taskId -> events array */
+let _showThinking = false;
+let _showText = true;
 
 /* DAG state */
 let _dagFilter = ''; /* '' | 'active' | 'failed' | 'completed' */
@@ -160,6 +166,8 @@ function selectTask(id) {
   _selectedStageId = null;
   _liveEventCount = 0;
   _traceTerminalCache = {};
+  _traceAccordionCache = {};
+  _reportCache = {};
   _prevFingerprints = {};
   location.hash = '/task/' + id;
 
@@ -916,13 +924,236 @@ async function cancelTask(taskId) {
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   TRACE ACCORDION (agent-automation style)
+   ═══════════════════════════════════════════════════════════════ */
+
+/** Fetch and cache trace-terminal events for a task. */
+async function loadTraceAccordion(taskId) {
+  if (_traceAccordionCache[taskId]) return _traceAccordionCache[taskId];
+  const eventId = 'golem-' + taskId;
+  try {
+    const res = await fetch('/api/trace-terminal/' + encodeURIComponent(eventId));
+    if (!res.ok) return null;
+    const data = await res.json();
+    _traceAccordionCache[taskId] = data.events || [];
+    return _traceAccordionCache[taskId];
+  } catch (e) { return null; }
+}
+
+/** Group flat trace events into structured steps: pair tool_call with tool_result. */
+function groupTraceSteps(events) {
+  const steps = [];
+  const pending = [];
+  for (const ev of events) {
+    const kind = ev.type || ev.kind || '';
+    if (kind === 'tool_call') {
+      pending.push({ type: 'tool_step', name: ev.tool_name || ev.text, input: ev.text || '', result: null, is_error: false });
+    } else if (kind === 'tool_result') {
+      if (pending.length) {
+        const step = pending.shift();
+        step.result = ev.text || '';
+        step.is_error = ev.is_error || false;
+        steps.push(step);
+      }
+    } else {
+      while (pending.length) steps.push(pending.shift());
+      steps.push({ type: kind, text: ev.text || '', is_error: ev.is_error });
+    }
+  }
+  while (pending.length) steps.push(pending.shift());
+  return steps;
+}
+
+/** Render tool result content with JSON auto-detection and syntax highlighting. */
+function renderStepResult(text, isError) {
+  const { formatted, isJson, isPartialJson } = tryFormatJson(text);
+  const escaped = esc(formatted);
+  if (isJson && !isError) {
+    return '<pre class="step-result json">' + highlightJson(escaped) + '</pre>';
+  }
+  if (isPartialJson && !isError) {
+    return '<pre class="step-result json">' + highlightJson(escaped) + '<span style="color:var(--text-muted);font-style:italic">\n\u2026 (truncated)</span></pre>';
+  }
+  return '<pre class="step-result' + (isError ? ' error-result' : '') + '">' + escaped + '</pre>';
+}
+
+/** Render the trace controls bar (expand/collapse, show/hide toggles). */
+function renderTraceControlsBar() {
+  return '<div class="trace-top-bar">' +
+    '<div class="trace-controls">' +
+      '<button onclick="expandAllTraceSteps()" title="Expand all">Expand all</button>' +
+      '<button onclick="collapseAllTraceSteps()" title="Collapse all">Collapse all</button>' +
+      '<button id="btn-trace-thinking" class="' + (_showThinking ? 'active' : '') + '" onclick="toggleShowThinking()">' + (_showThinking ? 'Hide thinking' : 'Show thinking') + '</button>' +
+      '<button id="btn-trace-text" class="' + (_showText ? 'active' : '') + '" onclick="toggleShowText()">' + (_showText ? 'Hide text' : 'Show text') + '</button>' +
+    '</div>' +
+  '</div>';
+}
+
+/** Render the full trace accordion from grouped steps. */
+function renderTraceSteps(steps) {
+  return steps.map(function(s, i) {
+    switch (s.type) {
+      case 'system_init':
+        return '<div class="trace-init">\u25B6 ' + esc(s.text) + '</div>';
+
+      case 'thinking':
+        if (!_showThinking) return '';
+        var thinkPreview = truncText((s.text || '').replace(/\n/g, ' '), 80);
+        var sizeKB = ((s.text || '').length / 1024).toFixed(1);
+        return '<div class="trace-thinking" data-idx="' + i + '">' +
+          '<div class="thinking-header" onclick="toggleTraceNode(this)">' +
+            '<span class="step-icon">~</span>' +
+            '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(thinkPreview) + '</span>' +
+            '<span class="step-meta">' + sizeKB + 'KB</span>' +
+            '<span class="step-chevron">\u25B8</span>' +
+          '</div>' +
+          '<div class="thinking-body"><pre>' + esc(s.text) + '</pre></div>' +
+        '</div>';
+
+      case 'text':
+        if (!_showText) return '';
+        return '<div class="trace-text-block">' + renderMarkdown(s.text) + '</div>';
+
+      case 'tool_step':
+        var hasResult = s.result != null && s.result.length > 0;
+        var errCls = s.is_error ? ' error' : '';
+        var sizeStr = hasResult
+          ? (s.result.length > 1000 ? (s.result.length / 1024).toFixed(1) + 'KB' : s.result.length + ' chars')
+          : '';
+        var metaStr = s.is_error ? '\u2717 error' : sizeStr;
+
+        return '<div class="trace-step' + errCls + '" data-idx="' + i + '">' +
+          '<div class="step-header" onclick="toggleTraceNode(this)">' +
+            '<span class="step-icon">\u2699</span>' +
+            '<span class="step-name">' + esc(s.name) + '</span>' +
+            (metaStr ? '<span class="step-meta">' + esc(metaStr) + '</span>' : '') +
+            '<span class="step-chevron">\u25B8</span>' +
+          '</div>' +
+          '<div class="step-body">' +
+            (hasResult ? renderStepResult(s.result, s.is_error) : '<pre class="step-result" style="color:var(--text-muted);font-style:italic">No output</pre>') +
+          '</div>' +
+        '</div>';
+
+      case 'error':
+        return '<div class="trace-step error expanded" data-idx="' + i + '">' +
+          '<div class="step-header" onclick="toggleTraceNode(this)">' +
+            '<span class="step-icon">\u2717</span>' +
+            '<span class="step-name" style="color:var(--red)">Error</span>' +
+            '<span class="step-chevron">\u25B8</span>' +
+          '</div>' +
+          '<div class="step-body"><pre class="step-result error-result">' + esc(s.text) + '</pre></div>' +
+        '</div>';
+
+      case 'result':
+        return '<div class="trace-result' + (s.is_error ? ' error' : '') + '">\u2501 ' + esc(s.text) + '</div>';
+
+      default:
+        return s.text ? '<div class="trace-text-block"><p style="color:var(--text-muted)">' + esc(s.text) + '</p></div>' : '';
+    }
+  }).join('');
+}
+
+function toggleTraceNode(headerEl) {
+  headerEl.parentElement.classList.toggle('expanded');
+}
+
+function expandAllTraceSteps() {
+  document.querySelectorAll('#trace-steps .trace-step, #trace-steps .trace-thinking').forEach(function(el) { el.classList.add('expanded'); });
+  /* Also expand in waterfall detail */
+  document.querySelectorAll('#wf-detail-body .trace-step, #wf-detail-body .trace-thinking').forEach(function(el) { el.classList.add('expanded'); });
+}
+
+function collapseAllTraceSteps() {
+  document.querySelectorAll('#trace-steps .trace-step, #trace-steps .trace-thinking').forEach(function(el) { el.classList.remove('expanded'); });
+  document.querySelectorAll('#wf-detail-body .trace-step, #wf-detail-body .trace-thinking').forEach(function(el) { el.classList.remove('expanded'); });
+}
+
+function toggleShowThinking() {
+  _showThinking = !_showThinking;
+  _stageFingerprint = '';
+  if (_selectedId && _sessions[_selectedId]) renderPipelineView(_selectedId, _sessions[_selectedId]);
+}
+
+function toggleShowText() {
+  _showText = !_showText;
+  _stageFingerprint = '';
+  if (_selectedId && _sessions[_selectedId]) renderPipelineView(_selectedId, _sessions[_selectedId]);
+}
+
+/** Render the Trace view (full trace accordion, replaces the old Log/Accordion view). */
+async function renderTraceView(s) {
+  const taskId = _selectedId;
+  const controlsEl = document.getElementById('trace-controls');
+  const stepsEl = document.getElementById('trace-steps');
+  controlsEl.innerHTML = renderTraceControlsBar();
+  stepsEl.innerHTML = '<div class="trace-loading">Loading trace\u2026</div>';
+
+  const events = await loadTraceAccordion(taskId);
+  if (_selectedId !== taskId) return; /* task changed while loading */
+  if (!events || !events.length) {
+    stepsEl.innerHTML = '<div class="trace-loading">No trace available for this task.</div>';
+    return;
+  }
+
+  const steps = groupTraceSteps(events);
+  stepsEl.innerHTML = renderTraceSteps(steps);
+}
+
+/** Load report markdown for the Report tab. */
+let _reportCache = {};
+
+async function loadReport(taskId) {
+  const el = document.getElementById('tab-report');
+  if (!el) return;
+  if (_reportCache[taskId]) {
+    el.innerHTML = renderMarkdown(_reportCache[taskId]);
+    return;
+  }
+  el.innerHTML = '<div class="no-data">Loading report\u2026</div>';
+  const eventId = 'golem-' + taskId;
+  try {
+    const res = await fetch('/api/report/' + encodeURIComponent(eventId));
+    if (_selectedId !== taskId) return; /* task changed while loading */
+    if (!res.ok) {
+      el.innerHTML = '<div class="no-data">No report available for this task.</div>';
+      return;
+    }
+    const data = await res.json();
+    _reportCache[taskId] = data.markdown;
+    el.innerHTML = renderMarkdown(data.markdown);
+  } catch (e) {
+    el.innerHTML = '<div class="no-data">Failed to load report.</div>';
+  }
+}
+
+/** Render the result summary section above the pipeline view. */
+function renderResultSummary(s) {
+  const el = document.getElementById('result-summary-section');
+  if (!el) return;
+  const summary = s.result_summary || '';
+  if (!summary || ['detected', 'running'].includes(s.state)) {
+    el.classList.add('hidden');
+    el.innerHTML = '';
+    return;
+  }
+  el.classList.remove('hidden');
+  el.innerHTML = '<div class="rs-header">' +
+    '<span class="rs-icon">\uD83D\uDCCB</span>' +
+    '<span class="rs-title">Result Summary</span>' +
+  '</div>' +
+  '<div class="rs-body">' + renderMarkdown(summary) + '</div>';
+}
+
 /* ── Task Detail rendering ─────────────────────────────────── */
 function renderTaskDetail(id, s) {
   renderHeader(id, s);
   renderMetrics(s);
   renderPhaseBanner(s);
+  renderResultSummary(s);
   renderPipelineView(id, s);
   renderInfoTabs(s);
+  loadReport(id);
 }
 
 function renderHeader(id, s) {
@@ -1353,13 +1584,14 @@ function renderPipelineView(id, s) {
     (s.total_cost_usd || 0) + '|' + ((s.event_log || []).length) + '|' +
     (s.validation_verdict || '') + '|' +
     (s.supervisor_phase || '') + '|' +
-    (s.retry_count || 0) + '|' + (s.commit_sha || '') + '|' + (s.merge_ready ? '1' : '0');
+    (s.retry_count || 0) + '|' + (s.commit_sha || '') + '|' + (s.merge_ready ? '1' : '0') + '|' +
+    (_showThinking ? '1' : '0') + '|' + (_showText ? '1' : '0');
 
   if (fp === _stageFingerprint) return;
   _stageFingerprint = fp;
 
   document.getElementById('waterfall-view').classList.add('hidden');
-  document.getElementById('log-view').classList.add('hidden');
+  document.getElementById('trace-view').classList.add('hidden');
   document.getElementById('live-view').classList.add('hidden');
 
   if (_pipelineView === 'waterfall') {
@@ -1369,8 +1601,8 @@ function renderPipelineView(id, s) {
     document.getElementById('live-view').classList.remove('hidden');
     renderLiveTerminal(s);
   } else {
-    document.getElementById('log-view').classList.remove('hidden');
-    renderAccordionView(stages, s);
+    document.getElementById('trace-view').classList.remove('hidden');
+    renderTraceView(s);
   }
 }
 
@@ -1379,7 +1611,7 @@ function setPipelineView(view) {
   _stageFingerprint = '';
   _liveEventCount = 0;
   document.getElementById('btn-waterfall-view').classList.toggle('active', view === 'waterfall');
-  document.getElementById('btn-log-view').classList.toggle('active', view === 'log');
+  document.getElementById('btn-trace-view').classList.toggle('active', view === 'trace');
   document.getElementById('btn-live-view').classList.toggle('active', view === 'live');
   if (_selectedId && _sessions[_selectedId]) renderPipelineView(_selectedId, _sessions[_selectedId]);
 }
@@ -1581,6 +1813,10 @@ function renderWaterfallDetail(st, session) {
     <span class="wf-dh-name">${esc(st.label)}</span>
     <span class="wf-state st-${st.state}" style="font-size:0.78rem">${st.state}</span>
     <div class="wf-dh-meta">${metaParts.map(m => `<span>${m}</span>`).join('')}</div>
+    <div class="trace-controls" style="margin-left:auto;margin-right:0.5rem">
+      <button onclick="expandAllTraceSteps()">Expand all</button>
+      <button onclick="collapseAllTraceSteps()">Collapse all</button>
+    </div>
     <button class="wf-dh-close" onclick="closeWaterfallDetail()" title="Close">&times;</button>
   </div>`;
 
@@ -1692,12 +1928,11 @@ function renderWfEventRow(ev, index) {
 }
 
 /* ── Expandable Event Detail ──────────────────────────────── */
-let _traceTerminalCache = {};
 
 async function loadTraceTerminal(eventId) {
   if (_traceTerminalCache[eventId]) return _traceTerminalCache[eventId];
   try {
-    const res = await fetch('/api/trace-terminal/' + eventId);
+    const res = await fetch('/api/trace-terminal/' + encodeURIComponent(eventId));
     if (!res.ok) return null;
     const data = await res.json();
     _traceTerminalCache[eventId] = data.events || [];
@@ -1786,11 +2021,11 @@ async function toggleEventDetail(rowEl) {
   }
 
   if (fullEvent.text) {
-    const { formatted, isJson } = tryFormatJson(fullEvent.text);
-    if (isJson) {
-      html += `<pre class="ev-detail-pre json">${highlightJson(esc(formatted))}</pre>`;
+    const evType = fullEvent.type || 'unknown';
+    if (evType === 'text') {
+      html += '<div class="ev-detail-md">' + renderMarkdown(fullEvent.text) + '</div>';
     } else {
-      html += `<pre class="ev-detail-pre">${esc(fullEvent.text)}</pre>`;
+      html += renderStepResult(fullEvent.text, fullEvent.is_error || false);
     }
   }
 
@@ -1798,34 +2033,6 @@ async function toggleEventDetail(rowEl) {
   panel.innerHTML = html;
 }
 
-function expandStage(stageId) {
-  _expandedStages.add(stageId);
-  _stageFingerprint = '';
-  if (_selectedId && _sessions[_selectedId]) renderPipelineView(_selectedId, _sessions[_selectedId]);
-}
-
-function toggleStage(stageId) {
-  if (_expandedStages.has(stageId)) _expandedStages.delete(stageId);
-  else _expandedStages.add(stageId);
-  _stageFingerprint = '';
-  if (_selectedId && _sessions[_selectedId]) renderPipelineView(_selectedId, _sessions[_selectedId]);
-}
-
-function renderStageBody(st, s) {
-  let html = renderDetailSummary(st);
-  const events = filterEvents(st.events);
-
-  if (events.length > 0) {
-    const MAX = 200;
-    const rendered = events.length > MAX ? events.slice(-MAX) : events;
-    if (events.length > MAX) html += `<div class="wf-events-empty">${events.length - MAX} older events hidden</div>`;
-    html += renderEventsWithPhases(rendered, s);
-  } else if (!html) {
-    html += '<div class="wf-events-empty">No events recorded.</div>';
-  }
-
-  return html;
-}
 
 /* ── Live Terminal View ───────────────────────────────────── */
 function renderLiveTerminal(s) {
@@ -2063,42 +2270,14 @@ async function toggleLiveDetail(rowEl) {
     return;
   }
 
-  /* Render full text with basic code block handling.
-     Split on fenced code blocks BEFORE escaping so <> inside code blocks survive. */
-  const parts = text.split(/(```\w*\n[\s\S]*?```)/g);
-  let rendered = '';
-  for (const part of parts) {
-    const m = part.match(/^```\w*\n([\s\S]*?)```$/);
-    if (m) {
-      rendered += '<code style="background:var(--bg-surface);padding:2px 6px;border-radius:3px;display:block;margin:0.5em 0;white-space:pre">' + esc(m[1]) + '</code>';
-    } else {
-      rendered += esc(part);
-    }
+  const evType = fullEvent.type || 'unknown';
+  if (evType === 'text') {
+    panel.innerHTML = '<div style="padding:0.75rem 1rem">' + renderMarkdown(text) + '</div>';
+  } else {
+    panel.innerHTML = renderStepResult(text, fullEvent.is_error || false);
   }
-  panel.innerHTML = `<pre style="white-space:pre-wrap">${rendered}</pre>`;
 }
 
-/* ── Accordion / Tree View ─────────────────────────────────── */
-function renderAccordionView(stages, s) {
-  const container = document.getElementById('accordion-view');
-  for (const st of stages) { if (st.state === 'running') _expandedStages.add(st.id); }
-
-  container.innerHTML = stages.map(st => {
-    const expanded = _expandedStages.has(st.id);
-    const icon = STAGE_ICONS[st.type] || '\u25CF';
-
-    return `<div class="acc-group st-${st.state}${expanded ? ' expanded' : ''}" data-stage="${st.id}">
-      <div class="acc-group-header" onclick="toggleStage('${st.id}')">
-        <span class="ag-chevron">\u25B6</span>
-        <span class="ag-icon">${icon}</span>
-        <span class="ag-name">${esc(st.label)}</span>
-        <span class="ag-badge sc-badge st-${st.state}">${st.state}</span>
-        ${st.events.length ? `<span class="ag-meta">${st.events.length} events</span>` : ''}
-      </div>
-      ${expanded ? `<div class="acc-group-body">${renderStageBody(st, s)}</div>` : ''}
-    </div>`;
-  }).join('');
-}
 
 
 /* ── Info Tabs ─────────────────────────────────────────────── */
@@ -2108,6 +2287,8 @@ function activateTab(name) {
 }
 
 function renderInfoTabs(s) {
+  /* Report tab is loaded async by loadReport() called from renderTaskDetail */
+
   const errors = s.errors || [];
   $('#tab-errors').innerHTML = errors.length
     ? errors.map(e => `<div class="error-item">${esc(e)}</div>`).join('')

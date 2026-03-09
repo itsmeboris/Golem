@@ -98,12 +98,13 @@
     <header class="task-header" id="task-header"></header>
     <div class="metrics-row" id="metrics-row"></div>
     <div id="phase-banner-container"></div>
+    <div class="result-summary-section hidden" id="result-summary-section"></div>
     <div class="pipeline-view hidden" id="pipeline-view">
       <div class="pv-toolbar">
         <h3>Pipeline</h3>
         <div class="pv-controls">
           <button class="pv-toggle-btn active" id="btn-waterfall-view" onclick="setPipelineView('waterfall')">Waterfall</button>
-          <button class="pv-toggle-btn" id="btn-log-view" onclick="setPipelineView('log')">Log</button>
+          <button class="pv-toggle-btn" id="btn-trace-view" onclick="setPipelineView('trace')">Trace</button>
           <button class="pv-toggle-btn" id="btn-live-view" onclick="setPipelineView('live')">Live</button>
         </div>
       </div>
@@ -111,8 +112,9 @@
         <div class="wf-table" id="wf-table"></div>
         <div class="wf-detail-panel hidden" id="wf-detail-panel"></div>
       </div>
-      <div id="log-view" class="hidden">
-        <div class="accordion-view" id="accordion-view"></div>
+      <div id="trace-view" class="hidden">
+        <div class="trace-controls" id="trace-controls"></div>
+        <div class="trace-steps" id="trace-steps"></div>
       </div>
       <div id="live-view" class="hidden">
         <div class="live-terminal" id="live-terminal"></div>
@@ -120,12 +122,14 @@
     </div>
     <div class="info-tabs" id="info-tabs">
       <div class="tab-bar" id="tab-bar">
-        <button class="tab-btn active" data-tab="errors" onclick="activateTab('errors')">Errors</button>
+        <button class="tab-btn active" data-tab="report" onclick="activateTab('report')">Report</button>
+        <button class="tab-btn" data-tab="errors" onclick="activateTab('errors')">Errors</button>
         <button class="tab-btn" data-tab="tools" onclick="activateTab('tools')">Tools</button>
         <button class="tab-btn" data-tab="coordination" onclick="activateTab('coordination')">Coordination</button>
         <button class="tab-btn" data-tab="raw" onclick="activateTab('raw')">Raw Session</button>
       </div>
-      <div id="tab-errors" class="tab-content active"></div>
+      <div id="tab-report" class="tab-content active"></div>
+      <div id="tab-errors" class="tab-content"></div>
       <div id="tab-tools" class="tab-content"></div>
       <div id="tab-coordination" class="tab-content"></div>
       <div id="tab-raw" class="tab-content"></div>

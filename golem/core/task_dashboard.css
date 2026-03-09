@@ -510,44 +510,6 @@
   font-size:0.82rem;color:var(--text-muted);padding:1rem;font-style:italic
 }
 
-/* ── Accordion View ──────────────────────────────────────────────── */
-.accordion-view{display:flex;flex-direction:column;gap:0.2rem}
-.acc-group{
-  background:var(--bg-surface);border:1px solid var(--border);
-  border-radius:8px;overflow:hidden
-}
-.acc-group-header{
-  display:flex;align-items:center;gap:0.5rem;padding:0.45rem 0.75rem;
-  cursor:pointer;user-select:none;transition:background 0.12s
-}
-.acc-group-header:hover{background:var(--bg-hover)}
-.acc-group-header .ag-chevron{
-  color:var(--text-muted);font-size:0.65rem;transition:transform 0.2s;flex-shrink:0
-}
-.acc-group.expanded .ag-chevron{transform:rotate(90deg)}
-.acc-group-header .ag-icon{font-size:0.8rem;flex-shrink:0;width:1.1rem;text-align:center}
-.acc-group-header .ag-name{
-  font-size:0.8rem;font-weight:600;color:var(--text-primary);flex:1;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis
-}
-.acc-group-header .ag-badge{
-  font-size:0.55rem;font-weight:700;text-transform:uppercase;
-  padding:0.08rem 0.3rem;border-radius:8px;flex-shrink:0
-}
-.acc-group-header .ag-meta{font-size:0.65rem;color:var(--text-muted);flex-shrink:0}
-.acc-group-body{
-  display:none;border-top:1px solid var(--border);
-  padding:0.4rem 0 0.4rem 0;max-height:60vh;overflow-y:auto;
-  background:var(--bg-base)
-}
-.acc-group.expanded .acc-group-body{display:block}
-
-/* State colors for accordion */
-.acc-group.st-completed{border-left:2px solid var(--green)}
-.acc-group.st-running{border-left:2px solid var(--blue)}
-.acc-group.st-failed{border-left:2px solid var(--red)}
-.acc-group.st-warning{border-left:2px solid var(--yellow)}
-
 /* Badge state colors (shared) */
 .sc-badge.st-completed{background:var(--green-bg);color:var(--green)}
 .sc-badge.st-running{background:var(--accent-bg);color:var(--accent)}
@@ -770,6 +732,121 @@
   .v-resize-wrapper{height:auto !important}
   .dag-body{max-height:35vh}
 }
+/* ═══════════════════════════════════════════════════════════════
+   TRACE ACCORDION
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Controls ──────────────────────────────────────────────── */
+.trace-top-bar{display:flex;align-items:center;justify-content:flex-end;margin-bottom:0.6rem}
+.trace-controls{display:flex;gap:0.4rem;align-items:center}
+.trace-controls button{
+  background:var(--bg-elevated);color:var(--text-secondary);border:1px solid var(--border);
+  padding:0.25rem 0.55rem;border-radius:var(--radius);font-size:0.72rem;cursor:pointer;
+  transition:all 0.12s
+}
+.trace-controls button:hover{background:var(--bg-hover);color:var(--text-primary)}
+.trace-controls button.active{background:var(--border-focus);color:#fff;border-color:var(--border-focus)}
+
+.trace-steps{display:flex;flex-direction:column;gap:0.3rem}
+
+/* ── Init line ─────────────────────────────────────────────── */
+.trace-init{
+  padding:0.35rem 0.75rem;font-size:0.75rem;color:var(--text-muted);
+  background:var(--bg-surface);border-radius:var(--radius);
+  border:1px solid var(--border);opacity:0.6
+}
+
+/* ── Tool step (collapsible) ───────────────────────────────── */
+.trace-step{border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.step-header{
+  display:flex;align-items:center;gap:0.5rem;padding:0.45rem 0.75rem;
+  cursor:pointer;transition:background 0.12s
+}
+.step-header:hover{background:var(--bg-elevated)}
+.step-icon{min-width:1.1rem;text-align:center;flex-shrink:0;font-size:0.82rem;color:var(--text-muted)}
+.step-name{font-family:var(--font-mono);font-size:0.82rem;color:var(--accent);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.step-meta{font-size:0.68rem;color:var(--text-muted);white-space:nowrap}
+.step-chevron{color:var(--text-muted);font-size:0.65rem;transition:transform 0.2s;width:1rem;text-align:center}
+.trace-step.expanded .step-chevron{transform:rotate(90deg)}
+.trace-step.error{border-color:rgba(248,113,113,.3)}
+.trace-step.error .step-name{color:var(--red)}
+
+.step-body{max-height:0;overflow:hidden;transition:max-height 0.35s ease-out}
+.trace-step.expanded .step-body{max-height:none;overflow:visible}
+.step-result{
+  padding:0.75rem 1rem;background:var(--bg-terminal);font-family:var(--font-mono);
+  font-size:0.75rem;line-height:1.5;color:var(--text-secondary);
+  white-space:pre-wrap;word-break:break-word;border-top:1px solid var(--border);
+  max-height:600px;overflow-y:auto;margin:0
+}
+.step-result::-webkit-scrollbar{width:4px}
+.step-result::-webkit-scrollbar-thumb{background:var(--border-active);border-radius:2px}
+.step-result.json .json-key{color:var(--blue)}
+.step-result.json .json-str{color:var(--green-dim)}
+.step-result.json .json-num{color:var(--orange)}
+.step-result.json .json-bool{color:var(--purple)}
+.step-result.json .json-null{color:var(--text-muted)}
+.step-result.error-result{color:var(--red)}
+
+/* ── Thinking block (collapsible) ──────────────────────────── */
+.trace-thinking{border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.thinking-header{
+  display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0.75rem;
+  cursor:pointer;font-size:0.78rem;color:var(--text-muted);font-style:italic;
+  transition:background 0.12s
+}
+.thinking-header:hover{background:var(--bg-elevated)}
+.thinking-body{max-height:0;overflow:hidden;transition:max-height 0.3s ease-out}
+.trace-thinking.expanded .thinking-body{max-height:none;overflow:visible}
+.trace-thinking.expanded .step-chevron{transform:rotate(90deg)}
+.thinking-body pre{
+  padding:0.75rem 1rem;background:var(--bg-terminal);font-family:var(--font-mono);
+  font-size:0.75rem;line-height:1.5;color:var(--text-muted);font-style:italic;
+  white-space:pre-wrap;word-break:break-word;border-top:1px solid var(--border);
+  max-height:500px;overflow-y:auto;margin:0
+}
+
+/* ── Text block ────────────────────────────────────────────── */
+.trace-text-block{
+  padding:0.6rem 0.85rem;border:1px solid var(--border);border-radius:var(--radius);
+  background:var(--bg-surface)
+}
+
+/* ── Result line ───────────────────────────────────────────── */
+.trace-result{
+  padding:0.45rem 0.75rem;font-size:0.82rem;font-weight:600;
+  color:var(--green);border-top:1px solid var(--border);
+  border-radius:var(--radius)
+}
+.trace-result.error{color:var(--red)}
+
+/* ── Loading ───────────────────────────────────────────────── */
+.trace-loading{
+  padding:1.5rem;text-align:center;font-size:0.85rem;
+  color:var(--text-muted);font-style:italic
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   RESULT SUMMARY SECTION
+   ═══════════════════════════════════════════════════════════════ */
+.result-summary-section{
+  background:var(--bg-surface);border:1px solid var(--border);
+  border-radius:var(--radius-lg);padding:0;margin-bottom:1rem;
+  overflow:hidden
+}
+.rs-header{
+  display:flex;align-items:center;gap:0.5rem;padding:0.6rem 1rem;
+  border-bottom:1px solid var(--border);background:var(--bg-elevated)
+}
+.rs-icon{font-size:0.9rem}
+.rs-title{font-size:0.82rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.04em}
+.rs-body{padding:0.75rem 1rem}
+.rs-body .markdown-body{font-size:0.85rem;line-height:1.6}
+
+/* ── Expand detail markdown ────────────────────────────────── */
+.ev-detail-md{padding:0.75rem 1rem}
+.ev-detail-md .markdown-body{font-size:0.85rem;line-height:1.6}
+
 @media(max-width:700px){
   .split-view{grid-template-columns:1fr !important}
   .dag-body{max-height:35vh}
