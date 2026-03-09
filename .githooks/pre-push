@@ -4,45 +4,235 @@ set -euo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
+# ── colours ──────────────────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 BOLD='\033[1m'
 NC='\033[0m'
 
+ZERO_SHA="0000000000000000000000000000000000000000"
+
+# ── 1. Collect changed files from every pushed ref ───────────────────
+changed_files=()
+while read -r local_ref local_sha remote_ref remote_sha; do
+    # Branch deletion — nothing to check
+    if [[ "$local_sha" == "$ZERO_SHA" ]]; then
+        continue
+    fi
+
+    # Determine the base commit
+    if [[ "$remote_sha" == "$ZERO_SHA" ]]; then
+        # New branch: diff against merge-base with origin/master
+        base=$(git merge-base origin/master "$local_sha" 2>/dev/null || true)
+        if [[ -z "$base" ]]; then
+            # No common ancestor — fall back to diffing the whole branch
+            base=$(git rev-list --max-parents=0 "$local_sha" | tail -1)
+        fi
+    else
+        base="$remote_sha"
+    fi
+
+    while IFS= read -r f; do
+        changed_files+=("$f")
+    done < <(git diff --name-only --diff-filter=d "$base".."$local_sha" 2>/dev/null || true)
+done
+
+# Deduplicate
+if [[ ${#changed_files[@]} -gt 0 ]]; then
+    mapfile -t changed_files < <(printf '%s\n' "${changed_files[@]}" | sort -u)
+fi
+
+# ── 2. Classify files ───────────────────────────────────────────────
+py_source=()
+py_test=()
+py_all=()
+toolconfig=()
+yaml_files=()
+other=()
+
+for f in "${changed_files[@]+"${changed_files[@]}"}"; do
+    classified=0
+
+    # Python source under golem/ but NOT golem/tests/
+    if [[ "$f" =~ ^golem/ && "$f" =~ \.py$ && ! "$f" =~ ^golem/tests/ ]]; then
+        py_source+=("$f")
+        py_all+=("$f")
+        classified=1
+    fi
+
+    # Python tests under golem/tests/
+    if [[ "$f" =~ ^golem/tests/ && "$f" =~ \.py$ ]]; then
+        py_test+=("$f")
+        py_all+=("$f")
+        classified=1
+    fi
+
+    # Any other .py file not already captured (e.g. scripts at repo root)
+    if [[ "$f" =~ \.py$ && $classified -eq 0 ]]; then
+        py_all+=("$f")
+        classified=1
+    fi
+
+    # Tool configuration files
+    if [[ "$f" == "pyproject.toml" || "$f" == ".pylintrc" || "$f" == "pyrightconfig.json" || "$f" =~ ^\.github/workflows/ ]]; then
+        toolconfig+=("$f")
+        classified=1
+    fi
+
+    # YAML files (may overlap with toolconfig — workflow yamls get both treatments)
+    if [[ "$f" =~ \.(yaml|yml)$ ]]; then
+        yaml_files+=("$f")
+        classified=1
+    fi
+
+    if [[ $classified -eq 0 ]]; then
+        other+=("$f")
+    fi
+done
+
+# ── 3. Print change summary ─────────────────────────────────────────
+total=${#changed_files[@]}
+n_source=${#py_source[@]}
+n_test=${#py_test[@]}
+n_tool=${#toolconfig[@]}
+n_yaml=${#yaml_files[@]}
+
+
+if [[ $total -eq 0 ]]; then
+    printf "${GREEN}${BOLD}No changed files detected — nothing to check.${NC}\n"
+    exit 0
+fi
+
+summary_parts=()
+if [[ $n_source -gt 0 ]]; then summary_parts+=("${n_source} source .py"); fi
+if [[ $n_test -gt 0 ]]; then summary_parts+=("${n_test} test .py"); fi
+if [[ $n_tool -gt 0 ]]; then summary_parts+=("toolconfig"); fi
+if [[ $n_yaml -gt 0 ]]; then summary_parts+=("${n_yaml} yaml"); fi
+
+if [[ ${#summary_parts[@]} -eq 0 ]]; then
+    printf "${BOLD}Changed files: ${total} (docs/other only)${NC}\n"
+else
+    detail=$(printf '%s' "${summary_parts[0]}"; for p in "${summary_parts[@]:1}"; do printf ', %s' "$p"; done)
+    printf "${BOLD}Changed files: ${total} (${detail})${NC}\n"
+fi
+echo ""
+
+# ── 4. Determine which checks to run ────────────────────────────────
+run_black=0
+run_pylint=0
+run_pytest_full=0
+run_pytest_tests_only=0
+run_yaml_check=0
+
+# black / pylint: any python or toolconfig change
+if [[ ${#py_all[@]} -gt 0 || ${#toolconfig[@]} -gt 0 ]]; then
+    run_black=1
+    run_pylint=1
+fi
+
+# pytest: source or toolconfig => full suite; test-only => just those tests
+if [[ ${#py_source[@]} -gt 0 || ${#toolconfig[@]} -gt 0 ]]; then
+    run_pytest_full=1
+elif [[ ${#py_test[@]} -gt 0 ]]; then
+    run_pytest_tests_only=1
+fi
+
+# yaml check
+if [[ ${#yaml_files[@]} -gt 0 ]]; then
+    run_yaml_check=1
+fi
+
+# ── 5. Run checks ───────────────────────────────────────────────────
 failed=0
 
+# Determine black/pylint targets: changed .py files, or all of golem/ when
+# only toolconfig changed (the lint configuration itself was modified).
+if [[ ${#py_all[@]} -gt 0 ]]; then
+    lint_targets=("${py_all[@]}")
+else
+    lint_targets=("golem/")
+fi
+
+# --- black ---
 printf "${BOLD}=== pre-push: black ===${NC}\n"
-if ! python -m black --check golem/ --quiet 2>/dev/null; then
-    printf "${RED}black: formatting issues found. Run 'python -m black golem/' to fix.${NC}\n"
-    failed=1
+if [[ $run_black -eq 1 ]]; then
+    if ! python -m black --check "${lint_targets[@]}" --quiet 2>/dev/null; then
+        printf "${RED}black: formatting issues found. Run 'python -m black ${lint_targets[*]}' to fix.${NC}\n"
+        failed=1
+    else
+        printf "${GREEN}black: ok${NC}\n"
+    fi
 else
-    printf "${GREEN}black: ok${NC}\n"
+    printf "${YELLOW}black: skipped (no Python changes)${NC}\n"
 fi
 
+# --- pylint ---
 printf "${BOLD}=== pre-push: pylint ===${NC}\n"
-if ! python -m pylint --errors-only golem/ 2>/dev/null; then
-    printf "${RED}pylint: errors found${NC}\n"
-    failed=1
+if [[ $run_pylint -eq 1 ]]; then
+    if ! python -m pylint --errors-only "${lint_targets[@]}" 2>/dev/null; then
+        printf "${RED}pylint: errors found${NC}\n"
+        failed=1
+    else
+        printf "${GREEN}pylint: ok${NC}\n"
+    fi
 else
-    printf "${GREEN}pylint: ok${NC}\n"
+    printf "${YELLOW}pylint: skipped (no Python changes)${NC}\n"
 fi
 
+# --- pytest ---
 printf "${BOLD}=== pre-push: pytest + coverage ===${NC}\n"
 if [[ "${AGENT_WORKTREE:-}" == "1" ]]; then
     printf "${YELLOW}pytest: skipped (agent worktree — validated by supervisor)${NC}\n"
-elif ! python -m pytest golem/tests/ -m "" -x -q --tb=line \
-        --cov=golem --cov-report=term-missing:skip-covered --cov-fail-under=100 2>/dev/null; then
-    printf "${RED}pytest: test failures or coverage below 100%%${NC}\n"
-    failed=1
+elif [[ $run_pytest_full -eq 1 ]]; then
+    if ! python -m pytest golem/tests/ -m "" -x -q --tb=line \
+            --cov=golem --cov-report=term-missing:skip-covered --cov-fail-under=100 2>/dev/null; then
+        printf "${RED}pytest: test failures or coverage below 100%%${NC}\n"
+        failed=1
+    else
+        printf "${GREEN}pytest + coverage: ok${NC}\n"
+    fi
+elif [[ $run_pytest_tests_only -eq 1 ]]; then
+    # Run only the changed test files (no coverage threshold — subset can't hit 100%)
+    if ! python -m pytest "${py_test[@]}" -m "" -x -q --tb=line 2>/dev/null; then
+        printf "${RED}pytest: test failures in changed test files${NC}\n"
+        failed=1
+    else
+        printf "${GREEN}pytest: ok (changed tests only — full coverage checked on source changes)${NC}\n"
+    fi
 else
-    printf "${GREEN}pytest + coverage: ok${NC}\n"
+    printf "${YELLOW}pytest: skipped (no Python changes)${NC}\n"
 fi
 
+# --- yaml syntax ---
+if [[ $run_yaml_check -eq 1 ]]; then
+    printf "${BOLD}=== pre-push: yaml syntax ===${NC}\n"
+    if ! python -c "import yaml" 2>/dev/null; then
+        printf "${YELLOW}yaml: skipped (pyyaml not installed)${NC}\n"
+    else
+        yaml_failed=0
+        for yf in "${yaml_files[@]}"; do
+            if [[ -f "$yf" ]]; then
+                if ! python -c "import yaml, pathlib, sys; yaml.safe_load(pathlib.Path(sys.argv[1]).read_text())" "$yf" 2>/dev/null; then
+                    printf "${RED}yaml: syntax error in ${yf}${NC}\n"
+                    yaml_failed=1
+                fi
+            fi
+        done
+        if [[ $yaml_failed -eq 1 ]]; then
+            failed=1
+        else
+            printf "${GREEN}yaml: ok${NC}\n"
+        fi
+    fi
+fi
+
+# ── 6. Final verdict ────────────────────────────────────────────────
+echo ""
 if [[ $failed -ne 0 ]]; then
-    printf "\n${RED}${BOLD}Pre-push checks failed. Push aborted.${NC}\n"
+    printf "${RED}${BOLD}Pre-push checks failed. Push aborted.${NC}\n"
     printf "Use ${YELLOW}git push --no-verify${NC} to bypass (not recommended).\n"
     exit 1
 fi
 
-printf "\n${GREEN}${BOLD}All pre-push checks passed.${NC}\n"
+printf "${GREEN}${BOLD}All pre-push checks passed.${NC}\n"
