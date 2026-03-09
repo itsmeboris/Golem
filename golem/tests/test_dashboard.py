@@ -654,6 +654,34 @@ class TestFormatLiveSection:
         assert "OK" in joined
         assert "$0.55" in joined
 
+    def test_recently_completed_long_subject_truncated(self):
+        snap = {
+            "uptime_s": 60,
+            "active_count": 0,
+            "queue_depth": 0,
+            "active_tasks": [],
+            "models_active": {},
+            "recently_completed": [
+                {
+                    "event_id": "golem-10-20260309",
+                    "flow": "golem",
+                    "success": True,
+                    "duration_s": 90.0,
+                    "cost_usd": 0.55,
+                    "finished_ago_s": 120,
+                }
+            ],
+        }
+        sessions = {
+            10: SimpleNamespace(
+                parent_subject="A" * 40,
+                total_cost_usd=0.0,
+            )
+        }
+        lines = _format_live_section(snap, sessions=sessions)
+        joined = "\n".join(lines)
+        assert "..." in joined
+
     def test_queue_depth_shown(self):
         snap = {
             "uptime_s": 60,
@@ -734,7 +762,9 @@ class TestFormatStatusText:
     @patch("golem.core.dashboard._check_daemon_status", return_value=("stopped", False))
     @patch("golem.core.dashboard.read_live_snapshot")
     @patch("golem.core.dashboard.read_runs")
-    def test_basic_output(self, mock_read_runs, mock_snap, _mock_daemon, _mock_sessions):
+    def test_basic_output(
+        self, mock_read_runs, mock_snap, _mock_daemon, _mock_sessions
+    ):
         mock_read_runs.return_value = [
             {
                 "success": True,
@@ -765,7 +795,9 @@ class TestFormatStatusText:
     @patch("golem.core.dashboard._check_daemon_status", return_value=("stopped", False))
     @patch("golem.core.dashboard.read_live_snapshot")
     @patch("golem.core.dashboard.read_runs")
-    def test_with_flow_filter(self, mock_read_runs, mock_snap, _mock_daemon, _mock_sessions):
+    def test_with_flow_filter(
+        self, mock_read_runs, mock_snap, _mock_daemon, _mock_sessions
+    ):
         mock_read_runs.return_value = []
         mock_snap.return_value = {
             "uptime_s": 0,
@@ -782,7 +814,9 @@ class TestFormatStatusText:
     @patch("golem.core.dashboard._check_daemon_status", return_value=("stopped", False))
     @patch("golem.core.dashboard.read_live_snapshot")
     @patch("golem.core.dashboard.read_runs")
-    def test_truncates_long_event_id(self, mock_read_runs, mock_snap, _mock_daemon, _mock_sessions):
+    def test_truncates_long_event_id(
+        self, mock_read_runs, mock_snap, _mock_daemon, _mock_sessions
+    ):
         mock_read_runs.return_value = [
             {
                 "success": False,
@@ -844,7 +878,9 @@ class TestFormatStatusText:
     @patch("golem.core.dashboard._check_daemon_status", return_value=("stopped", False))
     @patch("golem.core.dashboard.read_live_snapshot")
     @patch("golem.core.dashboard.read_runs")
-    def test_history_uses_format_duration(self, mock_runs, mock_snap, mock_daemon, mock_sessions):
+    def test_history_uses_format_duration(
+        self, mock_runs, mock_snap, mock_daemon, mock_sessions
+    ):
         mock_runs.return_value = [
             {
                 "success": True,
@@ -866,6 +902,43 @@ class TestFormatStatusText:
         text = format_status_text()
         assert "HISTORY:" in text
         assert "2m 30s" in text  # format_duration(150) = "2m 30s"
+
+    @patch("golem.core.dashboard.load_sessions")
+    @patch("golem.core.dashboard._check_daemon_status", return_value=("stopped", False))
+    @patch("golem.core.dashboard.read_live_snapshot")
+    @patch("golem.core.dashboard.read_runs")
+    def test_recent_run_long_subject_truncated(
+        self, mock_runs, mock_snap, _mock_daemon, mock_sessions
+    ):
+        mock_runs.return_value = [
+            {
+                "success": True,
+                "cost_usd": 0.10,
+                "duration_s": 10.0,
+                "flow": "golem",
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "started_at": "2026-01-01T00:00:00",
+                "event_id": "golem-77-20260309",
+            }
+        ]
+        mock_snap.return_value = {
+            "uptime_s": 0,
+            "active_count": 0,
+            "queue_depth": 0,
+            "active_tasks": [],
+            "models_active": {},
+            "recently_completed": [],
+        }
+        mock_sessions.return_value = {
+            77: SimpleNamespace(
+                parent_subject="B" * 40,
+                total_cost_usd=0.0,
+            )
+        }
+        text = format_status_text()
+        assert "..." in text
+        assert "BBB" in text
 
 
 # ---------------------------------------------------------------------------
