@@ -30,10 +30,11 @@ successfully completed task #{issue_id}.
 2. **Quality**: Are the changes correct and reasonable for the task?
 3. **No Regressions**: Did the agent avoid breaking existing functionality?
 4. **Documentation**: Did the agent document its work appropriately?
-5. **Verification Evidence**: The agent should have run ``black --check .``,
-   ``pylint --errors-only golem/``, and ``pytest --cov=golem --cov-fail-under=100``.
-   Check the event log for evidence of these commands. If verification commands
-   are absent or failed, flag this in concerns and lower your confidence.
+5. **Verification Evidence**: Independent verification results are provided below.
+   Do NOT check the event log for verification commands — the results below are
+   from independent execution after the agent finished. Trust these results over
+   any claims in the event log. If verification failed, the agent would have been
+   retried — if you see this prompt, verification passed.
 6. **Antipattern Detection**: Scan the git diff and event log for these
    antipatterns (ignore test code and debug-level logging):
    - *Traceback leaks*: Raw tracebacks or stack traces exposed in user-facing
@@ -44,6 +45,19 @@ successfully completed task #{issue_id}.
      (e.g., ``if status == "ready"``) for control flow instead of enums,
      constants, or dedicated types.
    If any antipattern is detected in a code_change task, flag each in concerns.
+7. **Cross-Module Consistency**: When the diff adds or modifies code that
+   reads from shared data structures (dicts, JSON, dataclass fields):
+   - Open golem/types.py (included below) and verify the keys used match
+     the TypedDict contract
+   - If the code accesses dict keys not defined in types.py, flag as HIGH concern
+   - If test fixtures construct dicts, verify their shape matches types.py
+   - If new cross-module dict shapes should be in types.py but aren't, flag as concern
+8. **Test Validity**: Tests must verify behavior, not just confirm assumptions:
+   - Check that test fixtures use realistic data shapes (matching types.py contracts)
+   - Flag tests where mocks/fixtures mirror the implementation rather than the
+     contract (circular validation — the bug class this criterion prevents)
+   - For cross-module features, verify at least one test exercises the real
+     producer -> consumer path end-to-end
 
 ## Required Output
 
@@ -83,5 +97,16 @@ Evaluation notes:
 - If the agent encountered errors, weigh whether they were resolved or left unaddressed
 - An empty git diff is fine for investigation/documentation tasks
 - If the git diff is truncated, lower your confidence accordingly and note it in concerns
-- If no verification commands (black, pylint, pytest) appear in the event log for a code_change task, lower confidence by at least 0.15 and flag in concerns
+- If the independent verification results below show failures, flag them in concerns and lower confidence
 - If antipatterns are detected in a code_change task, lower confidence by 0.05 per antipattern found, up to a maximum of 0.15, and flag each in concerns
+
+## Independent Verification Results
+
+{verification_evidence}
+
+## Shared Data Contracts (golem/types.py)
+
+{types_py_content}
+
+When reviewing, verify that any dict key access in the diff uses keys defined
+in these contracts. Flag mismatches as HIGH confidence concerns.

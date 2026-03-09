@@ -11,7 +11,9 @@ from golem.validation import (
     ValidationVerdict,
     _build_validation_prompt,
     _format_event_log,
+    _format_verification_evidence,
     _parse_validation_output,
+    _read_types_py,
     get_git_diff,
     has_uncommitted_changes,
     run_validation,
@@ -252,6 +254,47 @@ class TestBuildValidationPrompt:
         assert "Traceback leaks" in prompt
         assert "Cross-module private access" in prompt
         assert "String-matching control flow" in prompt
+        assert "Independent Verification Results" in prompt
+        assert "Shared Data Contracts" in prompt
+        assert "no independent verification was run" in prompt
+        assert "MilestoneDict" in prompt
+
+    @patch("golem.validation.get_git_diff", return_value="(no changes)")
+    def test_builds_prompt_with_verification(self, _):
+        session_data = {
+            "event_log": [],
+            "duration_seconds": 60,
+            "total_cost_usd": 0.10,
+            "milestone_count": 1,
+            "tools_called": [],
+            "mcp_tools_called": [],
+            "errors": [],
+        }
+        vr = SimpleNamespace(
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="",
+            test_count=42,
+            failures=[],
+            coverage_pct=100.0,
+        )
+        prompt = _build_validation_prompt(
+            issue_id=1,
+            subject="Test",
+            description="desc",
+            session_data=session_data,
+            work_dir="/tmp/work",
+            verification_result=vr,
+        )
+        assert "- black: PASS" in prompt
+        assert "- pylint: PASS" in prompt
+        assert "- pytest: PASS" in prompt
+        assert "42 tests" in prompt
+        assert "Cross-Module Consistency" in prompt
+        assert "Test Validity" in prompt
 
 
 class TestScanDiffAntipatterns:
@@ -677,3 +720,103 @@ class TestRunValidation:
         )
         assert v.verdict == "FAIL"
         assert mock_monitored.call_count == 2
+
+
+class TestFormatVerificationEvidence:
+    def test_none_result(self):
+        result = _format_verification_evidence(None)
+        assert "no independent verification was run" in result
+
+    def test_all_pass(self):
+        vr = SimpleNamespace(
+            black_ok=True,
+            black_output="All good",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="",
+            test_count=50,
+            failures=[],
+            coverage_pct=100.0,
+        )
+        result = _format_verification_evidence(vr)
+        assert "- black: PASS" in result
+        assert "- pylint: PASS" in result
+        assert "- pytest: PASS" in result
+        assert "50 tests, 0 failures, coverage: 100.0%" in result
+
+    def test_all_fail(self):
+        vr = SimpleNamespace(
+            black_ok=False,
+            black_output="would reformat foo.py",
+            pylint_ok=False,
+            pylint_output="E0001: syntax error",
+            pytest_ok=False,
+            pytest_output="FAILED test_foo.py::test_bar",
+            test_count=10,
+            failures=["test_foo.py::test_bar"],
+            coverage_pct=80.0,
+        )
+        result = _format_verification_evidence(vr)
+        assert "- black: FAIL" in result
+        assert "would reformat foo.py" in result
+        assert "- pylint: FAIL" in result
+        assert "E0001: syntax error" in result
+        assert "- pytest: FAIL" in result
+        assert "FAILED test_foo.py::test_bar" in result
+        # pytest_ok is False, so no summary line
+        assert "10 tests" not in result
+
+    def test_partial_failure(self):
+        vr = SimpleNamespace(
+            black_ok=True,
+            black_output="",
+            pylint_ok=False,
+            pylint_output="E0602: undefined name 'x'",
+            pytest_ok=True,
+            pytest_output="",
+            test_count=30,
+            failures=[],
+            coverage_pct=95.0,
+        )
+        result = _format_verification_evidence(vr)
+        assert "- black: PASS" in result
+        assert "- pylint: FAIL" in result
+        assert "undefined name" in result
+        assert "- pytest: PASS" in result
+        assert "30 tests, 0 failures, coverage: 95.0%" in result
+
+    def test_truncates_long_output(self):
+        vr = SimpleNamespace(
+            black_ok=False,
+            black_output="x" * 1000,
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="",
+            test_count=1,
+            failures=[],
+            coverage_pct=100.0,
+        )
+        result = _format_verification_evidence(vr)
+        # Output should be truncated to 500 chars
+        assert len("x" * 500) == 500
+        assert "x" * 501 not in result
+        assert "x" * 500 in result
+
+
+class TestReadTypesPy:
+    def test_returns_types_content(self):
+        content = _read_types_py()
+        assert "MilestoneDict" in content
+        assert "TypedDict" in content
+
+    def test_returns_content_with_contracts(self):
+        content = _read_types_py()
+        assert "TrackerExportDict" in content
+        assert "VerificationResultDict" in content
+
+    @patch("golem.validation.Path.read_text", side_effect=OSError("no file"))
+    def test_returns_fallback_on_error(self, _):
+        content = _read_types_py()
+        assert "golem/types.py not found" in content

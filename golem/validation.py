@@ -19,6 +19,7 @@ import logging
 import re
 import subprocess
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from .types import MilestoneDict
@@ -302,6 +303,42 @@ def _format_event_log(event_log: list[MilestoneDict]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Verification evidence + types.py helpers
+# ---------------------------------------------------------------------------
+
+
+def _format_verification_evidence(result: Any) -> str:
+    """Format a VerificationResult (or None) into human-readable evidence."""
+    if result is None:
+        return "(no independent verification was run)"
+    lines: list[str] = []
+    for name, ok, output in [
+        ("black", result.black_ok, result.black_output),
+        ("pylint", result.pylint_ok, result.pylint_output),
+        ("pytest", result.pytest_ok, result.pytest_output),
+    ]:
+        status = "PASS" if ok else "FAIL"
+        lines.append(f"- {name}: {status}")
+        if not ok and output:
+            lines.append(f"  {output[:500]}")
+    if result.pytest_ok:
+        lines.append(
+            f"  {result.test_count} tests, {len(result.failures)} failures, "
+            f"coverage: {result.coverage_pct}%"
+        )
+    return "\n".join(lines)
+
+
+def _read_types_py() -> str:
+    """Read golem/types.py for inclusion in the validation prompt."""
+    types_path = Path(__file__).resolve().parent / "types.py"
+    try:
+        return types_path.read_text(encoding="utf-8")
+    except OSError:
+        return "(golem/types.py not found)"
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
@@ -312,10 +349,13 @@ def _build_validation_prompt(
     description: str,
     session_data: dict[str, Any],
     work_dir: str,
+    verification_result: Any = None,
 ) -> str:
     """Build the validation prompt from session data and git state."""
     git_diff = get_git_diff(work_dir)
     event_log_summary = _format_event_log(session_data.get("event_log", []))
+    verification_evidence = _format_verification_evidence(verification_result)
+    types_py_content = _read_types_py()
 
     return format_prompt(
         "validate_task.txt",
@@ -330,6 +370,8 @@ def _build_validation_prompt(
         error_count=len(session_data.get("errors", [])),
         event_log_summary=event_log_summary,
         git_diff=git_diff,
+        verification_evidence=verification_evidence,
+        types_py_content=types_py_content,
     )
 
 
@@ -364,6 +406,7 @@ def run_validation(
     budget_usd: float = 0.0,
     timeout_seconds: int = 600,
     callback: ProgressCallback | None = None,
+    verification_result: Any = None,
 ) -> ValidationVerdict:
     """Run the validation agent and return a structured verdict.
 
@@ -388,9 +431,16 @@ def run_validation(
         Subprocess timeout.
     callback
         Optional stream-json event callback for real-time dashboard output.
+    verification_result
+        Optional VerificationResult from the deterministic verifier.
     """
     prompt = _build_validation_prompt(
-        issue_id, subject, description, session_data, work_dir
+        issue_id,
+        subject,
+        description,
+        session_data,
+        work_dir,
+        verification_result=verification_result,
     )
 
     cli_config = CLIConfig(
