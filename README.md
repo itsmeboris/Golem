@@ -125,9 +125,9 @@ flowchart TB
 
     mq -- "rebase + merge" --> verify["Integrity Check"]
     verify -- "clean" --> commit["Git Commit<br/>+ Notify Team"]
-    verify -- "lost additions" --> reconcile["Reconciliation Agent"]
-    reconcile -- "fixed + validated" --> commit
-    reconcile -- "failed" --> report
+    verify -- "conflict / lost additions" --> magent["Merge Agent"]
+    magent -- "resolved" --> commit
+    magent -- "failed" --> report
     val -- FAIL --> report["Report Failure<br/>+ Notify Team"]
 ```
 
@@ -187,9 +187,9 @@ flowchart LR
     mq -- "sequential<br/>rebase + merge" --> main
 ```
 
-No locks, no conflicts between tasks. Each instance has full read-write access to its own copy. Validated work enters a sequential **merge queue** that rebases each branch onto the latest HEAD before merging, so every merge sees the freshest state.
+No locks, no conflicts between tasks. Each instance has full read-write access to its own copy. Validated work enters a sequential **merge queue** that rebases each branch onto the latest HEAD before merging — all in a **temporary merge worktree** that never touches the user's working tree. If dirty files overlap, the merge is deferred and retried automatically.
 
-After each merge, a **post-merge integrity check** compares the agent's original diff against the merged result. If git silently dropped additions during rebase (e.g. master overwrote a file), a reconciliation agent re-applies the lost changes and validation re-runs before accepting the result. Traditional merge conflicts are handled similarly — a conflict-resolution agent reads both sides and produces a clean merge, subject to validation.
+All merge operations happen in a **temporary isolated worktree** — the user's working tree is never touched. After merging in the worktree, a **post-merge integrity check** compares the agent's original diff against the merged result. If git silently dropped additions during rebase, or a traditional merge conflict occurs, a unified **merge agent** reads both sides and produces a clean merge. The result is fast-forwarded onto the main branch. If the user's working tree has dirty files that overlap with the merge, the result is **deferred** on a `merge-ready/{id}` branch and retried automatically on each detection tick until the overlap clears.
 
 ---
 
@@ -249,13 +249,13 @@ golem/
 ├── committer.py           # Structured git commits
 ├── errors.py              # Error taxonomy (Infrastructure/Task/Validation)
 ├── merge_queue.py         # Sequential merge queue for cross-task coordination
-├── merge_review.py        # Agent-assisted merge reconciliation & conflict resolution
+├── merge_review.py        # Unified merge agent (conflict resolution + lost-addition recovery)
 ├── event_tracker.py       # Stream event processing & milestones
 ├── poller.py              # Task detection from trackers
 ├── notifications.py       # Teams Adaptive Card builders
 ├── mcp_scope.py           # Dynamic MCP server selection
 ├── workdir.py             # Per-task working directory resolution
-├── worktree_manager.py    # Git worktree isolation
+├── worktree_manager.py    # Git worktree isolation + isolated merge worktrees
 ├── interfaces.py          # Protocol definitions
 ├── profile.py             # Profile registry
 │
@@ -312,7 +312,7 @@ See [`config.yaml.example`](config.yaml.example) for the full annotated template
 | `validation_budget_usd` | `0.0` | Budget for validation agent (0 = unlimited) |
 | `validation_timeout_seconds` | `600` | Timeout for validation agent |
 | `retry_budget_usd` | `5.0` | Budget for retry agent (0 = unlimited) |
-| `merge_review_budget_usd` | `1.0` | Budget for merge reconciliation / conflict resolution agents |
+| `merge_review_budget_usd` | `1.0` | Budget for the unified merge agent (conflicts + lost additions) |
 | `merge_review_timeout` | `600` | Timeout (seconds) for merge review agent invocations |
 | `checkpoint_interval_seconds` | `300` | Seconds between checkpoint saves for crash recovery |
 | `checkpoint_max_age_minutes` | `10` | Max age before a checkpoint is considered stale |

@@ -247,8 +247,9 @@ class TestRetryDeferredMerges:
         session.base_work_dir = "/repo"
         flow._sessions[42] = session
 
-        with patch("golem.flow.fast_forward_if_safe", return_value=(True, "")) as mock_ff, \
-             patch("golem.flow._run_git") as mock_git:
+        with patch(
+            "golem.flow.fast_forward_if_safe", return_value=(True, "")
+        ) as mock_ff, patch("golem.flow._run_git") as mock_git:
             mock_git.return_value = MagicMock(stdout="abc123\n")
             await flow._retry_deferred_merges()
 
