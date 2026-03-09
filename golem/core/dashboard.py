@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 from collections import Counter
 from datetime import datetime, timedelta, timezone
@@ -12,8 +13,9 @@ from pathlib import Path
 from typing import Any
 
 from .config import DATA_DIR
+from .daemon_utils import read_pid
 from .live_state import LiveState, read_live_snapshot
-from .run_log import read_runs
+from .run_log import format_duration, read_runs
 from ..event_tracker import _summarize_tool_input
 
 logger = logging.getLogger("golem.core.dashboard")
@@ -559,28 +561,71 @@ _task_js_cache = _FileCache(Path(__file__).parent / "task_dashboard.js")
 _elk_js_cache = _FileCache(Path(__file__).parent / "elk.min.js")
 
 
-def _format_live_section(snap: dict) -> list[str]:
-    """Build the LIVE block for the CLI status output."""
-    if not snap["active_count"] and not snap["queue_depth"]:
-        return []
+_PID_FILE = DATA_DIR / "daemon.pid"
 
-    lines = [
-        "",
-        "  LIVE:",
-        f"    Running now:  {snap['active_count']}",
-        f"    In queue:     {snap['queue_depth']}",
-    ]
-    for t in snap["active_tasks"]:
-        eid = t["event_id"]
-        if len(eid) > 40:
-            eid = eid[:37] + "..."
-        lines.append(
-            f"      {t['flow']:10s}  {t['phase']:10s}  "
-            f"{t['elapsed_s']:>6.1f}s  {eid}"
-        )
-    if snap["models_active"]:
-        models = ", ".join(f"{m} x{c}" for m, c in snap["models_active"].items())
-        lines.append(f"    Models:       {models}")
+
+def _check_daemon_status(pid_file=None):
+    """Check if the golem daemon is running. Returns (label, is_running)."""
+    pid_file = pid_file or _PID_FILE
+    pid = read_pid(pid_file)
+    if pid is None:
+        return "stopped", False
+    try:
+        os.kill(pid, 0)
+        return "running (PID %d)" % pid, True
+    except OSError:
+        return "stopped (stale PID)", False
+
+
+def _format_live_section(snap: dict, sessions=None) -> list[str]:
+    """Build the LIVE block for CLI status output."""
+    sessions = sessions or {}
+    uptime = format_duration(snap.get("uptime_s", 0))
+    lines = ["", f"  Uptime:       {uptime}"]
+
+    if snap["active_count"]:
+        lines.append("")
+        lines.append("  ACTIVE:")
+        for t in snap["active_tasks"]:
+            eid = t["event_id"]
+            _, num = _extract_numeric_id(eid)
+            sess = sessions.get(int(num)) if num else None
+            subject = getattr(sess, "parent_subject", "") or eid
+            if len(subject) > 50:
+                subject = subject[:47] + "..."
+            model = t.get("model", "?")
+            phase = t.get("phase", "?")
+            elapsed = format_duration(t.get("elapsed_s", 0))
+            cost = getattr(sess, "total_cost_usd", 0.0)
+            lines.append(f"    #{num or '?':>5s}  {subject}")
+            lines.append(
+                f"           Phase: {phase}  Model: {model}"
+                f"  Elapsed: {elapsed}  Cost: ${cost:.2f}"
+            )
+    else:
+        lines.append("  Active:       No active tasks")
+
+    lines.append(f"  Queue:        {snap['queue_depth']} waiting")
+
+    recent = snap.get("recently_completed", [])
+    if recent:
+        lines += ["", "  RECENT:"]
+        for c in recent[:5]:
+            status = "OK" if c.get("success") else "FAIL"
+            ago = format_duration(c.get("finished_ago_s", 0))
+            eid = c.get("event_id", "")
+            _, num = _extract_numeric_id(eid)
+            sess = sessions.get(int(num)) if num else None
+            subject = getattr(sess, "parent_subject", "") or eid
+            if len(subject) > 30:
+                subject = subject[:27] + "..."
+            dur = format_duration(c.get("duration_s", 0))
+            cost = c.get("cost_usd", 0.0)
+            lines.append(
+                f"    [{status:4s}]  {ago:>8s} ago  "
+                f"#{num or '?':>5s}  {subject:<30s}  ${cost:.2f}  {dur}"
+            )
+
     return lines
 
 
@@ -594,6 +639,9 @@ def format_status_text(since_hours: int = 24, flow: str | None = None) -> str:
     lines = [
         f"=== Golem Status (last {since_hours}h{scope}) ===",
     ]
+
+    daemon_label, _ = _check_daemon_status()
+    lines.append(f"  Daemon:       {daemon_label}")
 
     lines += _format_live_section(read_live_snapshot())
 

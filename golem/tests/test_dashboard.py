@@ -11,6 +11,7 @@ import pytest
 from golem.core.dashboard import (
     _FileCache,
     _aggregate_stats,
+    _check_daemon_status,
     _extract_assistant_events,
     _extract_numeric_id,
     _extract_user_events,
@@ -551,6 +552,37 @@ class TestFileCache:
 
 
 # ---------------------------------------------------------------------------
+# _check_daemon_status
+# ---------------------------------------------------------------------------
+
+
+class TestCheckDaemonStatus:
+    @patch("golem.core.dashboard.read_pid")
+    def test_no_pid_file(self, mock_read_pid):
+        mock_read_pid.return_value = None
+        label, running = _check_daemon_status()
+        assert not running
+        assert "stopped" in label.lower()
+
+    @patch("golem.core.dashboard.os.kill")
+    @patch("golem.core.dashboard.read_pid")
+    def test_pid_alive(self, mock_read_pid, mock_kill):
+        mock_read_pid.return_value = 12345
+        mock_kill.return_value = None
+        label, running = _check_daemon_status()
+        assert running
+        assert "12345" in label
+
+    @patch("golem.core.dashboard.os.kill", side_effect=OSError)
+    @patch("golem.core.dashboard.read_pid")
+    def test_pid_stale(self, mock_read_pid, mock_kill):
+        mock_read_pid.return_value = 99999
+        label, running = _check_daemon_status()
+        assert not running
+        assert "stale" in label.lower()
+
+
+# ---------------------------------------------------------------------------
 # _format_live_section
 # ---------------------------------------------------------------------------
 
@@ -608,9 +640,10 @@ class TestFormatLiveSection:
 
 
 class TestFormatStatusText:
+    @patch("golem.core.dashboard._check_daemon_status", return_value=("stopped", False))
     @patch("golem.core.dashboard.read_live_snapshot")
     @patch("golem.core.dashboard.read_runs")
-    def test_basic_output(self, mock_read_runs, mock_snap):
+    def test_basic_output(self, mock_read_runs, mock_snap, _mock_daemon):
         mock_read_runs.return_value = [
             {
                 "success": True,
@@ -635,10 +668,12 @@ class TestFormatStatusText:
         assert "Golem Status" in text
         assert "Total runs:" in text
         assert "golem" in text
+        assert "Daemon:" in text
 
+    @patch("golem.core.dashboard._check_daemon_status", return_value=("stopped", False))
     @patch("golem.core.dashboard.read_live_snapshot")
     @patch("golem.core.dashboard.read_runs")
-    def test_with_flow_filter(self, mock_read_runs, mock_snap):
+    def test_with_flow_filter(self, mock_read_runs, mock_snap, _mock_daemon):
         mock_read_runs.return_value = []
         mock_snap.return_value = {
             "uptime_s": 0,
@@ -651,9 +686,10 @@ class TestFormatStatusText:
         text = format_status_text(since_hours=12, flow="golem")
         assert "golem" in text
 
+    @patch("golem.core.dashboard._check_daemon_status", return_value=("stopped", False))
     @patch("golem.core.dashboard.read_live_snapshot")
     @patch("golem.core.dashboard.read_runs")
-    def test_truncates_long_event_id(self, mock_read_runs, mock_snap):
+    def test_truncates_long_event_id(self, mock_read_runs, mock_snap, _mock_daemon):
         mock_read_runs.return_value = [
             {
                 "success": False,
