@@ -569,3 +569,18 @@ class TestMergeNoNewCommits:
         assert results[0].success is True
         assert results[0].merge_sha == "head123"
         assert results[0].deferred is False
+
+
+class TestMergeEmptyShaNoError:
+    """When merge_in_worktree returns empty sha with no error — no changes."""
+
+    @patch(
+        "golem.merge_queue.merge_in_worktree",
+        return_value=MergeOutcome(sha="", error=""),
+    )
+    @patch("golem.merge_queue.get_changed_files", return_value=[])
+    async def test_empty_sha_no_error_succeeds(self, _gcf, _miw, queue, base_entry):
+        await queue.enqueue(base_entry)
+        results = await queue.process_all()
+        assert results[0].success is True
+        assert results[0].merge_sha == ""

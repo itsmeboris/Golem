@@ -520,6 +520,82 @@ class TestMergeInWorktree:
         assert outcome.error  # non-empty error message
 
 
+class TestMergeInWorktreeEdgeCases:
+    def test_stale_merge_worktree_cleaned(self, git_repo, tmp_path):
+        """Pre-existing merge worktree directory is cleaned before merge."""
+        from golem.worktree_manager import merge_in_worktree
+
+        wt_root = str(tmp_path / "worktrees")
+        wt_path = create_worktree(str(git_repo), 1010, worktree_root=wt_root)
+
+        (Path(wt_path) / "f.py").write_text("code\n")
+        _run_git(["add", "."], cwd=wt_path)
+        _run_git(["commit", "-m", "Work"], cwd=wt_path)
+        _run_git(["worktree", "remove", "--force", wt_path], cwd=str(git_repo))
+
+        # Pre-create the merge worktree directory to trigger rmtree
+        merge_wt_dir = Path(git_repo) / "data" / "agent" / "merge-worktrees" / "1010"
+        merge_wt_dir.mkdir(parents=True)
+        (merge_wt_dir / "stale_file").write_text("stale")
+
+        outcome = merge_in_worktree(str(git_repo), 1010)
+        assert outcome.sha
+        assert outcome.error == ""
+        # Stale dir was replaced, merge worked
+        assert not merge_wt_dir.exists()  # cleaned up after merge
+
+    def test_worktree_creation_failure(self, git_repo, tmp_path, monkeypatch):
+        """Worktree creation failure returns error outcome."""
+        from golem.worktree_manager import merge_in_worktree
+
+        # Create agent branch with a commit
+        wt_root = str(tmp_path / "worktrees")
+        wt_path = create_worktree(str(git_repo), 1011, worktree_root=wt_root)
+        (Path(wt_path) / "f.py").write_text("code\n")
+        _run_git(["add", "."], cwd=wt_path)
+        _run_git(["commit", "-m", "Work"], cwd=wt_path)
+        _run_git(["worktree", "remove", "--force", wt_path], cwd=str(git_repo))
+
+        original_run_git = _run_git
+
+        def mock_run_git(args, cwd, timeout=30):
+            if "worktree" in args and "add" in args:
+                result = MagicMock()
+                result.returncode = 128
+                result.stderr = "fatal: cannot create worktree"
+                result.stdout = ""
+                return result
+            return original_run_git(args, cwd, timeout=timeout)
+
+        monkeypatch.setattr("golem.worktree_manager._run_git", mock_run_git)
+        outcome = merge_in_worktree(str(git_repo), 1011)
+        assert outcome.sha == ""
+        assert "worktree creation failed" in outcome.error
+
+    def test_missing_additions_warning(self, git_repo, tmp_path, monkeypatch):
+        """Merge succeeds but verify_merge_integrity finds missing additions."""
+        from golem.worktree_manager import merge_in_worktree
+
+        wt_root = str(tmp_path / "worktrees")
+        wt_path = create_worktree(str(git_repo), 1012, worktree_root=wt_root)
+
+        (Path(wt_path) / "agent_file.py").write_text("agent code\n")
+        _run_git(["add", "."], cwd=wt_path)
+        _run_git(["commit", "-m", "Agent work"], cwd=wt_path)
+        _run_git(["worktree", "remove", "--force", wt_path], cwd=str(git_repo))
+
+        # Mock verify_merge_integrity to report missing additions
+        fake_missing = [MissingAddition(file="agent_file.py", expected_lines=["lost"])]
+        monkeypatch.setattr(
+            "golem.worktree_manager.verify_merge_integrity",
+            lambda *_args, **_kwargs: fake_missing,
+        )
+
+        outcome = merge_in_worktree(str(git_repo), 1012)
+        assert outcome.sha  # Merge succeeded
+        assert outcome.missing_additions == fake_missing
+
+
 class TestFastForwardIfSafe:
     def test_clean_ff(self, git_repo, tmp_path):
         """Fast-forward succeeds when working tree is clean."""
@@ -573,3 +649,39 @@ class TestFastForwardIfSafe:
         assert "overlapping" in reason.lower() or "dirty" in reason.lower()
         # README still has user's version
         assert (git_repo / "README.md").read_text() == "user edits\n"
+
+    def test_diverged_branches_not_ff(self, git_repo, tmp_path):
+        """FF fails when branches have diverged (not fast-forwardable)."""
+        from golem.worktree_manager import fast_forward_if_safe
+
+        # Create divergent branch
+        _run_git(["checkout", "-b", "merge-ready/103"], cwd=str(git_repo))
+        (git_repo / "branch_file.py").write_text("branch\n")
+        _run_git(["add", "."], cwd=str(git_repo))
+        _run_git(["commit", "-m", "branch commit"], cwd=str(git_repo))
+        _run_git(["checkout", "master"], cwd=str(git_repo))
+
+        # Advance master (diverge)
+        (git_repo / "master_file.py").write_text("master\n")
+        _run_git(["add", "."], cwd=str(git_repo))
+        _run_git(["commit", "-m", "master commit"], cwd=str(git_repo))
+
+        ok, reason = fast_forward_if_safe(str(git_repo), "merge-ready/103")
+        assert ok is False
+        assert "diverged" in reason or "ff-only failed" in reason
+
+    def test_generic_ff_failure(self, monkeypatch):
+        """Generic ff-only failure with unexpected error message."""
+        from golem.worktree_manager import fast_forward_if_safe
+
+        def mock_run_git(args, cwd, timeout=30):
+            result = MagicMock()
+            result.returncode = 1
+            result.stdout = ""
+            result.stderr = "fatal: some unexpected git error"
+            return result
+
+        monkeypatch.setattr("golem.worktree_manager._run_git", mock_run_git)
+        ok, reason = fast_forward_if_safe("/repo", "branch")
+        assert ok is False
+        assert "ff-only failed" in reason
