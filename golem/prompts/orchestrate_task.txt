@@ -176,3 +176,5 @@ If blocked:
 - ALWAYS pass Scout findings as context when dispatching Builders and Reviewers.
 - Keep subagent prompts specific — include file paths, code snippets, and context.
 - When running parallel agents, use a single message with multiple Agent tool calls.
+- If the task description references a TODO item (e.g. "TODO #16"), update TODO.md
+  to mark that item as done (change ``[ ]`` to ``[x]``) before reporting completion.

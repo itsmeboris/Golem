@@ -413,6 +413,144 @@ class TestApplyMergeResult:
             MergeResult(session_id=999, success=True, merge_sha="a")
         )
 
+    def test_success_cleans_up_worktree(self, monkeypatch, tmp_path):
+        """After successful merge, the session's worktree should be cleaned up."""
+        flow = _make_flow(monkeypatch, tmp_path)
+        session = TaskSession(
+            parent_issue_id=410,
+            parent_subject="cleanup test",
+            worktree_path="/wt/410",
+            base_work_dir="/repo",
+        )
+        flow._sessions[410] = session
+
+        from golem.merge_queue import MergeResult
+
+        cleanup_calls = []
+        monkeypatch.setattr(
+            "golem.flow.cleanup_worktree",
+            lambda base_dir, wt_path, **kw: cleanup_calls.append(
+                (base_dir, wt_path, kw)
+            ),
+        )
+
+        flow._apply_merge_result(
+            MergeResult(session_id=410, success=True, merge_sha="abc")
+        )
+        assert len(cleanup_calls) == 1
+        assert cleanup_calls[0][0] == "/repo"
+        assert cleanup_calls[0][1] == "/wt/410"
+        assert session.worktree_path == ""
+
+    def test_failure_cleans_up_worktree_keeps_branch(self, monkeypatch, tmp_path):
+        """After non-deferred failure, worktree cleaned up but branch kept."""
+        flow = _make_flow(monkeypatch, tmp_path)
+        session = TaskSession(
+            parent_issue_id=411,
+            parent_subject="fail cleanup",
+            worktree_path="/wt/411",
+            base_work_dir="/repo",
+        )
+        flow._sessions[411] = session
+
+        from golem.merge_queue import MergeResult
+
+        cleanup_calls = []
+        monkeypatch.setattr(
+            "golem.flow.cleanup_worktree",
+            lambda base_dir, wt_path, **kw: cleanup_calls.append(
+                (base_dir, wt_path, kw)
+            ),
+        )
+
+        flow._apply_merge_result(
+            MergeResult(session_id=411, success=False, error="conflict")
+        )
+        assert len(cleanup_calls) == 1
+        assert cleanup_calls[0][0] == "/repo"
+        assert cleanup_calls[0][1] == "/wt/411"
+        assert cleanup_calls[0][2].get("keep_branch") is True
+        assert session.worktree_path == ""
+
+    def test_deferred_does_not_clean_up_worktree(self, monkeypatch, tmp_path):
+        """Deferred merges keep the worktree for later retry."""
+        flow = _make_flow(monkeypatch, tmp_path)
+        session = TaskSession(
+            parent_issue_id=412,
+            parent_subject="deferred keep",
+            worktree_path="/wt/412",
+            base_work_dir="/repo",
+        )
+        flow._sessions[412] = session
+
+        from golem.merge_queue import MergeResult
+
+        cleanup_calls = []
+        monkeypatch.setattr(
+            "golem.flow.cleanup_worktree",
+            lambda *a, **kw: cleanup_calls.append(1),
+        )
+
+        flow._apply_merge_result(
+            MergeResult(
+                session_id=412,
+                success=False,
+                deferred=True,
+                merge_branch="merge/412",
+                error="overlap",
+            )
+        )
+        assert not cleanup_calls
+        assert session.worktree_path == "/wt/412"
+
+    def test_no_worktree_skips_cleanup(self, monkeypatch, tmp_path):
+        """Sessions without a worktree_path should not trigger cleanup."""
+        flow = _make_flow(monkeypatch, tmp_path)
+        session = TaskSession(
+            parent_issue_id=413,
+            parent_subject="no wt",
+            worktree_path="",
+            base_work_dir="/repo",
+        )
+        flow._sessions[413] = session
+
+        from golem.merge_queue import MergeResult
+
+        cleanup_calls = []
+        monkeypatch.setattr(
+            "golem.flow.cleanup_worktree",
+            lambda *a, **kw: cleanup_calls.append(1),
+        )
+
+        flow._apply_merge_result(
+            MergeResult(session_id=413, success=True, merge_sha="abc")
+        )
+        assert not cleanup_calls
+
+    def test_cleanup_error_does_not_crash(self, monkeypatch, tmp_path):
+        """If cleanup_worktree raises, the merge result is still applied."""
+        flow = _make_flow(monkeypatch, tmp_path)
+        session = TaskSession(
+            parent_issue_id=414,
+            parent_subject="cleanup crash",
+            worktree_path="/wt/414",
+            base_work_dir="/repo",
+        )
+        flow._sessions[414] = session
+
+        from golem.merge_queue import MergeResult
+
+        monkeypatch.setattr(
+            "golem.flow.cleanup_worktree",
+            lambda *a, **kw: (_ for _ in ()).throw(OSError("disk full")),
+        )
+
+        flow._apply_merge_result(
+            MergeResult(session_id=414, success=True, merge_sha="xyz")
+        )
+        assert session.commit_sha == "xyz"
+        assert session.worktree_path == ""
+
 
 class TestMergeReadyInRunSession:
     async def test_merge_ready_session_enqueued(self, monkeypatch, tmp_path):

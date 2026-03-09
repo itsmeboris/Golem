@@ -53,6 +53,8 @@ passing output from all three.
 - **Do NOT commit** code changes — leave files as uncommitted changes. The orchestrator handles commits after validation.
 - **Do NOT push** to any remote repository.
 - **Keep your work focused** on the assigned task
+- If the task description references a TODO item (e.g. "TODO #16"), update TODO.md
+  to mark that item as done (change ``[ ]`` to ``[x]``) before reporting completion
 
 ## Output
 

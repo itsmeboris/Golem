@@ -38,7 +38,7 @@ from .errors import (
 from .event_tracker import Milestone, TaskEventTracker
 from .merge_queue import MergeEntry, MergeQueue, MergeResult
 from .merge_review import ReconciliationResult, run_merge_agent
-from .worktree_manager import _run_git, fast_forward_if_safe
+from .worktree_manager import _run_git, cleanup_worktree, fast_forward_if_safe
 from .batch_monitor import BatchMonitor
 from .orchestrator import (
     TaskOrchestrator,
@@ -454,6 +454,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             session.files_changed = result.changed_files
             if result.merge_sha:
                 session.commit_sha = result.merge_sha
+            self._cleanup_session_worktree(session)
             logger.info(
                 "Session %d: merge applied → %s",
                 result.session_id,
@@ -473,9 +474,31 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             session.merge_ready = False
             session.merge_deferred = False
             session.errors.append(f"merge failed: {result.error}")
+            self._cleanup_session_worktree(session, keep_branch=True)
             logger.warning(
                 "Session %d: merge failed: %s", result.session_id, result.error
             )
+
+    def _cleanup_session_worktree(
+        self, session: TaskSession, *, keep_branch: bool = False
+    ) -> None:
+        """Remove the session's worktree if it exists."""
+        if not session.worktree_path:
+            return
+        try:
+            cleanup_worktree(
+                session.base_work_dir,
+                session.worktree_path,
+                keep_branch=keep_branch,
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.warning(
+                "Session %d: worktree cleanup failed for %s",
+                session.parent_issue_id,
+                session.worktree_path,
+                exc_info=True,
+            )
+        session.worktree_path = ""
 
     def _handle_merge_agent(
         self,
