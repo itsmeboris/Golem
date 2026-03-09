@@ -10,6 +10,21 @@ You are working in an isolated git worktree. The orchestrator manages the git
 lifecycle (commits, merges, branches) — your job is to make changes and verify
 they work.
 
+## Skills
+
+Before starting work, check your available skills using the Skill tool. Skills
+provide domain knowledge, structured workflows, and search techniques that
+prevent wasted exploration. Invoke any skills that match:
+
+- The workspace or codebase you're working in (e.g., a workspace skill that
+  describes module layout, conventions, and verification commands)
+- The type of work you're doing (test-driven development, debugging, code
+  review, structural code search, etc.)
+- The domain of the task (registers, RTL, CI, MCP servers, etc.)
+
+Do this BEFORE step 1 below. A few skill invocations upfront save dozens of
+unfocused grep/find commands later.
+
 ## Steps
 
 1. Analyze the task description above carefully

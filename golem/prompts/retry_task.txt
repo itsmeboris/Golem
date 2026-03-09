@@ -19,6 +19,14 @@ but your work was reviewed and found PARTIALLY complete.
 **Specific concerns**:
 {concerns}
 
+## Before Retrying
+
+Check if any debugging or workspace skills are available using the Skill tool.
+The previous attempt failed — before jumping into fixes, use a structured
+debugging approach to understand the root cause from the validation feedback
+above. Re-invoke any workspace or domain skills to refresh your understanding
+of the codebase layout and conventions.
+
 ## Your Mission
 
 Address ONLY the concerns listed above. Do not redo work that was already done correctly.

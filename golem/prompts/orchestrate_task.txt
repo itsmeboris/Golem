@@ -34,6 +34,22 @@ code changes to Builder agents.
 - Use for: running black, pylint, pytest
 - Returns structured pass/fail — do not use for anything else
 
+## Skills
+
+You have access to skills via the Skill tool. Skills provide domain knowledge,
+structured workflows, and search techniques that are far more effective than
+unfocused exploration. Before starting work:
+
+1. Invoke any skills that match the workspace or codebase you're working in
+   (e.g., a workspace skill that describes module layout and conventions).
+2. Invoke the subagent-driven-development skill if available — it provides
+   guidance on how to parallelize and coordinate subagent work effectively.
+3. Check if any other skills match the task domain (registers, RTL, CI,
+   MCP servers, debugging, etc.) and note them for use by subagents.
+
+A few skill invocations upfront save dozens of unfocused grep/find commands later.
+When dispatching subagents, tell them which skills to invoke in their prompts.
+
 ## Effort Scaling
 
 Before starting, assess task complexity from the subject and description:
@@ -56,6 +72,10 @@ Do NOT ask Scouts to "explore the X system" — that leads to unfocused search.
 
 Wait for all Scout results. **Save their output** — you will pass it to Builders.
 
+Tell Scouts to invoke any relevant skills before searching. Skills can provide
+codebase maps, structural search techniques (e.g., AST-based search), or domain
+knowledge that makes scouting targeted instead of brute-force.
+
 ### Phase 2: Plan
 Using Scout findings (and optionally reading files yourself), decide:
 - What files need to change
@@ -63,6 +83,11 @@ Using Scout findings (and optionally reading files yourself), decide:
 - What the implementation approach is
 
 State your plan briefly before proceeding.
+
+Before finalizing your plan, check if any skills apply to your implementation
+approach — for example, a brainstorming skill for tasks with unclear requirements,
+or a test-driven-development skill to enforce red-green-refactor. When dispatching
+Builders, include in their prompts which skills they should invoke.
 
 ### Phase 3: Build
 Dispatch Builder agents. Each Builder prompt MUST include:
@@ -91,6 +116,10 @@ Review all uncommitted changes in {work_dir} for correctness and edge cases.
 If the Reviewer reports NEEDS_FIXES with issues >= 80 confidence, dispatch a
 Builder to fix them and re-review. Do not fix issues below confidence 80.
 
+Instruct the Reviewer to invoke any code-review skills before starting. These
+skills may provide structured review criteria, confidence thresholds, or
+domain-specific checks that improve review quality.
+
 ### Phase 5: Verify
 Dispatch one Verifier agent. It runs black, pylint, and pytest.
 
@@ -98,9 +127,11 @@ Dispatch one Verifier agent. It runs black, pylint, and pytest.
 error, report status as "BLOCKED" instead of retrying. Do NOT loop forever.
 
 If tests fail:
-1. Dispatch a Builder to fix the specific failure
-2. Re-run the Verifier
-3. Repeat up to {inner_retry_max} times total
+1. Check if a debugging skill is available — evidence-first debugging prevents
+   guess-and-check loops on persistent failures.
+2. Dispatch a Builder to fix the specific failure
+3. Re-run the Verifier
+4. Repeat up to {inner_retry_max} times total
 
 ## Report
 

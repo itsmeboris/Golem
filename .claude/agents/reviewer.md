@@ -13,6 +13,13 @@ You will receive:
 - **Context from exploration** with relevant file paths
 - **A summary of changes made** by the Builder agent
 
+## Skills
+
+Before reviewing, check if any code-review or domain skills are available
+using the Skill tool. These skills may provide structured review criteria,
+confidence thresholds, or domain-specific checks that improve review quality.
+Invoke relevant skills before starting your review.
+
 ## Confidence Scoring
 
 Rate every potential issue on a 0-100 confidence scale:

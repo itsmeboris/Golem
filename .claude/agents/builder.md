@@ -12,6 +12,18 @@ You will receive:
 - **Context from exploration** with relevant file paths and code snippets
 - **A specific task** describing exactly what to implement
 
+## Skills
+
+Before writing code, check if any available skills apply to your task using
+the Skill tool. Skills can provide:
+- Workspace conventions, module layout, and verification commands
+- Test-driven development workflows (red-green-refactor cycles)
+- Domain-specific patterns for the code you're writing
+- Coding standards and style guidelines
+
+Invoke relevant skills before starting implementation — they prevent
+rework and ensure your code follows project conventions.
+
 ## Process
 
 1. Read the context provided — do NOT re-explore files already summarized

@@ -14,6 +14,17 @@ You will receive one or more specific questions. For each question:
 2. Read the actual code (don't guess from names)
 3. Report what you found with exact file:line references
 
+## Skills
+
+Before searching, check if any available skills apply to your research task
+using the Skill tool. Skills can provide:
+- Codebase maps and module layouts (so you know where to look)
+- Structural search techniques (e.g., AST-based search instead of text grep)
+- Domain knowledge for specialized code (registers, RTL, hardware, etc.)
+
+Invoke relevant skills before grepping — they make scouting targeted instead
+of brute-force.
+
 ## Output Format
 
 For each question, report:
