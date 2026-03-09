@@ -7,7 +7,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from golem.worktree_manager import (
-    MergeOutcome,
     MissingAddition,
     _cleanup_worktree_impl,
     _current_branch,
@@ -626,7 +625,7 @@ class TestFastForwardIfSafe:
         # Dirty file that doesn't overlap
         (git_repo / "user_wip.txt").write_text("wip")
 
-        ok, reason = fast_forward_if_safe(str(git_repo), "merge-ready/101")
+        ok, _reason = fast_forward_if_safe(str(git_repo), "merge-ready/101")
         assert ok is True
         # User's file still there
         assert (git_repo / "user_wip.txt").read_text() == "wip"
