@@ -420,6 +420,7 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
             "write_trace": patch(
                 "golem.orchestrator._write_trace", return_value="/trace"
             ),
+            "streaming_trace": patch("golem.orchestrator._StreamingTraceWriter"),
             "preflight": patch.object(TaskOrchestrator, "_preflight_check"),
         }
         return patches
@@ -468,8 +469,8 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
         with deps["resolve"], deps["create_wt"] as m_create, deps["invoke"], deps[
             "run_val"
         ], deps["commit"], deps["write_prompt"], deps["write_trace"], deps[
-            "preflight"
-        ], patch.object(
+            "streaming_trace"
+        ], deps["preflight"], patch.object(
             orch, "_write_report"
         ), patch.object(
             orch, "_record_run"
@@ -651,6 +652,8 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
         ), patch(
             "golem.orchestrator._write_trace"
         ), patch(
+            "golem.orchestrator._StreamingTraceWriter"
+        ), patch(
             "golem.orchestrator.cleanup_worktree"
         ) as m_cleanup, patch.object(
             orch, "_write_report"
@@ -663,42 +666,91 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
         assert m_cleanup.call_args[1]["keep_branch"] is True
 
 
-class TestPersistTraces:
-    def test_writes_prompt_and_trace(self):
-        orch = _make_orch()
-        result = CLIResult(trace_events=[{"t": 1}])
-        with patch("golem.orchestrator._write_prompt") as m_p, patch(
-            "golem.orchestrator._write_trace", return_value="/t"
-        ) as m_t:
-            orch._persist_traces(42, "the prompt", result)
-        m_p.assert_called_once_with("golem", "golem-42", "the prompt")
-        m_t.assert_called_once()
-        assert orch.session.trace_file == "/t"
+class TestStreamingTraceWriter:
+    def test_appends_events_and_flushes(self, tmp_path):
+        from golem.core.flow_base import _StreamingTraceWriter
 
-    def test_skips_empty_prompt(self):
-        orch = _make_orch()
-        with patch("golem.orchestrator._write_prompt") as m_p, patch(
-            "golem.orchestrator._write_trace"
-        ):
-            orch._persist_traces(42, "", CLIResult())
-        m_p.assert_not_called()
+        with patch("golem.core.flow_base.TRACES_DIR", tmp_path):
+            writer = _StreamingTraceWriter("golem", "golem-42")
+            writer.append({"type": "assistant", "msg": "hello"})
+            writer.append({"type": "tool_use", "name": "Read"})
+            # File should have content before close (flushed)
+            lines = (tmp_path / "golem" / "golem-42.jsonl").read_text().strip().split("\n")
+            assert len(lines) == 2
+            assert json.loads(lines[0])["msg"] == "hello"
+            writer.close()
 
-    def test_skips_none_result(self):
-        orch = _make_orch()
-        with patch("golem.orchestrator._write_prompt"), patch(
-            "golem.orchestrator._write_trace"
-        ) as m_t:
-            orch._persist_traces(42, "prompt", None)
-        m_t.assert_not_called()
+    def test_close_is_idempotent(self, tmp_path):
+        from golem.core.flow_base import _StreamingTraceWriter
 
-    def test_skips_empty_trace_events(self):
-        orch = _make_orch()
-        result = CLIResult(trace_events=[])
-        with patch("golem.orchestrator._write_prompt"), patch(
+        with patch("golem.core.flow_base.TRACES_DIR", tmp_path):
+            writer = _StreamingTraceWriter("golem", "golem-1")
+            writer.append({"t": 1})
+            writer.close()
+            writer.close()  # should not raise
+
+    def test_append_after_close_is_noop(self, tmp_path):
+        from golem.core.flow_base import _StreamingTraceWriter
+
+        with patch("golem.core.flow_base.TRACES_DIR", tmp_path):
+            writer = _StreamingTraceWriter("golem", "golem-1")
+            writer.close()
+            writer.append({"t": 1})  # should not raise
+            content = (tmp_path / "golem" / "golem-1.jsonl").read_text()
+            assert content == ""
+
+
+class TestStreamingCallbackWiring:
+    """Verify the _streaming_callback inner function is exercised."""
+
+    async def test_monolithic_callback_streams_events(self, tmp_path):
+        session = TaskSession(parent_issue_id=99, parent_subject="CB test")
+        profile = MagicMock()
+        profile.task_source.get_task_description.return_value = "desc"
+        profile.prompt_provider.format.return_value = "prompt"
+        profile.tool_provider.servers_for_subject.return_value = []
+        orch = _make_orch(session, profile=profile)
+
+        captured_cb = None
+
+        def _capture_cli(prompt, config, callback=None):
+            nonlocal captured_cb
+            captured_cb = callback
+            # Simulate the CLI firing events via the callback
+            if callback:
+                callback(
+                    {
+                        "type": "assistant",
+                        "message": {
+                            "content": [{"type": "text", "text": "thinking..."}]
+                        },
+                    }
+                )
+            return CLIResult(cost_usd=0.1, trace_events=[])
+
+        with patch(
+            "golem.orchestrator.resolve_work_dir", return_value="/work"
+        ), patch.object(orch, "_preflight_check"), patch(
+            "golem.orchestrator.invoke_cli_monitored", side_effect=_capture_cli
+        ), patch(
+            "golem.orchestrator._write_prompt"
+        ), patch(
             "golem.orchestrator._write_trace"
-        ) as m_t:
-            orch._persist_traces(42, "prompt", result)
-        m_t.assert_not_called()
+        ), patch(
+            "golem.orchestrator._StreamingTraceWriter"
+        ) as mock_sw, patch(
+            "golem.orchestrator.run_validation",
+            return_value=ValidationVerdict(
+                verdict="PASS", confidence=0.9, summary="ok", task_type="f"
+            ),
+        ), patch(
+            "golem.orchestrator.commit_changes",
+            return_value=CommitResult(committed=True, sha="abc"),
+        ), patch.object(orch, "_write_report"), patch.object(orch, "_record_run"):
+            await orch._run_agent_monolithic()
+
+        # The streaming writer's append should have been called via the callback
+        mock_sw.return_value.append.assert_called()
 
 
 class TestRunValidation:
@@ -875,7 +927,7 @@ class TestRetryAgent:
             "golem.orchestrator.invoke_cli_monitored", return_value=retry_result
         ), patch("golem.orchestrator._write_prompt"), patch(
             "golem.orchestrator._write_trace", return_value="/rt"
-        ), patch(
+        ), patch("golem.orchestrator._StreamingTraceWriter"), patch(
             "golem.orchestrator.run_validation", return_value=retry_verdict
         ):
             await orch._retry_agent(initial_verdict, "/work", [])
@@ -907,7 +959,7 @@ class TestRetryAgent:
             "golem.orchestrator.invoke_cli_monitored", return_value=retry_result
         ), patch("golem.orchestrator._write_prompt"), patch(
             "golem.orchestrator._write_trace"
-        ), patch(
+        ), patch("golem.orchestrator._StreamingTraceWriter"), patch(
             "golem.orchestrator.run_validation", return_value=retry_verdict
         ):
             await orch._retry_agent(initial_verdict, "/work", [])
@@ -935,6 +987,8 @@ class TestRetryAgent:
         with patch("golem.orchestrator.invoke_cli_monitored", return_value=None), patch(
             "golem.orchestrator._write_prompt"
         ), patch("golem.orchestrator._write_trace"), patch(
+            "golem.orchestrator._StreamingTraceWriter"
+        ), patch(
             "golem.orchestrator.run_validation", return_value=retry_verdict
         ):
             await orch._retry_agent(initial_verdict, "/work", [])
@@ -964,7 +1018,7 @@ class TestRetryAgent:
             "golem.orchestrator.invoke_cli_monitored", return_value=retry_result
         ), patch("golem.orchestrator._write_prompt"), patch(
             "golem.orchestrator._write_trace"
-        ), patch(
+        ), patch("golem.orchestrator._StreamingTraceWriter"), patch(
             "golem.orchestrator.run_validation", return_value=retry_verdict
         ):
             await orch._retry_agent(initial_verdict, "/work", ["mcp1"])
@@ -1383,6 +1437,8 @@ class TestInfraErrorReraised:
             "golem.orchestrator._write_prompt"
         ), patch(
             "golem.orchestrator._write_trace"
+        ), patch(
+            "golem.orchestrator._StreamingTraceWriter"
         ), patch.object(
             orch, "_write_report"
         ), patch.object(
@@ -1426,6 +1482,7 @@ class TestCheckpointIntegration:
             "write_trace": patch(
                 "golem.orchestrator._write_trace", return_value="/trace"
             ),
+            "streaming_trace": patch("golem.orchestrator._StreamingTraceWriter"),
             "preflight": patch.object(TaskOrchestrator, "_preflight_check"),
         }
         return patches
@@ -1497,7 +1554,7 @@ class TestCheckpointIntegration:
             return_value=CLIResult(cost_usd=0.3, trace_events=[]),
         ), patch("golem.orchestrator._write_prompt"), patch(
             "golem.orchestrator._write_trace"
-        ), patch(
+        ), patch("golem.orchestrator._StreamingTraceWriter"), patch(
             "golem.orchestrator.run_validation", return_value=retry_verdict
         ):
             await orch._retry_agent(initial_verdict, "/work", [])
@@ -1623,6 +1680,8 @@ class TestCheckpointIntegration:
             "golem.orchestrator._write_prompt"
         ), patch(
             "golem.orchestrator._write_trace"
+        ), patch(
+            "golem.orchestrator._StreamingTraceWriter"
         ), patch(
             "golem.orchestrator.run_validation", return_value=retry_verdict
         ):

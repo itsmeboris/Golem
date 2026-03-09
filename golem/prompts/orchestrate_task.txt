@@ -178,3 +178,7 @@ If blocked:
 - When running parallel agents, use a single message with multiple Agent tool calls.
 - If the task description references a TODO item (e.g. "TODO #16"), update TODO.md
   to mark that item as done (change ``[ ]`` to ``[x]``) before reporting completion.
+- **ALL subagents work in {work_dir}.** Every subagent prompt MUST start with:
+  ``Working directory: {work_dir}`` — and all file paths you give them must be
+  relative to or inside that directory. Never let a subagent default to the repo
+  root; that is a different directory.

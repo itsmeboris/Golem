@@ -6,9 +6,11 @@ import them without a cross-package dependency.
 
 import json
 import logging
+import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, TypeVar
+from pathlib import Path
+from typing import IO, Any, TypeVar
 
 from .config import DATA_DIR, Config, FlowConfig
 from .live_state import LiveState
@@ -22,7 +24,7 @@ TRACES_DIR = DATA_DIR / "traces"
 
 
 def _write_prompt(flow_name: str, event_id: str, prompt: str) -> str:
-    safe_id = event_id.replace("/", "_")
+    safe_id = event_id.replace("/", "_").replace("\\", "_")
     trace_dir = TRACES_DIR / flow_name
     trace_dir.mkdir(parents=True, exist_ok=True)
     prompt_file = trace_dir / f"{safe_id}.prompt.txt"
@@ -41,6 +43,39 @@ def _write_trace(flow_name: str, event_id: str, events: list[dict]) -> str:
         for ev in events:
             fh.write(json.dumps(ev, default=str) + "\n")
     return str(trace_file.relative_to(DATA_DIR.parent))
+
+
+class _StreamingTraceWriter:
+    """Append trace events to a JSONL file as they arrive.
+
+    Thread-safe — the callback may fire from any thread.
+    Call :meth:`close` when the agent finishes to flush remaining data.
+    """
+
+    def __init__(self, flow_name: str, event_id: str) -> None:
+        safe_id = event_id.replace("/", "_").replace("\\", "_")
+        trace_dir = TRACES_DIR / flow_name
+        trace_dir.mkdir(parents=True, exist_ok=True)
+        self._path: Path = trace_dir / f"{safe_id}.jsonl"
+        self._fh: IO[str] | None = open(  # noqa: SIM115  # pylint: disable=consider-using-with
+            self._path, "w", encoding="utf-8"
+        )
+        self._lock = threading.Lock()
+        self.relative_path = str(self._path.relative_to(DATA_DIR.parent))
+
+    def append(self, event: dict) -> None:
+        """Write a single event as a JSON line, flushing to disk."""
+        with self._lock:
+            if self._fh is not None:
+                self._fh.write(json.dumps(event, default=str) + "\n")
+                self._fh.flush()
+
+    def close(self) -> None:
+        """Flush and close the underlying file handle (idempotent)."""
+        with self._lock:
+            if self._fh is not None:
+                self._fh.close()
+                self._fh = None
 
 
 @dataclass

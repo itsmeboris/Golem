@@ -129,6 +129,7 @@ class TestRunPipeline:
             patch("golem.supervisor_v2_subagent.commit_changes") as mock_commit,
             patch("golem.supervisor_v2_subagent._write_prompt"),
             patch("golem.supervisor_v2_subagent._write_trace"),
+            patch("golem.supervisor_v2_subagent._StreamingTraceWriter"),
             patch(
                 "golem.supervisor_v2_subagent.resolve_work_dir",
                 return_value="/tmp/test",
@@ -327,6 +328,7 @@ class TestRetryWithResume:
             patch("golem.supervisor_v2_subagent.commit_changes") as mock_commit,
             patch("golem.supervisor_v2_subagent._write_prompt"),
             patch("golem.supervisor_v2_subagent._write_trace"),
+            patch("golem.supervisor_v2_subagent._StreamingTraceWriter"),
         ):
             mock_cli.return_value = _make_cli_result(cost=0.2, session_id="sess-456")
             mock_val.return_value = ValidationVerdict(
@@ -663,10 +665,10 @@ class TestTraceEventsPersistence:
             patch("golem.supervisor_v2_subagent.run_validation") as mock_val,
             patch("golem.supervisor_v2_subagent.commit_changes") as mock_commit,
             patch("golem.supervisor_v2_subagent._write_prompt"),
+            patch("golem.supervisor_v2_subagent._write_trace") as mock_trace,
             patch(
-                "golem.supervisor_v2_subagent._write_trace",
-                return_value="/tmp/trace.jsonl",
-            ) as mock_trace,
+                "golem.supervisor_v2_subagent._StreamingTraceWriter",
+            ) as mock_streaming,
             patch(
                 "golem.supervisor_v2_subagent.resolve_work_dir",
                 return_value="/tmp/test",
@@ -683,6 +685,8 @@ class TestTraceEventsPersistence:
                 verdict="PASS", confidence=0.9, summary="ok", task_type="feature"
             )
             mock_commit.return_value = CommitResult(committed=True, sha="abc")
+            mock_streaming.return_value.relative_path = "/tmp/trace.jsonl"
+            mock_trace.return_value = "/tmp/retry_trace.jsonl"
             yield {
                 "cli": mock_cli,
                 "val": mock_val,
@@ -716,7 +720,62 @@ class TestTraceEventsPersistence:
 
         await sup._retry_with_resume(verdict, "/work", 42)
 
-        assert session.retry_trace_file == "/tmp/trace.jsonl"
+        assert session.retry_trace_file == "/tmp/retry_trace.jsonl"
+
+
+class TestStreamingCallbackWiring:
+    """Verify the _streaming_callback inner function in _invoke_orchestrator."""
+
+    async def test_callback_streams_events(self):
+        captured_cb = None
+
+        def _capture_cli(prompt, config, callback=None):
+            nonlocal captured_cb
+            captured_cb = callback
+            if callback:
+                callback(
+                    {
+                        "type": "assistant",
+                        "message": {
+                            "content": [{"type": "text", "text": "hello"}]
+                        },
+                    }
+                )
+            return _make_cli_result(
+                output_result='{"status": "COMPLETE", "summary": "done"}',
+                session_id="sess-x",
+                trace_events=[],
+            )
+
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.invoke_cli_monitored",
+                side_effect=_capture_cli,
+            ),
+            patch(
+                "golem.supervisor_v2_subagent.run_validation",
+                return_value=ValidationVerdict(
+                    verdict="PASS", confidence=0.9, summary="ok", task_type="f"
+                ),
+            ),
+            patch(
+                "golem.supervisor_v2_subagent.commit_changes",
+                return_value=CommitResult(committed=True, sha="abc"),
+            ),
+            patch("golem.supervisor_v2_subagent._write_prompt"),
+            patch("golem.supervisor_v2_subagent._write_trace"),
+            patch("golem.supervisor_v2_subagent._StreamingTraceWriter"),
+            patch(
+                "golem.supervisor_v2_subagent.resolve_work_dir",
+                return_value="/tmp/test",
+            ),
+            patch("golem.supervisor_v2_subagent.create_worktree"),
+            patch("golem.supervisor_v2_subagent.cleanup_worktree"),
+        ):
+            session = TaskSession(parent_issue_id=42, parent_subject="Test")
+            sup = _make_supervisor(session=session)
+            await sup.run()
+        assert captured_cb is not None
 
 
 # -- Checkpoint resume (skip-ahead) -----------------------------------------
@@ -731,6 +790,7 @@ class TestCheckpointResume:
             patch("golem.supervisor_v2_subagent.commit_changes") as mock_commit,
             patch("golem.supervisor_v2_subagent._write_prompt"),
             patch("golem.supervisor_v2_subagent._write_trace"),
+            patch("golem.supervisor_v2_subagent._StreamingTraceWriter"),
             patch(
                 "golem.supervisor_v2_subagent.resolve_work_dir",
                 return_value="/tmp/test",

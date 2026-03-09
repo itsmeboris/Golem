@@ -20,7 +20,7 @@ from .committer import commit_changes
 from .errors import InfrastructureError
 from .core.cli_wrapper import CLIConfig, CLIResult, CLIType, invoke_cli_monitored
 from .core.config import PROJECT_ROOT, GolemFlowConfig
-from .core.flow_base import _write_prompt, _write_trace
+from .core.flow_base import _StreamingTraceWriter, _write_prompt, _write_trace
 from .core.json_extract import extract_json
 from .core.log_context import SessionLogAdapter
 from .event_tracker import TaskEventTracker
@@ -313,15 +313,34 @@ class SubagentSupervisor:
             session_id=issue_id,
             on_milestone=self._on_milestone,
         )
-        callback = self._chain_event_callback(tracker.handle_event)
+
+        # Write prompt immediately so the dashboard can show it during the run
+        event_id = f"golem-{issue_id}"
+        _write_prompt("golem", event_id, prompt)
+
+        # Set up streaming trace writer so events are visible during the run
+        trace_writer = _StreamingTraceWriter("golem", event_id)
+        self.session.trace_file = trace_writer.relative_path
+
+        def _streaming_callback(event: dict) -> None:
+            trace_writer.append(event)
+            tracker.handle_event(event)
+
+        callback = self._chain_event_callback(_streaming_callback)
 
         self.session.supervisor_phase = "orchestrating"
         self._emit_event("Starting single-session orchestration...")
 
-        async with self._work_dir_lock:
-            result = await asyncio.get_running_loop().run_in_executor(
-                None, invoke_cli_monitored, prompt, cli_config, callback
-            )
+        try:
+            async with self._work_dir_lock:
+                result = await asyncio.get_running_loop().run_in_executor(
+                    None, invoke_cli_monitored, prompt, cli_config, callback
+                )
+        except BaseException:
+            trace_writer.close()
+            raise
+
+        trace_writer.close()
 
         elapsed = time.time() - start
         self.session.duration_seconds = elapsed
@@ -334,14 +353,6 @@ class SubagentSupervisor:
         # Capture session_id for --resume support
         if result.session_id:
             self.session.cli_session_id = result.session_id
-
-        # Persist traces
-        event_id = f"golem-{issue_id}"
-        _write_prompt("golem", event_id, prompt)
-        if result.trace_events:
-            self.session.trace_file = _write_trace(
-                "golem", event_id, result.trace_events
-            )
 
         return result
 

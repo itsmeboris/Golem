@@ -34,7 +34,7 @@ from .core.config import DATA_DIR, PROJECT_ROOT, GolemFlowConfig
 from .core.defaults import _now_iso  # re-exported for backward compat (flow.py)
 from .core.report import ReportWriter
 from .core.run_log import RunRecord, format_duration, record_run
-from .core.flow_base import _write_prompt, _write_trace
+from .core.flow_base import _StreamingTraceWriter, _write_prompt, _write_trace
 
 from .checkpoint import delete_checkpoint, save_checkpoint
 from .committer import commit_changes
@@ -386,6 +386,7 @@ class TaskOrchestrator:
             on_milestone=self._on_milestone,
         )
         prompt = ""
+        trace_writer: _StreamingTraceWriter | None = None
 
         try:
             prompt = self._format_prompt(
@@ -393,22 +394,10 @@ class TaskOrchestrator:
                 issue_id=issue_id,
                 task_description=description,
             )
-            mcp_servers = self._get_mcp_servers(self.session.parent_subject)
-            cli_config = CLIConfig(
-                cli_type=CLIType.CLAUDE,
-                model=self.task_config.task_model,
-                max_budget_usd=self.session.budget_usd,
-                timeout_seconds=self.task_config.task_timeout_seconds,
-                mcp_servers=mcp_servers,
-                cwd=work_dir,
+            result, trace_writer, mcp_servers = await self._invoke_agent(
+                issue_id, prompt, work_dir, tracker,
             )
-            callback = self._chain_event_callback(tracker.handle_event)
-            async with self._work_dir_lock:
-                result = await asyncio.get_running_loop().run_in_executor(
-                    None, invoke_cli_monitored, prompt, cli_config, callback
-                )
             self._populate_session_from_tracker(tracker, result, time.time() - start)
-            self._persist_traces(issue_id, prompt, result)
             self._update_task(issue_id, status=TaskStatus.FIXED, progress=80)
 
             verdict = await self._run_validation(issue_id, work_dir)
@@ -434,6 +423,8 @@ class TaskOrchestrator:
             self._handle_agent_failure(issue_id, exc, start, tracker, result, prompt)
 
         finally:
+            if trace_writer:
+                trace_writer.close()
             if self.session.state in (
                 TaskSessionState.COMPLETED,
                 TaskSessionState.FAILED,
@@ -479,19 +470,46 @@ class TaskOrchestrator:
             shutil.copy2(str(src), str(dest / "settings.local.json"))
             logger.debug("Copied .claude/settings.local.json into %s", work_dir)
 
-    # -- Pipeline helpers --------------------------------------------------------
-
-    def _persist_traces(
-        self, issue_id: int, prompt: str, result: CLIResult | None
-    ) -> None:
-        """Phase 2: Write prompt and trace files to disk."""
+    async def _invoke_agent(
+        self,
+        issue_id: int,
+        prompt: str,
+        work_dir: str,
+        tracker: TaskEventTracker,
+    ) -> tuple[CLIResult, _StreamingTraceWriter, list[str]]:
+        """Prepare traces, invoke the CLI, and return the result + writer."""
         event_id = f"golem-{issue_id}"
-        if prompt:
-            _write_prompt("golem", event_id, prompt)
-        if result and result.trace_events:
-            self.session.trace_file = _write_trace(
-                "golem", event_id, result.trace_events
-            )
+        _write_prompt("golem", event_id, prompt)
+
+        trace_writer = _StreamingTraceWriter("golem", event_id)
+        self.session.trace_file = trace_writer.relative_path
+
+        def _streaming_callback(event: dict) -> None:
+            trace_writer.append(event)
+            tracker.handle_event(event)
+
+        mcp_servers = self._get_mcp_servers(self.session.parent_subject)
+        cli_config = CLIConfig(
+            cli_type=CLIType.CLAUDE,
+            model=self.task_config.task_model,
+            max_budget_usd=self.session.budget_usd,
+            timeout_seconds=self.task_config.task_timeout_seconds,
+            mcp_servers=mcp_servers,
+            cwd=work_dir,
+        )
+        callback = self._chain_event_callback(_streaming_callback)
+        try:
+            async with self._work_dir_lock:
+                result = await asyncio.get_running_loop().run_in_executor(
+                    None, invoke_cli_monitored, prompt, cli_config, callback
+                )
+        except BaseException:
+            trace_writer.close()
+            raise
+        trace_writer.close()
+        return result, trace_writer, mcp_servers
+
+    # -- Pipeline helpers --------------------------------------------------------
 
     async def _run_validation(self, issue_id: int, work_dir: str) -> ValidationVerdict:
         """Phase 3: Spawn the validation agent and store the verdict."""
@@ -610,7 +628,6 @@ class TaskOrchestrator:
         self._populate_session_from_tracker(tracker, result, elapsed)
         self.session.state = TaskSessionState.FAILED
         self.session.errors.append(str(exc))
-        self._persist_traces(issue_id, prompt, result)
         self._update_task(
             issue_id,
             comment=f"Agent failed after {format_duration(elapsed)}: {exc}",
@@ -903,6 +920,7 @@ class TaskOrchestrator:
             "kind": milestone.kind,
             "tool_name": milestone.tool_name,
             "summary": milestone.summary,
+            **({"full_text": milestone.full_text} if milestone.full_text else {}),
             "timestamp": milestone.timestamp,
             "is_error": milestone.is_error,
         }
@@ -945,6 +963,7 @@ class TaskOrchestrator:
                 "kind": m.kind,
                 "tool_name": m.tool_name,
                 "summary": m.summary,
+                **({"full_text": m.full_text} if m.full_text else {}),
                 "timestamp": m.timestamp,
                 "is_error": m.is_error,
             }
