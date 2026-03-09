@@ -3,8 +3,10 @@
 
 # pylint: disable=missing-function-docstring
 
+import json
 import subprocess
-from unittest.mock import patch, MagicMock
+from pathlib import Path
+from unittest.mock import MagicMock, mock_open, patch
 
 from golem.verifier import run_verification, VerificationResult
 
@@ -145,3 +147,107 @@ class TestRunVerification:
         result = run_verification("/tmp/workdir")
         assert result.passed is False
         assert "command failed" in result.black_output.lower()
+
+    @patch("golem.verifier.subprocess.run")
+    def test_coverage_json_parsed_when_exists(self, mock_run, tmp_path):
+        """When coverage.json exists after pytest, it is parsed into coverage_delta."""
+        cov_json = tmp_path / "coverage.json"
+        cov_data = {
+            "files": {
+                "golem/foo.py": {
+                    "executed_lines": [1, 2, 3],
+                    "missing_lines": [],
+                    "summary": {"percent_covered": 100.0},
+                }
+            }
+        }
+        cov_json.write_text(json.dumps(cov_data))
+
+        def side_effect(*args, **kwargs):
+            cmd = args[0]
+            if "git" in cmd:
+                return MagicMock(
+                    returncode=0, stdout="golem/foo.py\n", stderr=""
+                )
+            return MagicMock(
+                returncode=0,
+                stdout="1 passed\nTOTAL 100 0 100%",
+                stderr="",
+            )
+
+        mock_run.side_effect = side_effect
+        result = run_verification(str(tmp_path))
+        assert result.coverage_delta is not None
+        assert result.coverage_delta.all_covered is True
+        assert not cov_json.exists()  # cleaned up
+
+    @patch("golem.verifier.subprocess.run")
+    def test_coverage_json_parse_error_logged(self, mock_run, tmp_path):
+        """When coverage.json contains invalid JSON, a warning is logged."""
+        cov_json = tmp_path / "coverage.json"
+        cov_json.write_text("not valid json {{{")
+
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="1 passed\nTOTAL 100 0 100%",
+            stderr="",
+        )
+        result = run_verification(str(tmp_path))
+        assert result.coverage_delta is None
+        assert not cov_json.exists()  # still cleaned up
+
+    @patch("golem.verifier.subprocess.run")
+    def test_coverage_delta_none_when_no_json(self, mock_run):
+        """When coverage.json does not exist, coverage_delta is None."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="1 passed\nTOTAL 100 0 100%",
+            stderr="",
+        )
+        result = run_verification("/tmp/workdir_no_json")
+        assert result.coverage_delta is None
+
+    def test_to_dict_includes_coverage_delta(self):
+        """to_dict includes coverage_delta key."""
+        from golem.verifier import CoverageDelta
+
+        delta = CoverageDelta(
+            all_covered=True, delta_pct=100.0, uncovered_lines={}
+        )
+        r = VerificationResult(
+            passed=True,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="",
+            test_count=1,
+            failures=[],
+            coverage_pct=100.0,
+            duration_s=1.0,
+            coverage_delta=delta,
+        )
+        d = r.to_dict()
+        assert d["coverage_delta"] is not None
+        assert d["coverage_delta"]["all_covered"] is True
+        assert d["coverage_delta"]["delta_pct"] == 100.0
+        assert d["coverage_delta"]["uncovered_lines"] == {}
+
+    def test_to_dict_coverage_delta_none(self):
+        """to_dict returns None for coverage_delta when not set."""
+        r = VerificationResult(
+            passed=True,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="",
+            test_count=1,
+            failures=[],
+            coverage_pct=100.0,
+            duration_s=1.0,
+        )
+        d = r.to_dict()
+        assert d["coverage_delta"] is None

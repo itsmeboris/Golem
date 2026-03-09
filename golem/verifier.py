@@ -8,11 +8,13 @@ Part of the Quality Assurance Pipeline v2 (Layer 2).
 See: docs/plans/2026-03-09-quality-assurance-pipeline-v2-design.md
 """
 
+import json
 import logging
 import re
 import subprocess
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from golem.types import VerificationResultDict
 
@@ -34,6 +36,7 @@ class VerificationResult:
     failures: list[str] = field(default_factory=list)
     coverage_pct: float = 0.0
     duration_s: float = 0.0
+    coverage_delta: "CoverageDelta | None" = None
 
     def to_dict(self) -> VerificationResultDict:
         """Serialize for JSON persistence."""
@@ -49,7 +52,73 @@ class VerificationResult:
             "failures": list(self.failures),
             "coverage_pct": self.coverage_pct,
             "duration_s": self.duration_s,
+            "coverage_delta": (
+                {
+                    "all_covered": self.coverage_delta.all_covered,
+                    "delta_pct": self.coverage_delta.delta_pct,
+                    "uncovered_lines": self.coverage_delta.uncovered_lines,
+                }
+                if self.coverage_delta
+                else None
+            ),
         }
+
+
+@dataclass
+class CoverageDelta:
+    """Coverage analysis for changed files only."""
+
+    all_covered: bool
+    delta_pct: float
+    uncovered_lines: dict[str, list[int]]  # {filepath: [line_numbers]}
+
+    def summary(self) -> str:
+        if self.all_covered:
+            return "Coverage delta: 100% on changed files"
+        parts = []
+        for path, lines in self.uncovered_lines.items():
+            parts.append(f"  {path}: lines {lines}")
+        return f"Coverage delta: {self.delta_pct:.0f}%\n" + "\n".join(parts)
+
+
+def parse_coverage_delta(
+    cov_data: dict, changed_files: list[str]
+) -> CoverageDelta:
+    """Analyze coverage for changed files only."""
+    if not changed_files:
+        return CoverageDelta(all_covered=True, delta_pct=100.0, uncovered_lines={})
+
+    files_data = cov_data.get("files", {})
+    uncovered: dict[str, list[int]] = {}
+    total_lines = 0
+    covered_lines = 0
+
+    for filepath in changed_files:
+        # Skip test files
+        if "/test_" in filepath or filepath.startswith("test_"):
+            continue
+
+        file_cov = files_data.get(filepath)
+        if file_cov is None:
+            continue
+
+        executed = file_cov.get("executed_lines", [])
+        missing = file_cov.get("missing_lines", [])
+        total_lines += len(executed) + len(missing)
+        covered_lines += len(executed)
+
+        if missing:
+            uncovered[filepath] = missing
+
+    if total_lines == 0:
+        return CoverageDelta(all_covered=True, delta_pct=100.0, uncovered_lines={})
+
+    delta_pct = (covered_lines / total_lines) * 100
+    return CoverageDelta(
+        all_covered=len(uncovered) == 0,
+        delta_pct=delta_pct,
+        uncovered_lines=uncovered,
+    )
 
 
 def _run_cmd(cmd: list[str], cwd: str, timeout: int) -> tuple[bool, str]:
@@ -89,6 +158,24 @@ def _parse_pytest_output(output: str) -> tuple[int, list[str], float]:
     return test_count, failures, coverage
 
 
+def _get_changed_files(work_dir: str) -> list[str]:
+    """Get list of files changed relative to HEAD~1 or merge-base."""
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--name-only", "HEAD~1"],
+            cwd=work_dir,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip().splitlines()
+    except (subprocess.SubprocessError, OSError):
+        pass
+    return []
+
+
 def run_verification(work_dir: str, *, timeout: int = 300) -> VerificationResult:
     """Run black, pylint, pytest and return structured results.
 
@@ -101,11 +188,30 @@ def run_verification(work_dir: str, *, timeout: int = 300) -> VerificationResult
     pylint_ok, pylint_output = _run_cmd(
         ["pylint", "--errors-only", "golem/"], work_dir, timeout
     )
+    cov_json_path = Path(work_dir) / "coverage.json"
     pytest_ok, pytest_output = _run_cmd(
-        ["pytest", "--cov=golem", "--cov-fail-under=100"], work_dir, timeout
+        [
+            "pytest",
+            "--cov=golem",
+            "--cov-fail-under=100",
+            f"--cov-report=json:{cov_json_path}",
+        ],
+        work_dir,
+        timeout,
     )
 
     test_count, failures, coverage_pct = _parse_pytest_output(pytest_output)
+
+    coverage_delta = None
+    if cov_json_path.exists():
+        try:
+            cov_data = json.loads(cov_json_path.read_text())
+            changed_files = _get_changed_files(work_dir)
+            coverage_delta = parse_coverage_delta(cov_data, changed_files)
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("Failed to parse coverage JSON: %s", exc)
+        finally:
+            cov_json_path.unlink(missing_ok=True)
 
     passed = black_ok and pylint_ok and pytest_ok
     duration = time.time() - start
@@ -133,4 +239,5 @@ def run_verification(work_dir: str, *, timeout: int = 300) -> VerificationResult
         failures=failures,
         coverage_pct=coverage_pct,
         duration_s=round(duration, 2),
+        coverage_delta=coverage_delta,
     )
