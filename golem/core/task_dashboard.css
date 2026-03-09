@@ -614,7 +614,7 @@
   border-radius:3px;white-space:nowrap;text-transform:uppercase;
   letter-spacing:0.03em
 }
-.lt-row .lt-body{color:var(--text-secondary);word-break:break-word}
+.lt-row .lt-body{color:var(--text-secondary);word-break:break-word;white-space:pre-wrap}
 .lt-row .lt-ts{
   font-size:0.68rem;color:var(--text-muted);white-space:nowrap;opacity:0.6
 }
