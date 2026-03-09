@@ -422,3 +422,55 @@ class TestTextMilestoneTruncation:
         assert m.kind == "text"
         assert m.summary == "First line of analysis."
         assert "\n" not in m.summary
+        assert m.full_text == "First line of analysis.\nSecond line with details.\nThird line."
+
+    def test_text_milestone_full_text_untruncated(self):
+        tracker = TaskEventTracker(session_id=1)
+        long_text = "a" * 200
+        event = {
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "text", "text": long_text}]
+            },
+        }
+        m = tracker.handle_event(event)
+        assert m is not None
+        assert len(m.summary) == 121  # 120 + ellipsis
+        assert m.full_text == long_text  # full text preserved
+
+    def test_to_dict_includes_full_text_for_text_events(self):
+        tracker = TaskEventTracker(session_id=1)
+        event = {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {"type": "text", "text": "Line one.\nLine two.\nLine three."}
+                ]
+            },
+        }
+        tracker.handle_event(event)
+        data = tracker.to_dict()
+        text_events = [e for e in data["event_log"] if e["kind"] == "text"]
+        assert len(text_events) == 1
+        assert text_events[0]["full_text"] == "Line one.\nLine two.\nLine three."
+
+    def test_to_dict_omits_full_text_when_empty(self):
+        tracker = TaskEventTracker(session_id=1)
+        event = {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "Read",
+                        "id": "x",
+                        "input": {"file_path": "/tmp/foo.py"},
+                    }
+                ]
+            },
+        }
+        tracker.handle_event(event)
+        data = tracker.to_dict()
+        tool_events = [e for e in data["event_log"] if e["kind"] == "tool_call"]
+        assert len(tool_events) == 1
+        assert "full_text" not in tool_events[0]

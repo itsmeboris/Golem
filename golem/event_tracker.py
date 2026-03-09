@@ -22,6 +22,7 @@ class Milestone:
     kind: str  # "tool_call" | "tool_result" | "error" | "result" | "text"
     tool_name: str = ""
     summary: str = ""
+    full_text: str = ""  # untruncated text for dashboard display
     timestamp: float = 0.0
     is_error: bool = False
 
@@ -313,6 +314,7 @@ class TaskEventTracker:
             return Milestone(
                 kind="text",
                 summary=_truncate_summary(combined),
+                full_text=combined,
                 timestamp=time.time(),
             )
         return None
@@ -395,6 +397,7 @@ class TaskEventTracker:
                     "kind": m.kind,
                     "tool_name": m.tool_name,
                     "summary": m.summary,
+                    **({"full_text": m.full_text} if m.full_text else {}),
                     "timestamp": m.timestamp,
                     "is_error": m.is_error,
                 }

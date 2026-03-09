@@ -1235,13 +1235,14 @@ function enrichEvent(ev) {
   const kind = ev.kind || ev.type || '';
   const toolName = ev.tool_name || '';
   const text = ev.summary || ev.text || '';
+  const fullText = ev.full_text || text;
   const isError = ev.is_error;
   const ts = ev.timestamp ? fmtTermTs(ev.timestamp) : '';
 
   switch (kind) {
     case 'tool_call': return { icon: '\u2699', cls: 'ev-tool-call', chip: toolName, body: text || toolName, ts };
     case 'tool_result': return { icon: isError ? '\u2717' : '\u2192', cls: 'ev-tool-result' + (isError ? ' ev-error' : ''), chip: '', body: text, ts };
-    case 'text': return { icon: '\u2026', cls: 'ev-text', chip: '', body: text, ts };
+    case 'text': return { icon: '\u2026', cls: 'ev-text', chip: '', body: fullText, ts };
     case 'thinking': return { icon: '~', cls: 'ev-thinking', chip: '', body: text, ts };
     case 'error': return { icon: '\u2717', cls: 'ev-error', chip: '', body: text, ts };
     case 'result': return { icon: '\u2501', cls: 'ev-result', chip: '', body: text, ts };
@@ -1911,6 +1912,7 @@ function renderLiveRow(ev) {
   const kind = ev.kind || ev.type || '';
   const toolName = ev.tool_name || '';
   const text = ev.summary || ev.text || '';
+  const fullText = ev.full_text || text;
   const isError = ev.is_error;
   const ts = ev.timestamp ? fmtTermTs(ev.timestamp) : '';
 
@@ -1948,7 +1950,7 @@ function renderLiveRow(ev) {
       icon = '\u2026';
       cls = 'lt-text';
       label = 'TEXT';
-      body = text;
+      body = fullText;
       break;
     case 'thinking':
       icon = '~';
