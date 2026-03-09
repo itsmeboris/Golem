@@ -37,12 +37,8 @@ from .errors import (
 )
 from .event_tracker import Milestone, TaskEventTracker
 from .merge_queue import MergeEntry, MergeQueue, MergeResult
-from .merge_review import (
-    ReconciliationResult,
-    run_conflict_resolution,
-    run_merge_reconciliation,
-)
-from .worktree_manager import MissingAddition
+from .merge_review import ReconciliationResult, run_merge_agent
+from .worktree_manager import MissingAddition, _run_git, fast_forward_if_safe
 from .batch_monitor import BatchMonitor
 from .orchestrator import (
     TaskOrchestrator,
@@ -94,8 +90,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         self._profile: GolemProfile = build_profile(profile_name, config)
 
         self._merge_queue = MergeQueue(
-            on_conflict=self._handle_merge_conflict,
-            on_reconcile=self._handle_merge_reconciliation,
+            on_merge_agent=self._handle_merge_agent,
         )
         self._max_infra_retries = getattr(self._task_config, "max_infra_retries", 2)
         self._batch_monitor = BatchMonitor()
@@ -265,6 +260,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         while self._running:
             try:
                 self._detect_new_issues()
+                await self._retry_deferred_merges()
                 self._health.record_poll_success()
             except Exception:  # pylint: disable=broad-exception-caught
                 logger.exception("Error in detection loop")
@@ -451,103 +447,87 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         session = self._sessions.get(result.session_id)
         if session is None:
             return
-        if result.success and result.merge_sha:
-            session.commit_sha = result.merge_sha
+        if result.success:
             session.merge_ready = False
+            session.merge_deferred = False
+            session.merge_branch = ""
             session.files_changed = result.changed_files
+            if result.merge_sha:
+                session.commit_sha = result.merge_sha
             logger.info(
                 "Session %d: merge applied → %s",
                 result.session_id,
-                result.merge_sha,
+                result.merge_sha or "(no changes)",
+            )
+        elif result.deferred:
+            session.merge_deferred = True
+            session.merge_branch = result.merge_branch
+            session.merge_ready = False
+            logger.info(
+                "Session %d: merge deferred — %s (branch %s)",
+                result.session_id,
+                result.error,
+                result.merge_branch,
             )
         elif not result.success:
             session.merge_ready = False
+            session.merge_deferred = False
             session.errors.append(f"merge failed: {result.error}")
             logger.warning(
                 "Session %d: merge failed: %s", result.session_id, result.error
             )
 
-    def _handle_merge_conflict(
-        self, entry: MergeEntry, conflict_files: list[str]
-    ) -> bool:
-        result = run_conflict_resolution(
-            entry.base_dir,
-            conflict_files,
-            budget_usd=self._task_config.merge_review_budget_usd,
-            timeout_seconds=self._task_config.merge_review_timeout,
-        )
-        if not result.resolved:
-            return False
-
-        from .validation import run_validation
-
-        verdict = run_validation(
-            issue_id=entry.session_id,
-            subject=f"Post-conflict validation for session {entry.session_id}",
-            description="Verify conflict resolution did not break anything.",
-            session_data={},
-            work_dir=entry.base_dir,
-            model=self._task_config.validation_model,
-            budget_usd=self._task_config.validation_budget_usd,
-            timeout_seconds=self._task_config.validation_timeout_seconds,
-        )
-        if verdict.verdict != "PASS":
-            logger.warning(
-                "Session %d: validation failed after conflict resolution — %s",
-                entry.session_id,
-                verdict.summary,
-            )
-            return False
-        return True
-
-    def _handle_merge_reconciliation(
+    def _handle_merge_agent(
         self,
-        entry: MergeEntry,
+        base_dir: str,
+        issue_id: int,
         agent_diff: str,
-        missing: list[MissingAddition],
+        conflict_files: list[str],
+        missing: list,
     ) -> ReconciliationResult:
-        result = run_merge_reconciliation(
-            entry.base_dir,
+        """Callback for the merge queue — spawns the unified merge agent."""
+        return run_merge_agent(
+            base_dir,
+            issue_id,
             agent_diff,
-            missing,
+            conflict_files=conflict_files,
+            missing=missing,
             budget_usd=self._task_config.merge_review_budget_usd,
             timeout_seconds=self._task_config.merge_review_timeout,
         )
-        if not result.resolved:
-            return result
 
-        from .validation import run_validation
-
-        verdict = run_validation(
-            issue_id=entry.session_id,
-            subject=f"Post-reconciliation validation for session {entry.session_id}",
-            description="Verify reconciliation fixup did not break anything.",
-            session_data={},
-            work_dir=entry.base_dir,
-            model=self._task_config.validation_model,
-            budget_usd=self._task_config.validation_budget_usd,
-            timeout_seconds=self._task_config.validation_timeout_seconds,
-        )
-        if verdict.verdict != "PASS":
-            logger.warning(
-                "Session %d: validation failed after reconciliation — reverting",
-                entry.session_id,
+    async def _retry_deferred_merges(self) -> None:
+        """Retry deferred merges when the working tree may have changed."""
+        for session in list(self._sessions.values()):
+            if not session.merge_deferred or not session.merge_branch:
+                continue
+            ok, reason = fast_forward_if_safe(
+                session.base_work_dir, session.merge_branch
             )
-            import subprocess
-
-            subprocess.run(
-                ["git", "revert", "--no-edit", "HEAD"],
-                cwd=entry.base_dir,
-                capture_output=True,
-                timeout=30,
-                check=False,
-            )
-            return ReconciliationResult(
-                resolved=False,
-                explanation=f"validation failed after reconciliation: {verdict.summary}",
-            )
-
-        return result
+            if ok:
+                merge_branch = session.merge_branch
+                session.merge_deferred = False
+                session.merge_branch = ""
+                sha = _run_git(
+                    ["rev-parse", "--short", "HEAD"],
+                    cwd=session.base_work_dir,
+                ).stdout.strip()
+                session.commit_sha = sha
+                logger.info(
+                    "Session %d: deferred merge applied → %s",
+                    session.parent_issue_id,
+                    sha,
+                )
+                # Clean up branches using the captured name
+                _run_git(
+                    ["branch", "-D", f"agent/{session.parent_issue_id}"],
+                    cwd=session.base_work_dir,
+                )
+                _run_git(
+                    ["branch", "-D", merge_branch],
+                    cwd=session.base_work_dir,
+                )
+                self._save_state()
 
     def _on_agent_progress(self, session: TaskSession, milestone: Milestone) -> None:
         """Central progress handler — updates LiveState and session from milestones."""
