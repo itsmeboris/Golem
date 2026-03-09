@@ -14,6 +14,7 @@ from typing import Any
 from .config import DATA_DIR
 from .live_state import LiveState, read_live_snapshot
 from .run_log import read_runs
+from ..event_tracker import _summarize_tool_input
 
 logger = logging.getLogger("golem.core.dashboard")
 
@@ -157,7 +158,9 @@ def _extract_assistant_events(ev: dict, events: list, stats: dict) -> None:
         btype = block.get("type", "")
         if btype == "tool_use":
             name = block.get("name", "?")
-            events.append(_term_ev("tool_call", name, tool_name=name))
+            tool_input = block.get("input", {})
+            summary = _summarize_tool_input(name, tool_input) or name
+            events.append(_term_ev("tool_call", summary, tool_name=name))
             stats["tool_calls"] += 1
         elif btype == "text":
             text = block.get("text", "").strip()

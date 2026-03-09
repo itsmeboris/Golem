@@ -6,6 +6,10 @@ from golem.event_tracker import (
     TaskEventTracker,
     _short_path,
     _summarize_agent,
+    _summarize_skill,
+    _summarize_task_create,
+    _summarize_task_update,
+    _summarize_todo_write,
     _summarize_tool_input,
 )
 
@@ -287,3 +291,74 @@ class TestSummarizeAgent:
         result = _summarize_agent("Agent", {"description": "desc", "prompt": "prompt"})
         assert "desc" in result
         assert "prompt" not in result
+
+
+class TestSummarizeSkill:
+    def test_skill_with_name(self):
+        assert _summarize_skill("Skill", {"skill": "commit"}) == "Skill: commit"
+
+    def test_skill_with_name_and_args(self):
+        result = _summarize_skill("Skill", {"skill": "commit", "args": "-m 'Fix'"})
+        assert result == "Skill: commit -m 'Fix'"
+
+    def test_skill_empty(self):
+        assert _summarize_skill("Skill", {}) == ""
+
+    def test_skill_via_summarize_tool_input(self):
+        assert (
+            _summarize_tool_input("Skill", {"skill": "review-pr"}) == "Skill: review-pr"
+        )
+
+
+class TestSummarizeTodoWrite:
+    def test_with_items(self):
+        todos = [{"id": "1", "text": "a"}, {"id": "2", "text": "b"}]
+        assert (
+            _summarize_todo_write("TodoWrite", {"todos": todos}) == "TodoWrite: 2 items"
+        )
+
+    def test_empty_list(self):
+        assert _summarize_todo_write("TodoWrite", {"todos": []}) == "TodoWrite"
+
+    def test_no_todos_key(self):
+        assert _summarize_todo_write("TodoWrite", {}) == "TodoWrite"
+
+    def test_via_summarize_tool_input(self):
+        todos = [{"id": "1", "text": "item"}]
+        result = _summarize_tool_input("TodoWrite", {"todos": todos})
+        assert result == "TodoWrite: 1 items"
+
+
+class TestSummarizeTaskCreate:
+    def test_with_description(self):
+        result = _summarize_task_create(
+            "TaskCreate", {"description": "Fix the login bug"}
+        )
+        assert result == "TaskCreate: Fix the login bug"
+
+    def test_long_description_truncated(self):
+        desc = "x" * 120
+        result = _summarize_task_create("TaskCreate", {"description": desc})
+        assert len(result) <= len("TaskCreate: ") + 80
+
+    def test_description_with_newlines(self):
+        result = _summarize_task_create("TaskCreate", {"description": "line1\nline2"})
+        assert "\n" not in result
+
+    def test_empty(self):
+        assert _summarize_task_create("TaskCreate", {}) == ""
+
+
+class TestSummarizeTaskUpdate:
+    def test_with_id_and_status(self):
+        result = _summarize_task_update(
+            "TaskUpdate", {"task_id": "42", "status": "completed"}
+        )
+        assert result == "TaskUpdate: #42 → completed"
+
+    def test_with_id_only(self):
+        result = _summarize_task_update("TaskUpdate", {"task_id": "42"})
+        assert result == "TaskUpdate: #42"
+
+    def test_empty(self):
+        assert _summarize_task_update("TaskUpdate", {}) == ""

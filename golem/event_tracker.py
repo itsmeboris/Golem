@@ -109,6 +109,39 @@ def _summarize_agent(_name: str, inp: dict) -> str:
     return "Agent: " + " ".join(parts) if parts else ""
 
 
+def _summarize_skill(_name: str, inp: dict) -> str:
+    skill = inp.get("skill", "")
+    args = inp.get("args", "")
+    if skill and args:
+        return f"Skill: {skill} {args}"
+    return f"Skill: {skill}" if skill else ""
+
+
+def _summarize_todo_write(_name: str, inp: dict) -> str:
+    todos = inp.get("todos", [])
+    if isinstance(todos, list) and todos:
+        return f"TodoWrite: {len(todos)} items"
+    return "TodoWrite"
+
+
+def _summarize_task_create(_name: str, inp: dict) -> str:
+    desc = inp.get("description", "")
+    if desc:
+        short = desc.replace("\n", " ").strip()[:80]
+        return f"TaskCreate: {short}"
+    return ""
+
+
+def _summarize_task_update(_name: str, inp: dict) -> str:
+    task_id = inp.get("task_id", "")
+    status = inp.get("status", "")
+    if task_id and status:
+        return f"TaskUpdate: #{task_id} → {status}"
+    if task_id:
+        return f"TaskUpdate: #{task_id}"
+    return ""
+
+
 def _summarize_default(name: str, _inp: dict) -> str:
     if name.startswith("mcp__"):
         parts = name.split("__")
@@ -126,6 +159,10 @@ _TOOL_SUMMARIZERS: dict[str, Callable[[str, dict], str]] = {
     "Task": _summarize_keyed("description"),
     "ToolSearch": _summarize_keyed("query"),
     "Agent": _summarize_agent,
+    "Skill": _summarize_skill,
+    "TodoWrite": _summarize_todo_write,
+    "TaskCreate": _summarize_task_create,
+    "TaskUpdate": _summarize_task_update,
 }
 
 

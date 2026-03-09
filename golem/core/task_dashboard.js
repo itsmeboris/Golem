@@ -1264,6 +1264,84 @@ function filterEvents(events) {
   });
 }
 
+/* ── Phase Separator Rendering ─────────────────────────────── */
+const PHASE_LABELS = {
+  setup: 'Setup', scout: 'Scout', plan: 'Planning',
+  build: 'Build', review: 'Review', verify: 'Verify',
+  retry: 'Retry', committing: 'Committing', merge_queue: 'Merge Queue',
+  ext_validation: 'Validation', build_agent: 'Build Agent',
+  _end_build: 'Finishing', _end: 'Done'
+};
+
+function renderPhaseSepHtml(phase) {
+  const basePhase = phase.replace(/_\d+$/, '');
+  const label = PHASE_LABELS[basePhase] || phase;
+  return `<div class="phase-sep" data-phase="${esc(basePhase)}">
+    <span class="phase-sep-line"></span>
+    <span class="phase-sep-label">${esc(label)}</span>
+    <span class="phase-sep-line"></span>
+  </div>`;
+}
+
+function renderEventsWithPhases(events, session) {
+  const allEvents = session.event_log || [];
+  const isOrchestrated = session.execution_mode === 'subagent';
+
+  if (!isOrchestrated || allEvents.length < 2) {
+    return events.map(renderWfEventRow).join('');
+  }
+
+  /* Build a timestamp→phase lookup from all events (unfiltered) */
+  const phases = detectOrchestraPhases(allEvents);
+  const tsToPhase = new Map();
+  for (const p of phases) {
+    for (const ev of p.events) {
+      if (ev.timestamp) tsToPhase.set(ev.timestamp, p.phase);
+    }
+  }
+
+  let html = '';
+  let currentPhase = null;
+  for (const ev of events) {
+    const phase = tsToPhase.get(ev.timestamp);
+    if (phase && phase !== currentPhase) {
+      currentPhase = phase;
+      html += renderPhaseSepHtml(phase);
+    }
+    html += renderWfEventRow(ev);
+  }
+  return html;
+}
+
+function renderLiveEventsWithPhases(events, session) {
+  const allEvents = session.event_log || [];
+  const isOrchestrated = session.execution_mode === 'subagent';
+
+  if (!isOrchestrated || allEvents.length < 2) {
+    return events.map(renderLiveRow).join('');
+  }
+
+  const phases = detectOrchestraPhases(allEvents);
+  const tsToPhase = new Map();
+  for (const p of phases) {
+    for (const ev of p.events) {
+      if (ev.timestamp) tsToPhase.set(ev.timestamp, p.phase);
+    }
+  }
+
+  let html = '';
+  let currentPhase = null;
+  for (const ev of events) {
+    const phase = tsToPhase.get(ev.timestamp);
+    if (phase && phase !== currentPhase) {
+      currentPhase = phase;
+      html += renderPhaseSepHtml(phase);
+    }
+    html += renderLiveRow(ev);
+  }
+  return html;
+}
+
 /* ── Pipeline View Main Entry ──────────────────────────────── */
 function renderPipelineView(id, s) {
   const section = document.getElementById('pipeline-view');
@@ -1590,7 +1668,7 @@ function renderDetailEvents(st, session) {
     if (events.length > MAX) {
       html += `<div class="wf-events-empty">${events.length - MAX} older events hidden</div>`;
     }
-    html += rendered.map(renderWfEventRow).join('');
+    html += renderEventsWithPhases(rendered, session);
   } else {
     html += '<div class="wf-events-empty">No events recorded.</div>';
   }
@@ -1740,7 +1818,7 @@ function renderStageBody(st, s) {
     const MAX = 200;
     const rendered = events.length > MAX ? events.slice(-MAX) : events;
     if (events.length > MAX) html += `<div class="wf-events-empty">${events.length - MAX} older events hidden</div>`;
-    html += rendered.map(renderWfEventRow).join('');
+    html += renderEventsWithPhases(rendered, s);
   } else if (!html) {
     html += '<div class="wf-events-empty">No events recorded.</div>';
   }
@@ -1786,12 +1864,13 @@ function renderLiveTerminal(s) {
   }
   statsHtml += '</div>';
   statsHtml += `<label class="lt-auto-scroll"><input type="checkbox" ${_liveAutoScroll ? 'checked' : ''} onchange="_liveAutoScroll=this.checked"> Auto-scroll</label>`;
+  statsHtml += `<button class="lt-top-btn" onclick="document.getElementById('live-terminal').scrollTo({top:0,behavior:'smooth'})">\u2191 Top</button>`;
   statsHtml += '</div>';
 
   if (isNewRender) {
     let html = statsHtml;
     html += '<div class="lt-events">';
-    html += filtered.map(renderLiveRow).join('');
+    html += renderLiveEventsWithPhases(filtered, s);
     html += '<div class="lt-scroll-anchor"></div>';
     html += '</div>';
     container.innerHTML = html;
