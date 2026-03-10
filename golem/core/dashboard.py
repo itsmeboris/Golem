@@ -592,10 +592,34 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
             headers=_NO_CACHE_HEADERS,
         )
 
-    @app.get("/dashboard/task.js")
-    async def task_js() -> Response:
+    @app.get("/dashboard/task_api.js")
+    async def task_api_js() -> Response:
         return Response(
-            content=_task_js_cache.read(),
+            content=_task_api_js_cache.read(),
+            media_type="application/javascript",
+            headers=_NO_CACHE_HEADERS,
+        )
+
+    @app.get("/dashboard/task_timeline.js")
+    async def task_timeline_js() -> Response:
+        return Response(
+            content=_task_timeline_js_cache.read(),
+            media_type="application/javascript",
+            headers=_NO_CACHE_HEADERS,
+        )
+
+    @app.get("/dashboard/task_overview.js")
+    async def task_overview_js() -> Response:
+        return Response(
+            content=_task_overview_js_cache.read(),
+            media_type="application/javascript",
+            headers=_NO_CACHE_HEADERS,
+        )
+
+    @app.get("/dashboard/task_live.js")
+    async def task_live_js() -> Response:
+        return Response(
+            content=_task_live_js_cache.read(),
             media_type="application/javascript",
             headers=_NO_CACHE_HEADERS,
         )
@@ -617,7 +641,10 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
             (_shared_css_cache, "shared.css"),
             (_task_css_cache, "task.css"),
             (_shared_js_cache, "shared.js"),
-            (_task_js_cache, "task.js"),
+            (_task_api_js_cache, "task_api.js"),
+            (_task_timeline_js_cache, "task_timeline.js"),
+            (_task_overview_js_cache, "task_overview.js"),
+            (_task_live_js_cache, "task_live.js"),
         ]:
             # Trigger a read so .version reflects current mtime
             cache.read()
@@ -665,7 +692,10 @@ _admin_cache = _FileCache(Path(__file__).parent / "admin.html")
 _shared_css_cache = _FileCache(Path(__file__).parent / "dashboard_shared.css")
 _shared_js_cache = _FileCache(Path(__file__).parent / "dashboard_shared.js")
 _task_css_cache = _FileCache(Path(__file__).parent / "task_dashboard.css")
-_task_js_cache = _FileCache(Path(__file__).parent / "task_dashboard.js")
+_task_api_js_cache = _FileCache(Path(__file__).parent / "task_api.js")
+_task_timeline_js_cache = _FileCache(Path(__file__).parent / "task_timeline.js")
+_task_overview_js_cache = _FileCache(Path(__file__).parent / "task_overview.js")
+_task_live_js_cache = _FileCache(Path(__file__).parent / "task_live.js")
 _elk_js_cache = _FileCache(Path(__file__).parent / "elk.min.js")
 
 

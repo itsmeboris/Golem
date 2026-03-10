@@ -1405,10 +1405,30 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         assert resp.body is not None
 
     @pytest.mark.asyncio
-    async def test_task_js(self, handlers):
-        with patch.object(_FileCache, "read", return_value="function render(){}"):
-            resp = await handlers["/dashboard/task.js"]()
-        assert resp.body is not None
+    async def test_task_api_js(self, handlers):
+        with patch.object(_FileCache, "read", return_value="const S={}"):
+            resp = await handlers["/dashboard/task_api.js"]()
+        assert resp.media_type == "application/javascript"
+
+    @pytest.mark.asyncio
+    async def test_task_timeline_js(self, handlers):
+        with patch.object(_FileCache, "read", return_value="function renderDetail(){}"):
+            resp = await handlers["/dashboard/task_timeline.js"]()
+        assert resp.media_type == "application/javascript"
+
+    @pytest.mark.asyncio
+    async def test_task_overview_js(self, handlers):
+        with patch.object(
+            _FileCache, "read", return_value="function renderOverview(){}"
+        ):
+            resp = await handlers["/dashboard/task_overview.js"]()
+        assert resp.media_type == "application/javascript"
+
+    @pytest.mark.asyncio
+    async def test_task_live_js(self, handlers):
+        with patch.object(_FileCache, "read", return_value="function startPolling(){}"):
+            resp = await handlers["/dashboard/task_live.js"]()
+        assert resp.media_type == "application/javascript"
 
     @pytest.mark.asyncio
     async def test_elk_js(self, handlers):
@@ -1426,6 +1446,11 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         assert "ov-task-list" in body, "Missing ov-task-list"
         assert "td-metrics" in body, "Missing td-metrics"
         assert "timeline-container" in body, "Missing timeline-container"
+        # New JS module script tags
+        assert "task_api.js" in body, "Missing task_api.js script tag"
+        assert "task_timeline.js" in body, "Missing task_timeline.js script tag"
+        assert "task_overview.js" in body, "Missing task_overview.js script tag"
+        assert "task_live.js" in body, "Missing task_live.js script tag"
 
     def test_dashboard_html_has_theme_toggle(self):
         """Theme toggle button should exist in the top bar."""
