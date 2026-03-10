@@ -242,23 +242,25 @@ When `supervisor_mode` is enabled (the default), the orchestrator coordinates su
 
 ```mermaid
 flowchart LR
-    O["Orient<br/>(skills)"] --> S["Scout<br/>(haiku)"]
-    S --> P["Plan"]
+    U["Understand<br/>(orchestrator reads)"] --> P["Plan + Specify"]
     P --> B["Build<br/>(sonnet)"]
-    B --> R["Review<br/>(opus)"]
-    R --> V["Verify<br/>(haiku)"]
+    B --> SR["Spec Review<br/>(sonnet)"]
+    SR --> QR["Quality Review<br/>(sonnet)"]
+    QR --> V["Verify<br/>(sonnet)"]
     V -- "fail" --> B
     V -- "pass" --> Done(["Report"])
+    SR -- "issues" --> B
+    QR -- "fixes needed" --> B
 ```
 
 | Phase | What happens |
 |-------|-------------|
-| **Orient** | Invoke workspace and domain skills to understand the codebase layout before touching anything. Assess task complexity (trivial / standard / complex). |
-| **Scout** | Dispatch fast read-only agents with specific research questions. Returns structured findings with `file:line` references. |
-| **Plan** | Using Scout findings, decide what files change, whether subtasks can parallelize, and which skills Builders should use. For standard/complex tasks, write explicit **specification statements** (SPEC-1, SPEC-2, ...) describing expected behavior — these are verified by Builders and the Reviewer. |
-| **Build** | Dispatch code-writing agents with Scout context, spec statements, and skill guidance. Follows TDD when applicable. Bug-fix tasks require a reproduction test before the fix. Independent subtasks run in parallel. |
-| **Review** | Adversarial code review by an opus-class agent. Only reports issues with >= 80% confidence. Builders fix flagged issues and re-review. |
-| **Verify** | Run `black`, `pylint`, `pytest`. Circuit breaker stops after 3 identical failures. |
+| **Understand** | Orchestrator reads 3-5 key files directly (no Scout needed for most tasks). Invokes workspace skills, assesses complexity (trivial / standard / complex). Writes `## Phase: UNDERSTAND` marker. |
+| **Plan + Specify** | Using its own findings, decides what files change, whether subtasks can parallelize. Writes 3-7 **specification statements** (SPEC-1, SPEC-2, ...) — these are verified by Builders and Reviewers. Writes `## Phase: PLAN` marker. |
+| **Build** | Dispatch Builders with exploration context, spec statements, and prior builder output (**context chaining** — each builder's summary feeds the next). Builders self-verify with targeted `pytest -x` + `black --check`. Bug-fix tasks require a reproduction test first. Writes `## Phase: BUILD` marker. |
+| **Spec Review** | Verifies implementation matches each SPEC statement. Reads actual code — does not trust Builder self-reports. Issues trigger a fix-and-re-review cycle. |
+| **Quality Review** | Only after Spec Review passes. Checks code quality, bugs, edge cases, naming. Reports issues with >= 80% confidence. Writes `## Phase: REVIEW` marker. |
+| **Verify** | Full-suite `black`, `pylint`, `pytest --cov` — the only full run in the workflow. Circuit breaker stops after repeated identical failures. Writes `## Phase: VERIFY` marker. |
 
 ### Specialized Subagents
 
@@ -266,10 +268,11 @@ Each subagent role is defined in `.claude/agents/` with a specific model, toolse
 
 | Agent | Model | Tools | Purpose |
 |-------|-------|-------|---------|
-| **Scout** | haiku | Read, Grep, Glob | Focused codebase research — answers specific questions fast |
-| **Builder** | sonnet | All | Writes code, tests, fixes issues. TDD with `pytest.mark.parametrize` |
-| **Reviewer** | opus | Read, Grep, Glob, Bash | Adversarial code review with confidence-based filtering |
-| **Verifier** | haiku | Bash | Runs linters and tests, returns structured pass/fail |
+| **Builder** | sonnet | All | Writes code, tests, fixes issues. Self-verifies with targeted tests before reporting |
+| **Spec Reviewer** | sonnet | Read, Grep, Glob | Verifies implementation matches specification — does not trust Builder reports |
+| **Quality Reviewer** | sonnet | Read, Grep, Glob | Code quality, bugs, edge cases. Only reports issues with >= 80% confidence |
+| **Verifier** | sonnet | Bash | Runs full-suite linters and tests, returns structured pass/fail |
+| **Scout** | haiku | Read, Grep, Glob | Reserved for unknown codebases — most tasks don't need one |
 
 ### Skill Discovery
 
