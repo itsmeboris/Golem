@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -39,9 +40,120 @@ def run_wizard(output_path: Path, use_defaults: bool = False) -> int:
         return 1
 
 
-def _run_wizard_impl(
-    output_path: Path, use_defaults: bool
-) -> int:  # pylint: disable=too-many-locals,too-many-branches,too-many-statements
+def _collect_inputs(use_defaults: bool) -> dict[str, str]:
+    """Gather all wizard inputs, either from defaults or interactively."""
+    default_work_dir = os.getcwd()
+
+    if use_defaults:
+        return {
+            "profile": "local",
+            "task_model": "sonnet",
+            "budget": "10.0",
+            "work_dir": default_work_dir,
+            "projects": "",
+            "slack_enabled": "n",
+            "slack_webhook_url": "",
+            "teams_enabled": "n",
+            "teams_webhook_url": "",
+            "dashboard_port": "8081",
+        }
+
+    _ensure_builtins_registered()
+    profiles = available_profiles()
+    models = sorted(KNOWN_MODELS)
+
+    result: dict[str, str] = {}
+    result["profile"] = ask("Which profile?", default="local", choices=profiles)
+    result["task_model"] = ask(
+        "Which model for tasks?", default="sonnet", choices=models
+    )
+
+    while True:
+        result["budget"] = ask("Budget per task (USD)?", default="10.0")
+        try:
+            if float(result["budget"]) > 0:
+                break
+        except ValueError:
+            pass
+        print("Budget must be a positive number.")
+
+    result["work_dir"] = ask("Default working directory?", default=default_work_dir)
+    result["projects"] = ask(
+        "Project identifiers (comma-separated, or empty):", default=""
+    )
+    result["slack_enabled"] = ask(
+        "Enable Slack notifications?", default="n", choices=["y", "n"]
+    )
+    result["slack_webhook_url"] = ""
+    if result["slack_enabled"] == "y":
+        result["slack_webhook_url"] = ask("Slack webhook URL:", default="")
+
+    result["teams_enabled"] = ask(
+        "Enable Teams notifications?", default="n", choices=["y", "n"]
+    )
+    result["teams_webhook_url"] = ""
+    if result["teams_enabled"] == "y":
+        result["teams_webhook_url"] = ask("Teams webhook URL:", default="")
+
+    while True:
+        result["dashboard_port"] = ask("Dashboard port?", default="8081")
+        try:
+            if 1 <= int(result["dashboard_port"]) <= 65535:
+                break
+        except ValueError:
+            pass
+        print("Port must be an integer between 1 and 65535.")
+
+    return result
+
+
+def _build_config(inputs: dict[str, str]) -> dict[str, Any]:
+    """Build the config dict from collected inputs."""
+    projects: list[str] = (
+        [p.strip() for p in inputs["projects"].split(",") if p.strip()]
+        if inputs["projects"].strip()
+        else []
+    )
+    work_dirs = {proj: inputs["work_dir"] for proj in projects}
+
+    slack_webhooks: dict[str, str] = {}
+    if inputs["slack_enabled"] == "y" and inputs["slack_webhook_url"]:
+        slack_webhooks["default"] = inputs["slack_webhook_url"]
+
+    teams_webhooks: dict[str, str] = {}
+    if inputs["teams_enabled"] == "y" and inputs["teams_webhook_url"]:
+        teams_webhooks["default"] = inputs["teams_webhook_url"]
+
+    return {
+        "flows": {
+            "golem": {
+                "enabled": True,
+                "profile": inputs["profile"],
+                "projects": projects,
+                "task_model": inputs["task_model"],
+                "budget_per_task_usd": float(inputs["budget"]),
+                "default_work_dir": inputs["work_dir"],
+                "work_dirs": work_dirs,
+            }
+        },
+        "claude": {
+            "model": inputs["task_model"],
+        },
+        "dashboard": {
+            "port": int(inputs["dashboard_port"]),
+        },
+        "slack": {
+            "enabled": inputs["slack_enabled"] == "y",
+            **({"webhooks": slack_webhooks} if slack_webhooks else {}),
+        },
+        "teams": {
+            "enabled": inputs["teams_enabled"] == "y",
+            **({"webhooks": teams_webhooks} if teams_webhooks else {}),
+        },
+    }
+
+
+def _run_wizard_impl(output_path: Path, use_defaults: bool) -> int:
     if output_path.exists() and not use_defaults:
         answer = ask(
             "Config file already exists. Overwrite?", default="n", choices=["y", "n"]
@@ -50,125 +162,49 @@ def _run_wizard_impl(
             print("Aborted.")
             return 1
 
-    _ensure_builtins_registered()
-    profiles = available_profiles()
-    models = sorted(KNOWN_MODELS)
-    default_work_dir = os.getcwd()
-
-    if use_defaults:
-        profile = "local"
-        task_model = "sonnet"
-        budget_str = "10.0"
-        work_dir = default_work_dir
-        projects_str = ""
-        slack_enabled = "n"
-        slack_webhook_url = ""
-        teams_enabled = "n"
-        teams_webhook_url = ""
-        dashboard_port_str = "8081"
-    else:
-        profile = ask("Which profile?", default="local", choices=profiles)
-        task_model = ask("Which model for tasks?", default="sonnet", choices=models)
-
-        while True:
-            budget_str = ask("Budget per task (USD)?", default="10.0")
-            try:
-                budget_val = float(budget_str)
-                if budget_val > 0:
-                    break
-            except ValueError:
-                pass
-            print("Budget must be a positive number.")
-
-        work_dir = ask("Default working directory?", default=default_work_dir)
-        projects_str = ask(
-            "Project identifiers (comma-separated, or empty):", default=""
-        )
-        slack_enabled = ask(
-            "Enable Slack notifications?", default="n", choices=["y", "n"]
-        )
-        slack_webhook_url = ""
-        if slack_enabled == "y":
-            slack_webhook_url = ask("Slack webhook URL:", default="")
-
-        teams_enabled = ask(
-            "Enable Teams notifications?", default="n", choices=["y", "n"]
-        )
-        teams_webhook_url = ""
-        if teams_enabled == "y":
-            teams_webhook_url = ask("Teams webhook URL:", default="")
-
-        while True:
-            dashboard_port_str = ask("Dashboard port?", default="8081")
-            try:
-                port_val = int(dashboard_port_str)
-                if 1 <= port_val <= 65535:
-                    break
-            except ValueError:
-                pass
-            print("Port must be an integer between 1 and 65535.")
-
-    budget = float(budget_str)
-    dashboard_port = int(dashboard_port_str)
-
-    projects: list[str] = (
-        [p.strip() for p in projects_str.split(",") if p.strip()]
-        if projects_str.strip()
-        else []
-    )
-
-    work_dirs: dict[str, str] = {}
-    for proj in projects:
-        work_dirs[proj] = work_dir
-
-    slack_webhooks: dict[str, str] = {}
-    if not use_defaults and slack_enabled == "y" and slack_webhook_url:
-        slack_webhooks["default"] = slack_webhook_url
-
-    teams_webhooks: dict[str, str] = {}
-    if not use_defaults and teams_enabled == "y" and teams_webhook_url:
-        teams_webhooks["default"] = teams_webhook_url
-
-    config_dict: dict[str, Any] = {
-        "flows": {
-            "golem": {
-                "enabled": True,
-                "profile": profile,
-                "projects": projects,
-                "task_model": task_model,
-                "budget_per_task_usd": budget,
-                "default_work_dir": work_dir,
-                "work_dirs": work_dirs,
-            }
-        },
-        "claude": {
-            "model": task_model,
-        },
-        "dashboard": {
-            "port": dashboard_port,
-        },
-        "slack": {
-            "enabled": slack_enabled == "y",
-            **({"webhooks": slack_webhooks} if slack_webhooks else {}),
-        },
-        "teams": {
-            "enabled": teams_enabled == "y",
-            **({"webhooks": teams_webhooks} if teams_webhooks else {}),
-        },
-    }
+    inputs = _collect_inputs(use_defaults)
+    config_dict = _build_config(inputs)
 
     output_path.write_text(
         yaml.dump(config_dict, default_flow_style=False, sort_keys=False),
         encoding="utf-8",
     )
 
+    projects = config_dict["flows"]["golem"]["projects"]
     print(f"\nConfig written to {output_path}")
-    print(f"  profile:  {profile}")
-    print(f"  model:    {task_model}")
-    print(f"  budget:   ${budget}")
-    print(f"  work_dir: {work_dir}")
+    print(f"  profile:  {inputs['profile']}")
+    print(f"  model:    {inputs['task_model']}")
+    print(f"  budget:   ${inputs['budget']}")
+    print(f"  work_dir: {inputs['work_dir']}")
     if projects:
         print(f"  projects: {', '.join(projects)}")
-    print(f"  port:     {dashboard_port}")
+    print(f"  port:     {inputs['dashboard_port']}")
+
+    _setup_git_hooks()
 
     return 0
+
+
+def _setup_git_hooks() -> None:
+    """Configure git to use tracked .githooks/ directory."""
+    repo_root = Path(__file__).resolve().parent.parent
+    if not (repo_root / ".githooks").is_dir():
+        return
+    try:
+        cur = subprocess.run(
+            ["git", "config", "core.hooksPath"],
+            capture_output=True,
+            text=True,
+            cwd=str(repo_root),
+            check=False,
+        ).stdout.strip()
+        if cur == ".githooks":
+            return
+        subprocess.run(
+            ["git", "config", "core.hooksPath", ".githooks"],
+            cwd=str(repo_root),
+            check=True,
+        )
+        print("\nGit hooks configured (core.hooksPath = .githooks)")
+    except (FileNotFoundError, OSError, subprocess.CalledProcessError):
+        print("\nNote: run 'make setup' to enable git hooks")

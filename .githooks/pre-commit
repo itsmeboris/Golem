@@ -1,0 +1,12 @@
+#!/bin/bash
+# Auto-format staged Python files with black before commit.
+set -euo pipefail
+
+staged_py=$(git diff --cached --name-only --diff-filter=d -- '*.py' || true)
+if [[ -z "$staged_py" ]]; then
+    exit 0
+fi
+
+# Format and re-stage
+echo "$staged_py" | xargs python -m black --quiet 2>/dev/null
+echo "$staged_py" | xargs git add

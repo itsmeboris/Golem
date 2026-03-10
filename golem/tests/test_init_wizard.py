@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import yaml
 
@@ -376,3 +376,51 @@ class TestCmdInitHandler:
         with patch("golem.init_wizard.run_wizard", return_value=1):
             result = cmd_init(args)
         assert result == 1
+
+
+class TestSetupGitHooks:
+    def test_configures_hooks_path(self):
+        """_setup_git_hooks sets core.hooksPath when .githooks/ exists."""
+        from golem.init_wizard import _setup_git_hooks
+
+        # The real repo has .githooks/, so we just mock subprocess
+        with patch(
+            "golem.init_wizard.subprocess.run",
+            side_effect=[
+                MagicMock(stdout=".git/hooks\n"),  # current value != .githooks
+                MagicMock(),  # set call
+            ],
+        ) as mock_run:
+            _setup_git_hooks()
+        assert mock_run.call_count == 2
+
+    def test_skips_when_already_configured(self):
+        """_setup_git_hooks is a no-op when already set to .githooks."""
+        from golem.init_wizard import _setup_git_hooks
+
+        with patch(
+            "golem.init_wizard.subprocess.run",
+            return_value=MagicMock(stdout=".githooks\n"),
+        ) as mock_run:
+            _setup_git_hooks()
+        mock_run.assert_called_once()
+
+    def test_handles_missing_git(self):
+        """_setup_git_hooks handles git not being available."""
+        from golem.init_wizard import _setup_git_hooks
+
+        with patch(
+            "golem.init_wizard.subprocess.run",
+            side_effect=FileNotFoundError,
+        ):
+            _setup_git_hooks()  # should not raise
+
+    def test_skips_when_no_githooks_dir(self):
+        """_setup_git_hooks returns early when .githooks/ doesn't exist."""
+        from golem.init_wizard import _setup_git_hooks
+
+        with patch("pathlib.Path.is_dir", return_value=False), patch(
+            "golem.init_wizard.subprocess.run",
+        ) as mock_run:
+            _setup_git_hooks()
+        mock_run.assert_not_called()

@@ -444,11 +444,13 @@ pylint --errors-only golem/                 # lint
 pytest --cov=golem --cov-fail-under=100     # tests (100% coverage required)
 ```
 
-A [pre-push hook](.githooks/pre-push) runs all three automatically. Enable it with:
+A [pre-push hook](.githooks/pre-push) runs all three automatically. Set up with:
 
 ```bash
-git config core.hooksPath .githooks
+make setup        # or: git config core.hooksPath .githooks
 ```
+
+This is also done automatically by `golem init`.
 
 ---
 
