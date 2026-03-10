@@ -138,10 +138,12 @@ Working directory: {work_dir}
 [Specific instructions: what to implement, which files to modify]
 
 ## Self-verification
-Before reporting back, run:
+Before reporting back, run ONLY these — nothing more:
 1. pytest path/to/your/test_file.py -x  (targeted, NOT full suite)
 2. black --check path/to/changed/files
 3. pylint --errors-only path/to/changed/files
+Do NOT run pytest --cov, pytest without a path, or the full test suite.
+The Verifier handles that.
 ````
 
 **Context chaining rule:** After each Builder completes, capture its report
@@ -176,7 +178,7 @@ Working directory: {work_dir}
 ## Your task
 Verify the implementation matches each SPEC statement. Do NOT trust the
 Builder reports — read the actual code. Compare implementation to specs
-line by line.
+line by line. Do NOT run tests — you are a code reader, not a test runner.
 
 Report: APPROVED or ISSUES: [list what is missing or wrong, with file:line]
 ````
@@ -196,7 +198,7 @@ Working directory: {work_dir}
 ## Your task
 Review all changed files for: bugs, edge cases, naming clarity,
 test quality, code duplication, security issues. Only report issues
-with confidence >= 80. Read each file once — do not re-read.
+with confidence >= 80. Read each file once — do not re-read or run tests.
 
 Report: APPROVED or NEEDS_FIXES: [confidence, file:line, fix suggestion]
 ````
@@ -285,6 +287,8 @@ If blocked:
   what was built, which specs to check, and which files changed.
 - **Do NOT let subagents use ``bash grep`` or ``bash cat``** — tell them to
   use Read, Grep, and Glob tools.
+- **Do NOT let reviewers run tests** — reviewers read code, only the
+  Verifier runs the test suite.
 
 ## Rules
 
