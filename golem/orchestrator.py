@@ -515,7 +515,7 @@ class TaskOrchestrator:
             self._copy_claude_settings(work_dir)
 
         # Pre-flight verification: ensure base branch is healthy
-        if self.task_config.preflight_verify:
+        if getattr(self.task_config, "preflight_verify", True):
             self._slog.info("Running pre-flight verification on base branch...")
             vr = run_verification(work_dir, timeout=120)
             if not vr.passed:

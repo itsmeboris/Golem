@@ -220,7 +220,7 @@ class SubagentSupervisor:
                 ) from wt_err
 
         # Pre-flight verification: ensure base branch is healthy before spending budget
-        if self.task_config.preflight_verify:
+        if getattr(self.task_config, "preflight_verify", True):
             self._slog.info("Running pre-flight verification on base branch...")
             vr = run_verification(work_dir, timeout=120)
             if not vr.passed:

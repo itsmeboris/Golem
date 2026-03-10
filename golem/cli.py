@@ -73,11 +73,6 @@ DEFAULT_DAEMON_LOG_DIR = DATA_DIR / "logs"
 DEFAULT_PID_FILE = DATA_DIR / "daemon.pid"
 DEFAULT_DASHBOARD_PID_FILE = DATA_DIR / "dashboard.pid"
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _get_profile(config: Config) -> GolemProfile:
     """Build a GolemProfile from config.  Raises on failure."""
     tc = config.get_flow_config("golem")
@@ -806,8 +801,6 @@ def cmd_status(args) -> int:
         return 0
 
     # Watch mode: clear screen and re-render in a loop
-    import time
-
     interval = max(0.5, watch)
     try:
         while True:
@@ -871,22 +864,54 @@ def cmd_init(args) -> int:
     return run_wizard(output, use_defaults=defaults)
 
 
-# ---------------------------------------------------------------------------
-# Argparse
-# ---------------------------------------------------------------------------
+def _add_run_subparser(sub: argparse._SubParsersAction) -> None:
+    run_p = sub.add_parser("run", help="Execute a task via single agent")
+    run_p.add_argument(
+        "parent_id", nargs="?", type=int, default=None, help="Task/issue ID"
+    )
+    prompt_grp = run_p.add_mutually_exclusive_group()
+    prompt_grp.add_argument(
+        "--prompt", "-p", default="",
+        help="Submit inline prompt to daemon for execution",
+    )
+    prompt_grp.add_argument(
+        "--file", "-f", default="",
+        help="Submit prompt from file to daemon for execution",
+    )
+    run_p.add_argument("--dry", action="store_true", help="Preview without executing")
+    run_p.add_argument("--subject", default="", help="Override issue subject")
+    run_p.add_argument(
+        "--cwd", "-C", default="",
+        help="Override working directory for this invocation",
+    )
+    mcp_grp = run_p.add_mutually_exclusive_group()
+    mcp_grp.add_argument(
+        "--mcp", dest="mcp", action="store_const", const=True, default=None,
+        help="Enable MCP servers (keyword-scoped from task subject)",
+    )
+    mcp_grp.add_argument(
+        "--no-mcp", dest="mcp", action="store_const", const=False,
+        help="Disable all MCP servers",
+    )
+    run_p.set_defaults(func=cmd_run)
+
+
+def _add_batch_subparser(sub: argparse._SubParsersAction) -> None:
+    batch_p = sub.add_parser("batch", help="Submit and query batches")
+    bsub = batch_p.add_subparsers(dest="batch_command")
+    submit_p = bsub.add_parser("submit", help="Submit a batch from a JSON/YAML file")
+    submit_p.add_argument("file", help="Path to a JSON or YAML file describing the batch")
+    status_p = bsub.add_parser("status", help="Show batch status")
+    status_p.add_argument("group_id", help="Batch group ID")
+    bsub.add_parser("list", help="List all batches")
+    batch_p.set_defaults(func=cmd_batch)
 
 
 def _build_parser() -> argparse.ArgumentParser:
     """Build the CLI argument parser."""
-    parser = argparse.ArgumentParser(
-        description="Golem",
-        prog="golem",
-    )
+    parser = argparse.ArgumentParser(description="Golem", prog="golem")
     parser.add_argument(
-        "-c",
-        "--config",
-        type=Path,
-        default="config.yaml",
+        "-c", "--config", type=Path, default="config.yaml",
         help="Path to configuration file (default: config.yaml)",
     )
     parser.add_argument(
@@ -895,67 +920,20 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub = parser.add_subparsers(dest="command", help="Available commands")
 
-    # run
-    run_p = sub.add_parser("run", help="Execute a task via single agent")
-    run_p.add_argument(
-        "parent_id", nargs="?", type=int, default=None, help="Task/issue ID"
-    )
-    run_prompt_group = run_p.add_mutually_exclusive_group()
-    run_prompt_group.add_argument(
-        "--prompt",
-        "-p",
-        default="",
-        help="Submit inline prompt to daemon for execution",
-    )
-    run_prompt_group.add_argument(
-        "--file",
-        "-f",
-        default="",
-        help="Submit prompt from file to daemon for execution",
-    )
-    run_p.add_argument("--dry", action="store_true", help="Preview without executing")
-    run_p.add_argument("--subject", default="", help="Override issue subject")
-    run_p.add_argument(
-        "--cwd",
-        "-C",
-        default="",
-        help="Override working directory for this invocation",
-    )
-    run_mcp = run_p.add_mutually_exclusive_group()
-    run_mcp.add_argument(
-        "--mcp",
-        dest="mcp",
-        action="store_const",
-        const=True,
-        default=None,
-        help="Enable MCP servers (keyword-scoped from task subject)",
-    )
-    run_mcp.add_argument(
-        "--no-mcp",
-        dest="mcp",
-        action="store_const",
-        const=False,
-        help="Disable all MCP servers",
-    )
-    run_p.set_defaults(func=cmd_run)
+    _add_run_subparser(sub)
 
     # poll
     poll_p = sub.add_parser("poll", help="Scan for [AGENT] issues")
     poll_p.add_argument("--run", action="store_true", help="Also execute found tasks")
     poll_p.add_argument(
-        "--dry",
-        action="store_true",
+        "--dry", action="store_true",
         help="Show detected issues and config without executing",
     )
     poll_p.set_defaults(func=cmd_poll)
 
     # daemon
     daemon_p = sub.add_parser("daemon", help="Run golem daemon with tick loop")
-    daemon_p.add_argument(
-        "--foreground",
-        action="store_true",
-        help="Stay attached to terminal",
-    )
+    daemon_p.add_argument("--foreground", action="store_true", help="Stay attached to terminal")
     daemon_p.add_argument("--log-dir", type=Path, help="Directory for logs")
     daemon_p.add_argument("--pid-file", type=Path, help="PID file path")
     daemon_p.add_argument("--port", type=int, help="Dashboard port")
@@ -968,11 +946,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # stop
     stop_p = sub.add_parser("stop", help="Stop agent daemon")
-    stop_p.add_argument(
-        "--dashboard",
-        action="store_true",
-        help="Stop dashboard instead",
-    )
+    stop_p.add_argument("--dashboard", action="store_true", help="Stop dashboard instead")
     stop_p.add_argument("--pid-file", type=Path)
     stop_p.add_argument("--force", action="store_true")
     stop_p.set_defaults(func=cmd_stop)
@@ -981,19 +955,11 @@ def _build_parser() -> argparse.ArgumentParser:
     status_p = sub.add_parser("status", help="Show run stats")
     status_p.add_argument("--hours", type=int, default=24)
     status_p.add_argument(
-        "--watch",
-        type=float,
-        nargs="?",
-        const=2.0,
-        default=None,
-        metavar="SECS",
-        help="Auto-refresh every SECS seconds (default: 2)",
+        "--watch", type=float, nargs="?", const=2.0, default=None,
+        metavar="SECS", help="Auto-refresh every SECS seconds (default: 2)",
     )
     status_p.add_argument(
-        "--task",
-        type=int,
-        default=None,
-        metavar="ID",
+        "--task", type=int, default=None, metavar="ID",
         help="Show detail for a specific task ID",
     )
     status_p.set_defaults(func=cmd_status)
@@ -1003,30 +969,12 @@ def _build_parser() -> argparse.ArgumentParser:
     dash_p.add_argument("--port", type=int)
     dash_p.set_defaults(func=cmd_dashboard)
 
-    # batch
-    batch_p = sub.add_parser("batch", help="Submit and query batches")
-    batch_sub = batch_p.add_subparsers(dest="batch_command")
-    batch_submit_p = batch_sub.add_parser(
-        "submit", help="Submit a batch from a JSON/YAML file"
-    )
-    batch_submit_p.add_argument(
-        "file", help="Path to a JSON or YAML file describing the batch"
-    )
-    batch_status_p = batch_sub.add_parser("status", help="Show batch status")
-    batch_status_p.add_argument("group_id", help="Batch group ID")
-    batch_sub.add_parser("list", help="List all batches")
-    batch_p.set_defaults(func=cmd_batch)
+    _add_batch_subparser(sub)
 
     # init
     init_p = sub.add_parser("init", help="Generate a starter config.yaml")
-    init_p.add_argument(
-        "-o", "--output", default="config.yaml", help="Output file path"
-    )
-    init_p.add_argument(
-        "--defaults",
-        action="store_true",
-        help="Use defaults without prompting",
-    )
+    init_p.add_argument("-o", "--output", default="config.yaml", help="Output file path")
+    init_p.add_argument("--defaults", action="store_true", help="Use defaults without prompting")
     init_p.set_defaults(func=cmd_init)
 
     return parser
