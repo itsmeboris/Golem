@@ -59,13 +59,15 @@ Most AI coding tools wait for you to invoke them. Golem runs the other way aroun
 
 **Parallel execution** — Multiple Claude instances run simultaneously, each in its own git worktree. Infrastructure failures auto-retry without consuming the task's retry budget. When tasks complete, changes merge cleanly back into your branch.
 
-**Three-layer quality pipeline** — Every task passes through deterministic verification (`black`, `pylint`, `pytest`), then a separate validation agent reviews the work. Failures retry immediately with structured feedback — no LLM review wasted on broken code. Only fully validated work gets committed.
+**Deep quality pipeline** — Pre-execution gates catch doomed tasks early: a base branch health check verifies the codebase isn't already broken, and an optional clarity pre-check scores vague requirements before spending budget. Every task then passes through deterministic verification (`black`, `pylint`, `pytest`), AST-based structural analysis, coverage delta on changed files, and a separate validation agent review. Bug-fix tasks are checked for reproduction tests. Known-flaky tests are retried automatically. Failures retry with structured feedback — only fully validated work gets committed.
 
 **Skill-driven agents** — Agents discover and invoke relevant skills at each phase of execution — workspace knowledge, test-driven development, debugging workflows, code review criteria, and domain-specific tooling. Skills prevent unfocused exploration and enforce structured workflows.
 
 **Pluggable everything** — The profile system decouples Golem from any specific tracker, notifier, or tool provider. Swap Redmine for GitHub Issues, Teams for Slack, or write your own backend — without touching core logic.
 
 **Batch orchestration** — Submit multiple tasks as a batch with explicit dependency ordering. Task B can declare it depends on Task A — Golem schedules them accordingly and runs post-merge integration validation on the whole group.
+
+**Human feedback loop** — When a task fails and a human posts review comments on the tracker, Golem detects the feedback and re-attempts with the human's guidance as structured input — closing the loop on escalated tasks.
 
 **Budget guardrails** — Set per-task dollar limits and timeouts. A one-liner fix won't accidentally burn $50 in API calls.
 
@@ -197,17 +199,20 @@ flowchart LR
     R --> C
     C -- "timeout /<br/>budget" --> F
     C -. "infra error" .-> C
+    F -. "human feedback" .-> HR["HUMAN_REVIEW"]
+    HR --> C
 ```
 
 | State | What happens |
 |-------|-------------|
 | **DETECTED** | Task received; waits for dependency resolution and grace deadline |
 | **RUNNING** | Claude instances execute in isolated worktrees (infra failures auto-retry) |
-| **VERIFYING** | Deterministic checks — `black`, `pylint`, `pytest` with 100% coverage. Failure skips the reviewer and retries immediately with structured feedback |
-| **VALIDATING** | A separate validation agent reviews the work with verification evidence and shared type contracts |
+| **VERIFYING** | Deterministic checks — `black`, `pylint`, `pytest` with 100% coverage, plus AST analysis and coverage delta on changed files. Failure skips the reviewer and retries immediately with structured feedback |
+| **VALIDATING** | A separate validation agent reviews the work with verification evidence, spec fidelity checks, and reproduction test detection for bug fixes |
 | **RETRYING** | Partial result — agent retries with validation feedback |
 | **COMPLETED** | Validated, merged via merge queue, and team notified |
 | **FAILED** | Budget exceeded, timeout hit, or validation failed after retries |
+| **HUMAN_REVIEW** | Human posted feedback on a failed task — agent re-attempts with the human's guidance |
 
 ### Parallel Tasks & Git Worktrees
 
@@ -250,8 +255,8 @@ flowchart LR
 |-------|-------------|
 | **Orient** | Invoke workspace and domain skills to understand the codebase layout before touching anything. Assess task complexity (trivial / standard / complex). |
 | **Scout** | Dispatch fast read-only agents with specific research questions. Returns structured findings with `file:line` references. |
-| **Plan** | Using Scout findings, decide what files change, whether subtasks can parallelize, and which skills Builders should use. |
-| **Build** | Dispatch code-writing agents with Scout context and skill guidance. Follows TDD when applicable. Independent subtasks run in parallel. |
+| **Plan** | Using Scout findings, decide what files change, whether subtasks can parallelize, and which skills Builders should use. For standard/complex tasks, write explicit **specification statements** (SPEC-1, SPEC-2, ...) describing expected behavior — these are verified by Builders and the Reviewer. |
+| **Build** | Dispatch code-writing agents with Scout context, spec statements, and skill guidance. Follows TDD when applicable. Bug-fix tasks require a reproduction test before the fix. Independent subtasks run in parallel. |
 | **Review** | Adversarial code review by an opus-class agent. Only reports issues with >= 80% confidence. Builders fix flagged issues and re-review. |
 | **Verify** | Run `black`, `pylint`, `pytest`. Circuit breaker stops after 3 identical failures. |
 
@@ -340,6 +345,13 @@ The `local` profile is the recommended starting point. Prompts submitted via CLI
 | `use_worktrees` | `true` | Isolate tasks in separate git worktrees |
 | `auto_commit` | `true` | Git commit on PASS |
 | `validation_model` | `opus` | Model for the validation agent |
+| `preflight_verify` | `true` | Run verifier on base branch before agent starts — catches broken codebases early |
+| `ast_analysis` | `true` | Run ast-grep structural rules during validation (requires `sg` binary) |
+| `clarity_check` | `false` | Opt-in: score task clarity with haiku before execution |
+| `clarity_threshold` | `3` | Minimum clarity score (1–5) to proceed without human clarification |
+| `ensemble_on_second_retry` | `false` | Spawn parallel candidates with different strategies on second retry |
+| `ensemble_candidates` | `2` | Number of parallel candidates for ensemble retry |
+| `flaky_tests_file` | `""` | Path to known-flaky tests JSON registry; empty = disabled |
 
 See [`config.yaml.example`](config.yaml.example) for the full list including budget limits, timeouts, checkpoint intervals, and merge settings.
 
@@ -403,6 +415,7 @@ The daemon exposes a REST API (served on the dashboard port, default `8081`).
 | `/api/flow/status` | GET | None | Status of all configured flows |
 | `/api/flow/start` | POST | Admin | Start flows by name |
 | `/api/flow/stop` | POST | Admin | Stop flows by name |
+| `/api/analytics` | GET | None | Quality metrics — pass/fail rates, avg cost, retry effectiveness, top failure reasons |
 
 ```bash
 curl -X POST http://localhost:8081/api/submit \
