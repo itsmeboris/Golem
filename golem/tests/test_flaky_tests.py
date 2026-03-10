@@ -1,7 +1,6 @@
 """Tests for flaky test detection and management."""
 
 import json
-import tempfile
 from pathlib import Path
 
 from golem.flaky_tests import FlakyTestRegistry, is_flaky

@@ -1,18 +1,5 @@
 #!/usr/bin/env python3
-"""CLI entry point for Golem.
-
-Subcommands:
-    golem run -p "fix the bug"          # submit prompt to daemon
-    golem run -f plan.md                # submit prompt from file
-    golem run 4895049                   # execute a task by tracker ID
-    golem run 4895049 --dry             # preview without executing
-    golem poll                          # scan for [AGENT] issues
-    golem poll --run                    # scan + execute all found
-    golem daemon --foreground           # tick-loop daemon
-    golem stop                          # stop daemon
-    golem status                        # show run stats
-    golem dashboard                     # standalone dashboard
-"""
+"""CLI entry point for Golem — run, poll, daemon, status, dashboard."""
 
 from __future__ import annotations
 
@@ -218,23 +205,7 @@ def run_issue(  # pylint: disable=too-many-arguments,too-many-locals
     cwd_override: str = "",
     mcp_override: bool | None = None,
 ) -> bool:
-    """Run a task through the orchestrator pipeline.
-
-    Both Redmine tasks (``run <issue_id>``) and prompt-mode tasks
-    (``run -p "..."``) share the same execution path.  The *profile*
-    determines how tasks are read, how state is updated, and which
-    notifications are sent.
-
-    Parameters
-    ----------
-    profile_override
-        If given, use this profile instead of building one from config.
-    cwd_override
-        If given, override the working directory.
-    mcp_override
-        ``True`` enables keyword-scoped MCP; ``False`` disables all MCP;
-        ``None`` (default) uses whatever the profile provides.
-    """
+    """Run a task through the orchestrator pipeline."""
     profile = profile_override or _get_profile(config)
 
     # Apply CLI --mcp / --no-mcp override
@@ -488,12 +459,7 @@ def cmd_run(args) -> int:
 
 
 def _cmd_run_prompt(args: argparse.Namespace, config: Config, prompt_text: str) -> int:
-    """Submit a prompt to the daemon for background execution.
-
-    Ensures the daemon is running (starts it if needed), then submits the
-    prompt via the HTTP API.  The daemon handles worktree creation, execution,
-    validation, commit, and merge-back.
-    """
+    """Submit a prompt to the daemon for background execution."""
     port = config.dashboard.port if config.dashboard else DashboardConfig.port
     daemon_cfg = config.daemon
     _ensure_daemon(args, config, port, daemon_cfg=daemon_cfg)
@@ -531,11 +497,6 @@ def _cmd_run_file(args: argparse.Namespace, config: Config, file_path: str) -> i
     return _cmd_run_prompt(args, config, prompt_text)
 
 
-# ---------------------------------------------------------------------------
-# Daemon auto-start + HTTP submission
-# ---------------------------------------------------------------------------
-
-
 def _daemon_health(port: int, timeout: int = 3) -> bool:
     """Probe the daemon health endpoint.  Returns True if healthy."""
     try:
@@ -554,14 +515,12 @@ def _ensure_daemon(args, config, port: int, daemon_cfg=None) -> None:
     hc_timeout = daemon_cfg.health_check_timeout
     if _daemon_health(port, timeout=hc_timeout):
         return
-
     pid = read_pid(DEFAULT_PID_FILE)
     if pid is not None:
         try:
             os.kill(pid, 0)
         except OSError:
             remove_pid(DEFAULT_PID_FILE)
-
     if not _daemon_health(port, timeout=hc_timeout):
         print("  Starting daemon in background...")
         import subprocess as _sp
@@ -571,12 +530,10 @@ def _ensure_daemon(args, config, port: int, daemon_cfg=None) -> None:
         if cfg_path:
             cmd += ["-c", str(cfg_path)]
         cmd += ["daemon"]
-
         log_dir = DATA_DIR / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         bg_log = log_dir / f"agent_{stamp}.log"
-
         with open(bg_log, "w", encoding="utf-8") as lf:
             _sp.Popen(  # pylint: disable=consider-using-with
                 cmd,
@@ -584,13 +541,11 @@ def _ensure_daemon(args, config, port: int, daemon_cfg=None) -> None:
                 stderr=_sp.STDOUT,
                 start_new_session=True,
             )
-
         for _ in range(daemon_cfg.startup_max_iterations):
             time.sleep(daemon_cfg.startup_poll_seconds)
             if _daemon_health(port, timeout=hc_timeout):
                 print(f"  Daemon started (log: {bg_log})")
                 return
-
         print(
             "  Warning: daemon may not be ready yet. "
             "Check logs or run 'golem daemon --foreground'.",
@@ -617,7 +572,6 @@ def _submit_to_daemon(
         payload["subject"] = subject
     if work_dir:
         payload["work_dir"] = work_dir
-
     url = f"http://127.0.0.1:{port}/api/submit"
     data = json.dumps(payload).encode("utf-8")
     headers: dict[str, str] = {"Content-Type": "application/json"}

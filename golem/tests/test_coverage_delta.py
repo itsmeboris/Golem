@@ -1,10 +1,7 @@
 """Tests for coverage delta analysis on changed files."""
 
-import json
 import subprocess
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from golem.verifier import CoverageDelta, _get_changed_files, parse_coverage_delta
 
@@ -25,7 +22,7 @@ class TestCoverageDelta:
         result = parse_coverage_delta(cov_data, changed_files)
         assert result.all_covered is True
         assert result.delta_pct == 100.0
-        assert result.uncovered_lines == {}
+        assert not result.uncovered_lines
 
     def test_some_changed_lines_uncovered(self):
         """When changed files have missing lines, report them."""

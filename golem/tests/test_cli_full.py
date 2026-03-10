@@ -1167,9 +1167,7 @@ class TestCmdStatus:
     @patch("golem.core.dashboard.format_status_text", return_value="watch output")
     def test_watch_mode(self, mock_format, capsys):
         """Watch mode prints with ANSI clear, then exits on KeyboardInterrupt."""
-        import time
-
-        with patch.object(time, "sleep", side_effect=KeyboardInterrupt):
+        with patch("time.sleep", side_effect=KeyboardInterrupt):
             args = SimpleNamespace(hours=24, task=None, watch=2.0, config=None)
             result = cmd_status(args)
         assert result == 0
@@ -1180,9 +1178,7 @@ class TestCmdStatus:
     @patch("golem.core.dashboard.format_status_text", return_value="clamp test")
     def test_watch_clamps_interval(self, mock_format, capsys):
         """Watch interval is clamped to minimum 0.5s."""
-        import time
-
-        with patch.object(time, "sleep", side_effect=KeyboardInterrupt) as mock_sleep:
+        with patch("time.sleep", side_effect=KeyboardInterrupt) as mock_sleep:
             args = SimpleNamespace(hours=24, task=None, watch=0.1, config=None)
             cmd_status(args)
         mock_sleep.assert_called_once_with(0.5)
