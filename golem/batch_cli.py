@@ -13,7 +13,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from .core.run_log import format_duration
+from .utils import format_duration
 
 
 # ---------------------------------------------------------------------------

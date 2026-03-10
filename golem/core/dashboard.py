@@ -15,7 +15,8 @@ from typing import Any
 from .config import DATA_DIR
 from .daemon_utils import read_pid
 from .live_state import LiveState, read_live_snapshot
-from .run_log import format_duration, read_runs
+from .run_log import read_runs
+from ..utils import format_duration
 from ..event_tracker import _summarize_tool_input
 from ..orchestrator import load_sessions
 from ..types import (

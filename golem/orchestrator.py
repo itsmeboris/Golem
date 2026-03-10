@@ -36,7 +36,8 @@ from .core.cli_wrapper import CLIConfig, CLIResult, CLIType, invoke_cli_monitore
 from .core.config import DATA_DIR, PROJECT_ROOT, GolemFlowConfig
 from .core.defaults import _now_iso  # re-exported for backward compat (flow.py)
 from .core.report import ReportWriter
-from .core.run_log import RunRecord, format_duration, record_run
+from .core.run_log import RunRecord, record_run
+from .utils import format_duration
 from .core.flow_base import _StreamingTraceWriter, _write_prompt, _write_trace
 
 from .checkpoint import delete_checkpoint, save_checkpoint

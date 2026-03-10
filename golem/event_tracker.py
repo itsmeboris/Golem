@@ -10,7 +10,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from .core.run_log import format_duration
+from .utils import format_duration
 from .types import MilestoneDict, TrackerExportDict
 
 logger = logging.getLogger("golem.event_tracker")

@@ -33,6 +33,7 @@ from .orchestrator import (
 from .profile import GolemProfile
 from .validation import ValidationVerdict, run_validation
 from .workdir import resolve_work_dir
+from .utils import format_duration
 from .verifier import run_verification
 from .worktree_manager import (
     cleanup_worktree,
@@ -629,8 +630,6 @@ class SubagentSupervisor:
         if self.session.retry_count:
             extras += f", {self.session.retry_count} retry"
 
-        from .core.run_log import format_duration
-
         self._emit_event(f"Task completed: ${self.session.total_cost_usd:.2f}{extras}")
 
         self._update_task(
@@ -658,8 +657,6 @@ class SubagentSupervisor:
         self.session.updated_at = _now_iso()
 
         concerns_text = "\n".join(f"- {c}" for c in verdict.concerns) or "- (none)"
-
-        from .core.run_log import format_duration
 
         self._update_task(
             issue_id,

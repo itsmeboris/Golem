@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from golem.types import RunRecordDict
+from golem.utils import format_duration
 
 from .config import DATA_DIR
 
@@ -16,36 +17,7 @@ logger: logging.Logger = logging.getLogger("golem.core.run_log")
 
 DEFAULT_RUN_LOG: Path = DATA_DIR / "runs" / "runs.jsonl"
 
-
-def format_duration(seconds: float) -> str:
-    """Format a duration in seconds into a human-readable string.
-
-    >>> format_duration(0)
-    '0s'
-    >>> format_duration(-5)
-    '0s'
-    >>> format_duration(0.5)
-    '< 1s'
-    >>> format_duration(45)
-    '45s'
-    >>> format_duration(150)
-    '2m 30s'
-    >>> format_duration(4542)
-    '1h 15m 42s'
-    """
-    if seconds <= 0:
-        return "0s"
-    if seconds < 1:
-        return "< 1s"
-    total = int(seconds)
-    if total < 60:
-        return f"{total}s"
-    if total < 3600:
-        m, s = divmod(total, 60)
-        return f"{m}m {s}s"
-    h, remainder = divmod(total, 3600)
-    m, s = divmod(remainder, 60)
-    return f"{h}h {m}m {s}s"
+__all__ = ["RunRecord", "record_run", "read_runs", "purge_flow"]
 
 
 @dataclass

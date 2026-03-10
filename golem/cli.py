@@ -28,7 +28,7 @@ from .core.daemon_utils import (
     update_latest_symlink,
     write_pid,
 )
-from .core.run_log import format_duration
+from .utils import format_duration
 from .core.stream_printer import StreamPrinter as _StreamPrinter
 from .core.control_api import wire_control_api
 from .core.triggers import FASTAPI_AVAILABLE

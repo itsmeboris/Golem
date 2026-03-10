@@ -6,37 +6,10 @@ from datetime import datetime, timezone
 
 from golem.core.run_log import (
     RunRecord,
-    format_duration,
     purge_flow,
     read_runs,
     record_run,
 )
-
-
-class TestFormatDuration:
-    def test_zero(self):
-        assert format_duration(0) == "0s"
-
-    def test_negative(self):
-        assert format_duration(-5) == "0s"
-
-    def test_subsecond(self):
-        assert format_duration(0.5) == "< 1s"
-
-    def test_seconds(self):
-        assert format_duration(45) == "45s"
-
-    def test_minutes(self):
-        assert format_duration(150) == "2m 30s"
-
-    def test_hours(self):
-        assert format_duration(4542) == "1h 15m 42s"
-
-    def test_exact_minute(self):
-        assert format_duration(60) == "1m 0s"
-
-    def test_exact_hour(self):
-        assert format_duration(3600) == "1h 0m 0s"
 
 
 class TestRecordRun:
