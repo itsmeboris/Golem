@@ -1457,3 +1457,82 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         assert (
             "toggleTheme" in body or "setTheme" in body
         ), "Missing theme toggle in shared JS"
+
+
+# ---------------------------------------------------------------------------
+# /api/cost-analytics endpoint
+# ---------------------------------------------------------------------------
+
+
+class TestCostAnalyticsEndpoint:
+    """Test the /api/cost-analytics route handler."""
+
+    @pytest.fixture()
+    def handlers(self):
+        """Mount dashboard on a mock app and return a dict of route handlers."""
+        app = MagicMock()
+        routes: dict = {}
+
+        def capture_route(path, **kwargs):
+            def decorator(fn):
+                routes[path] = fn
+                return fn
+
+            return decorator
+
+        app.get = capture_route
+        with patch("golem.core.dashboard.FASTAPI_AVAILABLE", True):
+            with patch(
+                "golem.core.dashboard.Query", lambda default=None, **kw: default
+            ):
+                mount_dashboard(
+                    app,
+                    config_snapshot={"model": "test"},
+                    live_state_file=None,
+                )
+        return routes
+
+    def test_route_is_registered(self, handlers):
+        assert "/api/cost-analytics" in handlers
+
+    @pytest.mark.asyncio
+    async def test_returns_expected_keys(self, handlers):
+        with patch(
+            "golem.core.dashboard.read_runs",
+            return_value=[
+                {
+                    "cost_usd": 0.05,
+                    "verdict": "PASS",
+                    "started_at": "2025-01-01T10:00:00",
+                    "actions_taken": [],
+                }
+            ],
+        ):
+            with patch(
+                "golem.core.dashboard.load_sessions",
+                return_value={},
+            ):
+                resp = await handlers["/api/cost-analytics"]()
+        body = json.loads(resp.body)
+        for key in (
+            "cost_over_time",
+            "cost_by_verdict",
+            "cost_per_retry",
+            "budget_utilization",
+            "summary",
+        ):
+            assert key in body, "Missing key: %s" % key
+
+    @pytest.mark.asyncio
+    async def test_returns_json_response(self, handlers):
+        with patch(
+            "golem.core.dashboard.read_runs",
+            return_value=[],
+        ):
+            with patch(
+                "golem.core.dashboard.load_sessions",
+                return_value={},
+            ):
+                resp = await handlers["/api/cost-analytics"]()
+        body = json.loads(resp.body)
+        assert isinstance(body, dict)
