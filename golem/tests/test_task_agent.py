@@ -769,7 +769,13 @@ class TestPrompts:
 
     def test_orchestrate_prompt_has_new_roles(self):
         text = load_prompt("orchestrate_task.txt")
-        for role in ("Scout", "Builder", "Reviewer", "Verifier"):
+        for role in (
+            "Builder",
+            "Spec Reviewer",
+            "Quality Reviewer",
+            "Verifier",
+            "Scout",
+        ):
             assert role in text, f"Missing role: {role}"
         # Old roles should not appear
         for old_role in ("Explorer", "Implementer", "Tester"):
