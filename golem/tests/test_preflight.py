@@ -52,10 +52,10 @@ class TestPreflightVerification:
             passed=False,
             pytest_ok=False,
             pytest_output="FAILED test_foo.py::test_bar - AssertionError",
-            black_ok=True,
-            black_output="",
-            pylint_ok=True,
-            pylint_output="",
+            black_ok=False,
+            black_output="would reformat foo.py",
+            pylint_ok=False,
+            pylint_output="E0001: syntax error",
         )
         with patch("golem.orchestrator.run_verification", return_value=mock_result):
             with patch("pathlib.Path.is_dir", return_value=True):

@@ -944,3 +944,90 @@ class TestCheckpointHelpers:
             side_effect=OSError("disk full"),
         ):
             sup._delete_checkpoint(42)  # should not raise
+
+
+class TestPreflightSupervisor:
+    """Cover preflight verification failure branches in _setup_work_dir."""
+
+    def test_preflight_all_checks_fail(self):
+        from golem.errors import InfrastructureError
+
+        cfg = _make_config(preflight_verify=True, use_worktrees=False)
+        sup = _make_supervisor(config=cfg)
+        mock_vr = MagicMock(
+            passed=False,
+            black_ok=False,
+            black_output="would reformat foo.py",
+            pylint_ok=False,
+            pylint_output="E0001: syntax error",
+            pytest_ok=False,
+            pytest_output="FAILED test_bar",
+        )
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.run_verification", return_value=mock_vr
+            ),
+            patch("pathlib.Path.is_dir", return_value=True),
+            pytest.raises(InfrastructureError, match="black.*pylint.*pytest"),
+        ):
+            sup._setup_work_dir(42, "desc")
+
+
+class TestClarityGate:
+    """Cover the clarity check failure path in _execute_phases."""
+
+    @pytest.mark.asyncio
+    async def test_clarity_too_low_raises(self):
+        from golem.clarity import check_clarity as _real  # noqa: F401
+        from golem.errors import TaskExecutionError
+
+        cfg = _make_config(
+            clarity_check=True,
+            clarity_threshold=3,
+            use_worktrees=False,
+            preflight_verify=False,
+        )
+        sup = _make_supervisor(config=cfg)
+        mock_cr = MagicMock(score=1, reason="too vague", cost_usd=0.01)
+        mock_cr.is_clear.return_value = False
+        with (
+            patch("golem.clarity.check_clarity", return_value=mock_cr),
+            pytest.raises(TaskExecutionError, match="clarity below threshold"),
+        ):
+            await sup._execute_phases(42, "desc", "/work", 0.0)
+
+
+class TestEnsembleRetryBranch:
+    """Cover the not-yet-implemented ensemble retry branch."""
+
+    @pytest.mark.asyncio
+    async def test_ensemble_eligible_escalates(self):
+        cfg = _make_config(
+            ensemble_on_second_retry=True,
+            ensemble_candidates=2,
+            max_retries=2,
+            use_worktrees=False,
+            preflight_verify=False,
+        )
+        session = TaskSession(parent_issue_id=42, parent_subject="Test")
+        session.retry_count = 0  # will be incremented to 1 inside _retry_with_resume
+        sup = _make_supervisor(session=session, config=cfg)
+
+        mock_cli = _make_cli_result(output_result="done")
+        retry_verdict = MagicMock(verdict="PARTIAL", confidence=0.5)
+        with (
+            patch.object(sup, "_build_retry_prompt", return_value=("retry prompt", "")),
+            patch(
+                "golem.supervisor_v2_subagent.invoke_cli_monitored",
+                return_value=mock_cli,
+            ),
+            patch.object(sup, "_get_description", return_value="desc"),
+            patch.object(sup, "_run_overall_validation", return_value=retry_verdict),
+            patch.object(sup, "_escalate") as mock_esc,
+            patch.object(sup, "_save_checkpoint"),
+            patch.object(sup, "_emit_event"),
+            patch("golem.supervisor_v2_subagent._write_prompt"),
+            patch("golem.supervisor_v2_subagent._write_trace"),
+        ):
+            await sup._retry_with_resume(MagicMock(), "/work", 42)
+            mock_esc.assert_called_once_with(retry_verdict)
