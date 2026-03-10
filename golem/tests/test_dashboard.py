@@ -8,8 +8,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import golem.core.dashboard as _dashboard_module
 from golem.core.dashboard import (
     _FileCache,
+    _MAX_TRACE_CACHE,
     _aggregate_stats,
     _check_daemon_status,
     _extract_assistant_events,
@@ -18,6 +20,7 @@ from golem.core.dashboard import (
     _format_live_section,
     _parse_trace,
     _parse_trace_terminal,
+    _read_and_parse_trace,
     _read_log_tail,
     _read_sessions,
     _resolve_paths,
@@ -28,6 +31,7 @@ from golem.core.dashboard import (
     mount_dashboard,
 )
 from golem.orchestrator import TaskSession, TaskSessionState
+from golem.trace_parser import parse_trace as _parse_trace_structured
 from golem.types import MilestoneDict
 
 
@@ -1536,3 +1540,334 @@ class TestCostAnalyticsEndpoint:
                 resp = await handlers["/api/cost-analytics"]()
         body = json.loads(resp.body)
         assert isinstance(body, dict)
+
+
+# ---------------------------------------------------------------------------
+# _read_and_parse_trace (Task 3.1)
+# ---------------------------------------------------------------------------
+
+
+def _make_minimal_trace_jsonl(path: Path) -> None:
+    """Write a minimal valid JSONL trace file to path."""
+    events = [
+        json.dumps(
+            {
+                "type": "result",
+                "duration_ms": 1000,
+                "total_cost_usd": 0.01,
+                "num_turns": 1,
+                "is_error": False,
+                "usage": {},
+            }
+        )
+    ]
+    path.write_text("\n".join(events) + "\n", encoding="utf-8")
+
+
+class TestReadAndParseTrace:
+    def setup_method(self):
+        """Clear the parsed trace cache before each test."""
+        _dashboard_module._parsed_trace_cache.clear()
+
+    def teardown_method(self):
+        """Clear the parsed trace cache after each test."""
+        _dashboard_module._parsed_trace_cache.clear()
+
+    def test_returns_parsed_trace(self, tmp_path):
+        traces = tmp_path / "traces" / "golem"
+        traces.mkdir(parents=True)
+        trace_file = traces / "golem-42-20260101.jsonl"
+        _make_minimal_trace_jsonl(trace_file)
+
+        with patch("golem.core.dashboard.TRACES_DIR", tmp_path / "traces"):
+            with patch("golem.core.dashboard.REPORTS_DIR", tmp_path / "reports"):
+                result = _read_and_parse_trace("golem-42-20260101")
+
+        assert result is not None
+        assert "phases" in result
+        assert "totals" in result
+
+    def test_returns_none_for_missing_trace(self, tmp_path):
+        with patch("golem.core.dashboard.TRACES_DIR", tmp_path / "traces"):
+            with patch("golem.core.dashboard.REPORTS_DIR", tmp_path / "reports"):
+                result = _read_and_parse_trace("golem-999-20260101")
+
+        assert result is None
+
+    def test_includes_retry_trace_if_exists(self, tmp_path):
+        traces = tmp_path / "traces" / "golem"
+        traces.mkdir(parents=True)
+        trace_file = traces / "golem-42-20260101.jsonl"
+        _make_minimal_trace_jsonl(trace_file)
+
+        retry_file = traces / "golem-42-20260101-retry.jsonl"
+        _make_minimal_trace_jsonl(retry_file)
+
+        with patch("golem.core.dashboard.TRACES_DIR", tmp_path / "traces"):
+            with patch("golem.core.dashboard.REPORTS_DIR", tmp_path / "reports"):
+                result = _read_and_parse_trace("golem-42-20260101")
+
+        assert result is not None
+        assert "retry" in result
+        assert str(retry_file) == result["retry"]["trace_file"]
+
+    def test_completed_trace_is_cached(self, tmp_path):
+        traces = tmp_path / "traces" / "golem"
+        traces.mkdir(parents=True)
+        trace_file = traces / "golem-42-20260101.jsonl"
+        _make_minimal_trace_jsonl(trace_file)
+
+        with patch("golem.core.dashboard.TRACES_DIR", tmp_path / "traces"):
+            with patch("golem.core.dashboard.REPORTS_DIR", tmp_path / "reports"):
+                result1 = _read_and_parse_trace("golem-42-20260101")
+
+        assert result1 is not None
+        assert "golem-42-20260101" in _dashboard_module._parsed_trace_cache
+
+        # Delete the file — cache should still return the result
+        trace_file.unlink()
+        with patch("golem.core.dashboard.TRACES_DIR", tmp_path / "traces"):
+            with patch("golem.core.dashboard.REPORTS_DIR", tmp_path / "reports"):
+                result2 = _read_and_parse_trace("golem-42-20260101")
+
+        assert result2 is result1
+
+    def test_malformed_jsonl_skips_bad_lines(self, tmp_path):
+        """Malformed JSONL lines are skipped; valid lines still parsed."""
+        traces = tmp_path / "traces" / "golem"
+        traces.mkdir(parents=True)
+        trace_file = traces / "golem-42-20260101.jsonl"
+        trace_file.write_text("{not valid json at all!!!\n", encoding="utf-8")
+
+        with patch("golem.core.dashboard.TRACES_DIR", tmp_path / "traces"):
+            with patch("golem.core.dashboard.REPORTS_DIR", tmp_path / "reports"):
+                result = _read_and_parse_trace("golem-42-20260101")
+
+        assert result is not None
+        assert result["phases"] == []
+
+    def test_parse_exception_returns_empty_result(self, tmp_path):
+        """If _parse_trace_structured raises, return empty ParsedTrace."""
+        traces = tmp_path / "traces" / "golem"
+        traces.mkdir(parents=True)
+        trace_file = traces / "golem-42-20260101.jsonl"
+        _make_minimal_trace_jsonl(trace_file)
+
+        with patch("golem.core.dashboard.TRACES_DIR", tmp_path / "traces"):
+            with patch("golem.core.dashboard.REPORTS_DIR", tmp_path / "reports"):
+                with patch(
+                    "golem.core.dashboard._parse_trace_structured",
+                    side_effect=[RuntimeError("boom"), _parse_trace_structured([])],
+                ):
+                    result = _read_and_parse_trace("golem-42-20260101")
+
+        assert result is not None
+        assert result["phases"] == []
+
+    def test_trace_file_deleted_after_resolve(self, tmp_path):
+        """TOCTOU: trace file vanishes between _resolve_paths and open."""
+        traces = tmp_path / "traces" / "golem"
+        traces.mkdir(parents=True)
+        trace_file = traces / "golem-42-20260101.jsonl"
+        _make_minimal_trace_jsonl(trace_file)
+
+        real_open = open  # noqa: SIM115
+
+        def delete_then_open(path, **kwargs):
+            if str(path) == str(trace_file):
+                trace_file.unlink()
+                return real_open(path, **kwargs)  # raises FileNotFoundError
+            return real_open(path, **kwargs)
+
+        with patch("golem.core.dashboard.TRACES_DIR", tmp_path / "traces"):
+            with patch("golem.core.dashboard.REPORTS_DIR", tmp_path / "reports"):
+                with patch("builtins.open", side_effect=delete_then_open):
+                    result = _read_and_parse_trace("golem-42-20260101")
+
+        assert result is None
+
+    def test_empty_lines_in_jsonl_skipped(self, tmp_path):
+        """Empty lines in JSONL trace are silently skipped."""
+        traces = tmp_path / "traces" / "golem"
+        traces.mkdir(parents=True)
+        trace_file = traces / "golem-42-20260101.jsonl"
+        trace_file.write_text(
+            "\n\n"
+            '{"type":"result","total_cost_usd":0.1,"duration_ms":1000,'
+            '"num_turns":1,"is_error":false,"result":"","modelUsage":{}}\n'
+            "\n",
+            encoding="utf-8",
+        )
+
+        with patch("golem.core.dashboard.TRACES_DIR", tmp_path / "traces"):
+            with patch("golem.core.dashboard.REPORTS_DIR", tmp_path / "reports"):
+                result = _read_and_parse_trace("golem-42-20260101")
+
+        assert result is not None
+        assert result["phases"] == []
+
+    def test_retry_with_malformed_line(self, tmp_path):
+        """Malformed lines in retry JSONL are skipped, valid lines parsed."""
+        traces = tmp_path / "traces" / "golem"
+        traces.mkdir(parents=True)
+        _make_minimal_trace_jsonl(traces / "golem-42-20260101.jsonl")
+        retry_file = traces / "golem-42-20260101-retry.jsonl"
+        retry_file.write_text(
+            "not json!!!\n"
+            '{"type":"result","total_cost_usd":0.2,"duration_ms":2000,'
+            '"num_turns":2,"is_error":false,"result":"","modelUsage":{}}\n',
+            encoding="utf-8",
+        )
+
+        with patch("golem.core.dashboard.TRACES_DIR", tmp_path / "traces"):
+            with patch("golem.core.dashboard.REPORTS_DIR", tmp_path / "reports"):
+                result = _read_and_parse_trace("golem-42-20260101")
+
+        assert result is not None
+        assert result["retry"] is not None
+
+    def test_retry_file_not_found_is_silent(self, tmp_path):
+        """When retry file doesn't exist, no retry field is set (no error)."""
+        traces = tmp_path / "traces" / "golem"
+        traces.mkdir(parents=True)
+        _make_minimal_trace_jsonl(traces / "golem-42-20260101.jsonl")
+
+        with patch("golem.core.dashboard.TRACES_DIR", tmp_path / "traces"):
+            with patch("golem.core.dashboard.REPORTS_DIR", tmp_path / "reports"):
+                result = _read_and_parse_trace("golem-42-20260101")
+
+        assert result is not None
+        assert result.get("retry") is None
+
+
+# ---------------------------------------------------------------------------
+# HTTP route tests for /api/trace-parsed/ (Task 3.2)
+# ---------------------------------------------------------------------------
+
+
+class TestApiTraceParsedHTTP:
+    """Test the /api/trace-parsed/ route using the handler-capture pattern."""
+
+    @pytest.fixture()
+    def handlers(self):
+        """Mount dashboard and capture route handlers."""
+        app = MagicMock()
+        routes: dict = {}
+
+        def capture_route(path, **kwargs):
+            def decorator(fn):
+                routes[path] = fn
+                return fn
+
+            return decorator
+
+        app.get = capture_route
+        with patch("golem.core.dashboard.FASTAPI_AVAILABLE", True):
+            with patch(
+                "golem.core.dashboard.Query", lambda default=None, **kw: default
+            ):
+                mount_dashboard(app, config_snapshot={"model": "test"})
+        return routes
+
+    def setup_method(self):
+        """Clear the parsed trace cache before each test."""
+        _dashboard_module._parsed_trace_cache.clear()
+
+    def teardown_method(self):
+        """Clear the parsed trace cache after each test."""
+        _dashboard_module._parsed_trace_cache.clear()
+
+    @pytest.mark.asyncio
+    async def test_404_for_missing_trace(self, handlers):
+        with patch(
+            "golem.core.dashboard._read_and_parse_trace",
+            return_value=None,
+        ):
+            resp = await handlers["/api/trace-parsed/{event_id:path}"]("golem-999")
+        assert resp.status_code == 404
+        body = json.loads(resp.body)
+        assert "error" in body
+
+    @pytest.mark.asyncio
+    async def test_200_with_valid_trace(self, handlers, tmp_path):
+        traces = tmp_path / "traces" / "golem"
+        traces.mkdir(parents=True)
+        trace_file = traces / "golem-42-20260101.jsonl"
+        _make_minimal_trace_jsonl(trace_file)
+
+        with patch("golem.core.dashboard.TRACES_DIR", tmp_path / "traces"):
+            with patch("golem.core.dashboard.REPORTS_DIR", tmp_path / "reports"):
+                resp = await handlers["/api/trace-parsed/{event_id:path}"](
+                    "golem-42-20260101"
+                )
+
+        assert resp.status_code == 200
+        body = json.loads(resp.body)
+        assert "phases" in body
+        assert "totals" in body
+
+    @pytest.mark.asyncio
+    async def test_content_type_is_json(self, handlers, tmp_path):
+        traces = tmp_path / "traces" / "golem"
+        traces.mkdir(parents=True)
+        trace_file = traces / "golem-42-20260101.jsonl"
+        _make_minimal_trace_jsonl(trace_file)
+
+        with patch("golem.core.dashboard.TRACES_DIR", tmp_path / "traces"):
+            with patch("golem.core.dashboard.REPORTS_DIR", tmp_path / "reports"):
+                resp = await handlers["/api/trace-parsed/{event_id:path}"](
+                    "golem-42-20260101"
+                )
+
+        assert "application/json" in resp.media_type
+
+    @pytest.mark.asyncio
+    async def test_since_event_query_param(self, handlers, tmp_path):
+        traces = tmp_path / "traces" / "golem"
+        traces.mkdir(parents=True)
+        trace_file = traces / "golem-42-20260101.jsonl"
+        _make_minimal_trace_jsonl(trace_file)
+
+        captured_args: list = []
+
+        def fake_read_and_parse(event_id, since_event=0):
+            captured_args.append(since_event)
+            return {"phases": [], "totals": {}}
+
+        with patch(
+            "golem.core.dashboard._read_and_parse_trace",
+            side_effect=fake_read_and_parse,
+        ):
+            resp = await handlers["/api/trace-parsed/{event_id:path}"](
+                "golem-42-20260101", since_event=1
+            )
+
+        assert resp.status_code == 200
+        assert captured_args == [1]
+
+    def test_lru_cache_eviction(self, tmp_path):
+        """When cache is full, adding a new entry evicts the oldest."""
+        assert _MAX_TRACE_CACHE == 100
+        # Fill cache to capacity
+        for i in range(_MAX_TRACE_CACHE):
+            _dashboard_module._parsed_trace_cache[f"fill-{i}"] = {
+                "phases": [],
+                "result_meta": {"total_cost_usd": 0},
+            }
+        assert len(_dashboard_module._parsed_trace_cache) == _MAX_TRACE_CACHE
+        assert "fill-0" in _dashboard_module._parsed_trace_cache
+
+        # Create a trace file that will be parsed and cached
+        traces = tmp_path / "traces" / "golem"
+        traces.mkdir(parents=True)
+        _make_minimal_trace_jsonl(traces / "golem-42-20260101.jsonl")
+
+        with patch("golem.core.dashboard.TRACES_DIR", tmp_path / "traces"):
+            with patch("golem.core.dashboard.REPORTS_DIR", tmp_path / "reports"):
+                result = _read_and_parse_trace("golem-42-20260101")
+
+        assert result is not None
+        # New entry should be cached, oldest should be evicted
+        assert "golem-42-20260101" in _dashboard_module._parsed_trace_cache
+        assert "fill-0" not in _dashboard_module._parsed_trace_cache
+        assert len(_dashboard_module._parsed_trace_cache) == _MAX_TRACE_CACHE

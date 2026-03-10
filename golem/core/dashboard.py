@@ -19,6 +19,7 @@ from .run_log import read_runs
 from ..utils import format_duration
 from ..event_tracker import _summarize_tool_input
 from ..orchestrator import load_sessions
+from ..trace_parser import parse_trace as _parse_trace_structured
 from ..types import (
     ActiveTaskDict,
     ConfigSnapshotDict,
@@ -88,6 +89,82 @@ def _resolve_paths(event_id: str) -> dict[str, Path | None]:
         "prompt": prompt_path,
         "report": report_path,
     }
+
+
+# Cache for parsed traces (completed traces are immutable).
+# LRU-bounded: evict oldest entry when cache exceeds _MAX_TRACE_CACHE entries.
+_MAX_TRACE_CACHE = 100
+_parsed_trace_cache: dict[str, dict[str, Any]] = {}
+
+
+def _read_and_parse_trace(event_id: str, since_event: int = 0) -> dict[str, Any] | None:
+    """Read JSONL trace file and return ParsedTrace dict, or None if not found.
+
+    Note: ``since_event`` is stored in the response for the caller's bookkeeping
+    but does not yet filter events — the full trace is always parsed.  Incremental
+    requests (since_event > 0) bypass the cache so callers always get fresh data
+    for running tasks.
+    """
+    # Check cache first (skip for incremental requests)
+    if since_event == 0 and event_id in _parsed_trace_cache:
+        return _parsed_trace_cache[event_id]
+
+    paths = _resolve_paths(event_id)
+    trace_path = paths.get("trace")
+    if not trace_path:
+        return None
+
+    # Read and parse JSONL events
+    events: list[dict[str, Any]] = []
+    try:
+        with open(trace_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    events.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+    except FileNotFoundError:
+        return None
+
+    try:
+        result = _parse_trace_structured(events, since_event=since_event)
+    except Exception:  # pylint: disable=broad-except
+        logger.exception("Failed to parse trace %s", event_id)
+        result = _parse_trace_structured([])
+
+    # Check for retry trace
+    retry_path = trace_path.with_name(trace_path.stem + "-retry.jsonl")
+    try:
+        retry_events: list[dict[str, Any]] = []
+        with open(retry_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        retry_events.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+        if retry_events:
+            retry_parsed = _parse_trace_structured(retry_events)
+            result["retry"] = {
+                "type": "warm_resume",
+                "trace_file": str(retry_path),
+                "phases": retry_parsed["phases"],
+                "totals": retry_parsed["totals"],
+            }
+    except FileNotFoundError:
+        pass  # no retry trace — normal case
+
+    # Auto-cache if trace has a result event (task completed)
+    if result.get("result_meta") is not None:
+        if len(_parsed_trace_cache) >= _MAX_TRACE_CACHE:
+            _parsed_trace_cache.pop(next(iter(_parsed_trace_cache)))
+        _parsed_trace_cache[event_id] = result
+
+    return result
 
 
 def _parse_trace(trace_path: Path) -> list[dict[str, Any]]:
@@ -429,6 +506,14 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
         runs = await asyncio.to_thread(read_runs, limit=10_000)
         sessions = await asyncio.to_thread(load_sessions)
         return JSONResponse(content=compute_cost_analytics(runs, sessions))
+
+    @app.get("/api/trace-parsed/{event_id:path}")
+    async def api_trace_parsed(event_id: str, since_event: int = 0) -> JSONResponse:
+        """Return parsed trace. Pass ?since_event=N for incremental updates."""
+        result = await asyncio.to_thread(_read_and_parse_trace, event_id, since_event)
+        if result is None:
+            return JSONResponse({"error": "Trace not found"}, status_code=404)
+        return JSONResponse(result)
 
     @app.get("/api/trace/{event_id:path}")
     async def api_trace(event_id: str) -> JSONResponse:
