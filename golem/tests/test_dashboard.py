@@ -1549,7 +1549,7 @@ class TestCostAnalyticsEndpoint:
             "budget_utilization",
             "summary",
         ):
-            assert key in body, "Missing key: %s" % key
+            assert key in body, f"Missing key: {key}"
 
     @pytest.mark.asyncio
     async def test_returns_json_response(self, handlers):

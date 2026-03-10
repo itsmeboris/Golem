@@ -97,6 +97,24 @@ _MAX_TRACE_CACHE = 100
 _parsed_trace_cache: dict[str, dict[str, Any]] = {}
 
 
+def _read_jsonl_events(path: Path) -> list[dict[str, Any]] | None:
+    """Read a JSONL file, returning parsed events or None if file not found."""
+    events: list[dict[str, Any]] = []
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    events.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+    except FileNotFoundError:
+        return None
+    return events
+
+
 def _read_and_parse_trace(event_id: str, since_event: int = 0) -> dict[str, Any] | None:
     """Read JSONL trace file and return ParsedTrace dict, or None if not found.
 
@@ -114,19 +132,8 @@ def _read_and_parse_trace(event_id: str, since_event: int = 0) -> dict[str, Any]
     if not trace_path:
         return None
 
-    # Read and parse JSONL events
-    events: list[dict[str, Any]] = []
-    try:
-        with open(trace_path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    events.append(json.loads(line))
-                except json.JSONDecodeError:
-                    continue
-    except FileNotFoundError:
+    events = _read_jsonl_events(trace_path)
+    if events is None:
         return None
 
     try:
@@ -137,26 +144,15 @@ def _read_and_parse_trace(event_id: str, since_event: int = 0) -> dict[str, Any]
 
     # Check for retry trace
     retry_path = trace_path.with_name(trace_path.stem + "-retry.jsonl")
-    try:
-        retry_events: list[dict[str, Any]] = []
-        with open(retry_path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    try:
-                        retry_events.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        continue
-        if retry_events:
-            retry_parsed = _parse_trace_structured(retry_events)
-            result["retry"] = {
-                "type": "warm_resume",
-                "trace_file": str(retry_path),
-                "phases": retry_parsed["phases"],
-                "totals": retry_parsed["totals"],
-            }
-    except FileNotFoundError:
-        pass  # no retry trace — normal case
+    retry_events = _read_jsonl_events(retry_path)
+    if retry_events:
+        retry_parsed = _parse_trace_structured(retry_events)
+        result["retry"] = {
+            "type": "warm_resume",
+            "trace_file": str(retry_path),
+            "phases": retry_parsed["phases"],
+            "totals": retry_parsed["totals"],
+        }
 
     # Auto-cache if trace has a result event (task completed)
     if result.get("result_meta") is not None:

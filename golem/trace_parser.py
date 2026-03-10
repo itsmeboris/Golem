@@ -217,22 +217,20 @@ def _detect_fix_cycles(subagents: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return fix_cycles
 
 
-def _populate_phases(
-    phases: list[dict[str, Any]],
+def _build_lifecycle_maps(
     events: list[dict[str, Any]],
-    tool_result_map: dict[str, str],
-) -> None:
-    """Populate orchestrator_text, orchestrator_tools, and subagents for each phase."""
-    # Build lifecycle lookup maps
-    # tool_use_id -> task_id (from task_started events)
-    tool_use_to_task: dict[str, str] = {}
-    # task_id -> list of task_progress events
-    task_progress_map: dict[str, list[dict[str, Any]]] = {}
-    # task_id -> task_notification event
-    task_notification_map: dict[str, dict[str, Any]] = {}
-    # tool_use_id -> task_notification event (for lookup by tool_use_id)
-    tool_use_to_notification: dict[str, dict[str, Any]] = {}
+) -> dict[str, Any]:
+    """Build lookup maps from system lifecycle events.
 
+    Returns a dict with keys: tool_use_to_task, task_progress_map,
+    task_notification_map, tool_use_to_notification.
+    """
+    maps: dict[str, Any] = {
+        "tool_use_to_task": {},
+        "task_progress_map": {},
+        "task_notification_map": {},
+        "tool_use_to_notification": {},
+    }
     for event in events:
         if event.get("type") != "system":
             continue
@@ -241,80 +239,92 @@ def _populate_phases(
             tuid = event.get("tool_use_id")
             tid = event.get("task_id")
             if tuid and tid:
-                tool_use_to_task[tuid] = tid
+                maps["tool_use_to_task"][tuid] = tid
         elif subtype == "task_progress":
             tid = event.get("task_id")
             if tid:
-                task_progress_map.setdefault(tid, []).append(event)
+                maps["task_progress_map"].setdefault(tid, []).append(event)
         elif subtype == "task_notification":
             tid = event.get("task_id")
             tuid = event.get("tool_use_id")
             if tid:
-                task_notification_map[tid] = event
+                maps["task_notification_map"][tid] = event
             if tuid:
-                tool_use_to_notification[tuid] = event
+                maps["tool_use_to_notification"][tuid] = event
+    return maps
+
+
+def _build_subagent_dict(
+    tool_use: dict[str, Any],
+    lifecycle: dict[str, Any],
+    tool_result_map: dict[str, str],
+) -> dict[str, Any]:
+    """Construct a subagent dict from an Agent tool_use and lifecycle maps."""
+    tool_input = tool_use.get("input", {})
+    tuid = tool_use.get("id", "")
+    task_id = lifecycle["tool_use_to_task"].get(tuid, "")
+    notification = lifecycle["task_notification_map"].get(task_id) or lifecycle[
+        "tool_use_to_notification"
+    ].get(tuid)
+    usage = notification.get("usage", {}) if notification else {}
+    output = tool_result_map.get(tuid, "")
+    model_val = tool_input.get("model")
+    return {
+        "description": tool_input.get("description", ""),
+        "role": tool_input.get("subagent_type", ""),
+        "model": model_val if model_val else "unknown",
+        "task_id": task_id,
+        "tool_use_id": tuid,
+        "status": _infer_status(output),
+        "prompt": tool_input.get("prompt", ""),
+        "output": output,
+        "tokens": usage.get("total_tokens", 0),
+        "tool_count": usage.get("tool_uses", 0),
+        "duration_ms": usage.get("duration_ms", 0),
+        "tool_timeline": _build_tool_timeline(
+            lifecycle["task_progress_map"].get(task_id, [])
+        ),
+    }
+
+
+def _populate_phases(
+    phases: list[dict[str, Any]],
+    events: list[dict[str, Any]],
+    tool_result_map: dict[str, str],
+) -> None:
+    """Populate orchestrator_text, orchestrator_tools, and subagents for each phase."""
+    lifecycle = _build_lifecycle_maps(events)
 
     for phase in phases:
-        start = phase["start_event"]
-        end = phase["end_event"]
         text_parts: list[str] = []
-        orchestrator_tools: list[dict[str, Any]] = []
+        orch_tools: list[dict[str, Any]] = []
         subagents: list[dict[str, Any]] = []
 
-        for idx in range(start, end + 1):
+        for idx in range(phase["start_event"], phase["end_event"] + 1):
             event = events[idx]
+            text_parts.extend(_extract_text_blocks(event))
 
-            # Collect orchestrator text blocks
-            for text in _extract_text_blocks(event):
-                text_parts.append(text)
-
-            # Collect tool_use blocks
             for tool_use in _extract_tool_uses(event):
-                tool_name = tool_use.get("name", "")
-                tool_input = tool_use.get("input", {})
-                tuid = tool_use.get("id", "")
-
-                if tool_name == "Agent":
-                    # Subagent dispatch
-                    task_id = tool_use_to_task.get(tuid, "")
-                    notification = task_notification_map.get(
-                        task_id
-                    ) or tool_use_to_notification.get(tuid)
-                    usage = notification.get("usage", {}) if notification else {}
-                    progress_events = task_progress_map.get(task_id, [])
-                    output = tool_result_map.get(tuid, "")
-                    model_val = tool_input.get("model")
-                    model = model_val if model_val else "unknown"
-                    subagent = {
-                        "description": tool_input.get("description", ""),
-                        "role": tool_input.get("subagent_type", ""),
-                        "model": model,
-                        "task_id": task_id,
-                        "tool_use_id": tuid,
-                        "status": _infer_status(output),
-                        "prompt": tool_input.get("prompt", ""),
-                        "output": output,
-                        "tokens": usage.get("total_tokens", 0),
-                        "tool_count": usage.get("tool_uses", 0),
-                        "duration_ms": usage.get("duration_ms", 0),
-                        "tool_timeline": _build_tool_timeline(progress_events),
-                    }
-                    subagents.append(subagent)
+                if tool_use.get("name", "") == "Agent":
+                    subagents.append(
+                        _build_subagent_dict(tool_use, lifecycle, tool_result_map)
+                    )
                 else:
-                    # Orchestrator tool call
-                    description = _summarize_tool_description(tool_name, tool_input)
-                    result_preview = tool_result_map.get(tuid, "")
-                    orchestrator_tools.append(
+                    orch_tools.append(
                         {
-                            "tool": tool_name,
-                            "description": description,
+                            "tool": tool_use.get("name", ""),
+                            "description": _summarize_tool_description(
+                                tool_use.get("name", ""), tool_use.get("input", {})
+                            ),
                             "event_idx": idx,
-                            "result_preview": result_preview,
+                            "result_preview": tool_result_map.get(
+                                tool_use.get("id", ""), ""
+                            ),
                         }
                     )
 
         phase["orchestrator_text"] = "\n".join(text_parts)
-        phase["orchestrator_tools"] = orchestrator_tools
+        phase["orchestrator_tools"] = orch_tools
         phase["subagents"] = subagents
 
         # Detect fix cycles for REVIEW phases
