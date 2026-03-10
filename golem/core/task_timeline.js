@@ -37,6 +37,39 @@ function renderDetailHeader(session, trace, running) {
     ? `<div class="tl-live-badge"><span class="live-dot"></span>Live</div>`
     : '';
 
+  // Dependencies and dependents
+  const eventId = S.selectedTaskId || '';
+  const deps = (session && session.depends_on) || [];
+  const dependents = Object.entries(S.sessions || {})
+    .filter(([, s]) => (s.depends_on || []).includes(eventId))
+    .map(([id]) => id);
+
+  let depsHtml = '';
+  if (deps.length > 0 || dependents.length > 0) {
+    const renderDepCard = (depId) => {
+      const depSess = S.sessions[depId];
+      const depState = depSess ? depSess.state : '';
+      const depClass = _stateToChipClass(depState);
+      const depNum = String(depSess ? (depSess.parent_issue_id || depSess.id || depId) : depId).replace(/^golem-(\d+).*/, '$1');
+      const depSubject = depSess ? esc(truncText(depSess.subject || depSess.parent_subject || '', 30)) : '';
+      return `<span class="td-dep-card ${depClass}" data-dep-id="${esc(depId)}">
+        <div class="td-dep-info">
+          <span class="td-dep-id">#${esc(depNum)}</span>
+          ${depSubject ? `<span class="td-dep-subject">${depSubject}</span>` : ''}
+        </div>
+        <span class="td-dep-meta">${esc(depState.toLowerCase())}</span>
+      </span>`;
+    };
+    let sections = '';
+    if (deps.length > 0) {
+      sections += `<div class="td-deps-label">Depends on</div><div class="td-deps-list">${deps.map(renderDepCard).join('')}</div>`;
+    }
+    if (dependents.length > 0) {
+      sections += `<div class="td-deps-label">Blocks</div><div class="td-deps-list">${dependents.map(renderDepCard).join('')}</div>`;
+    }
+    depsHtml = `<div class="td-deps">${sections}</div>`;
+  }
+
   el.innerHTML = `
     <div class="td-top">
       <span class="td-id">#${taskId}</span>
@@ -45,7 +78,13 @@ function renderDetailHeader(session, trace, running) {
       ${liveHtml}
     </div>
     <div class="td-subject">${subject}</div>
+    ${depsHtml}
   `;
+
+  // Click handler for dependency cards — navigate to that task
+  el.querySelectorAll('.td-dep-card[data-dep-id]').forEach(card => {
+    card.addEventListener('click', () => selectTask(card.dataset.depId));
+  });
 }
 
 // ── Metrics ────────────────────────────────────
