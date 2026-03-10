@@ -569,9 +569,7 @@ class TestRunValidationAstAnalysisFlag:
     @patch("golem.ast_analysis.run_ast_analysis")
     @patch("golem.validation.invoke_cli")
     @patch("golem.validation.get_git_diff")
-    def test_ast_analysis_called_when_enabled(
-        self, mock_diff, mock_invoke, mock_ast
-    ):
+    def test_ast_analysis_called_when_enabled(self, mock_diff, mock_invoke, mock_ast):
         mock_diff.return_value = "+++ b/golem/foo.py\n+ x = 1\n"
         mock_invoke.return_value = SimpleNamespace(
             output={
@@ -598,9 +596,7 @@ class TestRunValidationAstAnalysisFlag:
     @patch("golem.ast_analysis.run_ast_analysis")
     @patch("golem.validation.invoke_cli")
     @patch("golem.validation.get_git_diff")
-    def test_ast_analysis_skipped_when_disabled(
-        self, mock_diff, mock_invoke, mock_ast
-    ):
+    def test_ast_analysis_skipped_when_disabled(self, mock_diff, mock_invoke, mock_ast):
         mock_diff.return_value = "+++ b/golem/foo.py\n+ x = 1\n"
         mock_invoke.return_value = SimpleNamespace(
             output={

@@ -199,3 +199,4 @@ class VerificationResultDict(TypedDict):
     failures: list[str]
     coverage_pct: float
     duration_s: float
+    coverage_delta: NotRequired[dict[str, Any]]

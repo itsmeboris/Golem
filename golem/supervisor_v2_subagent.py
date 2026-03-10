@@ -271,9 +271,7 @@ class SubagentSupervisor:
                 self.session.errors.append(f"Clarity too low: {cr.score}/5")
                 from .errors import TaskExecutionError
 
-                raise TaskExecutionError(
-                    f"Task clarity below threshold: {cr.score}/5"
-                )
+                raise TaskExecutionError(f"Task clarity below threshold: {cr.score}/5")
 
         prompt = self._build_prompt(issue_id, description, work_dir)
         result = await self._invoke_orchestrator(prompt, work_dir, issue_id, start)

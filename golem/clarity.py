@@ -54,7 +54,9 @@ def check_clarity(
     timeout_seconds: int = 30,
 ) -> ClarityResult:
     """Score task clarity using a cheap LLM call. Fail-open on errors."""
-    prompt = _CLARITY_PROMPT.format(subject=subject, description=description or "(empty)")
+    prompt = _CLARITY_PROMPT.format(
+        subject=subject, description=description or "(empty)"
+    )
 
     cli_config = CLIConfig(
         cli_type=CLIType.CLAUDE,

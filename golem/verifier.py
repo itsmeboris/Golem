@@ -40,7 +40,7 @@ class VerificationResult:
 
     def to_dict(self) -> VerificationResultDict:
         """Serialize for JSON persistence."""
-        return {
+        result: VerificationResultDict = {
             "passed": self.passed,
             "black_ok": self.black_ok,
             "black_output": self.black_output,
@@ -52,16 +52,14 @@ class VerificationResult:
             "failures": list(self.failures),
             "coverage_pct": self.coverage_pct,
             "duration_s": self.duration_s,
-            "coverage_delta": (
-                {
-                    "all_covered": self.coverage_delta.all_covered,
-                    "delta_pct": self.coverage_delta.delta_pct,
-                    "uncovered_lines": self.coverage_delta.uncovered_lines,
-                }
-                if self.coverage_delta
-                else None
-            ),
         }
+        if self.coverage_delta:
+            result["coverage_delta"] = {
+                "all_covered": self.coverage_delta.all_covered,
+                "delta_pct": self.coverage_delta.delta_pct,
+                "uncovered_lines": self.coverage_delta.uncovered_lines,
+            }
+        return result
 
 
 @dataclass
@@ -81,9 +79,7 @@ class CoverageDelta:
         return f"Coverage delta: {self.delta_pct:.0f}%\n" + "\n".join(parts)
 
 
-def parse_coverage_delta(
-    cov_data: dict, changed_files: list[str]
-) -> CoverageDelta:
+def parse_coverage_delta(cov_data: dict, changed_files: list[str]) -> CoverageDelta:
     """Analyze coverage for changed files only."""
     if not changed_files:
         return CoverageDelta(all_covered=True, delta_pct=100.0, uncovered_lines={})
@@ -176,6 +172,21 @@ def _get_changed_files(work_dir: str) -> list[str]:
     return []
 
 
+def _load_coverage_delta(cov_json_path: Path, work_dir: str) -> CoverageDelta | None:
+    """Parse coverage delta from JSON, cleaning up the file afterwards."""
+    if not cov_json_path.exists():
+        return None
+    try:
+        cov_data = json.loads(cov_json_path.read_text())
+        changed_files = _get_changed_files(work_dir)
+        return parse_coverage_delta(cov_data, changed_files)
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.warning("Failed to parse coverage JSON: %s", exc)
+        return None
+    finally:
+        cov_json_path.unlink(missing_ok=True)
+
+
 def run_verification(work_dir: str, *, timeout: int = 300) -> VerificationResult:
     """Run black, pylint, pytest and return structured results.
 
@@ -202,19 +213,8 @@ def run_verification(work_dir: str, *, timeout: int = 300) -> VerificationResult
 
     test_count, failures, coverage_pct = _parse_pytest_output(pytest_output)
 
-    coverage_delta = None
-    if cov_json_path.exists():
-        try:
-            cov_data = json.loads(cov_json_path.read_text())
-            changed_files = _get_changed_files(work_dir)
-            coverage_delta = parse_coverage_delta(cov_data, changed_files)
-        except (json.JSONDecodeError, OSError) as exc:
-            logger.warning("Failed to parse coverage JSON: %s", exc)
-        finally:
-            cov_json_path.unlink(missing_ok=True)
-
+    coverage_delta = _load_coverage_delta(cov_json_path, work_dir)
     passed = black_ok and pylint_ok and pytest_ok
-    duration = time.time() - start
 
     logger.info(
         "Verification %s: black=%s pylint=%s pytest=%s (%d tests, %.0f%% cov) in %.1fs",
@@ -224,7 +224,7 @@ def run_verification(work_dir: str, *, timeout: int = 300) -> VerificationResult
         pytest_ok,
         test_count,
         coverage_pct,
-        duration,
+        time.time() - start,
     )
 
     return VerificationResult(
@@ -238,6 +238,6 @@ def run_verification(work_dir: str, *, timeout: int = 300) -> VerificationResult
         test_count=test_count,
         failures=failures,
         coverage_pct=coverage_pct,
-        duration_s=round(duration, 2),
+        duration_s=round(time.time() - start, 2),
         coverage_delta=coverage_delta,
     )

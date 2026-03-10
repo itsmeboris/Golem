@@ -21,7 +21,12 @@ class TestComputeAnalytics:
         runs = [
             {"verdict": "PASS", "cost_usd": 5.0, "success": True, "duration_s": 60},
             {"verdict": "PASS", "cost_usd": 3.0, "success": True, "duration_s": 45},
-            {"verdict": "PARTIAL", "cost_usd": 8.0, "success": False, "duration_s": 120},
+            {
+                "verdict": "PARTIAL",
+                "cost_usd": 8.0,
+                "success": False,
+                "duration_s": 120,
+            },
             {"verdict": "FAIL", "cost_usd": 10.0, "success": False, "duration_s": 180},
         ]
         result = compute_analytics(runs)

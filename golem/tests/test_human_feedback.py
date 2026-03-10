@@ -279,9 +279,7 @@ def _make_flow(monkeypatch, tmp_path, profile=None, **flow_kwargs):
 class TestCheckHumanFeedback:
     def test_skips_non_failed_sessions(self, monkeypatch, tmp_path):
         flow = _make_flow(monkeypatch, tmp_path)
-        session = TaskSession(
-            parent_issue_id=1, state=TaskSessionState.COMPLETED
-        )
+        session = TaskSession(parent_issue_id=1, state=TaskSessionState.COMPLETED)
         flow._sessions[1] = session
         flow._check_human_feedback()
         assert session.state == TaskSessionState.COMPLETED
@@ -303,13 +301,9 @@ class TestCheckHumanFeedback:
                 "created_at": "2026-03-09T12:00:00Z",
             }
         ]
-        flow._profile.task_source.get_task_comments = MagicMock(
-            return_value=comments
-        )
+        flow._profile.task_source.get_task_comments = MagicMock(return_value=comments)
         spawned = []
-        monkeypatch.setattr(
-            flow, "_spawn_session_task", spawned.append
-        )
+        monkeypatch.setattr(flow, "_spawn_session_task", spawned.append)
 
         flow._check_human_feedback()
 
@@ -336,9 +330,7 @@ class TestCheckHumanFeedback:
                 "created_at": "2026-03-09T12:00:00Z",
             }
         ]
-        flow._profile.task_source.get_task_comments = MagicMock(
-            return_value=comments
-        )
+        flow._profile.task_source.get_task_comments = MagicMock(return_value=comments)
 
         flow._check_human_feedback()
         assert session.state == TaskSessionState.FAILED
@@ -359,9 +351,7 @@ class TestCheckHumanFeedback:
                 "created_at": "2026-03-01T00:00:00Z",
             }
         ]
-        flow._profile.task_source.get_task_comments = MagicMock(
-            return_value=comments
-        )
+        flow._profile.task_source.get_task_comments = MagicMock(return_value=comments)
 
         flow._check_human_feedback()
         assert session.state == TaskSessionState.FAILED
@@ -400,9 +390,7 @@ class TestTickHumanReview:
         config = Config(golem=GolemFlowConfig(enabled=True, projects=["p"]))
         flow_config = GolemFlowConfig(enabled=True, projects=["p"])
         profile = _make_test_profile()
-        orch = TaskOrchestrator(
-            session, config, flow_config, profile=profile
-        )
+        orch = TaskOrchestrator(session, config, flow_config, profile=profile)
         orch._run_agent = AsyncMock()
 
         await orch.tick()

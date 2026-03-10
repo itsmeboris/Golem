@@ -325,9 +325,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             session.state = TaskSessionState.HUMAN_REVIEW
             session.retry_count = 0
             self._save_state()
-            logger.info(
-                "Human feedback detected on #%s, queuing re-attempt", sid
-            )
+            logger.info("Human feedback detected on #%s, queuing re-attempt", sid)
             self._spawn_session_task(sid)
 
     # -- Per-session task lifecycle -----------------------------------------

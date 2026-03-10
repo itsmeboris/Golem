@@ -5,8 +5,7 @@
 
 import json
 import subprocess
-from pathlib import Path
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import MagicMock, patch
 
 from golem.verifier import run_verification, VerificationResult
 
@@ -166,9 +165,7 @@ class TestRunVerification:
         def side_effect(*args, **kwargs):
             cmd = args[0]
             if "git" in cmd:
-                return MagicMock(
-                    returncode=0, stdout="golem/foo.py\n", stderr=""
-                )
+                return MagicMock(returncode=0, stdout="golem/foo.py\n", stderr="")
             return MagicMock(
                 returncode=0,
                 stdout="1 passed\nTOTAL 100 0 100%",
@@ -211,9 +208,7 @@ class TestRunVerification:
         """to_dict includes coverage_delta key."""
         from golem.verifier import CoverageDelta
 
-        delta = CoverageDelta(
-            all_covered=True, delta_pct=100.0, uncovered_lines={}
-        )
+        delta = CoverageDelta(all_covered=True, delta_pct=100.0, uncovered_lines={})
         r = VerificationResult(
             passed=True,
             black_ok=True,
@@ -229,13 +224,13 @@ class TestRunVerification:
             coverage_delta=delta,
         )
         d = r.to_dict()
-        assert d["coverage_delta"] is not None
-        assert d["coverage_delta"]["all_covered"] is True
-        assert d["coverage_delta"]["delta_pct"] == 100.0
-        assert d["coverage_delta"]["uncovered_lines"] == {}
+        cd = d["coverage_delta"]
+        assert cd["all_covered"] is True
+        assert cd["delta_pct"] == 100.0
+        assert cd["uncovered_lines"] == {}
 
-    def test_to_dict_coverage_delta_none(self):
-        """to_dict returns None for coverage_delta when not set."""
+    def test_to_dict_coverage_delta_absent(self):
+        """to_dict omits coverage_delta when not set."""
         r = VerificationResult(
             passed=True,
             black_ok=True,
@@ -250,4 +245,4 @@ class TestRunVerification:
             duration_s=1.0,
         )
         d = r.to_dict()
-        assert d["coverage_delta"] is None
+        assert "coverage_delta" not in d
