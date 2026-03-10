@@ -7,11 +7,30 @@ Output: ParsedTrace dict (see design spec for full shape).
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
 PHASE_NAMES = ("UNDERSTAND", "PLAN", "BUILD", "REVIEW", "VERIFY")
 PHASE_MARKER_RE = re.compile(r"## Phase:\s*(UNDERSTAND|PLAN|BUILD|REVIEW|VERIFY)")
+
+_ISSUE_RE = re.compile(
+    r"\[(\d+)%\]\s+"  # confidence
+    r"([\w/.]+(?::\d+)?)"  # file:line
+    r"\s*[—–-]\s*"  # separator
+    r"(.+)"  # description
+)
+
+_JSON_BLOCK_RE = re.compile(r"```json\s*\n(.*?)\n```", re.DOTALL)
+
+# Keywords used to infer phase from subagent description (Task 2.4)
+_PHASE_KEYWORDS: list[tuple[str, list[str]]] = [
+    ("UNDERSTAND", ["scout", "explore", "understand", "research"]),
+    ("PLAN", ["plan"]),
+    ("BUILD", ["build", "implement", "write", "create"]),
+    ("REVIEW", ["review", "compliance", "quality"]),
+    ("VERIFY", ["verify", "test suite", "validation"]),
+]
 
 
 def _extract_text_blocks(event: dict[str, Any]) -> list[str]:
@@ -38,6 +57,21 @@ def _extract_tool_uses(event: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def _make_phase(name: str, start: int, end: int) -> dict[str, Any]:
+    """Create a phase dict with the standard structure."""
+    return {
+        "name": name,
+        "start_event": start,
+        "end_event": end,
+        "orchestrator_text": "",
+        "orchestrator_tools": [],
+        "subagents": [],
+        "fix_cycles": [],  # Populated by _detect_fix_cycles()
+        "tokens": 0,
+        "duration_ms": 0,
+    }
+
+
 def _detect_phases(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Scan events for phase markers. Return list of phase dicts with boundaries."""
     phases: list[dict[str, Any]] = []
@@ -48,19 +82,7 @@ def _detect_phases(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 # Close previous phase
                 if phases:
                     phases[-1]["end_event"] = idx
-                phases.append(
-                    {
-                        "name": name,
-                        "start_event": idx,
-                        "end_event": idx,  # updated when next phase starts or at end
-                        "orchestrator_text": "",
-                        "orchestrator_tools": [],
-                        "subagents": [],
-                        "fix_cycles": [],  # Populated by _detect_fix_cycles() in Chunk 2
-                        "tokens": 0,
-                        "duration_ms": 0,
-                    }
-                )
+                phases.append(_make_phase(name, idx, idx))
     # Close last phase at end of events
     if phases:
         phases[-1]["end_event"] = len(events) - 1
@@ -137,6 +159,62 @@ def _build_tool_timeline(progress_events: list[dict[str, Any]]) -> list[dict[str
         )
         prev_ms = cumulative_ms
     return timeline
+
+
+def _parse_issues(output: str) -> list[dict[str, Any]]:
+    """Parse issue lines from a reviewer output using _ISSUE_RE."""
+    issues: list[dict[str, Any]] = []
+    for match in _ISSUE_RE.finditer(output):
+        confidence = int(match.group(1))
+        file_ref = match.group(2)
+        description = match.group(3).strip()
+        issues.append(
+            {
+                "confidence": confidence,
+                "file": file_ref,
+                "text": description,
+            }
+        )
+    return issues
+
+
+def _detect_fix_cycles(subagents: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Detect fix cycles in a REVIEW phase's subagents list.
+
+    A fix cycle is: reviewer(NEEDS_FIXES) -> builder(fix) -> reviewer(re-check).
+    """
+    fix_cycles: list[dict[str, Any]] = []
+    iteration = 0
+    i = 0
+    while i < len(subagents):
+        agent = subagents[i]
+        if agent["status"] == "NEEDS_FIXES":
+            # This reviewer starts a fix cycle
+            iteration += 1
+            reviewer = agent
+            issues = _parse_issues(agent["output"])
+            fix_builder = None
+            # Look for the next builder
+            j = i + 1
+            while j < len(subagents):
+                if subagents[j]["role"] == "builder":
+                    fix_builder = subagents[j]
+                    j += 1
+                    break
+                j += 1
+            fix_cycles.append(
+                {
+                    "iteration": iteration,
+                    "reviewer": reviewer,
+                    "issues": issues,
+                    "fix_builder": fix_builder,
+                }
+            )
+            # Skip past the builder (if found)
+            i = j
+        else:
+            i += 1
+    return fix_cycles
 
 
 def _populate_phases(
@@ -239,6 +317,118 @@ def _populate_phases(
         phase["orchestrator_tools"] = orchestrator_tools
         phase["subagents"] = subagents
 
+        # Detect fix cycles for REVIEW phases
+        if phase["name"] == "REVIEW":
+            phase["fix_cycles"] = _detect_fix_cycles(subagents)
+
+        # Compute per-phase totals
+        phase["duration_ms"] = sum(s["duration_ms"] for s in subagents)
+        phase["tokens"] = sum(s["tokens"] for s in subagents)
+
+
+def _infer_phase_from_description(description: str) -> str | None:
+    """Infer phase name from an Agent description using keywords."""
+    lower = description.lower()
+    for phase_name, keywords in _PHASE_KEYWORDS:
+        for kw in keywords:
+            if kw in lower:
+                return phase_name
+    return None
+
+
+def _infer_phases_from_subagents(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Fallback: infer phases from Agent tool_use descriptions when no markers exist."""
+    # Collect all Agent dispatches with their event indices and inferred phases
+    agent_dispatches: list[tuple[int, str, dict[str, Any]]] = []
+    for idx, event in enumerate(events):
+        for tool_use in _extract_tool_uses(event):
+            if tool_use.get("name") == "Agent":
+                tool_input = tool_use.get("input", {})
+                desc = tool_input.get("description", "") or tool_input.get("prompt", "")
+                inferred = _infer_phase_from_description(desc)
+                if inferred:
+                    agent_dispatches.append((idx, inferred, tool_use))
+
+    if not agent_dispatches:
+        return []
+
+    # Group consecutive agents of the same inferred phase
+    phases: list[dict[str, Any]] = []
+    current_phase_name = agent_dispatches[0][1]
+    current_start = agent_dispatches[0][0]
+    current_end = agent_dispatches[0][0]
+
+    for ev_idx, phase_name, _ in agent_dispatches[1:]:
+        if phase_name == current_phase_name:
+            current_end = ev_idx
+        else:
+            phases.append(_make_phase(current_phase_name, current_start, current_end))
+            current_phase_name = phase_name
+            current_start = ev_idx
+            current_end = ev_idx
+
+    # Add last group
+    phases.append(_make_phase(current_phase_name, current_start, current_end))
+
+    return phases
+
+
+def _extract_result_meta(events: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Extract result metadata from the result event."""
+    for event in events:
+        if event.get("type") == "result":
+            return {
+                "total_cost_usd": event.get("total_cost_usd", 0),
+                "duration_ms": event.get("duration_ms", 0),
+                "num_turns": event.get("num_turns", 0),
+                "model_usage": event.get("modelUsage", {}),
+            }
+    return None
+
+
+def _extract_final_report(events: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Extract final report from the result event's JSON block."""
+    for event in events:
+        if event.get("type") == "result":
+            result_text = event.get("result", "")
+            match = _JSON_BLOCK_RE.search(result_text)
+            if not match:
+                return None
+            try:
+                data = json.loads(match.group(1))
+            except (json.JSONDecodeError, ValueError):
+                return None
+            if not isinstance(data, dict):
+                return None
+            return {
+                "status": data.get("status"),
+                "summary": data.get("summary"),
+                "files_changed": data.get("files_changed", []),
+                "test_results": data.get("test_results", {}),
+                "specs_satisfied": data.get("specs_satisfied", {}),
+                "concerns": data.get("concerns", []),
+            }
+    return None
+
+
+def _compute_totals(
+    phases: list[dict[str, Any]],
+    result_meta: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Compute aggregate totals across all phases."""
+    subagent_count = sum(len(p["subagents"]) for p in phases)
+    total_tokens = sum(s["tokens"] for p in phases for s in p["subagents"])
+    total_tool_calls = sum(s["tool_count"] for p in phases for s in p["subagents"])
+    fix_cycles = sum(len(p["fix_cycles"]) for p in phases)
+    duration_ms = result_meta["duration_ms"] if result_meta else 0
+    return {
+        "duration_ms": duration_ms,
+        "tokens": total_tokens,
+        "tool_calls": total_tool_calls,
+        "subagent_count": subagent_count,
+        "fix_cycles": fix_cycles,
+    }
+
 
 def parse_trace(events: list[dict[str, Any]], since_event: int = 0) -> dict[str, Any]:
     """Parse JSONL trace events into structured ParsedTrace dict.
@@ -246,24 +436,25 @@ def parse_trace(events: list[dict[str, Any]], since_event: int = 0) -> dict[str,
     Args:
         events: Full list of parsed JSONL event dicts.
         since_event: Stored in the returned dict for the caller's use.
-            Incremental parsing logic will be implemented in a future task (Chunk 2/3).
+            Incremental parsing logic will be implemented in a future task (Chunk 3).
     """
     phases = _detect_phases(events)
+    if not phases:
+        phases = _infer_phases_from_subagents(events)
+
     tool_result_map = _build_tool_result_map(events)
     _populate_phases(phases, events, tool_result_map)
+
+    result_meta = _extract_result_meta(events)
+    final_report = _extract_final_report(events)
+    totals = _compute_totals(phases, result_meta)
 
     return {
         "phases": phases,
         "retry": None,
-        "final_report": None,
-        "result_meta": None,
+        "final_report": final_report,
+        "result_meta": result_meta,
         "since_event": since_event,
         "total_events": len(events),
-        "totals": {
-            "duration_ms": 0,
-            "tokens": 0,
-            "tool_calls": 0,
-            "subagent_count": 0,
-            "fix_cycles": 0,
-        },
+        "totals": totals,
     }
