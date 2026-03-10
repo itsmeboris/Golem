@@ -179,8 +179,8 @@ function renderMarkdown(md) {
 function setTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   try { localStorage.setItem('golem-theme', theme); } catch(e) {}
-  const icon = document.getElementById('theme-icon');
-  if (icon) icon.textContent = theme === 'light' ? '\u2600' : '\u263D';
+  const btn = document.getElementById('theme-toggle');
+  if (btn) btn.textContent = theme === 'light' ? '\u2600' : '\u263D';
 }
 
 function toggleTheme() {
@@ -195,3 +195,33 @@ function toggleTheme() {
     if (saved) setTheme(saved);
   } catch(e) {}
 })();
+
+/* ── New Trace Viewer Utils ───────────────────────────────── */
+
+/** Format token count: 1200 → "1.2K", 1200000 → "1.2M" */
+function fmtTokens(n) {
+  if (!n) return '0';
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+  return String(n);
+}
+
+/** Format duration from ms: 5000 → "5s", 65000 → "1m 5s" */
+function fmtDurationMs(ms) {
+  if (!ms) return '0s';
+  const s = Math.round(ms / 1000);
+  if (s === 0) return '<1s';
+  return fmtDuration(s);
+}
+
+/** Create DOM element with classes and attributes */
+function el(tag, classes, attrs) {
+  const e = document.createElement(tag);
+  if (classes) e.className = classes;
+  if (attrs) Object.entries(attrs).forEach(([k, v]) => {
+    if (k === 'text') e.textContent = v;
+    else if (k === 'html') e.innerHTML = v;
+    else e.setAttribute(k, v);
+  });
+  return e;
+}

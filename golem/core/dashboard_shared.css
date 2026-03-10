@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
-
 /* ══════════════════════════════════════════════════════════════
    Shared CSS for both Flow Dashboard and Golem Dashboard.
    Warm Mono design system — dark/light themes.
@@ -9,35 +7,41 @@
 *{box-sizing:border-box;margin:0;padding:0}
 
 :root, [data-theme="dark"] {
-  --bg-base: #19181c;
-  --bg-surface: #1f1e24;
-  --bg-elevated: #2a2930;
-  --bg-hover: #302f38;
-  --bg-terminal: #14131a;
-  --border: #2a2930;
-  --border-active: #3a3944;
-  --border-focus: #c084fc;
-  --text-primary: #e4e2eb;
-  --text-secondary: #a09ca8;
-  --text-muted: #6e6a78;
-  --text-dim: #5a5664;
-  --accent: #c084fc;
-  --accent-bg: rgba(192,132,252,0.12);
-  --green: #6ee7b7;
-  --green-bg: rgba(110,231,183,0.10);
-  --green-dim: #86efac;
-  --red: #fca5a5;
-  --red-bg: rgba(252,165,165,0.10);
+  --bg-base: #0c0d10;
+  --bg-surface: #13141a;
+  --bg-elevated: #1a1b23;
+  --bg-hover: #22232e;
+  --bg-active: #2a2c3a;
+  --bg-terminal: #0c0d10;
+  --border: #2a2c3a;
+  --border-subtle: #1e2030;
+  --border-active: #3a3c4e;
+  --border-focus: #818cf8;
+  --text-primary: #e2e4eb;
+  --text-secondary: #8b8fa3;
+  --text-muted: #555872;
+  --text-dim: #3e4060;
+  --accent: #818cf8;
+  --accent-bg: rgba(129,140,248,0.12);
+  --accent-dim: rgba(129,140,248,0.06);
+  --green: #34d399;
+  --green-bg: rgba(52,211,153,0.12);
+  --green-dim: #6ee7b7;
+  --red: #f87171;
+  --red-bg: rgba(248,113,113,0.10);
+  --blue: #60a5fa;
+  --blue-bg: rgba(96,165,250,0.10);
   --yellow: #fbbf24;
   --yellow-bg: rgba(251,191,36,0.10);
-  --blue: #93c5fd;
-  --blue-bg: rgba(147,197,253,0.12);
-  --purple: #a78bfa;
   --orange: #fb923c;
-  --font-sans: 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  --orange-bg: rgba(251,146,60,0.10);
+  --purple: #a78bfa;
+  --purple-bg: rgba(167,139,250,0.10);
+  --font-sans: 'DM Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
   --radius: 8px;
-  --radius-lg: 14px;
+  --radius-sm: 5px;
+  --radius-lg: 12px;
   /* Overridable per-dashboard */
   --metrics-min: 120px;
   --tab-pre-max-h: 500px;
@@ -57,8 +61,10 @@
   --bg-surface: #fff;
   --bg-elevated: #f0ede8;
   --bg-hover: #eae7e1;
+  --bg-active: #ddd9d1;
   --bg-terminal: #faf9f6;
   --border: #e0ddd6;
+  --border-subtle: #e8e5de;
   --border-active: #d0ccc4;
   --border-focus: #7c3aed;
   --text-primary: #1e1e24;
@@ -67,17 +73,25 @@
   --text-dim: #a09ca8;
   --accent: #7c3aed;
   --accent-bg: rgba(124,58,237,0.08);
+  --accent-dim: rgba(124,58,237,0.04);
   --green: #059669;
   --green-bg: rgba(5,150,105,0.08);
   --green-dim: #10b981;
   --red: #dc2626;
   --red-bg: rgba(220,38,38,0.08);
-  --yellow: #d97706;
-  --yellow-bg: rgba(217,119,6,0.08);
   --blue: #2563eb;
   --blue-bg: rgba(37,99,235,0.08);
-  --purple: #7c3aed;
+  --yellow: #d97706;
+  --yellow-bg: rgba(217,119,6,0.08);
   --orange: #ea580c;
+  --orange-bg: rgba(234,88,12,0.08);
+  --purple: #7c3aed;
+  --purple-bg: rgba(124,58,237,0.08);
+  --font-sans: 'DM Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --radius: 8px;
+  --radius-sm: 5px;
+  --radius-lg: 12px;
 }
 
 /* ── Body & Layout ───────────────────────────────────────── */

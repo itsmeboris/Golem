@@ -1417,17 +1417,15 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         assert resp.media_type == "application/javascript"
 
     def test_dashboard_html_has_new_layout(self):
-        """Verify the HTML file has the Warm Mono layout structure."""
+        """Verify the HTML file has the Trace Viewer layout structure."""
         html = Path(__file__).resolve().parent.parent / "core" / "task_dashboard.html"
         body = html.read_text(encoding="utf-8")
         # Core layout elements
         assert "top-bar" in body, "Missing top-bar"
-        assert "split-view" in body, "Missing split-view (DAG + task list)"
-        assert "dag-panel" in body, "Missing dag-panel"
-        assert "task-list" in body, "Missing task-list"
-        assert "metrics-row" in body, "Missing metrics-row"
-        # No old sidebar
-        assert "sidebar" not in body, "Old sidebar should be removed"
+        assert "overview-layout" in body, "Missing overview-layout"
+        assert "ov-task-list" in body, "Missing ov-task-list"
+        assert "td-metrics" in body, "Missing td-metrics"
+        assert "timeline-container" in body, "Missing timeline-container"
 
     def test_dashboard_html_has_theme_toggle(self):
         """Theme toggle button should exist in the top bar."""
@@ -1448,11 +1446,12 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         assert "data-theme" in body, "Missing data-theme attribute selector"
         assert "--accent" in body, "Missing --accent CSS variable"
 
-    def test_css_has_split_view(self):
-        """Task dashboard CSS should have the split-view layout."""
+    def test_css_has_overview_layout(self):
+        """Task dashboard CSS should have the overview-layout for the trace viewer."""
         css = Path(__file__).resolve().parent.parent / "core" / "task_dashboard.css"
         body = css.read_text(encoding="utf-8")
-        assert "split-view" in body, "Missing split-view CSS"
+        assert "overview-layout" in body, "Missing overview-layout CSS"
+        assert "timeline-container" in body, "Missing timeline-container CSS"
 
     def test_shared_js_has_theme_toggle(self):
         """Shared JS should have theme toggle function."""
