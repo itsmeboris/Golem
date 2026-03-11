@@ -564,6 +564,15 @@ class TaskOrchestrator:
             tracker.handle_event(event)
 
         mcp_servers = self._get_mcp_servers(self.session.parent_subject)
+
+        system_prompt = ""
+        if self.task_config.context_injection:
+            from .context_injection import (
+                build_system_prompt,
+            )  # pylint: disable=import-outside-toplevel
+
+            system_prompt = build_system_prompt(work_dir)
+
         cli_config = CLIConfig(
             cli_type=CLIType.CLAUDE,
             model=self.task_config.task_model,
@@ -571,6 +580,7 @@ class TaskOrchestrator:
             timeout_seconds=self.task_config.task_timeout_seconds,
             mcp_servers=mcp_servers,
             cwd=work_dir,
+            system_prompt=system_prompt,
         )
         callback = self._chain_event_callback(_streaming_callback)
         try:

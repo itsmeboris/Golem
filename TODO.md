@@ -4,7 +4,7 @@
 
 | #   | Status | Task                                                                                                                                                                                                          | Impact | Priority     |
 | --- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------------ |
-| 7   | [ ]    | **Agent context injection** — auto-inject AGENTS.md + workspace conventions into agent sessions via `--append-system-prompt`; build write-back mechanism for agents to persist discoveries                     | High   | P1           |
+| 7   | [x]    | **Agent context injection** — auto-inject AGENTS.md + workspace conventions into agent sessions via `--append-system-prompt`; build write-back mechanism for agents to persist discoveries                     | High   | P1           |
 | 19  | [ ]    | **Expanded antipattern detection** — add validation rules for hardcoded UI states, dead/unreachable code, data contract mismatches (backend returns X, frontend expects Y), missing error/edge-case handling   | High   | P1           |
 | 20  | [ ]    | **Integration smoke tests as quality gate** — after unit tests pass, spin up the actual app (FastAPI TestClient / browser check) and verify key flows work end-to-end, not just unit assertions                | High   | P1           |
 | 6   | [ ]    | **Adoption & outreach plan** — strategy to advertise, gather feedback, and grow the user base — deferred until Golem proves itself in production                                                              | High   | P2 (deferred)|

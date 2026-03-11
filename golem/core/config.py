@@ -91,6 +91,8 @@ class GolemFlowConfig(FlowConfig):
     # Ensemble retry
     ensemble_on_second_retry: bool = False  # spawn parallel attempts on 2nd retry
     ensemble_candidates: int = 2  # number of parallel candidates
+    # Workspace context injection
+    context_injection: bool = True  # inject AGENTS.md + CLAUDE.md into agent sessions
 
 
 @dataclass
@@ -283,6 +285,7 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
         ast_analysis=data.get("ast_analysis", True),
         ensemble_on_second_retry=data.get("ensemble_on_second_retry", False),
         ensemble_candidates=data.get("ensemble_candidates", 2),
+        context_injection=data.get("context_injection", True),
     )
 
 
