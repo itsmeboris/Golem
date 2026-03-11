@@ -133,7 +133,7 @@ class SubagentSupervisor:
 
         try:
             description = self._get_description(issue_id)
-            work_dir = self._setup_work_dir(issue_id, description)
+            work_dir = await self._setup_work_dir(issue_id, description)
 
             skip_execute = resume_phase in ("post_execute", "post_validate")
             skip_validate = resume_phase == "post_validate"
@@ -147,7 +147,7 @@ class SubagentSupervisor:
             else:
                 await self._execute_phases(issue_id, description, work_dir, start)
 
-            verdict = self._resolve_verdict(
+            verdict = await self._resolve_verdict(
                 skip_validate, issue_id, description, work_dir
             )
 
@@ -155,7 +155,7 @@ class SubagentSupervisor:
             if verdict.verdict == "PASS":
                 self.session.supervisor_phase = "committing"
                 self._emit_event("Finalizing task...")
-                self._commit_and_complete(issue_id, work_dir, verdict)
+                await self._commit_and_complete(issue_id, work_dir, verdict)
             elif (
                 verdict.verdict == "PARTIAL"
                 and self.session.retry_count < self.task_config.max_retries
@@ -186,7 +186,7 @@ class SubagentSupervisor:
                     cleanup_worktree(self._base_work_dir, self._worktree_path)
             self._checkpoint()
 
-    def _setup_work_dir(self, issue_id: int, description: str) -> str:
+    async def _setup_work_dir(self, issue_id: int, description: str) -> str:
         """Resolve base work dir and optionally create worktree."""
         if self._work_dir_override:
             self._base_work_dir = self._work_dir_override
@@ -223,7 +223,10 @@ class SubagentSupervisor:
         # Pre-flight verification: ensure base branch is healthy before spending budget
         if getattr(self.task_config, "preflight_verify", True):
             self._slog.info("Running pre-flight verification on base branch...")
-            vr = run_verification(work_dir, timeout=120)
+            loop = asyncio.get_running_loop()
+            vr = await loop.run_in_executor(
+                None, lambda: run_verification(work_dir, timeout=120)
+            )
             if not vr.passed:
                 failures = []
                 if not vr.black_ok:
@@ -248,7 +251,10 @@ class SubagentSupervisor:
         if self.task_config.clarity_check:
             from .clarity import check_clarity
 
-            cr = check_clarity(self.session.parent_subject, description)
+            loop = asyncio.get_running_loop()
+            cr = await loop.run_in_executor(
+                None, check_clarity, self.session.parent_subject, description
+            )
             self.session.total_cost_usd += cr.cost_usd
             if not cr.is_clear(self.task_config.clarity_threshold):
                 self._slog.warning(
@@ -282,7 +288,7 @@ class SubagentSupervisor:
         self._update_task(issue_id, status=TaskStatus.FIXED, progress=80)
         self._save_checkpoint(issue_id, "post_execute")
 
-    def _resolve_verdict(
+    async def _resolve_verdict(
         self,
         skip_validate: bool,
         issue_id: int,
@@ -305,7 +311,7 @@ class SubagentSupervisor:
 
         self.session.supervisor_phase = "validating"
         self._emit_event("Running external validation...")
-        verdict = self._run_overall_validation(issue_id, description, work_dir)
+        verdict = await self._run_overall_validation(issue_id, description, work_dir)
         self._emit_event(
             f"Validation: {verdict.verdict} " f"(confidence {verdict.confidence:.0%})"
         )
@@ -428,22 +434,29 @@ class SubagentSupervisor:
 
     # -- Validation ------------------------------------------------------------
 
-    def _run_overall_validation(
+    async def _run_overall_validation(
         self, issue_id: int, description: str, work_dir: str
     ) -> ValidationVerdict:
         self.session.state = TaskSessionState.VALIDATING
         self.session.updated_at = _now_iso()
 
-        verdict = run_validation(
-            issue_id=issue_id,
-            subject=self.session.parent_subject,
-            description=description,
-            session_data=self.session.to_dict(),
-            work_dir=work_dir,
-            model=self.task_config.validation_model,
-            budget_usd=self.task_config.validation_budget_usd,
-            timeout_seconds=self.task_config.validation_timeout_seconds,
-            ast_analysis=self.task_config.ast_analysis,
+        from functools import partial
+
+        loop = asyncio.get_running_loop()
+        verdict = await loop.run_in_executor(
+            None,
+            partial(
+                run_validation,
+                issue_id=issue_id,
+                subject=self.session.parent_subject,
+                description=description,
+                session_data=self.session.to_dict(),
+                work_dir=work_dir,
+                model=self.task_config.validation_model,
+                budget_usd=self.task_config.validation_budget_usd,
+                timeout_seconds=self.task_config.validation_timeout_seconds,
+                ast_analysis=self.task_config.ast_analysis,
+            ),
         )
         self.session.validation_verdict = verdict.verdict
         self.session.validation_confidence = verdict.confidence
@@ -547,7 +560,9 @@ class SubagentSupervisor:
 
         # Re-validate
         description = self._get_description(issue_id)
-        retry_verdict = self._run_overall_validation(issue_id, description, work_dir)
+        retry_verdict = await self._run_overall_validation(
+            issue_id, description, work_dir
+        )
         self._emit_event(
             f"Retry validation: {retry_verdict.verdict} "
             f"(confidence {retry_verdict.confidence:.0%})"
@@ -556,7 +571,7 @@ class SubagentSupervisor:
 
         if retry_verdict.verdict == "PASS":
             self.session.supervisor_phase = "committing"
-            self._commit_and_complete(issue_id, work_dir, retry_verdict)
+            await self._commit_and_complete(issue_id, work_dir, retry_verdict)
         elif (
             self.task_config.ensemble_on_second_retry
             and self.session.retry_count < self.task_config.max_retries + 1
@@ -573,17 +588,24 @@ class SubagentSupervisor:
 
     # -- Commit & complete -----------------------------------------------------
 
-    def _commit_and_complete(
+    async def _commit_and_complete(
         self, issue_id: int, work_dir: str, verdict: ValidationVerdict
     ) -> None:
         if self.task_config.auto_commit and verdict.verdict == "PASS":
             task_type = verdict.task_type
-            cr = commit_changes(
-                work_dir=work_dir,
-                issue_id=issue_id,
-                subject=self.session.parent_subject,
-                task_type=task_type,
-                summary=self.session.validation_summary,
+            from functools import partial
+
+            loop = asyncio.get_running_loop()
+            cr = await loop.run_in_executor(
+                None,
+                partial(
+                    commit_changes,
+                    work_dir=work_dir,
+                    issue_id=issue_id,
+                    subject=self.session.parent_subject,
+                    task_type=task_type,
+                    summary=self.session.validation_summary,
+                ),
             )
             if cr.committed:
                 self.session.commit_sha = cr.sha

@@ -1,6 +1,6 @@
 # pylint: disable=too-few-public-methods,too-many-lines
 """Tests for golem.supervisor_v2_subagent — full coverage."""
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -451,7 +451,8 @@ class TestRetryWithResume:
 
 
 class TestCommitAndComplete:
-    def test_merge_ready_set_when_worktree(self):
+    @pytest.mark.asyncio
+    async def test_merge_ready_set_when_worktree(self):
         """Supervisor sets merge_ready instead of merging inline."""
         session = TaskSession(parent_issue_id=42, parent_subject="Test")
         config = _make_config(auto_commit=True)
@@ -467,14 +468,15 @@ class TestCommitAndComplete:
             "golem.supervisor_v2_subagent.commit_changes",
             return_value=CommitResult(committed=True, sha="abc"),
         ):
-            sup._commit_and_complete(42, "/wt/42", verdict)
+            await sup._commit_and_complete(42, "/wt/42", verdict)
 
         assert session.merge_ready is True
         assert session.worktree_path == "/wt/42"
         assert session.base_work_dir == "/repo"
         assert session.state == TaskSessionState.COMPLETED
 
-    def test_no_merge_ready_without_worktree(self):
+    @pytest.mark.asyncio
+    async def test_no_merge_ready_without_worktree(self):
         session = TaskSession(parent_issue_id=42, parent_subject="Test")
         config = _make_config(auto_commit=True)
         sup = _make_supervisor(session=session, config=config)
@@ -488,12 +490,13 @@ class TestCommitAndComplete:
             "golem.supervisor_v2_subagent.commit_changes",
             return_value=CommitResult(committed=True, sha="abc"),
         ):
-            sup._commit_and_complete(42, "/work", verdict)
+            await sup._commit_and_complete(42, "/work", verdict)
 
         assert session.merge_ready is False
         assert session.commit_sha == "abc"
 
-    def test_commit_error_does_not_set_merge_ready(self):
+    @pytest.mark.asyncio
+    async def test_commit_error_does_not_set_merge_ready(self):
         session = TaskSession(parent_issue_id=42, parent_subject="Test")
         config = _make_config(auto_commit=True)
         sup = _make_supervisor(session=session, config=config)
@@ -507,12 +510,13 @@ class TestCommitAndComplete:
             "golem.supervisor_v2_subagent.commit_changes",
             return_value=CommitResult(committed=False, error="pre-commit hook failed"),
         ):
-            sup._commit_and_complete(42, "/wt/42", verdict)
+            await sup._commit_and_complete(42, "/wt/42", verdict)
 
         assert session.merge_ready is False
         assert session.state == TaskSessionState.FAILED
 
-    def test_no_changes_skips_merge(self):
+    @pytest.mark.asyncio
+    async def test_no_changes_skips_merge(self):
         """When commit_changes reports no changes, merge_ready stays False."""
         session = TaskSession(parent_issue_id=42, parent_subject="Test")
         config = _make_config(auto_commit=True)
@@ -528,13 +532,14 @@ class TestCommitAndComplete:
             "golem.supervisor_v2_subagent.commit_changes",
             return_value=CommitResult(committed=False, message="No changes to commit"),
         ):
-            sup._commit_and_complete(42, "/wt/42", verdict)
+            await sup._commit_and_complete(42, "/wt/42", verdict)
 
         assert session.merge_ready is False
         assert session.state == TaskSessionState.COMPLETED
         assert not session.errors
 
-    def test_no_auto_commit(self):
+    @pytest.mark.asyncio
+    async def test_no_auto_commit(self):
         session = TaskSession(parent_issue_id=42, parent_subject="Test")
         config = _make_config(auto_commit=False)
         sup = _make_supervisor(session=session, config=config)
@@ -542,7 +547,7 @@ class TestCommitAndComplete:
 
         verdict = ValidationVerdict(verdict="PASS", confidence=0.9, summary="ok")
 
-        sup._commit_and_complete(42, "/work", verdict)
+        await sup._commit_and_complete(42, "/work", verdict)
 
         assert session.state == TaskSessionState.COMPLETED
 
@@ -949,7 +954,8 @@ class TestCheckpointHelpers:
 class TestPreflightSupervisor:
     """Cover preflight verification failure branches in _setup_work_dir."""
 
-    def test_preflight_all_checks_fail(self):
+    @pytest.mark.asyncio
+    async def test_preflight_all_checks_fail(self):
         from golem.errors import InfrastructureError
 
         cfg = _make_config(preflight_verify=True, use_worktrees=False)
@@ -970,7 +976,7 @@ class TestPreflightSupervisor:
             patch("pathlib.Path.is_dir", return_value=True),
             pytest.raises(InfrastructureError, match="black.*pylint.*pytest"),
         ):
-            sup._setup_work_dir(42, "desc")
+            await sup._setup_work_dir(42, "desc")
 
 
 class TestClarityGate:
@@ -1022,7 +1028,11 @@ class TestEnsembleRetryBranch:
                 return_value=mock_cli,
             ),
             patch.object(sup, "_get_description", return_value="desc"),
-            patch.object(sup, "_run_overall_validation", return_value=retry_verdict),
+            patch.object(
+                sup,
+                "_run_overall_validation",
+                new=AsyncMock(return_value=retry_verdict),
+            ),
             patch.object(sup, "_escalate") as mock_esc,
             patch.object(sup, "_save_checkpoint"),
             patch.object(sup, "_emit_event"),
