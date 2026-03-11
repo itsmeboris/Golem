@@ -61,9 +61,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const backLink = document.getElementById('td-back-link');
   if (backLink) backLink.addEventListener('click', () => showView('overview'));
 
-  const themeToggle = document.getElementById('theme-toggle');
-  if (themeToggle) themeToggle.addEventListener('click', toggleTheme);
-
   // Deep link: #detail/golem-123-20260310 — must load sessions first
   const hash = location.hash.slice(1);
   if (hash.startsWith('detail/')) {

@@ -95,6 +95,12 @@ omit = [
     "golem/__main__.py",
 ]
 
+[tool.coverage.paths]
+source = [
+    "golem",
+    "/.autodirect/*/golem",
+]
+
 [tool.coverage.report]
 fail_under = 100
 show_missing = true

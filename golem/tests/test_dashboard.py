@@ -87,6 +87,16 @@ class TestResolvePaths:
         assert result["prompt"] is not None
         assert result["report"] is not None
 
+    def test_bare_numeric_id_normalized(self, tmp_path):
+        """Bare numeric IDs (from sessions API) are prefixed with golem-."""
+        traces = tmp_path / "traces" / "golem"
+        traces.mkdir(parents=True)
+        (traces / "golem-1773152876161.jsonl").write_text("{}", encoding="utf-8")
+        with patch("golem.core.dashboard.TRACES_DIR", tmp_path / "traces"):
+            with patch("golem.core.dashboard.REPORTS_DIR", tmp_path / "reports"):
+                result = _resolve_paths("1773152876161")
+        assert result["trace"] is not None
+
     def test_slash_replaced_in_safe_id(self, tmp_path):
         """Event IDs with slashes get sanitized for file lookups."""
         traces = tmp_path / "traces" / "golem"

@@ -64,6 +64,9 @@ def _extract_numeric_id(event_id: str) -> tuple[str, str]:
 
 def _resolve_paths(event_id: str) -> dict[str, Path | None]:
     """Find prompt/trace/report file paths for a given event_id."""
+    # Normalize bare numeric IDs (from sessions API) to golem-{id} format
+    if event_id.isdigit():
+        event_id = f"golem-{event_id}"
     flow, numeric_id = _extract_numeric_id(event_id)
     safe_id = event_id.replace("/", "_")
 
