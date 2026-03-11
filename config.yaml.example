@@ -67,6 +67,9 @@ flows:
     # AST-based validation (requires ast-grep / sg on PATH)
     ast_analysis: true             # run ast-grep structural rules during validation
 
+    # Workspace context injection: load AGENTS.md + CLAUDE.md into agent sessions
+    context_injection: true
+
     # Ensemble retry: spawn parallel attempts on hard tasks
     ensemble_on_second_retry: false  # enable parallel candidate strategy
     ensemble_candidates: 2           # number of parallel attempts

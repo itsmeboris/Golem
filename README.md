@@ -370,6 +370,7 @@ The `local` profile is the recommended starting point. Prompts submitted via CLI
 | `ast_analysis` | `true` | Run ast-grep structural rules during validation (requires `sg` binary) |
 | `clarity_check` | `false` | Opt-in: score task clarity with haiku before execution |
 | `clarity_threshold` | `3` | Minimum clarity score (1–5) to proceed without human clarification |
+| `context_injection` | `true` | Auto-inject AGENTS.md + CLAUDE.md from workspace into agent sessions as system prompt context |
 | `ensemble_on_second_retry` | `false` | Spawn parallel candidates with different strategies on second retry |
 | `ensemble_candidates` | `2` | Number of parallel candidates for ensemble retry |
 | `flaky_tests_file` | `""` | Path to known-flaky tests JSON registry; empty = disabled |
