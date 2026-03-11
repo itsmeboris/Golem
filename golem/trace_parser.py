@@ -79,9 +79,9 @@ def _detect_phases(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
         for text in _extract_text_blocks(event):
             for match in PHASE_MARKER_RE.finditer(text):
                 name = match.group(1)
-                # Close previous phase
+                # Close previous phase — boundary event belongs to the new phase
                 if phases:
-                    phases[-1]["end_event"] = idx
+                    phases[-1]["end_event"] = max(phases[-1]["start_event"], idx - 1)
                 phases.append(_make_phase(name, idx, idx))
     # Close last phase at end of events
     if phases:
@@ -323,7 +323,7 @@ def _populate_phases(
                         }
                     )
 
-        phase["orchestrator_text"] = "\n".join(text_parts)
+        phase["orchestrator_text"] = text_parts
         phase["orchestrator_tools"] = orch_tools
         phase["subagents"] = subagents
 

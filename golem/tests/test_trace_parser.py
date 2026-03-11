@@ -349,6 +349,28 @@ class TestPhaseDetection:
         assert "PLAN" in names
         assert "BUILD" in names
 
+    def test_boundary_event_belongs_to_new_phase_only(self):
+        """When a new phase marker appears at idx, the previous phase ends at idx-1."""
+        events = [
+            _system_init(),
+            _assistant_text("## Phase: UNDERSTAND\nReading..."),
+            _assistant_tool_use("Read", {"file_path": "foo.py"}, tool_use_id="tu_r1"),
+            _user_tool_result("tu_r1", "contents"),
+            # Phase marker at idx=4 — should NOT be included in UNDERSTAND
+            _assistant_text("## Phase: BUILD\nDispatching..."),
+            _result_event(),
+        ]
+        result = parse_trace(events)
+        understand = next(p for p in result["phases"] if p["name"] == "UNDERSTAND")
+        build = next(p for p in result["phases"] if p["name"] == "BUILD")
+        # UNDERSTAND should have the Read tool, BUILD should not
+        assert len(understand["orchestrator_tools"]) == 1
+        assert len(build["orchestrator_tools"]) == 0
+        # BUILD text should contain its marker text, not UNDERSTAND's
+        build_text = " ".join(build["orchestrator_text"])
+        assert "Dispatching" in build_text
+        assert "Reading" not in build_text
+
     def test_empty_events(self):
         result = parse_trace([])
         assert not result["phases"]
@@ -381,7 +403,7 @@ class TestOrchestratorContent:
     def test_understand_has_orchestrator_text(self):
         result = parse_trace(_build_simple_trace())
         understand = result["phases"][0]
-        assert "Reading key files" in understand["orchestrator_text"]
+        assert any("Reading key files" in t for t in understand["orchestrator_text"])
 
     def test_understand_has_orchestrator_tools(self):
         result = parse_trace(_build_simple_trace())

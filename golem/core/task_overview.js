@@ -323,9 +323,14 @@ function renderSummaryCard(trace, session) {
   const fixCycles = (trace.phases || []).reduce((n, p) => n + (p.fix_cycles || []).length, 0);
   const commit = session ? (session.commit_sha || '') : '';
 
+  const success = result.success !== false && session?.state !== 'FAILED';
+  const statusIcon = success ? '✓' : '✗';
+  const statusLabel = success ? 'COMPLETE' : 'FAILED';
+  const statusColor = success ? 'var(--green)' : 'var(--red)';
+
   return `<div class="ov-summary">
     <div class="ov-summary-status">
-      <span style="color:var(--green);font-weight:700;font-size:0.9rem">✓ COMPLETE</span>
+      <span style="color:${statusColor};font-weight:700;font-size:0.9rem">${statusIcon} ${statusLabel}</span>
       ${result.summary ? `<span style="font-size:0.75rem;color:var(--text-secondary);margin-left:0.5rem">${esc(truncText(result.summary, 80))}</span>` : ''}
     </div>
     ${specsHtml ? `<div class="ov-summary-specs">${specsHtml}</div>` : ''}

@@ -248,10 +248,65 @@ function applySearch(query) {
   });
 }
 
+// ── UI State Preservation ─────────────────────
+function _captureTimelineState() {
+  const scroll = document.getElementById('timeline-scroll');
+  if (!scroll) return null;
+  const collapsed = [];
+  scroll.querySelectorAll('.tl-phase.collapsed').forEach(el => {
+    if (el.dataset.phase) collapsed.push(el.dataset.phase);
+  });
+  const expandedTools = [];
+  scroll.querySelectorAll('.tl-tool.expanded').forEach(el => {
+    expandedTools.push(Array.from(el.parentElement.children).indexOf(el));
+  });
+  const openSections = [];
+  scroll.querySelectorAll('.tl-agent-section-btn.open').forEach(btn => {
+    openSections.push(btn.textContent.trim());
+  });
+  return {
+    scrollTop: scroll.scrollTop,
+    collapsed,
+    expandedTools,
+    openSections,
+    promptVisible: document.getElementById('prompt-section')?.style.display !== 'none',
+  };
+}
+
+function _restoreTimelineState(state) {
+  if (!state) return;
+  const scroll = document.getElementById('timeline-scroll');
+  if (!scroll) return;
+  // Restore collapsed phases
+  state.collapsed.forEach(phase => {
+    const el = scroll.querySelector(`.tl-phase[data-phase="${phase}"]`);
+    if (el) el.classList.add('collapsed');
+  });
+  // Restore expanded tools (by index within parent)
+  state.expandedTools.forEach(idx => {
+    const tools = scroll.querySelectorAll('.tl-tool');
+    if (tools[idx]) tools[idx].classList.add('expanded');
+  });
+  // Restore open agent sections
+  state.openSections.forEach(text => {
+    scroll.querySelectorAll('.tl-agent-section-btn').forEach(btn => {
+      if (btn.textContent.trim() === text) btn.classList.add('open');
+    });
+  });
+  // Restore prompt visibility
+  const prompt = document.getElementById('prompt-section');
+  if (prompt && state.promptVisible) prompt.style.display = '';
+  // Restore scroll position
+  scroll.scrollTop = state.scrollTop;
+}
+
 // ── Timeline ───────────────────────────────────
 function renderTimeline(trace, running) {
   const scroll = document.getElementById('timeline-scroll');
   if (!scroll) return;
+
+  // Capture UI state before re-render so we can restore toggle states
+  const savedState = _captureTimelineState();
 
   const phases = trace.phases || [];
   const result = trace.result || null;
@@ -335,10 +390,16 @@ function renderTimeline(trace, running) {
 
   scroll.innerHTML = html;
 
+  // Restore UI state (expanded/collapsed, scroll position, prompt visibility)
+  _restoreTimelineState(savedState);
+
   // Apply thinking visibility
   if (!S.showThinking) {
     scroll.querySelectorAll('.tl-thinking').forEach(el => { el.style.display = 'none'; });
   }
+
+  // Apply active search filter
+  if (S.searchQuery) applySearch(S.searchQuery);
 }
 
 // ── Tool Call ──────────────────────────────────
@@ -589,7 +650,7 @@ function renderInfoTabs(trace, session, running) {
 }
 
 function activateTab(btn, tabId) {
-  const container = btn.closest('.info-tabs');
+  const container = btn.closest('#info-tabs');
   if (!container) return;
   container.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   container.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
@@ -601,10 +662,6 @@ function activateTab(btn, tabId) {
 // ── Toggle helpers ─────────────────────────────
 function togglePhase(el) {
   el.classList.toggle('collapsed');
-}
-
-function toggleTool(el) {
-  el.classList.toggle('expanded');
 }
 
 function toggleAgentSection(btn) {

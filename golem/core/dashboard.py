@@ -95,7 +95,7 @@ def _resolve_paths(event_id: str) -> dict[str, Path | None]:
 
 
 # Cache for parsed traces (completed traces are immutable).
-# LRU-bounded: evict oldest entry when cache exceeds _MAX_TRACE_CACHE entries.
+# FIFO-bounded: evict oldest inserted entry when cache exceeds _MAX_TRACE_CACHE.
 _MAX_TRACE_CACHE = 100
 _parsed_trace_cache: dict[str, dict[str, Any]] = {}
 

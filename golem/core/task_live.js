@@ -5,24 +5,32 @@
  */
 'use strict';
 
+let _pollInFlight = false;
+
 function startPolling() {
   if (S.pollTimer) return;
   S.pollTimer = setInterval(async () => {
-    if (S.view === 'overview') {
-      await renderOverview();
-    } else if (S.view === 'detail' && S.selectedTaskId) {
-      // Refresh session state so we detect when a task completes
-      S.sessions = await fetchSessions();
-      const session = S.sessions[S.selectedTaskId];
-      if (isTaskRunning(session)) {
-        // Incremental: only fetch new events since last poll
-        const trace = await fetchParsedTrace(S.selectedTaskId, true);
-        if (trace) {
-          renderDetail(S.selectedTaskId, trace);  // avoid double fetch
-          updateLiveCursor();
-          autoScrollIfAtBottom();
+    if (_pollInFlight) return;  // prevent concurrent ticks
+    _pollInFlight = true;
+    try {
+      if (S.view === 'overview') {
+        await renderOverview();
+      } else if (S.view === 'detail' && S.selectedTaskId) {
+        // Refresh session state so we detect when a task completes
+        S.sessions = await fetchSessions();
+        const session = S.sessions[S.selectedTaskId];
+        if (isTaskRunning(session)) {
+          // Incremental: only fetch new events since last poll
+          const trace = await fetchParsedTrace(S.selectedTaskId, true);
+          if (trace) {
+            renderDetail(S.selectedTaskId, trace);  // avoid double fetch
+            updateLiveCursor();
+            autoScrollIfAtBottom();
+          }
         }
       }
+    } finally {
+      _pollInFlight = false;
     }
   }, 5000);
 }

@@ -24,11 +24,6 @@ async function fetchSessions() {
   return data.sessions || {};
 }
 
-async function fetchLive() {
-  const res = await fetch('/api/live');
-  return res.json();
-}
-
 async function fetchParsedTrace(eventId, incremental = false) {
   // Return cached if available and not requesting incremental update
   if (!incremental && S.parsedTraces[eventId]) return S.parsedTraces[eventId];
