@@ -121,12 +121,11 @@ def _read_jsonl_events(path: Path) -> list[dict[str, Any]] | None:
 def _read_and_parse_trace(event_id: str, since_event: int = 0) -> dict[str, Any] | None:
     """Read JSONL trace file and return ParsedTrace dict, or None if not found.
 
-    Note: ``since_event`` is stored in the response for the caller's bookkeeping
-    but does not yet filter events — the full trace is always parsed.  Incremental
-    requests (since_event > 0) bypass the cache so callers always get fresh data
-    for running tasks.
+    When ``since_event`` matches the current event count, returns the cached
+    result (if available) since the trace hasn't changed.  Otherwise, a full
+    re-parse is performed.
     """
-    # Check cache first (skip for incremental requests)
+    # Fast-path: return cached result on initial (non-incremental) request
     if since_event == 0 and event_id in _parsed_trace_cache:
         return _parsed_trace_cache[event_id]
 
@@ -138,6 +137,11 @@ def _read_and_parse_trace(event_id: str, since_event: int = 0) -> dict[str, Any]
     events = _read_jsonl_events(trace_path)
     if events is None:
         return None
+
+    # Return cached result when trace hasn't grown since caller's last poll
+    cached = _parsed_trace_cache.get(event_id)
+    if cached and since_event > 0 and len(events) == since_event:
+        return cached
 
     try:
         result = _parse_trace_structured(events, since_event=since_event)

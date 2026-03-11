@@ -51,20 +51,34 @@ function renderTaskRow(eventId, session) {
   const phase = session.supervisor_phase || '';
   const activity = phase ? esc(phase) : '';
 
-  // Dependency chips
+  // Dependency and dependent chips
   const deps = session.depends_on || [];
+  const dependents = Object.entries(S.sessions || {})
+    .filter(([, s]) => (s.depends_on || []).includes(eventId))
+    .map(([id]) => id);
+
   let depsHtml = '';
-  if (deps.length > 0) {
-    const chips = deps.map(depId => {
-      const depSess = S.sessions[depId];
-      const depClass = depSess ? _stateToChipClass(depSess.state) : 'waiting';
-      const depNum = String(depId).replace(/^golem-(\d+).*/, '$1');
-      return `<span class="ov-dep-chip ${depClass}"><span class="dep-dot"></span>#${esc(depNum)}</span>`;
-    }).join('');
-    depsHtml = `<span class="ov-task-deps">
-      <span class="ov-dep-arrow"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 3L6 8l4 5"/></svg></span>
-      ${chips}
-    </span>`;
+  const renderDepChip = (depId) => {
+    const depSess = S.sessions[depId];
+    const depClass = depSess ? _stateToChipClass(depSess.state) : 'waiting';
+    const depNum = String(depId).replace(/^golem-(\d+).*/, '$1');
+    return `<span class="ov-dep-chip ${depClass}"><span class="dep-dot"></span>#${esc(depNum)}</span>`;
+  };
+  if (deps.length > 0 || dependents.length > 0) {
+    let sections = '';
+    if (deps.length > 0) {
+      sections += `<span class="ov-task-deps">
+        <span class="ov-dep-arrow"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 3L6 8l4 5"/></svg></span>
+        ${deps.map(renderDepChip).join('')}
+      </span>`;
+    }
+    if (dependents.length > 0) {
+      sections += `<span class="ov-task-deps">
+        <span class="ov-dep-arrow"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3l4 5-4 5"/></svg></span>
+        ${dependents.map(renderDepChip).join('')}
+      </span>`;
+    }
+    depsHtml = sections;
   }
 
   const div = document.createElement('div');
@@ -222,9 +236,10 @@ function renderLiveTraceStream(trace) {
       html += `<div class="ov-trace-ev orch-tool"><span style="color:${tColor}">${esc(tName)}</span> ${esc(truncText(tSum, 60))}</div>`;
     }
 
-    // Show brief text
+    // Show brief text — strip phase markers for cleaner preview
     for (const txt of (phase.orchestrator_text || []).slice(0, 1)) {
-      html += `<div class="ov-trace-ev text">${esc(truncText(txt, 100))}</div>`;
+      const cleaned = cleanPhaseMarkers(txt);
+      if (cleaned) html += `<div class="ov-trace-ev text">${esc(truncText(cleaned, 100))}</div>`;
     }
 
     // Show agents as collapsible blocks

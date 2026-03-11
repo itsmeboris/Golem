@@ -296,14 +296,13 @@ Launch with `golem dashboard --port 8081`. The dashboard is served alongside the
 | View | What it shows |
 |------|--------------|
 | **Overview** | Task list with status, cost, and elapsed time on the left; a preview panel on the right |
-| **Task Detail** | Header with task metadata, a metrics strip, and a phase-aware timeline with sidebar navigation for each phase (UNDERSTAND / PLAN / BUILD / REVIEW / VERIFY) |
-| **Live strip** | Active tasks, current phase, live cost, and queue depth — polled automatically |
+| **Task Detail** | Header with task metadata, a metrics strip, a phase-aware timeline with sidebar navigation for each phase (UNDERSTAND / PLAN / BUILD / REVIEW / VERIFY), and a live strip showing current phase and elapsed time while the task is running |
 
 Additional features:
 
 - **JSONL trace parsing** — raw agent traces are parsed into structured timelines with phase detection, subagent grouping, and per-tool usage visualization
-- **Incremental updates** — the timeline endpoint supports `?since_event=N` to fetch only new events, keeping the detail view current without a full reload
-- **Dark / light theme** — toggle in the header; preference persists across sessions
+- **Polling with cache bypass** — the timeline endpoint accepts `?since_event=N`; when the trace hasn't grown since the last poll the server returns the cached result, avoiding a full re-parse
+- **Dark / light theme** — toggle in the header; preference persists via localStorage
 
 ---
 
@@ -438,13 +437,20 @@ The daemon exposes a REST API (served on the dashboard port, default `8081`).
 | `/api/flow/start` | POST | Admin | Start flows by name |
 | `/api/flow/stop` | POST | Admin | Stop flows by name |
 | `/api/analytics` | GET | None | Quality metrics — pass/fail rates, avg cost, retry effectiveness, top failure reasons |
-| `/api/live` | GET | None | Live dashboard state — active tasks, queue depth, daemon health |
+| `/api/live` | GET | None | Live dashboard state — active tasks, queue depth, uptime, and recently completed tasks |
 | `/api/cost-analytics` | GET | None | Cost analytics and budget insights — spend per task, totals, budget remaining |
 | `/api/cancel/{task_id}` | POST | None | Cancel a running task |
+| `/api/sessions` | GET | None | All session metadata |
 | `/api/sessions/{task_id}` | GET | None | Session details for a specific task |
 | `/api/batch/{group_id}` | GET | None | Status of a submitted batch by group ID |
 | `/api/batches` | GET | None | List all known batches |
-| `/api/trace-parsed/{event_id}` | GET | None | Structured trace with phase detection, subagent grouping, and tool timelines; supports `?since_event=N` for incremental updates |
+| `/api/config` | GET | None | Current config snapshot |
+| `/api/logs` | GET | None | Tail of the daemon log file |
+| `/api/trace-parsed/{event_id}` | GET | None | Structured trace with phase detection, subagent grouping, and tool timelines; accepts `?since_event=N` to skip re-parsing when unchanged |
+| `/api/trace/{event_id}` | GET | None | Raw JSONL trace parsed into sections |
+| `/api/trace-terminal/{event_id}` | GET | None | Terminal-renderable event list |
+| `/api/prompt/{event_id}` | GET | None | Prompt text for a task |
+| `/api/report/{event_id}` | GET | None | Report markdown for a completed task |
 
 ```bash
 curl -X POST http://localhost:8081/api/submit \

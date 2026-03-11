@@ -108,6 +108,11 @@ html,body{height:100%;font-family:var(--font-sans);background:var(--bg-base);col
 
 /* Text Block */
 .tl-text{font-size:0.85rem;color:var(--text-secondary);padding:0.5rem 0;line-height:1.65}
+.tl-text .markdown-body{font-size:inherit;line-height:inherit;color:inherit}
+
+/* Thinking Block */
+.tl-thinking{font-size:0.82rem;color:var(--text-muted);padding:0.5rem 0.75rem;background:var(--bg-surface);border-left:2px solid var(--border);border-radius:0 var(--radius-sm) var(--radius-sm) 0;margin:0.25rem 0;font-style:italic;line-height:1.6}
+.tl-thinking .markdown-body{font-size:inherit;line-height:inherit;color:inherit}
 
 /* Tool Call */
 .tl-tool{border:1px solid var(--border-subtle);border-radius:var(--radius-sm);margin:0.35rem 0;overflow:hidden;transition:border-color 0.15s}
@@ -212,8 +217,14 @@ html,body{height:100%;font-family:var(--font-sans);background:var(--bg-base);col
 .tl-prompt-btn{background:var(--bg-surface);border:1px solid var(--border-subtle);color:var(--text-secondary);padding:0.35rem 0.75rem;border-radius:var(--radius-sm);cursor:pointer;font:inherit;font-size:0.75rem;display:flex;align-items:center;gap:0.4rem;transition:all 0.15s}
 .tl-prompt-btn:hover{background:var(--bg-hover);color:var(--text-primary)}
 .tl-prompt-btn .chevron{font-size:0.6rem;transition:transform 0.15s}
-.tl-prompt-body{display:none;margin-top:0.35rem;border:1px solid var(--border-subtle);border-radius:var(--radius-sm);max-height:500px;overflow-y:auto}
+.tl-prompt-body{display:none;margin-top:0.35rem;border:1px solid var(--border-subtle);border-radius:var(--radius-sm);max-height:500px;overflow-y:auto;padding:0.75rem;font-size:0.8rem;color:var(--text-secondary);line-height:1.65}
 .tl-prompt-body pre{font-family:var(--font-mono);font-size:0.72rem;padding:0.75rem;color:var(--text-secondary);line-height:1.6;white-space:pre-wrap}
+.tl-prompt-body h2{font-size:0.9rem;color:var(--text-primary);margin:1rem 0 0.4rem;font-weight:700}
+.tl-prompt-body h3{font-size:0.82rem;color:var(--text-primary);margin:0.8rem 0 0.3rem;font-weight:600}
+.tl-prompt-body ul,.tl-prompt-body ol{padding-left:1.2rem;margin:0.3rem 0}
+.tl-prompt-body li{margin:0.15rem 0}
+.tl-prompt-body code{font-family:var(--font-mono);font-size:0.75rem;background:var(--bg-elevated);padding:0.1rem 0.35rem;border-radius:3px}
+.tl-prompt-body strong{color:var(--text-primary);font-weight:600}
 
 /* Result Block */
 .tl-result{border:1px solid var(--border);border-radius:var(--radius);margin-top:1rem;overflow:hidden}
@@ -226,10 +237,11 @@ html,body{height:100%;font-family:var(--font-sans);background:var(--bg-base);col
 .tl-spec{display:flex;align-items:center;gap:0.3rem;font-size:0.75rem;padding:0.2rem 0.5rem;border-radius:var(--radius-sm);background:var(--bg-elevated);font-family:var(--font-mono)}
 .tl-spec.pass{color:var(--green)}
 .tl-spec.fail{color:var(--red)}
-.tl-tests{display:flex;gap:0.5rem;margin-top:0.5rem}
+.tl-tests{display:flex;flex-wrap:wrap;gap:0.35rem;margin-top:0.5rem}
 .tl-test{font-size:0.72rem;font-family:var(--font-mono);padding:0.2rem 0.5rem;border-radius:var(--radius-sm)}
 .tl-test.pass{background:var(--green-bg);color:var(--green)}
 .tl-test.fail{background:var(--red-bg);color:var(--red)}
+.tl-test.skip{background:var(--bg-elevated);color:var(--text-muted)}
 
 /* ── Info Tabs ──────────────────────────── */
 .info-tabs{border-top:1px solid var(--border-subtle);max-height:200px;overflow:hidden;display:flex;flex-direction:column}

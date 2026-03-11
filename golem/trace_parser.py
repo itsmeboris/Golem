@@ -45,6 +45,20 @@ def _extract_text_blocks(event: dict[str, Any]) -> list[str]:
     ]
 
 
+def _extract_thinking_blocks(event: dict[str, Any]) -> list[str]:
+    """Extract thinking text from an assistant event's content blocks."""
+    if event.get("type") != "assistant":
+        return []
+    content = event.get("message", {}).get("content", [])
+    return [
+        block.get("thinking", "")
+        for block in content
+        if isinstance(block, dict)
+        and block.get("type") == "thinking"
+        and block.get("thinking")
+    ]
+
+
 def _extract_tool_uses(event: dict[str, Any]) -> list[dict[str, Any]]:
     """Extract tool_use blocks from an assistant event."""
     if event.get("type") != "assistant":
@@ -63,7 +77,8 @@ def _make_phase(name: str, start: int, end: int) -> dict[str, Any]:
         "name": name,
         "start_event": start,
         "end_event": end,
-        "orchestrator_text": "",
+        "orchestrator_text": [],
+        "orchestrator_thinking": [],
         "orchestrator_tools": [],
         "subagents": [],
         "fix_cycles": [],  # Populated by _detect_fix_cycles()
@@ -108,7 +123,7 @@ def _build_tool_result_map(events: list[dict[str, Any]]) -> dict[str, str]:
                         for part in content
                         if isinstance(part, dict)
                     )
-                results[tuid] = str(content)[:2000]  # preview limit
+                results[tuid] = str(content)[:50000]  # generous limit for issue parsing
     return results
 
 
@@ -182,6 +197,8 @@ def _detect_fix_cycles(subagents: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Detect fix cycles in a REVIEW phase's subagents list.
 
     A fix cycle is: reviewer(NEEDS_FIXES) -> builder(fix) -> reviewer(re-check).
+    The re-check status is derived from the next non-builder subagent after
+    the fix builder (if any).
     """
     fix_cycles: list[dict[str, Any]] = []
     iteration = 0
@@ -189,11 +206,10 @@ def _detect_fix_cycles(subagents: list[dict[str, Any]]) -> list[dict[str, Any]]:
     while i < len(subagents):
         agent = subagents[i]
         if agent["status"] == "NEEDS_FIXES":
-            # This reviewer starts a fix cycle
             iteration += 1
-            reviewer = agent
             issues = _parse_issues(agent["output"])
             fix_builder = None
+            recheck_status = "pending"
             # Look for the next builder
             j = i + 1
             while j < len(subagents):
@@ -202,15 +218,23 @@ def _detect_fix_cycles(subagents: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     j += 1
                     break
                 j += 1
+            # Look ahead for re-check reviewer (next non-builder after fix)
+            if fix_builder:
+                k = j
+                while k < len(subagents):
+                    if subagents[k]["role"] != "builder":
+                        recheck_status = subagents[k]["status"]
+                        break
+                    k += 1
             fix_cycles.append(
                 {
                     "iteration": iteration,
-                    "reviewer": reviewer,
+                    "reviewer": agent,
                     "issues": issues,
                     "fix_builder": fix_builder,
+                    "recheck_status": recheck_status,
                 }
             )
-            # Skip past the builder (if found)
             i = j
         else:
             i += 1
@@ -297,12 +321,14 @@ def _populate_phases(
 
     for phase in phases:
         text_parts: list[str] = []
+        thinking_parts: list[str] = []
         orch_tools: list[dict[str, Any]] = []
         subagents: list[dict[str, Any]] = []
 
         for idx in range(phase["start_event"], phase["end_event"] + 1):
             event = events[idx]
             text_parts.extend(_extract_text_blocks(event))
+            thinking_parts.extend(_extract_thinking_blocks(event))
 
             for tool_use in _extract_tool_uses(event):
                 if tool_use.get("name", "") == "Agent":
@@ -324,14 +350,20 @@ def _populate_phases(
                     )
 
         phase["orchestrator_text"] = text_parts
+        phase["orchestrator_thinking"] = thinking_parts
         phase["orchestrator_tools"] = orch_tools
         phase["subagents"] = subagents
+        phase["_assistant_turns"] = sum(
+            1
+            for idx in range(phase["start_event"], phase["end_event"] + 1)
+            if events[idx].get("type") == "assistant"
+        )
 
         # Detect fix cycles for REVIEW phases
         if phase["name"] == "REVIEW":
             phase["fix_cycles"] = _detect_fix_cycles(subagents)
 
-        # Compute per-phase totals
+        # Compute per-phase totals (subagent time only — orchestrator time added later)
         phase["duration_ms"] = sum(s["duration_ms"] for s in subagents)
         phase["tokens"] = sum(s["tokens"] for s in subagents)
 
@@ -421,6 +453,34 @@ def _extract_final_report(events: list[dict[str, Any]]) -> dict[str, Any] | None
     return None
 
 
+def _estimate_phase_durations(
+    phases: list[dict[str, Any]],
+    result_meta: dict[str, Any] | None,
+) -> None:
+    """Estimate orchestrator phase durations when per-event timestamps are absent.
+
+    Subagent durations are already known from task_notification events.
+    The remaining time (total - subagent) is distributed across phases
+    proportionally by assistant turn count.
+    """
+    if not result_meta:
+        return
+    total_ms = result_meta.get("duration_ms", 0)
+    if total_ms <= 0:
+        return
+
+    subagent_ms = sum(p["duration_ms"] for p in phases)
+    orchestrator_ms = max(0, total_ms - subagent_ms)
+
+    total_turns = sum(p.get("_assistant_turns", 0) for p in phases)
+    if total_turns <= 0:
+        return
+
+    for phase in phases:
+        turns = phase.get("_assistant_turns", 0)
+        phase["duration_ms"] += round(orchestrator_ms * turns / total_turns)
+
+
 def _compute_totals(
     phases: list[dict[str, Any]],
     result_meta: dict[str, Any] | None,
@@ -445,8 +505,9 @@ def parse_trace(events: list[dict[str, Any]], since_event: int = 0) -> dict[str,
 
     Args:
         events: Full list of parsed JSONL event dicts.
-        since_event: Stored in the returned dict for the caller's use.
-            Incremental parsing logic will be implemented in a future task (Chunk 3).
+        since_event: Event index bookkeeping for callers. Stored in the
+            returned dict but does not filter events — full trace is always
+            parsed. Callers use this to detect unchanged traces.
     """
     phases = _detect_phases(events)
     if not phases:
@@ -457,6 +518,11 @@ def parse_trace(events: list[dict[str, Any]], since_event: int = 0) -> dict[str,
 
     result_meta = _extract_result_meta(events)
     final_report = _extract_final_report(events)
+
+    # Estimate orchestrator phase durations from total time minus subagent time,
+    # distributed proportionally by assistant turn count.
+    _estimate_phase_durations(phases, result_meta)
+
     totals = _compute_totals(phases, result_meta)
 
     return {

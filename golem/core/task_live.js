@@ -35,10 +35,6 @@ function startPolling() {
   }, 5000);
 }
 
-function stopPolling() {
-  if (S.pollTimer) { clearInterval(S.pollTimer); S.pollTimer = null; }
-}
-
 // ── Live cursor update ─────────────────────────
 function updateLiveCursor() {
   const cursor = document.getElementById('tl-live-cursor');

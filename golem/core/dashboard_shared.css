@@ -98,8 +98,6 @@
 body{font-family:var(--font-sans);background:var(--bg-base);color:var(--text-primary);line-height:1.5;overflow:hidden;height:100vh;display:flex;flex-direction:column}
 .main-view{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column}
 
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
-
 .hidden{display:none!important}
 
 /* ── Scrollbars ──────────────────────────────────────────── */
@@ -205,6 +203,9 @@ body{font-family:var(--font-sans);background:var(--bg-base);color:var(--text-pri
 .markdown-body strong{color:var(--text-primary)}
 .markdown-body a{color:var(--blue)}
 .markdown-body blockquote{border-left:3px solid var(--border-focus);padding-left:1rem;color:var(--text-secondary);margin:.75rem 0}
+.insight-callout{display:flex;gap:.6rem;background:color-mix(in srgb,var(--purple) 8%,var(--bg-primary));border:1px solid color-mix(in srgb,var(--purple) 25%,var(--border));border-radius:var(--radius);padding:.65rem .85rem;margin:.75rem 0}
+.insight-callout .insight-icon{color:var(--purple);font-size:1rem;flex-shrink:0;line-height:1.6}
+.insight-callout .insight-body{font-size:.85rem;line-height:1.6;color:var(--text-secondary)}
 .no-data{text-align:center;padding:2rem;color:var(--text-muted);font-style:italic}
 
 /* ── Error Tooltip ───────────────────────────────────────── */

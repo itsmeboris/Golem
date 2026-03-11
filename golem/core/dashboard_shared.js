@@ -128,6 +128,11 @@ function highlightJson(escaped) {
 
 /* ── Markdown renderer ─────────────────────────────────────── */
 
+/** Strip ## Phase: markers — already rendered as phase headers in the timeline */
+function cleanPhaseMarkers(text) {
+  return text.replace(/^## Phase:\s*(UNDERSTAND|PLAN|BUILD|REVIEW|VERIFY)\s*$/gm, '').trim();
+}
+
 /** Convert markdown to styled HTML with fenced code block support */
 function renderMarkdown(md) {
   if (!md) return '<div class="no-data">No content</div>';
@@ -139,6 +144,18 @@ function renderMarkdown(md) {
     codeBlocks.push({ lang: lang || '', code: code });
     return '___CODEBLOCK_' + idx + '___';
   });
+
+  /* Extract ★ Insight callout blocks before escaping.
+     Pattern: backtick-wrapped "★ Insight ───…" line, content, backtick-wrapped "───…" line */
+  const insightBlocks = [];
+  processed = processed.replace(
+    /`★\s*Insight[^`]*`\s*\n([\s\S]*?)\n`─{10,}`/g,
+    function(match, content) {
+      const idx = insightBlocks.length;
+      insightBlocks.push(content.trim());
+      return '___INSIGHT_' + idx + '___';
+    }
+  );
 
   let html = esc(processed);
 
@@ -161,6 +178,12 @@ function renderMarkdown(md) {
     return '<pre class="code-block' + (lang ? ' lang-' + lang : '') + '">' + langTag + '<code>' + escaped + '</code></pre>';
   });
 
+  /* Restore insight callout blocks */
+  html = html.replace(/___INSIGHT_(\d+)___/g, function(match, idx) {
+    const content = esc(insightBlocks[parseInt(idx)]);
+    return '<aside class="insight-callout"><span class="insight-icon">★</span><div class="insight-body">' + content + '</div></aside>';
+  });
+
   /* Standard markdown transforms */
   html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
   html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
@@ -171,7 +194,7 @@ function renderMarkdown(md) {
   html = html.replace(/^[*-] (.+)$/gm, '<li>$1</li>');
   html = html.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
   /* Paragraphs: skip lines already wrapped in HTML tags */
-  html = html.replace(/^(?!<[hulo\s]|<pre|<code|<\/|$)(.+)$/gm, '<p>$1</p>');
+  html = html.replace(/^(?!<[hulo\s]|<pre|<code|<aside|<\/|$)(.+)$/gm, '<p>$1</p>');
   return '<div class="markdown-body">' + html + '</div>';
 }
 

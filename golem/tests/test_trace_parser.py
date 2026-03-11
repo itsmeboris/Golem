@@ -747,6 +747,7 @@ class TestFixCycleDetection:
         assert cycle["reviewer"]["role"] == "quality_reviewer"
         assert cycle["reviewer"]["status"] == "NEEDS_FIXES"
         assert cycle["fix_builder"]["role"] == "builder"
+        assert cycle["recheck_status"] == "APPROVED"
 
     def test_fix_cycle_issues_parsed(self):
         review = self._review_phase()
@@ -802,6 +803,7 @@ class TestFixCycleDetection:
         assert len(review["fix_cycles"]) == 1
         assert review["fix_cycles"][0]["fix_builder"] is None
         assert review["fix_cycles"][0]["reviewer"]["status"] == "NEEDS_FIXES"
+        assert review["fix_cycles"][0]["recheck_status"] == "pending"
 
 
 # ---------------------------------------------------------------------------
@@ -881,10 +883,18 @@ class TestTotals:
         # 27+7+14+13+8+3 = 72
         assert self._totals()["tool_calls"] == 72
 
-    def test_phase_duration_from_subagents(self):
+    def test_phase_duration_includes_orchestrator_overhead(self):
+        """Phase duration = subagent time + proportional orchestrator time."""
         result = parse_trace(_build_simple_trace())
         build = next(p for p in result["phases"] if p["name"] == "BUILD")
-        assert build["duration_ms"] == 222000
+        # Raw subagent time is 222000; orchestrator overhead is distributed
+        # proportionally by assistant turn count, so BUILD gets more than 222000.
+        assert build["duration_ms"] >= 222000
+        # All phase durations should sum to ~total run time (rounding tolerance)
+        total_phase_ms = sum(p["duration_ms"] for p in result["phases"])
+        assert abs(total_phase_ms - result["result_meta"]["duration_ms"]) <= len(
+            result["phases"]
+        )
 
     def test_phase_tokens_from_subagents(self):
         result = parse_trace(_build_simple_trace())

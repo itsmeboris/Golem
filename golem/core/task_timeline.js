@@ -14,6 +14,12 @@ async function renderDetail(eventId, prefetchedTrace) {
   // Cache completed traces client-side
   if (!running && trace) S.parsedTraces[eventId] = trace;
 
+  // Fetch prompt text if not already on the trace object
+  if (!trace.prompt) {
+    const promptText = await fetchPrompt(eventId);
+    if (promptText) trace.prompt = promptText;
+  }
+
   renderDetailHeader(session, trace, running);
   renderMetrics(trace);
   renderLiveStrip(session, trace, running);
@@ -93,15 +99,21 @@ function renderMetrics(trace) {
   if (!el) return;
 
   const totals = trace.totals || {};
+  const meta = trace.result_meta || {};
+  const cost = meta.total_cost_usd || totals.total_cost_usd;
+  const duration = totals.duration_ms || totals.total_duration_ms || meta.duration_ms || 0;
+  const agents = totals.subagent_count || totals.total_agents || 0;
+  const tools = totals.tool_calls || totals.total_tool_calls || 0;
+  const tokens = totals.tokens || totals.total_tokens || 0;
   const fixCycles = (trace.phases || []).reduce((n, p) => n + (p.fix_cycles || []).length, 0);
   const fixColor = fixCycles > 0 ? 'style="color:var(--orange)"' : '';
 
   el.innerHTML = `
-    <div class="metric"><span class="metric-label">Cost</span><span class="metric-value">${fmtCost(totals.total_cost_usd)}</span></div>
-    <div class="metric"><span class="metric-label">Duration</span><span class="metric-value">${fmtDurationMs(totals.total_duration_ms)}</span></div>
-    <div class="metric"><span class="metric-label">Agents</span><span class="metric-value">${totals.total_agents || 0}</span></div>
-    <div class="metric"><span class="metric-label">Tools</span><span class="metric-value">${totals.total_tool_calls || 0}</span></div>
-    <div class="metric"><span class="metric-label">Tokens</span><span class="metric-value">${fmtTokens(totals.total_tokens)}</span></div>
+    <div class="metric"><span class="metric-label">Cost</span><span class="metric-value">${fmtCost(cost)}</span></div>
+    <div class="metric"><span class="metric-label">Duration</span><span class="metric-value">${fmtDurationMs(duration)}</span></div>
+    <div class="metric"><span class="metric-label">Agents</span><span class="metric-value">${agents}</span></div>
+    <div class="metric"><span class="metric-label">Tools</span><span class="metric-value">${tools}</span></div>
+    <div class="metric"><span class="metric-label">Tokens</span><span class="metric-value">${fmtTokens(tokens)}</span></div>
     <div class="metric"><span class="metric-label">Fix Cycles</span><span class="metric-value" ${fixColor}>${fixCycles}</span></div>
   `;
 }
@@ -309,14 +321,14 @@ function renderTimeline(trace, running) {
   const savedState = _captureTimelineState();
 
   const phases = trace.phases || [];
-  const result = trace.result || null;
+  const result = trace.result || trace.final_report || null;
   let html = '';
 
   // Prompt section (hidden by default)
   const promptText = trace.prompt || '';
   html += `<div class="tl-prompt" id="prompt-section" style="display:none">
     <div class="tl-prompt-body" style="display:block">
-      <pre>${esc(promptText)}</pre>
+      ${renderMarkdown(promptText)}
     </div>
   </div>`;
 
@@ -348,9 +360,17 @@ function renderTimeline(trace, running) {
     </div>
     <div class="tl-phase-content">`;
 
-    // Orchestrator text
+    // Orchestrator text — render as markdown, strip redundant phase markers
+    // Also strip JSON code blocks that duplicate the final result block
     for (const textBlock of (phase.orchestrator_text || [])) {
-      html += `<div class="tl-text">${esc(textBlock)}</div>`;
+      let cleaned = cleanPhaseMarkers(textBlock);
+      if (result) cleaned = cleaned.replace(/```json\s*\n[\s\S]*?\n```/g, '').trim();
+      if (cleaned) html += `<div class="tl-text">${renderMarkdown(cleaned)}</div>`;
+    }
+
+    // Orchestrator thinking (hidden by default, toggled by "Show thinking" button)
+    for (const thinkBlock of (phase.orchestrator_thinking || [])) {
+      if (thinkBlock) html += `<div class="tl-thinking" style="display:none">${renderMarkdown(thinkBlock)}</div>`;
     }
 
     // Orchestrator tool calls
@@ -359,7 +379,7 @@ function renderTimeline(trace, running) {
     }
 
     // Agent blocks
-    for (const agent of (phase.agents || [])) {
+    for (const agent of (phase.subagents || phase.agents || [])) {
       html += renderAgentBlock(agent);
     }
 
@@ -393,6 +413,10 @@ function renderTimeline(trace, running) {
   // Restore UI state (expanded/collapsed, scroll position, prompt visibility)
   _restoreTimelineState(savedState);
 
+  // Enforce prompt visibility from authoritative state flag
+  const promptEl = document.getElementById('prompt-section');
+  if (promptEl) promptEl.style.display = S.showPrompt ? '' : 'none';
+
   // Apply thinking visibility
   if (!S.showThinking) {
     scroll.querySelectorAll('.tl-thinking').forEach(el => { el.style.display = 'none'; });
@@ -412,8 +436,8 @@ function _toolNameClass(name) {
 }
 
 function renderToolCall(tool) {
-  const name = tool.name || tool.tool_name || '';
-  const summary = tool.summary || tool.input_summary || '';
+  const name = tool.name || tool.tool_name || tool.tool || '';
+  const summary = tool.summary || tool.input_summary || tool.description || '';
   const meta = tool.output_summary || '';
   const cls = _toolNameClass(name);
 
@@ -426,7 +450,7 @@ function renderToolCall(tool) {
       <span class="tl-tool-chevron">▸</span>
     </div>
     <div class="tl-tool-body">
-      <pre>${esc(tool.output || tool.result || '')}</pre>
+      <pre>${esc(tool.output || tool.result || tool.result_preview || '')}</pre>
     </div>
   </div>`;
 }
@@ -457,8 +481,8 @@ function renderAgentBlock(agent) {
   const showTools = tools.slice(0, 6);
   const hiddenTools = tools.slice(6);
   const _renderToolItem = (t, hidden) => {
-    const tName = t.name || t.tool_name || '';
-    const tDesc = t.summary || t.input_summary || '';
+    const tName = t.name || t.tool_name || t.tool || '';
+    const tDesc = t.summary || t.input_summary || t.description || '';
     const tOk = t.success || t.ok ? `<span class="tl-agent-tool-ok">✓</span>` : '';
     const tCls = _toolNameClass(tName);
     return `<div class="tl-agent-tool${hidden ? ' tl-agent-tool-hidden' : ''}"${hidden ? ' style="display:none"' : ''}>
@@ -567,7 +591,7 @@ function renderFixCycle(cycle) {
         <div class="tl-fix-flow-step">
           <div class="tl-fix-flow-icon recheck">✓</div>
           <div class="tl-fix-flow-label">Re-check</div>
-          <div class="tl-fix-flow-status" style="color:var(--green)">resolved</div>
+          <div class="tl-fix-flow-status" style="color:${(cycle.recheck_status === 'APPROVED' || cycle.recheck_status === 'completed') ? 'var(--green)' : cycle.recheck_status === 'NEEDS_FIXES' ? 'var(--orange)' : 'var(--text-muted)'}">${esc(cycle.recheck_status || 'pending')}</div>
         </div>
       </div>
       ${issues.length > 0 ? `<div class="tl-fix-cycle-issues">${issuesHtml}</div>` : ''}
@@ -578,22 +602,54 @@ function renderFixCycle(cycle) {
 
 // ── Result Block ───────────────────────────────
 function renderResultBlock(result, trace) {
-  const success = result.success !== false;
+  // Support both schemas: trace.result (legacy) and trace.final_report
+  const status = result.status || (result.success !== false ? 'COMPLETE' : 'BLOCKED');
+  const success = status === 'COMPLETE' || status === 'PASS';
   const statusClass = success ? 'complete' : 'blocked';
-  const statusLabel = success ? 'COMPLETE' : 'BLOCKED';
+  const statusLabel = status.toUpperCase();
   const summary = result.summary || trace.result_summary || '';
 
-  const specs = result.specs || [];
-  const specsHtml = specs.map(s => {
-    const pass = s.pass !== false;
-    return `<span class="tl-spec ${pass ? 'pass' : 'fail'}">${pass ? '✓' : '✗'} ${esc(s.id || s.name || '')}</span>`;
-  }).join('');
+  // Specs: support both array [{id, pass}] and object {SPEC-1: true}
+  let specsHtml = '';
+  const specsObj = result.specs_satisfied || {};
+  const specsArr = result.specs || [];
+  if (Object.keys(specsObj).length > 0) {
+    specsHtml = Object.entries(specsObj).map(([id, pass]) =>
+      `<span class="tl-spec ${pass ? 'pass' : 'fail'}">${pass ? '✓' : '✗'} ${esc(id)}</span>`
+    ).join('');
+  } else if (specsArr.length > 0) {
+    specsHtml = specsArr.map(s => {
+      const pass = s.pass !== false;
+      return `<span class="tl-spec ${pass ? 'pass' : 'fail'}">${pass ? '✓' : '✗'} ${esc(s.id || s.name || '')}</span>`;
+    }).join('');
+  }
 
-  const tests = result.tests || [];
-  const testsHtml = tests.map(t => {
-    const pass = t.pass !== false;
-    return `<span class="tl-test ${pass ? 'pass' : 'fail'}">${esc(t.name || t.label || '')}: ${pass ? 'pass' : 'fail'}</span>`;
-  }).join('');
+  // Tests: support both array [{name, pass}] and object {black: "pass"}
+  let testsHtml = '';
+  const testsObj = result.test_results || {};
+  const testsArr = result.tests || [];
+  if (Object.keys(testsObj).length > 0) {
+    testsHtml = Object.entries(testsObj).map(([name, val]) => {
+      const pass = val === 'pass' || val === true;
+      const skip = val === 'not_applicable' || val === 'skipped';
+      const cls = skip ? 'skip' : (pass ? 'pass' : 'fail');
+      const icon = skip ? '—' : (pass ? '✓' : '✗');
+      return `<span class="tl-test ${cls}">${icon} ${esc(name)}</span>`;
+    }).join('');
+  } else if (testsArr.length > 0) {
+    testsHtml = testsArr.map(t => {
+      const pass = t.pass !== false;
+      return `<span class="tl-test ${pass ? 'pass' : 'fail'}">${pass ? '✓' : '✗'} ${esc(t.name || t.label || '')}</span>`;
+    }).join('');
+  }
+
+  // Concerns
+  const concerns = result.concerns || [];
+  const concernsHtml = concerns.length > 0
+    ? `<div style="margin-top:0.5rem;font-size:0.78rem;color:var(--orange)">
+        ${concerns.map(c => `<div>⚠ ${esc(c)}</div>`).join('')}
+      </div>`
+    : '';
 
   const files = result.files_changed || [];
   const filesHtml = files.length > 0
@@ -611,6 +667,7 @@ function renderResultBlock(result, trace) {
       ${specsHtml ? `<div class="tl-specs">${specsHtml}</div>` : ''}
       ${testsHtml ? `<div class="tl-tests">${testsHtml}</div>` : ''}
       ${filesHtml}
+      ${concernsHtml}
     </div>
   </div>`;
 }
