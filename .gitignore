@@ -28,6 +28,7 @@ tasks/
 .claude/hooks/
 .claude/memory/
 .mcp.json
+.superpowers/
 .vscode
 .idea
 pyrightconfig.json
