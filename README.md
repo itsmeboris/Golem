@@ -42,6 +42,7 @@ Submit a prompt. Walk away. It's done.
   - [Task Lifecycle](#task-lifecycle)
   - [Parallel Tasks & Git Worktrees](#parallel-tasks--git-worktrees)
 - [Agent Intelligence](#agent-intelligence)
+- [Web Dashboard](#web-dashboard)
 - [Architecture](#architecture)
 - [Configuration](#configuration)
 - [HTTP API](#http-api)
@@ -288,6 +289,24 @@ Skills are discovered dynamically via the Skill tool. When new skills are added 
 
 ---
 
+## Web Dashboard
+
+Launch with `golem dashboard --port 8081`. The dashboard is served alongside the REST API on the same port.
+
+| View | What it shows |
+|------|--------------|
+| **Overview** | Task list with status, cost, and elapsed time on the left; a preview panel on the right |
+| **Task Detail** | Header with task metadata, a metrics strip, and a phase-aware timeline with sidebar navigation for each phase (UNDERSTAND / PLAN / BUILD / REVIEW / VERIFY) |
+| **Live strip** | Active tasks, current phase, live cost, and queue depth — polled automatically |
+
+Additional features:
+
+- **JSONL trace parsing** — raw agent traces are parsed into structured timelines with phase detection, subagent grouping, and per-tool usage visualization
+- **Incremental updates** — the timeline endpoint supports `?since_event=N` to fetch only new events, keeping the detail view current without a full reload
+- **Dark / light theme** — toggle in the header; preference persists across sessions
+
+---
+
 ## Architecture
 
 ### Profile System
@@ -419,6 +438,13 @@ The daemon exposes a REST API (served on the dashboard port, default `8081`).
 | `/api/flow/start` | POST | Admin | Start flows by name |
 | `/api/flow/stop` | POST | Admin | Stop flows by name |
 | `/api/analytics` | GET | None | Quality metrics — pass/fail rates, avg cost, retry effectiveness, top failure reasons |
+| `/api/live` | GET | None | Live dashboard state — active tasks, queue depth, daemon health |
+| `/api/cost-analytics` | GET | None | Cost analytics and budget insights — spend per task, totals, budget remaining |
+| `/api/cancel/{task_id}` | POST | None | Cancel a running task |
+| `/api/sessions/{task_id}` | GET | None | Session details for a specific task |
+| `/api/batch/{group_id}` | GET | None | Status of a submitted batch by group ID |
+| `/api/batches` | GET | None | List all known batches |
+| `/api/trace-parsed/{event_id}` | GET | None | Structured trace with phase detection, subagent grouping, and tool timelines; supports `?since_event=N` for incremental updates |
 
 ```bash
 curl -X POST http://localhost:8081/api/submit \
