@@ -22,11 +22,10 @@ function startPolling() {
         if (isTaskRunning(session)) {
           // Incremental: only fetch new events since last poll
           const trace = await fetchParsedTrace(S.selectedTaskId, true);
-          if (trace) {
-            renderDetail(S.selectedTaskId, trace);  // avoid double fetch
-            updateLiveCursor();
-            autoScrollIfAtBottom();
-          }
+          // Always re-render: shows session status even before trace is available
+          renderDetail(S.selectedTaskId, trace || undefined);
+          updateLiveCursor();
+          autoScrollIfAtBottom();
         }
       }
     } finally {

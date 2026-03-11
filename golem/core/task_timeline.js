@@ -7,9 +7,26 @@
 async function renderDetail(eventId, prefetchedTrace) {
   const session = S.sessions[eventId];
   const trace = prefetchedTrace || await fetchParsedTrace(eventId);
-  if (!trace) return;
-
   const running = isTaskRunning(session);
+
+  if (!trace) {
+    if (!running) return;
+    // Pre-flight: show session status while waiting for trace data
+    const el = document.getElementById('timeline-scroll');
+    if (el) {
+      const events = (session && session.event_log) || [];
+      let html = '<div style="padding:1.5rem">';
+      html += '<div class="tl-live-badge" style="margin-bottom:1rem"><span class="live-dot"></span>Starting</div>';
+      for (const ev of events) {
+        html += `<div style="padding:0.25rem 0;font-size:0.78rem;color:var(--text-secondary)">${esc(ev.summary || '')}</div>`;
+      }
+      if (!events.length) html += '<div style="color:var(--text-muted);font-size:0.78rem">Waiting for trace data\u2026</div>';
+      html += '<div class="ov-trace-cursor" style="margin-top:0.75rem"></div>';
+      html += '</div>';
+      el.innerHTML = html;
+    }
+    return;
+  }
 
   // Cache completed traces client-side
   if (!running && trace) S.parsedTraces[eventId] = trace;

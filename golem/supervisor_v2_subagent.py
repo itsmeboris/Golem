@@ -70,6 +70,7 @@ class SubagentSupervisor:
         self._work_dir_override = work_dir_override
         self._base_work_dir: str = ""
         self._worktree_path: str = ""
+        self._trace_writer: _StreamingTraceWriter | None = None
         self._slog = SessionLogAdapter(
             logger,
             session_id=session.parent_issue_id,
@@ -131,7 +132,14 @@ class SubagentSupervisor:
 
         start = time.time()
 
+        # Create trace writer early so pre-flight events are visible in dashboard
+        event_id = f"golem-{issue_id}"
+        self._trace_writer = _StreamingTraceWriter("golem", event_id)
+        self.session.trace_file = self._trace_writer.relative_path
+        self._checkpoint()
+
         try:
+            self._emit_event("Task picked up, starting setup...")
             description = self._get_description(issue_id)
             work_dir = await self._setup_work_dir(issue_id, description)
 
@@ -176,6 +184,8 @@ class SubagentSupervisor:
             self._slog.error("Supervisor failed: %s", exc)
 
         finally:
+            if self._trace_writer:
+                self._trace_writer.close()
             self._delete_checkpoint(issue_id)
             if self._worktree_path:
                 if self.session.state == TaskSessionState.FAILED:
@@ -201,6 +211,7 @@ class SubagentSupervisor:
 
         work_dir = self._base_work_dir
         if self.task_config.use_worktrees:
+            self._emit_event("Creating isolated worktree...")
             try:
                 self._worktree_path = create_worktree(self._base_work_dir, issue_id)
                 work_dir = self._worktree_path
@@ -222,6 +233,9 @@ class SubagentSupervisor:
 
         # Pre-flight verification: ensure base branch is healthy before spending budget
         if getattr(self.task_config, "preflight_verify", True):
+            self._emit_event(
+                "Running pre-flight verification (black, pylint, pytest)..."
+            )
             self._slog.info("Running pre-flight verification on base branch...")
             loop = asyncio.get_running_loop()
             vr = await loop.run_in_executor(
@@ -239,6 +253,7 @@ class SubagentSupervisor:
                 raise InfrastructureError(
                     f"Base branch verification failed — aborting to save budget. {detail}"
                 )
+            self._emit_event(f"Pre-flight passed ({vr.duration_s:.0f}s)")
             self._slog.info("Pre-flight verification passed (%.1fs)", vr.duration_s)
 
         return work_dir
@@ -354,7 +369,6 @@ class SubagentSupervisor:
         start: float,
     ) -> CLIResult:
         """Single CLI call for the full orchestration session."""
-        model = self.task_config.orchestrate_model or self.task_config.task_model
         mcp_servers = self._get_mcp_servers(self.session.parent_subject)
 
         system_prompt = ""
@@ -367,7 +381,7 @@ class SubagentSupervisor:
 
         cli_config = CLIConfig(
             cli_type=CLIType.CLAUDE,
-            model=model,
+            model=self.task_config.orchestrate_model or self.task_config.task_model,
             max_budget_usd=self.task_config.orchestrate_budget_usd,
             timeout_seconds=self.task_config.orchestrate_timeout_seconds,
             mcp_servers=mcp_servers,
@@ -381,15 +395,11 @@ class SubagentSupervisor:
         )
 
         # Write prompt immediately so the dashboard can show it during the run
-        event_id = f"golem-{issue_id}"
-        _write_prompt("golem", event_id, prompt)
-
-        # Set up streaming trace writer so events are visible during the run
-        trace_writer = _StreamingTraceWriter("golem", event_id)
-        self.session.trace_file = trace_writer.relative_path
+        _write_prompt("golem", f"golem-{issue_id}", prompt)
 
         def _streaming_callback(event: dict) -> None:
-            trace_writer.append(event)
+            if self._trace_writer:
+                self._trace_writer.append(event)
             tracker.handle_event(event)
 
         callback = self._chain_event_callback(_streaming_callback)
@@ -397,16 +407,10 @@ class SubagentSupervisor:
         self.session.supervisor_phase = "orchestrating"
         self._emit_event("Starting single-session orchestration...")
 
-        try:
-            async with self._work_dir_lock:
-                result = await asyncio.get_running_loop().run_in_executor(
-                    None, invoke_cli_monitored, prompt, cli_config, callback
-                )
-        except BaseException:
-            trace_writer.close()
-            raise
-
-        trace_writer.close()
+        async with self._work_dir_lock:
+            result = await asyncio.get_running_loop().run_in_executor(
+                None, invoke_cli_monitored, prompt, cli_config, callback
+            )
 
         elapsed = time.time() - start
         self.session.duration_seconds = elapsed
@@ -711,16 +715,17 @@ class SubagentSupervisor:
     # -- Helpers ---------------------------------------------------------------
 
     def _emit_event(self, summary: str, *, is_error: bool = False) -> None:
-        self.session.event_log.append(
-            {
-                "kind": "supervisor",
-                "tool_name": "",
-                "summary": summary,
-                "timestamp": time.time(),
-                "is_error": is_error,
-            }
-        )
+        event = {
+            "kind": "supervisor",
+            "tool_name": "",
+            "summary": summary,
+            "timestamp": time.time(),
+            "is_error": is_error,
+        }
+        self.session.event_log.append(event)
         self.session.milestone_count += 1
+        if self._trace_writer:
+            self._trace_writer.append(event)
         self._checkpoint()
 
     def _checkpoint(self) -> None:

@@ -134,6 +134,17 @@ async function renderPreview(eventId) {
   let bodyHtml = '';
   if (running && trace) {
     bodyHtml = renderLiveTraceStream(trace);
+  } else if (running) {
+    // Pre-flight: no trace data yet
+    const events = (session.event_log || []);
+    bodyHtml = '<div style="padding:1rem">';
+    bodyHtml += '<div class="tl-live-badge" style="margin-bottom:0.75rem"><span class="live-dot"></span>Starting</div>';
+    for (const ev of events) {
+      bodyHtml += `<div style="padding:0.2rem 0;font-size:0.75rem;color:var(--text-secondary)">${esc(ev.summary || '')}</div>`;
+    }
+    if (!events.length) bodyHtml += '<div style="color:var(--text-muted);font-size:0.75rem">Waiting for trace data\u2026</div>';
+    bodyHtml += '<div class="ov-trace-cursor" style="margin-top:0.5rem"></div>';
+    bodyHtml += '</div>';
   } else if (trace) {
     bodyHtml = renderSummaryCard(trace, session);
   }
@@ -338,7 +349,7 @@ function renderSummaryCard(trace, session) {
   const fixCycles = (trace.phases || []).reduce((n, p) => n + (p.fix_cycles || []).length, 0);
   const commit = session ? (session.commit_sha || '') : '';
 
-  const success = result.success !== false && session?.state !== 'FAILED';
+  const success = result.success !== false && (session?.state || '').toLowerCase() !== 'failed';
   const statusIcon = success ? '✓' : '✗';
   const statusLabel = success ? 'COMPLETE' : 'FAILED';
   const statusColor = success ? 'var(--green)' : 'var(--red)';
@@ -376,8 +387,8 @@ function updateTopStats(sessions) {
   const entries = Object.values(sessions);
   const running = entries.filter(isTaskRunning).length;
   const totalCost = entries.reduce((sum, s) => sum + (s.total_cost_usd || 0), 0);
-  const done = entries.filter(s => s.state === 'COMPLETED').length;
-  const failed = entries.filter(s => s.state === 'FAILED').length;
+  const done = entries.filter(s => (s.state || '').toLowerCase() === 'completed').length;
+  const failed = entries.filter(s => (s.state || '').toLowerCase() === 'failed').length;
   stats.innerHTML = `${running > 0 ? `<span><span class="dot"></span>${running} running</span>` : ''}
     <span>${fmtCost(totalCost)} spent</span><span>${done}&#10003; ${failed}&#10007;</span>`;
 }

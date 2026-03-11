@@ -75,12 +75,15 @@ const PHASE_COLORS = {
 };
 
 function isTaskRunning(session) {
-  return session && ['RUNNING', 'VERIFYING', 'VALIDATING'].includes(session.state);
+  if (!session) return false;
+  const s = (session.state || '').toLowerCase();
+  return ['running', 'verifying', 'validating', 'retrying', 'detected'].includes(s);
 }
 
 function _stateToChipClass(state) {
-  if (state === 'COMPLETED') return 'done';
-  if (['RUNNING', 'VERIFYING', 'VALIDATING'].includes(state)) return 'running';
-  if (['FAILED', 'HUMAN_REVIEW'].includes(state)) return 'failed';
+  const s = (state || '').toLowerCase();
+  if (s === 'completed') return 'done';
+  if (['running', 'verifying', 'validating', 'retrying', 'detected'].includes(s)) return 'running';
+  if (['failed', 'human_review'].includes(s)) return 'failed';
   return 'waiting';
 }

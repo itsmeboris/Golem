@@ -14,6 +14,7 @@
 | 23  | [ ]    | **Post-task learning loop** — after each completed task, extract what the validator/verifier caught and append to AGENTS.md as "known pitfalls" so future agents avoid the same mistakes                      | Medium | P2           |
 | 13  | [ ]    | **Prompt versioning & analytics** — hash prompts into `RunRecord`, add `/api/analytics/by-prompt` endpoint, dashboard prompt comparison view for data-driven prompt engineering                                | Medium | P3           |
 | 24  | [ ]    | **Validator fix-cycle depth** — allow validator to produce testable fix items and loop (build→review→fix) up to N iterations within a single task, rather than one-shot retry                                  | Medium | P3           |
+| 25  | [ ]    | **SSE-based dashboard live updates** — replace 5s polling with Server-Sent Events (SSE) for real-time dashboard updates; emit events from supervisor milestones and trace writer appends                       | Medium | P3           |
 
 ## Completed
 
