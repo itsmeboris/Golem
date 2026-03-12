@@ -12,7 +12,7 @@ build/
 .venv
 
 # Runtime data
-config.yaml
+/config.yaml
 golem/data
 data/
 tasks/
