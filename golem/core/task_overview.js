@@ -235,6 +235,10 @@ function renderPhaseStrip(trace, isRunning, session) {
     // Phase is "reached" if it exists in the trace data (even without duration_ms)
     const phaseReached = tracePhaseNames.has(name);
     const hasData = phase && phase.duration_ms > 0;
+
+    // For completed tasks, skip phases that weren't in the trace (e.g. REVIEW skipped)
+    if (!isRunning && !phaseReached) return '';
+
     // Ensure every reached phase gets at least 8% of the bar width so short
     // phases (UNDERSTAND, PLAN) remain readable. Unreached phases get flex:1.
     const MIN_FLEX = 14;
@@ -244,7 +248,7 @@ function renderPhaseStrip(trace, isRunning, session) {
     let barStyle = `width:100%;height:4px;border-radius:2px;`;
     let label = '';
     if (!phaseReached) {
-      // Phase not yet reached — gray bar
+      // Phase not yet reached — gray bar (only shown for running tasks)
       barStyle += `background:var(--bg-elevated)`;
       label = `<span style="font-size:0.6rem;color:var(--text-muted)">${name}</span>`;
     } else if (isActive && isRunning) {
