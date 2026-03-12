@@ -261,9 +261,14 @@ function renderPhaseSidebar(trace, running, session) {
   let preflightHtml = '';
   if (preflightEvents.length > 0) {
     const pfColor = PHASE_COLORS.PREFLIGHT || 'var(--cyan, #5eead4)';
+    const pfFirst = preflightEvents[0].timestamp;
+    const pfLast = preflightEvents[preflightEvents.length - 1].timestamp;
+    const pfDurMs = pfFirst && pfLast ? (pfLast - pfFirst) * 1000 : 0;
+    const pfDurStr = pfDurMs > 0 ? fmtDurationMs(pfDurMs) : '';
     preflightHtml = `<button class="phase-link" data-phase="preflight">
       <span class="ph-dot" style="background:${pfColor}"></span>
       PRE-FLIGHT
+      ${pfDurStr ? `<span class="ph-dur">${pfDurStr}</span>` : ''}
     </button>`;
   }
 
@@ -485,17 +490,25 @@ function renderTimeline(trace, running, session) {
     const pfSteps = preflightEvents.filter(ev => !ev.is_error);
     const pfCollapsed = !running ? ' collapsed' : '';
 
+    // Duration from first to last event timestamp
+    const pfFirst = preflightEvents[0].timestamp;
+    const pfLast = preflightEvents[preflightEvents.length - 1].timestamp;
+    const pfDurMs = pfFirst && pfLast ? (pfLast - pfFirst) * 1000 : 0;
+    const pfDurStr = pfDurMs > 0 ? fmtDurationMs(pfDurMs) : '';
+
     // Summary meta for the phase bar
-    let pfMeta = '';
+    const pfMetaParts = [];
+    if (pfDurStr) pfMetaParts.push(pfDurStr);
     if (pfErrors.length > 0) {
       const failedCheckers = pfErrors.map(ev => {
         const m = (ev.summary || '').match(/^(\w+):/);
         return m ? m[1] : 'error';
       });
-      pfMeta = `failed: ${failedCheckers.join(', ')}`;
+      pfMetaParts.push(`failed: ${failedCheckers.join(', ')}`);
     } else {
-      pfMeta = `${pfSteps.length} check${pfSteps.length !== 1 ? 's' : ''} passed`;
+      pfMetaParts.push(`${pfSteps.length} check${pfSteps.length !== 1 ? 's' : ''} passed`);
     }
+    const pfMeta = pfMetaParts.join(' · ');
 
     html += `<div class="tl-phase${pfCollapsed}" id="phase-preflight" data-phase="preflight" onclick="togglePhase(this)">
       <span class="tl-phase-chevron">${running ? '▾' : '▸'}</span>
@@ -646,11 +659,6 @@ function renderTimeline(trace, running, session) {
         ${testsHtml}
         ${filesHtml}
       </div>`;
-    }
-
-    // Result block
-    if (result) {
-      html += renderResultBlock(result, trace);
     }
 
     html += `</div>`; // end tl-completed-section
@@ -940,16 +948,19 @@ function renderInfoTabs(trace, session, running) {
 
   const rawSession = session ? JSON.stringify(session, null, 2) : '{}';
 
+  // Default first tab: Report if available, otherwise Errors
+  const firstTab = report ? 'report' : 'errors';
+
   el.innerHTML = `
     <div class="tab-bar">
-      <button class="tab-btn active" onclick="activateTab(this,'tab-report')">Report</button>
-      <button class="tab-btn" onclick="activateTab(this,'tab-errors')">Errors</button>
+      ${report ? `<button class="tab-btn${firstTab === 'report' ? ' active' : ''}" onclick="activateTab(this,'tab-report')">Report</button>` : ''}
+      <button class="tab-btn${firstTab === 'errors' ? ' active' : ''}" onclick="activateTab(this,'tab-errors')">Errors</button>
       <button class="tab-btn" onclick="activateTab(this,'tab-raw')">Raw Session</button>
     </div>
-    <div class="tab-content active" id="tab-report">
-      ${report ? renderMarkdown(report) : '<div style="color:var(--text-secondary)">No report available.</div>'}
-    </div>
-    <div class="tab-content" id="tab-errors">${errors}</div>
+    ${report ? `<div class="tab-content${firstTab === 'report' ? ' active' : ''}" id="tab-report">
+      ${renderMarkdown(report)}
+    </div>` : ''}
+    <div class="tab-content${firstTab === 'errors' ? ' active' : ''}" id="tab-errors">${errors}</div>
     <div class="tab-content" id="tab-raw"><pre style="font-size:0.70rem">${esc(rawSession)}</pre></div>
   `;
 }

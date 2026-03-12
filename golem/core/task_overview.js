@@ -120,7 +120,7 @@ async function renderPreview(eventId) {
   const dur = session.duration_seconds ? fmtDuration(session.duration_seconds) : '';
 
   const trace = await fetchParsedTrace(eventId);
-  const phaseStripHtml = trace ? renderPhaseStrip(trace, running) : '';
+  const phaseStripHtml = trace ? renderPhaseStrip(trace, running, session) : '';
 
   let headerExtra = '';
   if (running) {
@@ -178,12 +178,20 @@ async function renderPreview(eventId) {
   }
 }
 
-function renderPhaseStrip(trace, isRunning) {
+function renderPhaseStrip(trace, isRunning, session) {
   const phases = trace.phases || [];
   if (phases.length === 0) return '';
 
+  // Pre-flight bar
+  const pfEvents = typeof _getPreflightEvents === 'function'
+    ? _getPreflightEvents((session && session.event_log) || [])
+    : [];
+  const pfFirst = pfEvents.length > 0 ? pfEvents[0].timestamp : 0;
+  const pfLast = pfEvents.length > 0 ? pfEvents[pfEvents.length - 1].timestamp : 0;
+  const pfDurMs = pfFirst && pfLast ? (pfLast - pfFirst) * 1000 : 0;
+
   // Calculate proportional flex values based on duration
-  const totalMs = phases.reduce((sum, p) => sum + (p.duration_ms || 0), 0);
+  const totalMs = phases.reduce((sum, p) => sum + (p.duration_ms || 0), 0) + pfDurMs;
   const phaseNames = ['UNDERSTAND', 'PLAN', 'BUILD', 'REVIEW', 'VERIFY'];
 
   // Build a set of phase names present in the trace (case-insensitive)
@@ -191,6 +199,20 @@ function renderPhaseStrip(trace, isRunning) {
   // The active phase during runtime is the last phase present in the trace
   const lastTracePhase = phases.length > 0 ? (phases[phases.length - 1].name || '').toUpperCase() : null;
   const activePhase = isRunning ? lastTracePhase : null;
+
+  // Pre-flight item
+  let pfItem = '';
+  if (pfEvents.length > 0) {
+    const pfColor = PHASE_COLORS.PREFLIGHT || 'var(--cyan, #5eead4)';
+    const MIN_FLEX = 14;
+    const rawFlex = totalMs > 0 && pfDurMs > 0 ? Math.round(pfDurMs / totalMs * 100) : 0;
+    const flexVal = Math.max(rawFlex, MIN_FLEX);
+    const durText = pfDurMs > 0 && !isRunning ? ` ${fmtDurationMs(pfDurMs)}` : '';
+    pfItem = `<div style="flex:${flexVal};display:flex;flex-direction:column;align-items:center;gap:2px">
+      <div style="width:100%;height:4px;border-radius:2px;background:${pfColor}"></div>
+      <span style="font-size:0.6rem;color:${pfColor};font-weight:600">PRE-FLIGHT${esc(durText)}</span>
+    </div>`;
+  }
 
   const items = phaseNames.map(name => {
     const phase = phases.find(p => (p.name || '').toUpperCase() === name);
@@ -235,7 +257,7 @@ function renderPhaseStrip(trace, isRunning) {
   });
 
   return `<div style="display:flex;gap:2px;padding:0.5rem 1rem;border-bottom:1px solid var(--border-subtle);background:var(--bg-surface)">
-    ${items.join('')}
+    ${pfItem}${items.join('')}
   </div>`;
 }
 
