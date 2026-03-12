@@ -52,6 +52,12 @@ def test_complete_task(client):
     assert resp.get_json()["done"] is True
 
 
+def test_health_check(client):
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    assert resp.get_json() == {"status": "ok"}
+
+
 def test_log_output_is_valid_json(client):
     """Each log line is valid JSON with required fields."""
     buf = io.StringIO()
