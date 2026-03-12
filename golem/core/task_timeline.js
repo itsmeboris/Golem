@@ -589,6 +589,48 @@ function renderTimeline(trace, running, session) {
   } else {
     html += `<div id="tl-completed-section">`;
 
+    // Completion summary banner (uses `result` already declared above)
+    if (result) {
+      const status = result.status || (result.success !== false ? 'COMPLETE' : 'BLOCKED');
+      const success = status === 'COMPLETE' || status === 'PASS';
+      const bgColor = success ? 'var(--bg-success, #1a2a1a)' : 'var(--bg-danger, #2a1a1a)';
+      const borderColor = success ? 'var(--border-success, #2a4a2a)' : 'var(--border-danger, #4a2a2a)';
+      const statusClass = success ? 'complete' : 'blocked';
+      const summaryText = result.summary || '';
+
+      // Test results
+      const testsObj = result.test_results || {};
+      let testsHtml = '';
+      if (Object.keys(testsObj).length > 0) {
+        testsHtml = '<div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.3rem">' +
+          Object.entries(testsObj).map(([name, val]) => {
+            const pass = val === 'pass' || val === true;
+            const skip = val === 'not_applicable' || val === 'skipped';
+            const color = skip ? 'var(--text-muted)' : (pass ? 'var(--green)' : 'var(--danger, #e55)');
+            const icon = skip ? '—' : (pass ? '✓' : '✗');
+            return `<span style="color:${color};font-size:0.7rem">${icon} ${esc(name)}</span>`;
+          }).join('') + '</div>';
+      }
+
+      // Files changed
+      const files = result.files_changed || [];
+      let filesHtml = '';
+      if (files.length > 0) {
+        filesHtml = `<div style="color:var(--text-muted);font-size:0.68rem;margin-top:0.3rem">Files changed: ${
+          files.map(f => `<code style="font-family:var(--font-mono);font-size:0.65rem;background:var(--bg-elevated);padding:0.1rem 0.3rem;border-radius:3px">${esc(f)}</code>`).join(' ')
+        }</div>`;
+      }
+
+      html += `<div style="margin-top:0.75rem;padding:0.6rem 0.75rem;background:${bgColor};border:1px solid ${borderColor};border-radius:6px">
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.3rem">
+          <span class="status ${statusClass}" style="font-size:0.7rem;font-weight:700;padding:0.15rem 0.5rem;border-radius:3px">${esc(status.toUpperCase())}</span>
+          ${summaryText ? `<span style="font-size:0.75rem;color:var(--text-secondary)">${esc(summaryText)}</span>` : ''}
+        </div>
+        ${testsHtml}
+        ${filesHtml}
+      </div>`;
+    }
+
     // Result block
     if (result) {
       html += renderResultBlock(result, trace);
