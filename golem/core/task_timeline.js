@@ -109,9 +109,9 @@ async function renderDetail(eventId, prefetchedTrace) {
   renderDetailHeader(session, trace, running);
   renderMetrics(trace);
   renderLiveStrip(session, trace, running);
-  renderPhaseSidebar(trace, running);
+  renderPhaseSidebar(trace, running, session);
   renderToolbar();
-  renderTimeline(trace, running);
+  renderTimeline(trace, running, session);
   renderInfoTabs(trace, session, running);
 }
 
@@ -229,7 +229,7 @@ function renderLiveStrip(session, trace, running) {
 }
 
 // ── Phase Sidebar ──────────────────────────────
-function renderPhaseSidebar(trace, running) {
+function renderPhaseSidebar(trace, running, session) {
   const nav = document.getElementById('phase-nav');
   if (!nav) return;
 
@@ -399,7 +399,7 @@ function _restoreTimelineState(state) {
 }
 
 // ── Timeline ───────────────────────────────────
-function renderTimeline(trace, running) {
+function renderTimeline(trace, running, session) {
   const scroll = document.getElementById('timeline-scroll');
   if (!scroll) return;
 
