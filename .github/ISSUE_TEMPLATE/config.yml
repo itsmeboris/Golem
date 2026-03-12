@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question? Use Discussions
+    url: https://github.com/itsmeboris/golem/discussions/categories/q-a
+    about: Ask questions and get help from the community in GitHub Discussions.
