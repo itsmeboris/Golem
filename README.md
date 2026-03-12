@@ -8,10 +8,18 @@
   <strong>An autonomous AI agent that picks up tasks, executes them, and delivers results — no human in the loop.</strong>
 </p>
 
+<!-- GIF DEMOS — replace these placeholders after recording
+<p align="center">
+  <img src="assets/demo-run.gif" alt="golem run demo" width="720" />
+</p>
+-->
+
 <p align="center">
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white" alt="Python 3.11+"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT License"></a>
   <a href="#quick-start"><img src="https://img.shields.io/badge/get_started-→-blue" alt="Get Started"></a>
+  <a href="https://star-history.com/#itsmeboris/golem&Date"><img src="https://img.shields.io/badge/star_history-→-yellow" alt="Star History"></a>
+  <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/made_with-Claude-blueviolet?logo=anthropic" alt="Made with Claude"></a>
 </p>
 
 <p align="center">
@@ -36,6 +44,8 @@ Submit a prompt. Walk away. It's done.
 <summary><strong>Table of Contents</strong></summary>
 
 - [Why Golem](#why-golem)
+- [Who Is This For?](#who-is-this-for)
+- [How Is This Different?](#how-is-this-different)
 - [Quick Start](#quick-start)
 - [How It Works](#how-it-works)
   - [Daemon Architecture](#daemon-centric-architecture)
@@ -76,6 +86,31 @@ Most AI coding tools wait for you to invoke them. Golem runs the other way aroun
 
 ---
 
+## Who Is This For?
+
+**Developers using Claude Code who want it to work autonomously.** If you're already paying for Claude and find yourself running the same "edit → test → fix → commit" loop, Golem automates that entire cycle.
+
+- **Solo developers** — submit a prompt, work on something else, come back to committed code
+- **Small teams** — assign tasks to Golem via your issue tracker, get notified when they're done
+- **AI/LLM enthusiasts** — a real-world autonomous agent with validation, not a demo or benchmark
+
+## How Is This Different?
+
+Most AI coding tools are interactive — you drive, they assist. Golem is autonomous — you submit, it delivers.
+
+| | Claude Code | Aider | SWE-agent | Devin | **Golem** |
+|---|---|---|---|---|---|
+| **Mode** | Interactive | Interactive | Autonomous | Autonomous | **Autonomous** |
+| **Execution** | Single session | Single session | Single session | Cloud-hosted | **Daemon + parallel worktrees** |
+| **Validation** | Manual review | Manual review | Benchmark scoring | Internal | **black + pylint + pytest + AST + review agent** |
+| **Budget control** | None | None | None | Subscription | **Per-task dollar limit** |
+| **Merge workflow** | Manual | Auto-commit | Patch file | Internal | **Rebase + merge queue + integrity check** |
+| **Open source** | No | Yes | Yes | No | **Yes (MIT)** |
+
+Claude Code is the engine. Golem is the autonomous workflow — validation, parallel execution, merge queue, and budget control — that lets you submit a prompt and walk away. Think of it as the CI/CD pipeline around Claude Code.
+
+---
+
 ## Quick Start
 
 ### Prerequisites
@@ -83,6 +118,18 @@ Most AI coding tools wait for you to invoke them. Golem runs the other way aroun
 - **Python 3.11+**
 - **[Claude CLI](https://docs.anthropic.com/en/docs/claude-code)** — Golem wraps Claude Code as a subprocess. Install it first and verify `claude --version` works.
 - **Git** — for worktree isolation and merge operations.
+
+### Cost
+
+Golem requires **Claude CLI** with a paid Anthropic plan (Claude Pro or API access). Typical task costs:
+
+| Task type | Typical cost | Typical time |
+|-----------|-------------|-------------|
+| Simple bug fix | $0.50–$1.00 | 1–3 min |
+| New feature / endpoint | $1.00–$3.00 | 2–5 min |
+| Complex refactor | $3.00–$8.00 | 5–15 min |
+
+The `budget_per_task_usd` setting (default: $10) caps spend per task. A one-liner fix won't accidentally burn $50.
 
 ### 1. Install
 
@@ -140,6 +187,16 @@ golem dashboard --port 8081
 
   HISTORY:
     Total: 47  Success: 89.4%  Avg: 2m 22s  Cost: $15.82
+```
+
+### Try the Demo
+
+Want to see Golem work before running it on your own code? Try the [demo microservice](examples/demo-microservice/):
+
+```bash
+cd examples/demo-microservice
+pip install -r requirements.txt
+golem run -f prompts/add-logging.md    # ~$0.50-$1.00, ~2 min
 ```
 
 ---
