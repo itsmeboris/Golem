@@ -80,5 +80,7 @@ HEAD
 /refs
 .playwright-mcp/
 
-#plan files
+# Design specs, plans, and outreach drafts (local working documents)
+docs/superpowers/
+docs/outreach/
 docs/plans
