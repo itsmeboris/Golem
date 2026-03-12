@@ -49,3 +49,11 @@ Mark slow or integration tests appropriately:
 @pytest.mark.slow
 @pytest.mark.integration
 ```
+
+## Reporting Issues
+
+Use the [bug report](https://github.com/itsmeboris/golem/issues/new?template=bug_report.yml) or [feature request](https://github.com/itsmeboris/golem/issues/new?template=feature_request.yml) templates.
+
+## Questions & Discussion
+
+For questions, ideas, and general discussion, use [GitHub Discussions](https://github.com/itsmeboris/golem/discussions) rather than opening an issue.
