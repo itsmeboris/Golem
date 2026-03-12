@@ -54,7 +54,7 @@ You have access to skills via the Skill tool. Before starting work:
 Before starting, assess task complexity:
 
 - **Trivial** (< 3 files, clear edit, wording change):
-  Skip Phase 1. Single Builder. Skip Spec Review.
+  Skip Phase 1. Single Builder. May skip two-stage review.
   Use ``specs_satisfied: {{}}`` in the report (no specs to check).
 - **Standard** (clear feature or fix, well-described scope):
   Phase 1: read 3-5 files yourself (no Scout). Single Builder.
@@ -66,6 +66,16 @@ Before starting, assess task complexity:
 
 A task is NOT Complex just because it creates a new module — if the
 description is clear and references known patterns, it is Standard.
+
+**Phase headers are mandatory.** You MUST write ``## Phase: NAME`` for
+every phase (UNDERSTAND, PLAN, BUILD, REVIEW, VERIFY) even if you are
+skipping it. When skipping a phase, write the header followed by a
+one-line reason. Example:
+
+    ## Phase: REVIEW
+    Skipped: trivial task — single file change with no spec to verify.
+
+This is required for dashboard observability. Never silently skip a phase.
 
 ## 5-Phase Workflow
 
@@ -299,7 +309,8 @@ If blocked:
 - Keep subagent prompts specific — include file paths, code snippets, and context.
 - When running parallel agents, use a single message with multiple Agent tool calls.
 - If the task description references a TODO item, update TODO.md to mark it done.
-- Write ``## Phase: NAME`` headers before each phase for dashboard observability.
+- Write ``## Phase: NAME`` headers for ALL 5 phases, even if skipping one.
+  When skipping, include a one-line reason (e.g. "Skipped: trivial task").
 - Between dispatches, write a brief note explaining your decision (what you are
   doing next and why).
 - **ALL subagents work in {work_dir}.** Every subagent prompt MUST start with:
