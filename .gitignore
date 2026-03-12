@@ -82,5 +82,6 @@ HEAD
 
 # Design specs, plans, and outreach drafts (local working documents)
 docs/superpowers/
-docs/outreach/
+docs/outreach/*
+!docs/outreach/owner-checklist.md
 docs/plans
