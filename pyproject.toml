@@ -55,7 +55,7 @@ golem = "golem.cli:main"
 include = ["golem*"]
 
 [tool.black]
-target-version = ["py312"]
+target-version = ["py311"]
 
 [tool.pylint."messages control"]
 disable = [
