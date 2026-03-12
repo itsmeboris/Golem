@@ -639,7 +639,7 @@ function renderFixCycle(cycle) {
   const metaParts = [dur, tokens ? `${tokens} tokens` : ''].filter(Boolean);
 
   const issuesHtml = issues.map(issue => {
-    const conf = issue.confidence != null ? Math.round(issue.confidence * 100) : '';
+    const conf = issue.confidence != null ? Math.round(issue.confidence) : '';
     const text = issue.text || issue.description || '';
     const file = issue.file || issue.location || '';
     const fixed = issue.fixed !== false;

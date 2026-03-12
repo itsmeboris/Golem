@@ -186,24 +186,30 @@ function renderPhaseStrip(trace, isRunning) {
   const totalMs = phases.reduce((sum, p) => sum + (p.duration_ms || 0), 0);
   const phaseNames = ['UNDERSTAND', 'PLAN', 'BUILD', 'REVIEW', 'VERIFY'];
 
-  // Determine which phase is active (last one with data)
-  const lastPhaseWithData = [...phases].reverse().find(p => p.duration_ms);
-  const activePhase = isRunning && lastPhaseWithData ? lastPhaseWithData.name : null;
+  // Build a set of phase names present in the trace (case-insensitive)
+  const tracePhaseNames = new Set(phases.map(p => (p.name || '').toUpperCase()));
+  // The active phase during runtime is the last phase present in the trace
+  const lastTracePhase = phases.length > 0 ? (phases[phases.length - 1].name || '').toUpperCase() : null;
+  const activePhase = isRunning ? lastTracePhase : null;
 
   const items = phaseNames.map(name => {
     const phase = phases.find(p => (p.name || '').toUpperCase() === name);
     const color = PHASE_COLORS[name] || 'var(--text-muted)';
     const dur = phase && phase.duration_ms ? phase.duration_ms : 0;
     const flexVal = totalMs > 0 && dur > 0 ? Math.max(1, Math.round(dur / totalMs * 10)) : 1;
-    const isActive = phase && phase.name === activePhase;
+    const isActive = name === activePhase;
+    // Phase is "reached" if it exists in the trace data (even without duration_ms)
+    const phaseReached = tracePhaseNames.has(name);
     const hasData = phase && phase.duration_ms > 0;
 
     let barStyle = `width:100%;height:4px;border-radius:2px;`;
     let label = '';
-    if (!hasData) {
+    if (!phaseReached) {
+      // Phase not yet reached — gray bar
       barStyle += `background:var(--bg-elevated)`;
       label = `<span style="font-size:0.6rem;color:var(--text-muted)">${name}</span>`;
-    } else if (isActive) {
+    } else if (isActive && isRunning) {
+      // Currently active phase — animated bar
       barStyle += `background:var(--bg-elevated);overflow:hidden`;
       const innerBar = `<div style="width:60%;height:100%;background:${color};border-radius:2px;animation:grow 2s ease-in-out infinite alternate"></div>`;
       label = `<span style="font-size:0.6rem;color:${color};font-weight:600">${name}</span>`;
@@ -212,8 +218,9 @@ function renderPhaseStrip(trace, isRunning) {
         ${label}
       </div>`;
     } else {
+      // Completed phase — solid bar with duration (or name if duration unknown)
       barStyle += `background:${color}`;
-      const durLabel = isRunning ? name : fmtDurationMs(phase.duration_ms);
+      const durLabel = hasData && !isRunning ? fmtDurationMs(phase.duration_ms) : name;
       label = `<span style="font-size:0.6rem;color:${color};font-weight:600">${esc(durLabel)}</span>`;
     }
 
@@ -250,7 +257,7 @@ function renderLiveTraceStream(trace) {
     // Show brief text — strip phase markers for cleaner preview
     for (const txt of (phase.orchestrator_text || []).slice(0, 1)) {
       const cleaned = cleanPhaseMarkers(txt);
-      if (cleaned) html += `<div class="ov-trace-ev text">${esc(truncText(cleaned, 100))}</div>`;
+      if (cleaned) html += `<div class="ov-trace-ev text">${esc(truncText(cleaned, 300))}</div>`;
     }
 
     // Show agents as collapsible blocks

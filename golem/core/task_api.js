@@ -60,11 +60,15 @@ function showView(view) {
     t.classList.toggle('active', t.dataset.view === view)
   );
   if (view === 'overview') renderOverview();   // defined in task_overview.js
-  if (view === 'detail' && S.selectedTaskId) renderDetail(S.selectedTaskId);  // defined in task_timeline.js
+  if (view === 'detail' && S.selectedTaskId) {
+    if (typeof resetAutoScroll === 'function') resetAutoScroll();
+    renderDetail(S.selectedTaskId);  // defined in task_timeline.js
+  }
 }
 
 function selectTask(eventId) {
   S.selectedTaskId = eventId;
+  if (typeof resetAutoScroll === 'function') resetAutoScroll();
   showView('detail');
 }
 

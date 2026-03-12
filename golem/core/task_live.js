@@ -46,13 +46,25 @@ function updateLiveCursor() {
 }
 
 // ── Auto-scroll ────────────────────────────────
+let _initialScrollDone = false;
+
 function autoScrollIfAtBottom() {
   const scroll = document.getElementById('timeline-scroll');
   if (!scroll) return;
+  // On first render of a running task detail, always scroll to bottom
+  if (!_initialScrollDone) {
+    scroll.scrollTop = scroll.scrollHeight;
+    _initialScrollDone = true;
+    return;
+  }
   const atBottom = scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - 50;
   if (atBottom) {
     scroll.scrollTop = scroll.scrollHeight;
   }
+}
+
+function resetAutoScroll() {
+  _initialScrollDone = false;
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
