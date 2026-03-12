@@ -234,7 +234,19 @@ function renderPhaseSidebar(trace, running, session) {
   if (!nav) return;
 
   const phases = trace.phases || [];
-  nav.innerHTML = phases.map(p => {
+
+  // Prepend PRE-FLIGHT to sidebar if session has event_log entries
+  const preflightEvents = (session && session.event_log) || [];
+  let preflightHtml = '';
+  if (preflightEvents.length > 0) {
+    const pfColor = PHASE_COLORS.PREFLIGHT || 'var(--cyan, #5eead4)';
+    preflightHtml = `<button class="phase-link" data-phase="preflight">
+      <span class="ph-dot" style="background:${pfColor}"></span>
+      PRE-FLIGHT
+    </button>`;
+  }
+
+  nav.innerHTML = preflightHtml + phases.map(p => {
     const name = p.name || '';
     const color = PHASE_COLORS[name.toUpperCase()] || 'var(--text-muted)';
     const dur = p.duration_ms ? fmtDurationMs(p.duration_ms) : '';
@@ -272,7 +284,7 @@ function initScrollSpy() {
   // Tear down previous listener to prevent accumulation across poll ticks
   if (_scrollSpyController) _scrollSpyController.abort();
   _scrollSpyController = new AbortController();
-  const phases = ['understand', 'plan', 'build', 'review', 'verify'];
+  const phases = ['preflight', 'understand', 'plan', 'build', 'review', 'verify'];
   scroll.addEventListener('scroll', () => {
     let current = phases[0];
     for (const p of phases) {
@@ -425,6 +437,76 @@ function renderTimeline(trace, running, session) {
     html += `<div class="tl-init">
       ▶ <span>Model: ${esc(model)}</span> · <span>CWD: ${esc(cwd)}</span>
     </div>`;
+  }
+
+  // Pre-flight phase from session.event_log (collapsed by default for completed tasks)
+  const preflightEvents = (session && session.event_log) || [];
+  if (preflightEvents.length > 0) {
+    const pfColor = PHASE_COLORS.PREFLIGHT || 'var(--cyan, #5eead4)';
+    const pfErrors = preflightEvents.filter(ev => ev.is_error);
+    const pfSteps = preflightEvents.filter(ev => !ev.is_error);
+    const pfCollapsed = !running ? ' collapsed' : '';
+
+    // Summary meta for the phase bar
+    let pfMeta = '';
+    if (pfErrors.length > 0) {
+      const failedCheckers = pfErrors.map(ev => {
+        const m = (ev.summary || '').match(/^(\w+):/);
+        return m ? m[1] : 'error';
+      });
+      pfMeta = `failed: ${failedCheckers.join(', ')}`;
+    } else {
+      pfMeta = `${pfSteps.length} check${pfSteps.length !== 1 ? 's' : ''} passed`;
+    }
+
+    html += `<div class="tl-phase${pfCollapsed}" id="phase-preflight" data-phase="preflight" onclick="togglePhase(this)">
+      <span class="tl-phase-chevron">${running ? '▾' : '▸'}</span>
+      <span class="tl-phase-line" style="border-color:${pfColor}"></span>
+      <span class="tl-phase-name" style="color:${pfColor}">PRE-FLIGHT</span>
+      <span class="tl-phase-meta">${esc(pfMeta)}</span>
+      <span class="tl-phase-line" style="border-color:${pfColor}"></span>
+    </div>
+    <div class="tl-phase-content">`;
+
+    for (const ev of pfSteps) {
+      const icon = (ev.summary || '').includes('worktree') ? '🌿' : (ev.summary || '').includes('verification') ? '🔍' : '⚙';
+      html += `<div class="tl-tool">
+        <div class="tl-tool-header">
+          <span class="tl-tool-icon">${icon}</span>
+          <span class="tl-tool-name bash">supervisor</span>
+          <span class="tl-tool-summary">${esc(ev.summary || '')}</span>
+        </div>
+      </div>`;
+    }
+
+    for (const ev of pfErrors) {
+      const msg = ev.summary || '';
+      const sections = msg.split(/(?=\b(?:black|pylint|pytest):)/i).filter(Boolean);
+      const leadSection = sections.length > 0 && !/^(black|pylint|pytest):/i.test(sections[0]) ? sections.shift() : '';
+
+      if (leadSection) {
+        html += `<div class="tl-text" style="color:var(--danger, #e55);font-weight:600;font-size:0.82rem;margin:0.5rem 0">${esc(leadSection.replace(/[;,]\s*$/, '').trim())}</div>`;
+      }
+
+      for (const section of sections) {
+        const match = section.match(/^(\w+):\s*([\s\S]*)$/);
+        const checker = match ? match[1] : 'error';
+        const body = match ? match[2].replace(/[;,]\s*$/, '').trim() : section.trim();
+        html += `<div class="tl-tool" onclick="this.classList.toggle('expanded')">
+          <div class="tl-tool-header">
+            <span class="tl-tool-icon" style="color:var(--danger, #e55)">✗</span>
+            <span class="tl-tool-name" style="color:var(--danger, #e55)">${esc(checker)}</span>
+            <span class="tl-tool-summary" style="color:var(--danger, #e55)">${esc(truncText(body, 100))}</span>
+            <span class="tl-tool-chevron">▸</span>
+          </div>
+          <div class="tl-tool-body">
+            <pre>${esc(body)}</pre>
+          </div>
+        </div>`;
+      }
+    }
+
+    html += `</div>`; // end tl-phase-content
   }
 
   // Phases
