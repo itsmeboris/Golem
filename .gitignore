@@ -14,6 +14,7 @@ build/
 # Runtime data
 config.yaml
 golem/data
+data/
 tasks/
 
 # Daemon
