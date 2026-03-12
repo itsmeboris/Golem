@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -494,6 +495,10 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
     @app.get("/api/config")
     async def api_config() -> JSONResponse:
         return JSONResponse(content=config_snapshot)
+
+    @app.get("/api/ping")
+    async def api_ping() -> JSONResponse:
+        return JSONResponse(content={"status": "ok", "timestamp": int(time.time())})
 
     @app.get("/api/analytics")
     async def api_analytics() -> JSONResponse:

@@ -1224,6 +1224,13 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         assert resp.body is not None
 
     @pytest.mark.asyncio
+    async def test_api_ping(self, handlers):
+        resp = await handlers["/api/ping"]()
+        data = json.loads(resp.body)
+        assert data["status"] == "ok"
+        assert isinstance(data["timestamp"], int)
+
+    @pytest.mark.asyncio
     async def test_api_live_with_file(self):
         """When live_state_file is set, it reads from disk."""
         app = MagicMock()
