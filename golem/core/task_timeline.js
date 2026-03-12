@@ -256,8 +256,8 @@ function renderPhaseSidebar(trace, running, session) {
 
   const phases = trace.phases || [];
 
-  // Prepend PRE-FLIGHT to sidebar if session has event_log entries
-  const preflightEvents = (session && session.event_log) || [];
+  // Prepend PRE-FLIGHT to sidebar if session has pre-flight events
+  const preflightEvents = _getPreflightEvents((session && session.event_log) || []);
   let preflightHtml = '';
   if (preflightEvents.length > 0) {
     const pfColor = PHASE_COLORS.PREFLIGHT || 'var(--cyan, #5eead4)';
@@ -431,6 +431,23 @@ function _restoreTimelineState(state) {
   scroll.scrollTop = state.scrollTop;
 }
 
+// ── Pre-flight event extraction ────────────────
+// session.event_log contains ALL milestones (pre-flight + orchestrator + post-run).
+// Extract only the pre-flight portion: events before orchestration starts.
+function _getPreflightEvents(eventLog) {
+  const events = [];
+  for (const ev of eventLog) {
+    const s = ev.summary || '';
+    if (s.startsWith('Starting single-session orchestration') ||
+        s.startsWith('Starting multi-session orchestration') ||
+        s.startsWith('Resumed from checkpoint')) {
+      break;
+    }
+    events.push(ev);
+  }
+  return events;
+}
+
 // ── Timeline ───────────────────────────────────
 function renderTimeline(trace, running, session) {
   const scroll = document.getElementById('timeline-scroll');
@@ -461,7 +478,7 @@ function renderTimeline(trace, running, session) {
   }
 
   // Pre-flight phase from session.event_log (collapsed by default for completed tasks)
-  const preflightEvents = (session && session.event_log) || [];
+  const preflightEvents = _getPreflightEvents((session && session.event_log) || []);
   if (preflightEvents.length > 0) {
     const pfColor = PHASE_COLORS.PREFLIGHT || 'var(--cyan, #5eead4)';
     const pfErrors = preflightEvents.filter(ev => ev.is_error);
