@@ -52,17 +52,22 @@ async function fetchPrompt(eventId) {
 }
 
 // ── Navigation ─────────────────────────────────
-function showView(view) {
+async function showView(view) {
   S.view = view;
   document.getElementById('view-overview').style.display = view === 'overview' ? 'flex' : 'none';
   document.getElementById('view-detail').style.display = view === 'detail' ? 'flex' : 'none';
   document.querySelectorAll('.nav-tab').forEach(t =>
     t.classList.toggle('active', t.dataset.view === view)
   );
-  if (view === 'overview') renderOverview();   // defined in task_overview.js
+  if (view === 'overview') renderOverview();
   if (view === 'detail' && S.selectedTaskId) {
     if (typeof resetAutoScroll === 'function') resetAutoScroll();
-    renderDetail(S.selectedTaskId);  // defined in task_timeline.js
+    await renderDetail(S.selectedTaskId);
+    // Auto-scroll to bottom on initial navigation to a running task
+    const session = S.sessions[S.selectedTaskId];
+    if (isTaskRunning(session) && typeof autoScrollIfAtBottom === 'function') {
+      autoScrollIfAtBottom();
+    }
   }
 }
 
@@ -74,6 +79,7 @@ function selectTask(eventId) {
 
 // ── Helpers ────────────────────────────────────
 const PHASE_COLORS = {
+  PREFLIGHT: 'var(--cyan, #5eead4)',
   UNDERSTAND: 'var(--blue)', PLAN: 'var(--purple)',
   BUILD: 'var(--accent)', REVIEW: 'var(--orange)', VERIFY: 'var(--green)'
 };

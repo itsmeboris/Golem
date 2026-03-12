@@ -109,9 +109,9 @@ async function renderDetail(eventId, prefetchedTrace) {
   renderDetailHeader(session, trace, running);
   renderMetrics(trace);
   renderLiveStrip(session, trace, running);
-  renderPhaseSidebar(trace, running);
+  renderPhaseSidebar(trace, running, session);
   renderToolbar();
-  renderTimeline(trace, running);
+  renderTimeline(trace, running, session);
   renderInfoTabs(trace, session, running);
 }
 
@@ -162,6 +162,26 @@ function renderDetailHeader(session, trace, running) {
     depsHtml = `<div class="td-deps">${sections}</div>`;
   }
 
+  // Stats row for completed/failed tasks
+  let statsHtml = '';
+  if (!running && trace) {
+    const meta = trace.result_meta || {};
+    const cost = meta.total_cost_usd || (session && session.total_cost_usd);
+    const durMs = meta.duration_ms || ((session && session.duration_seconds) ? session.duration_seconds * 1000 : 0);
+    const commitSha = session && session.commit_sha;
+    const retryCount = session && session.retry_count;
+
+    const parts = [];
+    if (cost) parts.push(`<span style="color:var(--green)">${fmtCost(cost)}</span> cost`);
+    if (durMs) parts.push(fmtDurationMs(durMs));
+    if (commitSha) parts.push(`<code style="font-family:var(--font-mono);font-size:0.72rem;background:var(--bg-elevated);padding:0.1rem 0.3rem;border-radius:3px">${esc(String(commitSha).slice(0, 7))}</code>`);
+    if (retryCount) parts.push(`${retryCount} retr${retryCount === 1 ? 'y' : 'ies'}`);
+
+    if (parts.length > 0) {
+      statsHtml = `<div class="td-stats">${parts.join(' <span style="color:var(--text-muted);margin:0 0.25rem">·</span> ')}</div>`;
+    }
+  }
+
   el.innerHTML = `
     <div class="td-top">
       <span class="td-id">#${taskId}</span>
@@ -170,6 +190,7 @@ function renderDetailHeader(session, trace, running) {
       ${liveHtml}
     </div>
     <div class="td-subject">${subject}</div>
+    ${statsHtml}
     ${depsHtml}
   `;
 
@@ -229,12 +250,29 @@ function renderLiveStrip(session, trace, running) {
 }
 
 // ── Phase Sidebar ──────────────────────────────
-function renderPhaseSidebar(trace, running) {
+function renderPhaseSidebar(trace, running, session) {
   const nav = document.getElementById('phase-nav');
   if (!nav) return;
 
   const phases = trace.phases || [];
-  nav.innerHTML = phases.map(p => {
+
+  // Prepend PRE-FLIGHT to sidebar if session has pre-flight events
+  const preflightEvents = _getPreflightEvents((session && session.event_log) || []);
+  let preflightHtml = '';
+  if (preflightEvents.length > 0) {
+    const pfColor = PHASE_COLORS.PREFLIGHT || 'var(--cyan, #5eead4)';
+    const pfFirst = preflightEvents[0].timestamp;
+    const pfLast = preflightEvents[preflightEvents.length - 1].timestamp;
+    const pfDurMs = pfFirst && pfLast ? (pfLast - pfFirst) * 1000 : 0;
+    const pfDurStr = pfDurMs > 0 ? fmtDurationMs(pfDurMs) : '';
+    preflightHtml = `<button class="phase-link" data-phase="preflight">
+      <span class="ph-dot" style="background:${pfColor}"></span>
+      PRE-FLIGHT
+      ${pfDurStr ? `<span class="ph-dur">${pfDurStr}</span>` : ''}
+    </button>`;
+  }
+
+  nav.innerHTML = preflightHtml + phases.map(p => {
     const name = p.name || '';
     const color = PHASE_COLORS[name.toUpperCase()] || 'var(--text-muted)';
     const dur = p.duration_ms ? fmtDurationMs(p.duration_ms) : '';
@@ -272,7 +310,7 @@ function initScrollSpy() {
   // Tear down previous listener to prevent accumulation across poll ticks
   if (_scrollSpyController) _scrollSpyController.abort();
   _scrollSpyController = new AbortController();
-  const phases = ['understand', 'plan', 'build', 'review', 'verify'];
+  const phases = ['preflight', 'understand', 'plan', 'build', 'review', 'verify'];
   scroll.addEventListener('scroll', () => {
     let current = phases[0];
     for (const p of phases) {
@@ -398,8 +436,25 @@ function _restoreTimelineState(state) {
   scroll.scrollTop = state.scrollTop;
 }
 
+// ── Pre-flight event extraction ────────────────
+// session.event_log contains ALL milestones (pre-flight + orchestrator + post-run).
+// Extract only the pre-flight portion: events before orchestration starts.
+function _getPreflightEvents(eventLog) {
+  const events = [];
+  for (const ev of eventLog) {
+    const s = ev.summary || '';
+    if (s.startsWith('Starting single-session orchestration') ||
+        s.startsWith('Starting multi-session orchestration') ||
+        s.startsWith('Resumed from checkpoint')) {
+      break;
+    }
+    events.push(ev);
+  }
+  return events;
+}
+
 // ── Timeline ───────────────────────────────────
-function renderTimeline(trace, running) {
+function renderTimeline(trace, running, session) {
   const scroll = document.getElementById('timeline-scroll');
   if (!scroll) return;
 
@@ -425,6 +480,84 @@ function renderTimeline(trace, running) {
     html += `<div class="tl-init">
       ▶ <span>Model: ${esc(model)}</span> · <span>CWD: ${esc(cwd)}</span>
     </div>`;
+  }
+
+  // Pre-flight phase from session.event_log (collapsed by default for completed tasks)
+  const preflightEvents = _getPreflightEvents((session && session.event_log) || []);
+  if (preflightEvents.length > 0) {
+    const pfColor = PHASE_COLORS.PREFLIGHT || 'var(--cyan, #5eead4)';
+    const pfErrors = preflightEvents.filter(ev => ev.is_error);
+    const pfSteps = preflightEvents.filter(ev => !ev.is_error);
+    const pfCollapsed = !running ? ' collapsed' : '';
+
+    // Duration from first to last event timestamp
+    const pfFirst = preflightEvents[0].timestamp;
+    const pfLast = preflightEvents[preflightEvents.length - 1].timestamp;
+    const pfDurMs = pfFirst && pfLast ? (pfLast - pfFirst) * 1000 : 0;
+    const pfDurStr = pfDurMs > 0 ? fmtDurationMs(pfDurMs) : '';
+
+    // Summary meta for the phase bar
+    const pfMetaParts = [];
+    if (pfDurStr) pfMetaParts.push(pfDurStr);
+    if (pfErrors.length > 0) {
+      const failedCheckers = pfErrors.map(ev => {
+        const m = (ev.summary || '').match(/^(\w+):/);
+        return m ? m[1] : 'error';
+      });
+      pfMetaParts.push(`failed: ${failedCheckers.join(', ')}`);
+    } else {
+      pfMetaParts.push(`${pfSteps.length} check${pfSteps.length !== 1 ? 's' : ''} passed`);
+    }
+    const pfMeta = pfMetaParts.join(' · ');
+
+    html += `<div class="tl-phase${pfCollapsed}" id="phase-preflight" data-phase="preflight" onclick="togglePhase(this)">
+      <span class="tl-phase-chevron">${running ? '▾' : '▸'}</span>
+      <span class="tl-phase-line" style="border-color:${pfColor}"></span>
+      <span class="tl-phase-name" style="color:${pfColor}">PRE-FLIGHT</span>
+      <span class="tl-phase-meta">${esc(pfMeta)}</span>
+      <span class="tl-phase-line" style="border-color:${pfColor}"></span>
+    </div>
+    <div class="tl-phase-content">`;
+
+    for (const ev of pfSteps) {
+      const icon = (ev.summary || '').includes('worktree') ? '🌿' : (ev.summary || '').includes('verification') ? '🔍' : '⚙';
+      html += `<div class="tl-tool">
+        <div class="tl-tool-header">
+          <span class="tl-tool-icon">${icon}</span>
+          <span class="tl-tool-name bash">supervisor</span>
+          <span class="tl-tool-summary">${esc(ev.summary || '')}</span>
+        </div>
+      </div>`;
+    }
+
+    for (const ev of pfErrors) {
+      const msg = ev.summary || '';
+      const sections = msg.split(/(?=\b(?:black|pylint|pytest):)/i).filter(Boolean);
+      const leadSection = sections.length > 0 && !/^(black|pylint|pytest):/i.test(sections[0]) ? sections.shift() : '';
+
+      if (leadSection) {
+        html += `<div class="tl-text" style="color:var(--danger, #e55);font-weight:600;font-size:0.82rem;margin:0.5rem 0">${esc(leadSection.replace(/[;,]\s*$/, '').trim())}</div>`;
+      }
+
+      for (const section of sections) {
+        const match = section.match(/^(\w+):\s*([\s\S]*)$/);
+        const checker = match ? match[1] : 'error';
+        const body = match ? match[2].replace(/[;,]\s*$/, '').trim() : section.trim();
+        html += `<div class="tl-tool" onclick="this.classList.toggle('expanded')">
+          <div class="tl-tool-header">
+            <span class="tl-tool-icon" style="color:var(--danger, #e55)">✗</span>
+            <span class="tl-tool-name" style="color:var(--danger, #e55)">${esc(checker)}</span>
+            <span class="tl-tool-summary" style="color:var(--danger, #e55)">${esc(truncText(body, 100))}</span>
+            <span class="tl-tool-chevron">▸</span>
+          </div>
+          <div class="tl-tool-body">
+            <pre>${esc(body)}</pre>
+          </div>
+        </div>`;
+      }
+    }
+
+    html += `</div>`; // end tl-phase-content
   }
 
   // Phases
@@ -486,9 +619,46 @@ function renderTimeline(trace, running) {
   } else {
     html += `<div id="tl-completed-section">`;
 
-    // Result block
+    // Completion summary banner (uses `result` already declared above)
     if (result) {
-      html += renderResultBlock(result, trace);
+      const status = result.status || (result.success !== false ? 'COMPLETE' : 'BLOCKED');
+      const success = status === 'COMPLETE' || status === 'PASS';
+      const bgColor = success ? 'var(--bg-success, #1a2a1a)' : 'var(--bg-danger, #2a1a1a)';
+      const borderColor = success ? 'var(--border-success, #2a4a2a)' : 'var(--border-danger, #4a2a2a)';
+      const statusClass = success ? 'complete' : 'blocked';
+      const summaryText = result.summary || '';
+
+      // Test results
+      const testsObj = result.test_results || {};
+      let testsHtml = '';
+      if (Object.keys(testsObj).length > 0) {
+        testsHtml = '<div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.3rem">' +
+          Object.entries(testsObj).map(([name, val]) => {
+            const pass = val === 'pass' || val === true;
+            const skip = val === 'not_applicable' || val === 'skipped';
+            const color = skip ? 'var(--text-muted)' : (pass ? 'var(--green)' : 'var(--danger, #e55)');
+            const icon = skip ? '—' : (pass ? '✓' : '✗');
+            return `<span style="color:${color};font-size:0.7rem">${icon} ${esc(name)}</span>`;
+          }).join('') + '</div>';
+      }
+
+      // Files changed
+      const files = result.files_changed || [];
+      let filesHtml = '';
+      if (files.length > 0) {
+        filesHtml = `<div style="color:var(--text-muted);font-size:0.68rem;margin-top:0.3rem">Files changed: ${
+          files.map(f => `<code style="font-family:var(--font-mono);font-size:0.65rem;background:var(--bg-elevated);padding:0.1rem 0.3rem;border-radius:3px">${esc(f)}</code>`).join(' ')
+        }</div>`;
+      }
+
+      html += `<div style="margin-top:0.75rem;padding:0.6rem 0.75rem;background:${bgColor};border:1px solid ${borderColor};border-radius:6px">
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.3rem">
+          <span class="status ${statusClass}" style="font-size:0.7rem;font-weight:700;padding:0.15rem 0.5rem;border-radius:3px">${esc(status.toUpperCase())}</span>
+          ${summaryText ? `<span style="font-size:0.75rem;color:var(--text-secondary)">${esc(summaryText)}</span>` : ''}
+        </div>
+        ${testsHtml}
+        ${filesHtml}
+      </div>`;
     }
 
     html += `</div>`; // end tl-completed-section
@@ -778,16 +948,19 @@ function renderInfoTabs(trace, session, running) {
 
   const rawSession = session ? JSON.stringify(session, null, 2) : '{}';
 
+  // Default first tab: Report if available, otherwise Errors
+  const firstTab = report ? 'report' : 'errors';
+
   el.innerHTML = `
     <div class="tab-bar">
-      <button class="tab-btn active" onclick="activateTab(this,'tab-report')">Report</button>
-      <button class="tab-btn" onclick="activateTab(this,'tab-errors')">Errors</button>
+      ${report ? `<button class="tab-btn${firstTab === 'report' ? ' active' : ''}" onclick="activateTab(this,'tab-report')">Report</button>` : ''}
+      <button class="tab-btn${firstTab === 'errors' ? ' active' : ''}" onclick="activateTab(this,'tab-errors')">Errors</button>
       <button class="tab-btn" onclick="activateTab(this,'tab-raw')">Raw Session</button>
     </div>
-    <div class="tab-content active" id="tab-report">
-      ${report ? renderMarkdown(report) : '<div style="color:var(--text-secondary)">No report available.</div>'}
-    </div>
-    <div class="tab-content" id="tab-errors">${errors}</div>
+    ${report ? `<div class="tab-content${firstTab === 'report' ? ' active' : ''}" id="tab-report">
+      ${renderMarkdown(report)}
+    </div>` : ''}
+    <div class="tab-content${firstTab === 'errors' ? ' active' : ''}" id="tab-errors">${errors}</div>
     <div class="tab-content" id="tab-raw"><pre style="font-size:0.70rem">${esc(rawSession)}</pre></div>
   `;
 }
