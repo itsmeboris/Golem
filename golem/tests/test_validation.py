@@ -945,3 +945,371 @@ class TestReadTypesPy:
     def test_returns_fallback_on_error(self, _):
         content = _read_types_py()
         assert "golem/types.py not found" in content
+
+
+class TestHardcodedUIAntipattern:
+    def _make_diff(self, filename: str, code_line: str) -> str:
+        return f"+++ b/{filename}\n+{code_line}\n"
+
+    def test_display_none_flagged(self):
+        diff = self._make_diff("golem/ui.py", '    el.style = "display: none"')
+        concerns = scan_diff_antipatterns(diff)
+        assert any("hardcoded UI state" in c for c in concerns)
+
+    def test_visibility_hidden_flagged(self):
+        diff = self._make_diff("golem/ui.py", "    visibility: hidden;")
+        concerns = scan_diff_antipatterns(diff)
+        assert any("hardcoded UI state" in c for c in concerns)
+
+    def test_hidden_true_flagged(self):
+        diff = self._make_diff("golem/component.py", "    widget = Widget(hidden=True)")
+        concerns = scan_diff_antipatterns(diff)
+        assert any("hardcoded UI state" in c for c in concerns)
+
+    def test_disabled_attribute_flagged(self):
+        diff = self._make_diff(
+            "golem/component.py", '    btn = Button(disabled="disabled")'
+        )
+        concerns = scan_diff_antipatterns(diff)
+        assert any("hardcoded UI state" in c for c in concerns)
+
+    def test_normal_style_not_flagged(self):
+        diff = self._make_diff("golem/ui.py", '    el.style = "color: red"')
+        concerns = scan_diff_antipatterns(diff)
+        assert not any("hardcoded UI state" in c for c in concerns)
+
+    def test_test_file_skipped(self):
+        diff = self._make_diff(
+            "golem/tests/test_ui.py", '    el.style = "display: none"'
+        )
+        concerns = scan_diff_antipatterns(diff)
+        assert not any("hardcoded UI state" in c for c in concerns)
+
+    def test_comment_skipped(self):
+        diff = self._make_diff("golem/ui.py", "    # display: none is bad")
+        concerns = scan_diff_antipatterns(diff)
+        assert not any("hardcoded UI state" in c for c in concerns)
+
+    def test_deduplicates_files(self):
+        diff = (
+            "+++ b/golem/ui.py\n"
+            '+    a = "display: none"\n'
+            '+    b = "visibility: hidden"\n'
+        )
+        concerns = scan_diff_antipatterns(diff)
+        matching = [c for c in concerns if "hardcoded UI state" in c]
+        assert len(matching) == 1
+        assert matching[0].count("golem/ui.py") == 1
+
+
+class TestDeadCodeAntipattern:
+    def _make_diff(self, lines: list[str], filename: str = "golem/flow.py") -> str:
+        header = f"+++ b/{filename}\n"
+        return header + "".join(f"+{line}\n" for line in lines)
+
+    def test_code_after_return_flagged(self):
+        diff = self._make_diff(["    return value", "    do_something()"])
+        concerns = scan_diff_antipatterns(diff)
+        assert any("dead code" in c for c in concerns)
+
+    def test_code_after_raise_flagged(self):
+        diff = self._make_diff(["    raise ValueError('bad')", "    do_something()"])
+        concerns = scan_diff_antipatterns(diff)
+        assert any("dead code" in c for c in concerns)
+
+    def test_code_after_sys_exit_flagged(self):
+        diff = self._make_diff(["    sys.exit(1)", "    do_something()"])
+        concerns = scan_diff_antipatterns(diff)
+        assert any("dead code" in c for c in concerns)
+
+    def test_different_indent_not_flagged(self):
+        # Code at shallower indent (e.g., outer function body) is not dead code
+        diff = self._make_diff(["        return value", "    outer_call()"])
+        concerns = scan_diff_antipatterns(diff)
+        assert not any("dead code" in c for c in concerns)
+
+    def test_new_function_after_return_not_flagged(self):
+        diff = self._make_diff(["    return value", "    def next_func():"])
+        concerns = scan_diff_antipatterns(diff)
+        assert not any("dead code" in c for c in concerns)
+
+    def test_decorator_after_return_not_flagged(self):
+        diff = self._make_diff(["    return value", "    @decorator"])
+        concerns = scan_diff_antipatterns(diff)
+        assert not any("dead code" in c for c in concerns)
+
+    def test_test_file_skipped(self):
+        diff = self._make_diff(
+            ["    return value", "    do_something()"],
+            filename="golem/tests/test_flow.py",
+        )
+        concerns = scan_diff_antipatterns(diff)
+        assert not any("dead code" in c for c in concerns)
+
+    def test_blank_line_then_code_same_indent_flagged(self):
+        # Blank lines between return and code do not reset the flag
+        diff = (
+            "+++ b/golem/flow.py\n" "+    return value\n" "+ \n" "+    do_something()\n"
+        )
+        concerns = scan_diff_antipatterns(diff)
+        assert any("dead code" in c for c in concerns)
+
+    def test_class_after_return_not_flagged(self):
+        diff = self._make_diff(["    return value", "    class Foo:"])
+        concerns = scan_diff_antipatterns(diff)
+        assert not any("dead code" in c for c in concerns)
+
+    def test_else_after_return_not_flagged(self):
+        diff = self._make_diff(["    return value", "    else:"])
+        concerns = scan_diff_antipatterns(diff)
+        assert not any("dead code" in c for c in concerns)
+
+    def test_deduplicates_files(self):
+        diff = (
+            "+++ b/golem/flow.py\n"
+            "+    return x\n"
+            "+    dead1()\n"
+            "+    return y\n"
+            "+    dead2()\n"
+        )
+        concerns = scan_diff_antipatterns(diff)
+        matching = [c for c in concerns if "dead code" in c]
+        assert len(matching) == 1
+        assert matching[0].count("golem/flow.py") == 1
+
+
+class TestEmptyExceptAntipattern:
+    def _make_diff(self, code_line: str, filename: str = "golem/handler.py") -> str:
+        return f"+++ b/{filename}\n+{code_line}\n"
+
+    def test_except_pass_flagged(self):
+        diff = self._make_diff("    except Exception: pass")
+        concerns = scan_diff_antipatterns(diff)
+        assert any("empty exception handler" in c for c in concerns)
+
+    def test_except_ellipsis_flagged(self):
+        diff = self._make_diff("    except: ...")
+        concerns = scan_diff_antipatterns(diff)
+        assert any("empty exception handler" in c for c in concerns)
+
+    def test_bare_except_pass_flagged(self):
+        diff = self._make_diff("    except: pass")
+        concerns = scan_diff_antipatterns(diff)
+        assert any("empty exception handler" in c for c in concerns)
+
+    def test_except_with_logging_not_flagged(self):
+        diff = self._make_diff("    except Exception as e:")
+        concerns = scan_diff_antipatterns(diff)
+        assert not any("empty exception handler" in c for c in concerns)
+
+    def test_test_file_skipped(self):
+        diff = self._make_diff(
+            "    except Exception: pass",
+            filename="golem/tests/test_handler.py",
+        )
+        concerns = scan_diff_antipatterns(diff)
+        assert not any("empty exception handler" in c for c in concerns)
+
+    def test_comment_skipped(self):
+        diff = self._make_diff("    # except Exception: pass")
+        concerns = scan_diff_antipatterns(diff)
+        assert not any("empty exception handler" in c for c in concerns)
+
+    def test_deduplicates_files(self):
+        diff = (
+            "+++ b/golem/handler.py\n"
+            "+    except ValueError: pass\n"
+            "+    except KeyError: ...\n"
+        )
+        concerns = scan_diff_antipatterns(diff)
+        matching = [c for c in concerns if "empty exception handler" in c]
+        assert len(matching) == 1
+        assert matching[0].count("golem/handler.py") == 1
+
+
+class TestDeadCodeBugFixes:
+    """Tests for Bug 1 (>= vs ==) and Bug 3 (state reset after first flagged line)."""
+
+    def _make_diff(self, lines: list[str], filename: str = "golem/flow.py") -> str:
+        header = f"+++ b/{filename}\n"
+        return header + "".join(f"+{line}\n" for line in lines)
+
+    def test_deeper_indent_after_return_not_flagged(self):
+        # Bug 1: return at indent=4, next line at indent=8 — should NOT be dead code
+        diff = self._make_diff(["    return value", "        nested_call()"])
+        concerns = scan_diff_antipatterns(diff)
+        assert not any("dead code" in c for c in concerns)
+
+    def test_consecutive_dead_lines_all_flagged(self):
+        # Bug 3: after return, BOTH dead1() and dead2() should be flagged
+        # (concern is still 1 due to dedup, but it must be present)
+        diff = self._make_diff(["    return x", "    dead1()", "    dead2()"])
+        concerns = scan_diff_antipatterns(diff)
+        assert any("dead code" in c for c in concerns)
+
+    def test_second_dead_line_triggers_concern(self):
+        # Bug 3: if ONLY the second dead line were tracked, using two different
+        # files ensures both are independently flagged
+        diff = (
+            "+++ b/golem/a.py\n"
+            "+    return x\n"
+            "+    dead1()\n"
+            "+    dead2()\n"
+            "+++ b/golem/b.py\n"
+            "+    return y\n"
+            "+    dead3()\n"
+            "+    dead4()\n"
+        )
+        concerns = scan_diff_antipatterns(diff)
+        matching = [c for c in concerns if "dead code" in c]
+        assert len(matching) == 1
+        assert "golem/a.py" in matching[0]
+        assert "golem/b.py" in matching[0]
+
+
+class TestMultilineEmptyExcept:
+    """Tests for Bug 2: _EMPTY_EXCEPT_RE misses multi-line except blocks."""
+
+    def _make_diff(self, lines: list[str], filename: str = "golem/handler.py") -> str:
+        header = f"+++ b/{filename}\n"
+        return header + "".join(f"+{line}\n" for line in lines)
+
+    def test_multiline_except_pass_flagged(self):
+        # except Exception:\n    pass — two separate added lines
+        diff = self._make_diff(["    except Exception:", "        pass"])
+        concerns = scan_diff_antipatterns(diff)
+        assert any("empty exception handler" in c for c in concerns)
+
+    def test_multiline_except_ellipsis_flagged(self):
+        # except:\n    ... — two separate added lines
+        diff = self._make_diff(["    except:", "        ..."])
+        concerns = scan_diff_antipatterns(diff)
+        assert any("empty exception handler" in c for c in concerns)
+
+    def test_multiline_except_with_code_not_flagged(self):
+        # except Exception:\n    logger.error(e) — NOT empty
+        diff = self._make_diff(["    except Exception:", "        logger.error(e)"])
+        concerns = scan_diff_antipatterns(diff)
+        assert not any("empty exception handler" in c for c in concerns)
+
+
+class TestIOCallAntipattern:
+    def _make_diff(self, code_line: str, filename: str = "golem/utils.py") -> str:
+        return f"+++ b/{filename}\n+{code_line}\n"
+
+    def test_open_call_flagged(self):
+        diff = self._make_diff('    f = open("file.txt")')
+        concerns = scan_diff_antipatterns(diff)
+        assert any("I/O call" in c for c in concerns)
+
+    def test_subprocess_run_flagged(self):
+        diff = self._make_diff('    subprocess.run(["ls"])')
+        concerns = scan_diff_antipatterns(diff)
+        assert any("I/O call" in c for c in concerns)
+
+    def test_requests_get_flagged(self):
+        diff = self._make_diff("    resp = requests.get(url)")
+        concerns = scan_diff_antipatterns(diff)
+        assert any("I/O call" in c for c in concerns)
+
+    def test_urlopen_flagged(self):
+        diff = self._make_diff("    resp = urlopen(url)")
+        concerns = scan_diff_antipatterns(diff)
+        assert any("I/O call" in c for c in concerns)
+
+    def test_shutil_copy_flagged(self):
+        diff = self._make_diff('    shutil.copy("src", "dst")')
+        concerns = scan_diff_antipatterns(diff)
+        assert any("I/O call" in c for c in concerns)
+
+    def test_normal_function_not_flagged(self):
+        diff = self._make_diff("    result = calculate()")
+        concerns = scan_diff_antipatterns(diff)
+        assert not any("I/O call" in c for c in concerns)
+
+    def test_test_file_skipped(self):
+        diff = self._make_diff(
+            '    f = open("file.txt")',
+            filename="golem/tests/test_utils.py",
+        )
+        concerns = scan_diff_antipatterns(diff)
+        assert not any("I/O call" in c for c in concerns)
+
+    def test_comment_skipped(self):
+        diff = self._make_diff("    # open() is an I/O call")
+        concerns = scan_diff_antipatterns(diff)
+        assert not any("I/O call" in c for c in concerns)
+
+    def test_deduplicates_files(self):
+        diff = (
+            "+++ b/golem/utils.py\n"
+            '+    f1 = open("a.txt")\n'
+            '+    f2 = open("b.txt")\n'
+        )
+        concerns = scan_diff_antipatterns(diff)
+        matching = [c for c in concerns if "I/O call" in c]
+        assert len(matching) == 1
+        assert matching[0].count("golem/utils.py") == 1
+
+
+class TestDataContractMismatchAntipattern:
+    """Tests for data contract mismatch detection."""
+
+    def test_camel_case_dict_key_flagged(self):
+        diff = '+++ b/golem/api.py\n+    name = data["firstName"]\n'
+        concerns = scan_diff_antipatterns(diff)
+        assert any("data contract" in c.lower() for c in concerns)
+
+    def test_camel_case_get_flagged(self):
+        diff = '+++ b/golem/api.py\n+    name = data.get("firstName")\n'
+        concerns = scan_diff_antipatterns(diff)
+        assert any("data contract" in c.lower() for c in concerns)
+
+    def test_json_direct_access_flagged(self):
+        diff = '+++ b/golem/api.py\n+    val = resp.json()["status"]\n'
+        concerns = scan_diff_antipatterns(diff)
+        assert any("data contract" in c.lower() for c in concerns)
+
+    def test_json_get_access_flagged(self):
+        diff = '+++ b/golem/api.py\n+    val = resp.json().get("status")\n'
+        concerns = scan_diff_antipatterns(diff)
+        assert any("data contract" in c.lower() for c in concerns)
+
+    def test_snake_case_key_not_flagged(self):
+        """Normal snake_case dict access should NOT trigger this detector."""
+        diff = '+++ b/golem/api.py\n+    name = data["first_name"]\n'
+        concerns = scan_diff_antipatterns(diff)
+        assert not any("data contract" in c.lower() for c in concerns)
+
+    def test_single_word_key_not_flagged(self):
+        """Single lowercase word keys are fine — no mismatch signal."""
+        diff = '+++ b/golem/api.py\n+    name = data["name"]\n'
+        concerns = scan_diff_antipatterns(diff)
+        assert not any("data contract" in c.lower() for c in concerns)
+
+    def test_test_file_skipped(self):
+        diff = '+++ b/golem/tests/test_api.py\n+    val = resp.json()["status"]\n'
+        concerns = scan_diff_antipatterns(diff)
+        assert not any("data contract" in c.lower() for c in concerns)
+
+    def test_comment_skipped(self):
+        diff = '+++ b/golem/api.py\n+    # data["firstName"]\n'
+        concerns = scan_diff_antipatterns(diff)
+        assert not any("data contract" in c.lower() for c in concerns)
+
+    def test_deduplicates_files(self):
+        diff = (
+            "+++ b/golem/api.py\n"
+            '+    a = data["firstName"]\n'
+            '+    b = data["lastName"]\n'
+        )
+        concerns = scan_diff_antipatterns(diff)
+        matching = [c for c in concerns if "data contract" in c.lower()]
+        assert len(matching) == 1
+        assert matching[0].count("golem/api.py") == 1
+
+    def test_response_bracket_json_access_flagged(self):
+        """response.json()[key] is a contract mismatch risk."""
+        diff = '+++ b/golem/handler.py\n+    x = response.json()["items"]\n'
+        concerns = scan_diff_antipatterns(diff)
+        assert any("data contract" in c.lower() for c in concerns)

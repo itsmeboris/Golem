@@ -44,6 +44,20 @@ successfully completed task #{issue_id}.
    - *String-matching control flow*: Using bare string comparisons
      (e.g., ``if status == "ready"``) for control flow instead of enums,
      constants, or dedicated types.
+   - *Hardcoded UI states*: Inline styles or attributes that permanently hide
+     or disable elements (e.g., ``display: none``, ``visibility: hidden``,
+     ``hidden=True``, ``disabled=True``).
+   - *Dead/unreachable code*: Statements placed after ``return``, ``raise``,
+     or ``sys.exit()`` at the same indentation level (unreachable at runtime).
+   - *Empty exception handlers*: ``except`` clauses whose body is only
+     ``pass`` or ``...`` (silently swallowing errors).
+   - *I/O calls without error handling*: File, network, or subprocess calls
+     (``open``, ``requests.get``, ``subprocess.run``, etc.) not wrapped in a
+     ``try/except`` block — verify that error handling exists nearby.
+   - *Data contract mismatches*: camelCase dict key access in Python code
+     (suggesting frontend/backend naming convention mismatch) or direct
+     ``.json()["key"]`` / ``.json().get("key")`` access on API responses
+     without type validation — verify keys match the backend response shape.
    If any antipattern is detected in a code_change task, flag each in concerns.
 7. **Cross-Module Consistency**: When the diff adds or modifies code that
    reads from shared data structures (dicts, JSON, dataclass fields):

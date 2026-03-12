@@ -236,6 +236,46 @@ _RAW_DICT_ACCESS_RE = re.compile(
     r'\.get\(\s*["\'][a-z_]+["\']\s*' + r"|" + r'\[["\'][a-z_]+["\']\]'
 )
 
+# Hardcoded UI states: inline hide/disable in HTML/templates/Python code
+_HARDCODED_UI_RE = re.compile(
+    r"display\s*:\s*none"
+    r"|visibility\s*:\s*hidden"
+    r'|hidden\s*=\s*["\']?(?:true|True|hidden)["\']?'
+    r'|disabled\s*=\s*["\']?(?:true|True|disabled)["\']?'
+    r'|style\s*=\s*["\'][^"\']*display\s*:\s*none',
+    re.IGNORECASE,
+)
+
+# Empty exception handlers — except with only pass or ellipsis on the same line
+_EMPTY_EXCEPT_RE = re.compile(
+    r"except\s*(?:\w[\w\s,.|]*)?:\s*(?:pass|\.\.\.)\s*(?:#.*)?$"
+)
+
+# Except header with NO body on the same line (multi-line except block)
+_EXCEPT_HEADER_RE = re.compile(r"^\s*except\s*(?:\w[\w\s,.|]*)?:\s*(?:#.*)?$")
+
+# I/O calls that may need error handling (soft signal)
+_IO_CALL_RE = re.compile(
+    r"\b(?:open|subprocess\.(?:run|call|check_output|check_call|Popen)"
+    r"|requests\.(?:get|post|put|delete|patch|head)"
+    r"|urlopen|shutil\.(?:copy|copy2|move|rmtree))\s*\("
+)
+
+# Data contract mismatch: camelCase dict keys (naming convention mismatch)
+# or direct .json()["key"]/.json().get("key") access (untyped API response access)
+_CAMEL_CASE_KEY_RE = re.compile(r"""(?:\.get\(\s*|[\[])["']([a-z]+[A-Z]\w*)["']""")
+_JSON_FIELD_ACCESS_RE = re.compile(
+    r"""\.json\(\)\s*(?:\[["']\w+["']\]|\.get\(\s*["']\w+["'])"""
+)
+
+# Detect return/raise/sys.exit lines for dead code tracking
+_RETURN_EXIT_RE = re.compile(r"^\s*(?:return\b|raise\b|sys\.exit\s*\()")
+
+# Detect lines that start a new scope (def/class/decorator/except/elif/else/finally)
+_NEW_SCOPE_RE = re.compile(
+    r"^\s*(?:def\s|class\s|@|except\s|elif\s|else\s*:|finally\s*:)"
+)
+
 
 def _check_line_antipatterns(
     content: str,
@@ -244,6 +284,10 @@ def _check_line_antipatterns(
     private_hits: list[str],
     string_hits: list[str],
     dict_access_hits: list[str],
+    hardcoded_ui_hits: list[str],
+    empty_except_hits: list[str],
+    io_call_hits: list[str],
+    contract_hits: list[str],
 ) -> None:
     """Check a single added line for antipatterns and append to hit lists."""
     loc = current_file or "unknown file"
@@ -257,6 +301,14 @@ def _check_line_antipatterns(
         string_hits.append(loc)
     if _RAW_DICT_ACCESS_RE.search(content):
         dict_access_hits.append(loc)
+    if _HARDCODED_UI_RE.search(content):
+        hardcoded_ui_hits.append(loc)
+    if _EMPTY_EXCEPT_RE.search(content):
+        empty_except_hits.append(loc)
+    if _IO_CALL_RE.search(content):
+        io_call_hits.append(loc)
+    if _CAMEL_CASE_KEY_RE.search(content) or _JSON_FIELD_ACCESS_RE.search(content):
+        contract_hits.append(loc)
 
 
 def scan_diff_antipatterns(diff_text: str) -> list[str]:
@@ -273,12 +325,27 @@ def scan_diff_antipatterns(diff_text: str) -> list[str]:
     private_hits: list[str] = []
     string_hits: list[str] = []
     dict_access_hits: list[str] = []
+    hardcoded_ui_hits: list[str] = []
+    empty_except_hits: list[str] = []
+    io_call_hits: list[str] = []
+    contract_hits: list[str] = []
+    dead_code_hits: list[str] = []
+
+    # Track the indentation level of the last return/raise/sys.exit() added line
+    prev_return_indent: int | None = None
+    # Track the indentation level of the last except header (for multi-line detection)
+    prev_except_indent: int | None = None
 
     for line in diff_text.splitlines():
         if line.startswith("+++ b/"):
             current_file = line[6:]
+            prev_return_indent = None
+            prev_except_indent = None
             continue
         if not line.startswith("+") or line.startswith("+++"):
+            # Non-added line resets dead code and except tracking
+            prev_return_indent = None
+            prev_except_indent = None
             continue
         content = line[1:]
 
@@ -288,9 +355,52 @@ def scan_diff_antipatterns(diff_text: str) -> list[str]:
             and ("/test_" in current_file or current_file.startswith("test_"))
         )
         if is_test_file:
+            prev_return_indent = None
+            prev_except_indent = None
             continue
         if content.strip().startswith("#"):
             continue
+
+        # Skip blank lines for dead code tracking (don't reset the flag)
+        if not content.strip():
+            continue
+
+        loc = current_file or "unknown file"
+        current_indent = len(content) - len(content.lstrip())
+
+        # Dead code detection: check if this line follows a return/raise/exit
+        # at the same indentation level (same scope)
+        if prev_return_indent is not None:
+            if current_indent == prev_return_indent and not _NEW_SCOPE_RE.match(
+                content
+            ):
+                dead_code_hits.append(loc)
+
+        # Multi-line empty except detection: check if this line is just pass/...
+        # following an except header at a shallower indentation
+        if prev_except_indent is not None:
+            if current_indent > prev_except_indent and content.strip() in (
+                "pass",
+                "...",
+            ):
+                empty_except_hits.append(loc)
+            prev_except_indent = None
+
+        # Update dead code tracking state
+        if _RETURN_EXIT_RE.match(content):
+            prev_return_indent = current_indent
+        elif _NEW_SCOPE_RE.match(content):
+            prev_return_indent = None
+        else:
+            # Only reset if we've moved to a shallower scope
+            if prev_return_indent is not None and current_indent < prev_return_indent:
+                prev_return_indent = None
+
+        # Update except header tracking state
+        if _EXCEPT_HEADER_RE.match(content):
+            prev_except_indent = current_indent
+        else:
+            prev_except_indent = None
 
         _check_line_antipatterns(
             content,
@@ -299,6 +409,10 @@ def scan_diff_antipatterns(diff_text: str) -> list[str]:
             private_hits,
             string_hits,
             dict_access_hits,
+            hardcoded_ui_hits,
+            empty_except_hits,
+            io_call_hits,
+            contract_hits,
         )
 
     concerns: list[str] = []
@@ -320,6 +434,29 @@ def scan_diff_antipatterns(diff_text: str) -> list[str]:
         concerns.append(
             f"Antipattern: untyped dict access in {', '.join(files)} "
             f"— verify keys match golem/types.py contracts"
+        )
+    if hardcoded_ui_hits:
+        files = sorted(set(hardcoded_ui_hits))
+        concerns.append(f"Antipattern: hardcoded UI state in {', '.join(files)}")
+    if dead_code_hits:
+        files = sorted(set(dead_code_hits))
+        concerns.append(
+            f"Antipattern: dead code after return/raise/exit in {', '.join(files)}"
+        )
+    if empty_except_hits:
+        files = sorted(set(empty_except_hits))
+        concerns.append(f"Antipattern: empty exception handler in {', '.join(files)}")
+    if io_call_hits:
+        files = sorted(set(io_call_hits))
+        concerns.append(
+            f"Antipattern: I/O call without visible error handling in {', '.join(files)}"
+        )
+    if contract_hits:
+        files = sorted(set(contract_hits))
+        concerns.append(
+            f"Antipattern: possible data contract mismatch in {', '.join(files)}"
+            f" — camelCase keys or untyped .json() access may diverge from"
+            f" backend response shape"
         )
     return concerns
 
