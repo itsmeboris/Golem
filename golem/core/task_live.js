@@ -89,5 +89,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     showView('overview');
   }
 
+  // Browser back/forward support
+  window.addEventListener('hashchange', async () => {
+    const h = location.hash.slice(1);
+    if (h.startsWith('detail/')) {
+      S.selectedTaskId = h.slice(7);
+      showView('detail');
+    } else {
+      showView('overview');
+    }
+  });
+
   startPolling();
 });

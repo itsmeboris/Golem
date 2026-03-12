@@ -220,7 +220,7 @@ function renderPhaseStrip(trace, isRunning, session) {
     const MIN_FLEX = 14;
     const rawFlex = totalMs > 0 && pfDurMs > 0 ? Math.round(pfDurMs / totalMs * 100) : 0;
     const flexVal = Math.max(rawFlex, MIN_FLEX);
-    const durText = pfDurMs > 0 && !isRunning ? ` ${fmtDurationMs(pfDurMs)}` : '';
+    const durText = pfDurMs > 0 ? ` ${fmtDurationMs(pfDurMs)}` : '';
     pfItem = `<div style="flex:${flexVal};display:flex;flex-direction:column;align-items:center;gap:2px">
       <div style="width:100%;height:4px;border-radius:2px;background:${pfColor}"></div>
       <span style="font-size:0.6rem;color:${pfColor};font-weight:600">PRE-FLIGHT${esc(durText)}</span>
@@ -236,8 +236,8 @@ function renderPhaseStrip(trace, isRunning, session) {
     const phaseReached = tracePhaseNames.has(name);
     const hasData = phase && phase.duration_ms > 0;
 
-    // For completed tasks, skip phases that weren't in the trace (e.g. REVIEW skipped)
-    if (!isRunning && !phaseReached) return '';
+    // Skip phases that haven't been reached yet (whether running or completed)
+    if (!phaseReached) return '';
 
     // Ensure every reached phase gets at least 8% of the bar width so short
     // phases (UNDERSTAND, PLAN) remain readable. Unreached phases get flex:1.
@@ -263,7 +263,7 @@ function renderPhaseStrip(trace, isRunning, session) {
     } else {
       // Completed phase — solid bar with name and duration
       barStyle += `background:${color}`;
-      const durText = hasData && !isRunning ? ` ${fmtDurationMs(phase.duration_ms)}` : '';
+      const durText = hasData && !isActive ? ` ${fmtDurationMs(phase.duration_ms)}` : '';
       label = `<span style="font-size:0.6rem;color:${color};font-weight:600">${name}${esc(durText)}</span>`;
     }
 

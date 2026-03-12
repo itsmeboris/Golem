@@ -59,6 +59,13 @@ async function showView(view) {
   document.querySelectorAll('.nav-tab').forEach(t =>
     t.classList.toggle('active', t.dataset.view === view)
   );
+
+  // Update URL hash so the view persists across refresh / back-forward
+  const newHash = view === 'detail' && S.selectedTaskId
+    ? `#detail/${S.selectedTaskId}`
+    : '#overview';
+  if (location.hash !== newHash) history.pushState(null, '', newHash);
+
   if (view === 'overview') renderOverview();
   if (view === 'detail' && S.selectedTaskId) {
     if (typeof resetAutoScroll === 'function') resetAutoScroll();
