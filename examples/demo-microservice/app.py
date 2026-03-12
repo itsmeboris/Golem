@@ -96,3 +96,9 @@ def complete_task(task_id):
         task["done"] = True
         logger.info("Task completed", extra={"task_id": task_id})
     return jsonify(task)
+
+
+@app.get("/health")
+def health_check():
+    """Return service health status."""
+    return jsonify({"status": "ok"})
