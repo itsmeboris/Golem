@@ -52,6 +52,16 @@ html,body{height:100%;font-family:var(--font-sans);background:var(--bg-base);col
 .td-badge.failed{background:var(--red-bg);color:var(--red)}
 .td-mode{font-size:0.72rem;color:var(--text-muted);font-family:var(--font-mono)}
 .td-subject{font-size:0.95rem;color:var(--text-secondary);font-weight:400}
+.td-stats {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  padding: 0.3rem 0;
+  border-top: 1px solid var(--border);
+  margin-top: 0.3rem;
+}
 
 /* Metrics */
 .metrics{display:flex;gap:0.5rem;padding:0.6rem 1.25rem;border-bottom:1px solid var(--border-subtle);flex-wrap:wrap}

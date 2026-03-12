@@ -162,6 +162,26 @@ function renderDetailHeader(session, trace, running) {
     depsHtml = `<div class="td-deps">${sections}</div>`;
   }
 
+  // Stats row for completed/failed tasks
+  let statsHtml = '';
+  if (!running && trace) {
+    const meta = trace.result_meta || {};
+    const cost = meta.total_cost_usd || (session && session.total_cost_usd);
+    const durMs = meta.duration_ms || ((session && session.duration_seconds) ? session.duration_seconds * 1000 : 0);
+    const commitSha = session && session.commit_sha;
+    const retryCount = session && session.retry_count;
+
+    const parts = [];
+    if (cost) parts.push(`<span style="color:var(--green)">${fmtCost(cost)}</span> cost`);
+    if (durMs) parts.push(fmtDurationMs(durMs));
+    if (commitSha) parts.push(`<code style="font-family:var(--font-mono);font-size:0.72rem;background:var(--bg-elevated);padding:0.1rem 0.3rem;border-radius:3px">${esc(String(commitSha).slice(0, 7))}</code>`);
+    if (retryCount) parts.push(`${retryCount} retr${retryCount === 1 ? 'y' : 'ies'}`);
+
+    if (parts.length > 0) {
+      statsHtml = `<div class="td-stats">${parts.join(' <span style="color:var(--text-muted);margin:0 0.25rem">·</span> ')}</div>`;
+    }
+  }
+
   el.innerHTML = `
     <div class="td-top">
       <span class="td-id">#${taskId}</span>
@@ -170,6 +190,7 @@ function renderDetailHeader(session, trace, running) {
       ${liveHtml}
     </div>
     <div class="td-subject">${subject}</div>
+    ${statsHtml}
     ${depsHtml}
   `;
 
