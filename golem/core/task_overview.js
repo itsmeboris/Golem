@@ -196,11 +196,15 @@ function renderPhaseStrip(trace, isRunning) {
     const phase = phases.find(p => (p.name || '').toUpperCase() === name);
     const color = PHASE_COLORS[name] || 'var(--text-muted)';
     const dur = phase && phase.duration_ms ? phase.duration_ms : 0;
-    const flexVal = totalMs > 0 && dur > 0 ? Math.max(1, Math.round(dur / totalMs * 10)) : 1;
     const isActive = name === activePhase;
     // Phase is "reached" if it exists in the trace data (even without duration_ms)
     const phaseReached = tracePhaseNames.has(name);
     const hasData = phase && phase.duration_ms > 0;
+    // Ensure every reached phase gets at least 8% of the bar width so short
+    // phases (UNDERSTAND, PLAN) remain readable. Unreached phases get flex:1.
+    const MIN_FLEX = 8;
+    const rawFlex = totalMs > 0 && dur > 0 ? Math.round(dur / totalMs * 100) : 0;
+    const flexVal = phaseReached ? Math.max(rawFlex, MIN_FLEX) : 1;
 
     let barStyle = `width:100%;height:4px;border-radius:2px;`;
     let label = '';

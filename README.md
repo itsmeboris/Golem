@@ -8,11 +8,9 @@
   <strong>An autonomous AI agent that picks up tasks, executes them, and delivers results — no human in the loop.</strong>
 </p>
 
-<!-- GIF DEMOS — replace these placeholders after recording
 <p align="center">
-  <img src="assets/demo-run.gif" alt="golem run demo" width="720" />
+  <img src="assets/demo-dashboard.gif" alt="Dashboard overview — task lifecycle" width="720" />
 </p>
--->
 
 <p align="center">
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white" alt="Python 3.11+"></a>
@@ -349,6 +347,10 @@ Skills are discovered dynamically via the Skill tool. When new skills are added 
 ## Web Dashboard
 
 Launch with `golem dashboard --port 8081`. The dashboard is served alongside the REST API on the same port.
+
+<p align="center">
+  <img src="assets/demo-task-detail.gif" alt="Task detail — phase timeline walkthrough" width="720" />
+</p>
 
 | View | What it shows |
 |------|--------------|
