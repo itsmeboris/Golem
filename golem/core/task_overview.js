@@ -202,7 +202,7 @@ function renderPhaseStrip(trace, isRunning) {
     const hasData = phase && phase.duration_ms > 0;
     // Ensure every reached phase gets at least 8% of the bar width so short
     // phases (UNDERSTAND, PLAN) remain readable. Unreached phases get flex:1.
-    const MIN_FLEX = 8;
+    const MIN_FLEX = 14;
     const rawFlex = totalMs > 0 && dur > 0 ? Math.round(dur / totalMs * 100) : 0;
     const flexVal = phaseReached ? Math.max(rawFlex, MIN_FLEX) : 1;
 
@@ -222,10 +222,10 @@ function renderPhaseStrip(trace, isRunning) {
         ${label}
       </div>`;
     } else {
-      // Completed phase — solid bar with duration (or name if duration unknown)
+      // Completed phase — solid bar with name and duration
       barStyle += `background:${color}`;
-      const durLabel = hasData && !isRunning ? fmtDurationMs(phase.duration_ms) : name;
-      label = `<span style="font-size:0.6rem;color:${color};font-weight:600">${esc(durLabel)}</span>`;
+      const durText = hasData && !isRunning ? ` ${fmtDurationMs(phase.duration_ms)}` : '';
+      label = `<span style="font-size:0.6rem;color:${color};font-weight:600">${name}${esc(durText)}</span>`;
     }
 
     return `<div style="flex:${flexVal};display:flex;flex-direction:column;align-items:center;gap:2px">
