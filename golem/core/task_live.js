@@ -23,9 +23,12 @@ function startPolling() {
           // Incremental: only fetch new events since last poll
           const trace = await fetchParsedTrace(S.selectedTaskId, true);
           // Always re-render: shows session status even before trace is available
-          renderDetail(S.selectedTaskId, trace || undefined);
+          await renderDetail(S.selectedTaskId, trace || undefined);
           updateLiveCursor();
           autoScrollIfAtBottom();
+        } else {
+          // Task just completed — do a final full render to show completion state
+          await renderDetail(S.selectedTaskId);
         }
       }
     } finally {
