@@ -17,25 +17,18 @@ async function renderDetail(eventId, prefetchedTrace) {
     if (el) {
       const events = (session && session.event_log) || [];
       const isFailed = session.state === 'failed';
-      const phaseColor = isFailed ? 'var(--danger, #e55)' : 'var(--blue)';
+      const pfColor = isFailed ? 'var(--danger, #e55)' : (PHASE_COLORS.PREFLIGHT || 'var(--cyan, #5eead4)');
 
       let html = '';
 
       // Phase divider — identical to build/plan/review phases
       html += `<div class="tl-phase" data-phase="preflight">
         <span class="tl-phase-chevron">▾</span>
-        <span class="tl-phase-line" style="border-color:${phaseColor}"></span>
-        <span class="tl-phase-name" style="color:${phaseColor}">PRE-FLIGHT</span>
-        <span class="tl-phase-line" style="border-color:${phaseColor}"></span>
+        <span class="tl-phase-line" style="border-color:${pfColor}"></span>
+        <span class="tl-phase-name" style="color:${pfColor}">PRE-FLIGHT</span>
+        <span class="tl-phase-line" style="border-color:${pfColor}"></span>
       </div>`;
       html += '<div class="tl-phase-content">';
-
-      if (running) {
-        html += `<div id="tl-live-cursor" style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;margin:0.25rem 0">
-          <div class="ov-trace-cursor" style="margin:0"></div>
-          <span style="font-size:0.72rem;color:var(--text-muted);font-family:var(--font-mono)">starting...</span>
-        </div>`;
-      }
 
       // Render each step as a tool-call-style block
       const steps = events.filter(ev => !ev.is_error);
@@ -86,6 +79,13 @@ async function renderDetail(eventId, prefetchedTrace) {
       }
 
       if (!events.length) html += '<div class="tl-text" style="color:var(--text-muted)">Waiting for trace data\u2026</div>';
+
+      if (running) {
+        html += `<div id="tl-live-cursor" style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;margin:0.25rem 0">
+          <div class="ov-trace-cursor" style="margin:0"></div>
+          <span style="font-size:0.72rem;color:var(--text-muted);font-family:var(--font-mono)">running pre-flight...</span>
+        </div>`;
+      }
 
       html += '</div>'; // end tl-phase-content
       el.innerHTML = html;

@@ -120,7 +120,20 @@ async function renderPreview(eventId) {
   const dur = session.duration_seconds ? fmtDuration(session.duration_seconds) : '';
 
   const trace = await fetchParsedTrace(eventId);
-  const phaseStripHtml = trace ? renderPhaseStrip(trace, running, session) : '';
+  let phaseStripHtml = trace ? renderPhaseStrip(trace, running, session) : '';
+
+  // Show a pre-flight-only strip when running with no trace yet
+  if (!phaseStripHtml && running && session.event_log && session.event_log.length > 0) {
+    const pfColor = PHASE_COLORS.PREFLIGHT || 'var(--cyan, #5eead4)';
+    phaseStripHtml = `<div style="display:flex;gap:2px;padding:0.5rem 1rem;border-bottom:1px solid var(--border-subtle);background:var(--bg-surface)">
+      <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px">
+        <div style="width:100%;height:4px;border-radius:2px;background:var(--bg-elevated);overflow:hidden">
+          <div style="width:60%;height:100%;background:${pfColor};border-radius:2px;animation:grow 2s ease-in-out infinite alternate"></div>
+        </div>
+        <span style="font-size:0.6rem;color:${pfColor};font-weight:600">PRE-FLIGHT</span>
+      </div>
+    </div>`;
+  }
 
   let headerExtra = '';
   if (running) {
