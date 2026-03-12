@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from golem.trace_parser import PHASE_NAMES, PHASE_MARKER_RE, parse_trace
 
-
 # ---------------------------------------------------------------------------
 # Fixture builder helpers
 # ---------------------------------------------------------------------------

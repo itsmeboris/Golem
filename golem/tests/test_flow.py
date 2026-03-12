@@ -1,5 +1,6 @@
 # pylint: disable=too-few-public-methods,too-many-lines
 """Tests for golem.flow — full coverage."""
+
 import asyncio
 import json
 from datetime import datetime, timedelta, timezone

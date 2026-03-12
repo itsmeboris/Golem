@@ -22,7 +22,6 @@ import pytest
 
 from golem.core.config import Config, GolemFlowConfig, SlackConfig, TeamsConfig
 
-
 # ---------------------------------------------------------------------------
 # Helpers — build a null-backends profile inline (no registry needed)
 # ---------------------------------------------------------------------------

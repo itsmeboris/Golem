@@ -11,7 +11,6 @@ from golem.core.config import (
     _parse_golem_config,
 )
 
-
 # -- Orchestration config fields --------------------------------------------
 
 

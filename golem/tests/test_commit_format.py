@@ -145,9 +145,7 @@ class TestLoadCommitFormat:
     def test_custom_file(self, tmp_path):
         _clear_cache()
         cfg = tmp_path / "custom.yaml"
-        cfg.write_text(
-            dedent(
-                """\
+        cfg.write_text(dedent("""\
             main_tags:
               - X
               - Y
@@ -156,9 +154,7 @@ class TestLoadCommitFormat:
                 - HW1
               areas:
                 - A1
-            """
-            )
-        )
+            """))
         fmt = load_commit_format(cfg)
         assert fmt.main_tags == ("X", "Y")
         assert fmt.sub_tags_hw == ("HW1",)

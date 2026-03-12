@@ -8,7 +8,6 @@ import pytest
 from golem.core.config import Config, GolemFlowConfig
 from golem.orchestrator import TaskSessionState
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

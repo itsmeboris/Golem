@@ -18,7 +18,6 @@ from golem.core.config import GolemFlowConfig
 from golem.orchestrator import TaskSession
 from golem.supervisor_v2_subagent import SubagentSupervisor
 
-
 # ---------------------------------------------------------------------------
 # load_workspace_context
 # ---------------------------------------------------------------------------

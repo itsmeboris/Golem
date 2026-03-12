@@ -8,5 +8,5 @@ if [[ -z "$staged_py" ]]; then
 fi
 
 # Format and re-stage
-echo "$staged_py" | xargs python -m black --quiet 2>/dev/null
+echo "$staged_py" | xargs python3 -m black --quiet
 echo "$staged_py" | xargs git add

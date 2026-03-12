@@ -18,7 +18,6 @@ from golem.core.stream_printer import StreamPrinter
 from golem.event_tracker import TaskEventTracker
 from golem.orchestrator import TaskSession
 
-
 # ---------------------------------------------------------------------------
 # _write_settings_json — must overwrite restrictive existing settings
 # ---------------------------------------------------------------------------

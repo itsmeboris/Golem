@@ -34,7 +34,6 @@ from golem.orchestrator import TaskSession, TaskSessionState
 from golem.trace_parser import parse_trace as _parse_trace_structured
 from golem.types import MilestoneDict
 
-
 # ---------------------------------------------------------------------------
 # _extract_numeric_id
 # ---------------------------------------------------------------------------

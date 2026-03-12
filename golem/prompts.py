@@ -33,9 +33,9 @@ def _apply_description_guard(name: str, kwargs: dict) -> None:
             "Empty task_description for template %s, using subject fallback",
             name,
         )
-        kwargs[
-            "task_description"
-        ] = f"Implement the following based on the subject: {subject}"
+        kwargs["task_description"] = (
+            f"Implement the following based on the subject: {subject}"
+        )
 
 
 def format_prompt(name: str, **kwargs) -> str:

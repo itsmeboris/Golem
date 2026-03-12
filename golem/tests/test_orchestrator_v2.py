@@ -455,18 +455,19 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
         orch = _make_orch(session, profile=profile)
 
         deps = self._mock_deps()
-        with deps["resolve"], deps["invoke"], deps["run_verification"], deps[
-            "run_val"
-        ], deps["commit"], deps["write_prompt"], deps["write_trace"], deps[
-            "preflight"
-        ], deps[
-            "save_cp"
-        ], deps[
-            "del_cp"
-        ], patch.object(
-            orch, "_write_report"
-        ), patch.object(
-            orch, "_record_run"
+        with (
+            deps["resolve"],
+            deps["invoke"],
+            deps["run_verification"],
+            deps["run_val"],
+            deps["commit"],
+            deps["write_prompt"],
+            deps["write_trace"],
+            deps["preflight"],
+            deps["save_cp"],
+            deps["del_cp"],
+            patch.object(orch, "_write_report"),
+            patch.object(orch, "_record_run"),
         ):
             await orch._run_agent_monolithic()
 
@@ -493,22 +494,21 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
         orch = _make_orch(session, profile=profile, task_config=tc)
 
         deps = self._mock_deps()
-        with deps["resolve"], deps["create_wt"] as m_create, deps["invoke"], deps[
-            "run_verification"
-        ], deps["run_val"], deps["commit"], deps["write_prompt"], deps[
-            "write_trace"
-        ], deps[
-            "streaming_trace"
-        ], deps[
-            "preflight"
-        ], deps[
-            "save_cp"
-        ], deps[
-            "del_cp"
-        ], patch.object(
-            orch, "_write_report"
-        ), patch.object(
-            orch, "_record_run"
+        with (
+            deps["resolve"],
+            deps["create_wt"] as m_create,
+            deps["invoke"],
+            deps["run_verification"],
+            deps["run_val"],
+            deps["commit"],
+            deps["write_prompt"],
+            deps["write_trace"],
+            deps["streaming_trace"],
+            deps["preflight"],
+            deps["save_cp"],
+            deps["del_cp"],
+            patch.object(orch, "_write_report"),
+            patch.object(orch, "_record_run"),
         ):
             await orch._run_agent_monolithic()
 
@@ -539,9 +539,13 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
         orch = _make_orch(session, profile=profile, task_config=tc)
 
         deps = self._mock_deps()
-        with deps["resolve"], patch(
-            "golem.orchestrator.create_worktree", side_effect=RuntimeError("no git")
-        ), pytest.raises(InfrastructureError, match="Worktree creation failed"):
+        with (
+            deps["resolve"],
+            patch(
+                "golem.orchestrator.create_worktree", side_effect=RuntimeError("no git")
+            ),
+            pytest.raises(InfrastructureError, match="Worktree creation failed"),
+        ):
             await orch._run_agent_monolithic()
 
     async def test_work_dir_override(self):
@@ -553,18 +557,19 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
         orch = _make_orch(session, profile=profile, work_dir_override="/custom")
 
         deps = self._mock_deps()
-        with deps["invoke"], deps["run_verification"], deps["run_val"], deps[
-            "commit"
-        ], deps["write_prompt"], deps["write_trace"], deps["preflight"], deps[
-            "save_cp"
-        ], deps[
-            "del_cp"
-        ], patch(
-            "golem.orchestrator.resolve_work_dir"
-        ) as m_resolve, patch.object(
-            orch, "_write_report"
-        ), patch.object(
-            orch, "_record_run"
+        with (
+            deps["invoke"],
+            deps["run_verification"],
+            deps["run_val"],
+            deps["commit"],
+            deps["write_prompt"],
+            deps["write_trace"],
+            deps["preflight"],
+            deps["save_cp"],
+            deps["del_cp"],
+            patch("golem.orchestrator.resolve_work_dir") as m_resolve,
+            patch.object(orch, "_write_report"),
+            patch.object(orch, "_record_run"),
         ):
             await orch._run_agent_monolithic()
 
@@ -585,20 +590,19 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
             confidence=0.5,
             summary="needs work",
         )
-        with deps["resolve"], deps["invoke"], deps["run_verification"], deps[
-            "preflight"
-        ], deps["save_cp"], deps["del_cp"], patch(
-            "golem.orchestrator.run_validation", return_value=partial_verdict
-        ), deps[
-            "commit"
-        ], deps[
-            "write_prompt"
-        ], deps[
-            "write_trace"
-        ], patch.object(
-            orch, "_write_report"
-        ), patch.object(
-            orch, "_record_run"
+        with (
+            deps["resolve"],
+            deps["invoke"],
+            deps["run_verification"],
+            deps["preflight"],
+            deps["save_cp"],
+            deps["del_cp"],
+            patch("golem.orchestrator.run_validation", return_value=partial_verdict),
+            deps["commit"],
+            deps["write_prompt"],
+            deps["write_trace"],
+            patch.object(orch, "_write_report"),
+            patch.object(orch, "_record_run"),
         ):
             await orch._run_agent_monolithic()
 
@@ -618,18 +622,18 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
             confidence=0.3,
             summary="still bad",
         )
-        with deps["resolve"], deps["invoke"], deps["run_verification"], deps[
-            "preflight"
-        ], deps["save_cp"], deps["del_cp"], patch(
-            "golem.orchestrator.run_validation", return_value=partial_verdict
-        ), deps[
-            "write_prompt"
-        ], deps[
-            "write_trace"
-        ], patch.object(
-            orch, "_write_report"
-        ), patch.object(
-            orch, "_record_run"
+        with (
+            deps["resolve"],
+            deps["invoke"],
+            deps["run_verification"],
+            deps["preflight"],
+            deps["save_cp"],
+            deps["del_cp"],
+            patch("golem.orchestrator.run_validation", return_value=partial_verdict),
+            deps["write_prompt"],
+            deps["write_trace"],
+            patch.object(orch, "_write_report"),
+            patch.object(orch, "_record_run"),
         ):
             await orch._run_agent_monolithic()
 
@@ -645,18 +649,18 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
 
         deps = self._mock_deps()
         fail_verdict = ValidationVerdict(verdict="FAIL", confidence=0.1, summary="bad")
-        with deps["resolve"], deps["invoke"], deps["run_verification"], deps[
-            "preflight"
-        ], deps["save_cp"], deps["del_cp"], patch(
-            "golem.orchestrator.run_validation", return_value=fail_verdict
-        ), deps[
-            "write_prompt"
-        ], deps[
-            "write_trace"
-        ], patch.object(
-            orch, "_write_report"
-        ), patch.object(
-            orch, "_record_run"
+        with (
+            deps["resolve"],
+            deps["invoke"],
+            deps["run_verification"],
+            deps["preflight"],
+            deps["save_cp"],
+            deps["del_cp"],
+            patch("golem.orchestrator.run_validation", return_value=fail_verdict),
+            deps["write_prompt"],
+            deps["write_trace"],
+            patch.object(orch, "_write_report"),
+            patch.object(orch, "_record_run"),
         ):
             await orch._run_agent_monolithic()
 
@@ -671,12 +675,19 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
         orch = _make_orch(session, profile=profile)
 
         deps = self._mock_deps()
-        with deps["resolve"], deps["preflight"], deps["save_cp"], deps["del_cp"], patch(
-            "golem.orchestrator.invoke_cli_monitored", side_effect=RuntimeError("boom")
-        ), deps["write_prompt"], deps["write_trace"], patch.object(
-            orch, "_write_report"
-        ), patch.object(
-            orch, "_record_run"
+        with (
+            deps["resolve"],
+            deps["preflight"],
+            deps["save_cp"],
+            deps["del_cp"],
+            patch(
+                "golem.orchestrator.invoke_cli_monitored",
+                side_effect=RuntimeError("boom"),
+            ),
+            deps["write_prompt"],
+            deps["write_trace"],
+            patch.object(orch, "_write_report"),
+            patch.object(orch, "_record_run"),
         ):
             await orch._run_agent_monolithic()
 
@@ -702,22 +713,19 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
         tc.retry_budget_usd = 5.0
         orch = _make_orch(session, profile=profile, task_config=tc)
 
-        with patch("golem.orchestrator.resolve_work_dir", return_value="/work"), patch(
-            "golem.orchestrator.create_worktree", return_value="/wt"
-        ), patch.object(orch, "_preflight_check"), patch(
-            "golem.orchestrator.invoke_cli_monitored", side_effect=RuntimeError("x")
-        ), patch(
-            "golem.orchestrator._write_prompt"
-        ), patch(
-            "golem.orchestrator._write_trace"
-        ), patch(
-            "golem.orchestrator._StreamingTraceWriter"
-        ), patch(
-            "golem.orchestrator.cleanup_worktree"
-        ) as m_cleanup, patch.object(
-            orch, "_write_report"
-        ), patch.object(
-            orch, "_record_run"
+        with (
+            patch("golem.orchestrator.resolve_work_dir", return_value="/work"),
+            patch("golem.orchestrator.create_worktree", return_value="/wt"),
+            patch.object(orch, "_preflight_check"),
+            patch(
+                "golem.orchestrator.invoke_cli_monitored", side_effect=RuntimeError("x")
+            ),
+            patch("golem.orchestrator._write_prompt"),
+            patch("golem.orchestrator._write_trace"),
+            patch("golem.orchestrator._StreamingTraceWriter"),
+            patch("golem.orchestrator.cleanup_worktree") as m_cleanup,
+            patch.object(orch, "_write_report"),
+            patch.object(orch, "_record_run"),
         ):
             await orch._run_agent_monolithic()
 
@@ -801,34 +809,28 @@ class TestStreamingCallbackWiring:
             pytest_output="",
             duration_s=1.0,
         )
-        with patch(
-            "golem.orchestrator.resolve_work_dir", return_value="/work"
-        ), patch.object(orch, "_preflight_check"), patch(
-            "golem.orchestrator.invoke_cli_monitored", side_effect=_capture_cli
-        ), patch(
-            "golem.orchestrator._write_prompt"
-        ), patch(
-            "golem.orchestrator._write_trace"
-        ), patch(
-            "golem.orchestrator._StreamingTraceWriter"
-        ) as mock_sw, patch(
-            "golem.orchestrator.run_verification", return_value=_pass_vr
-        ), patch(
-            "golem.orchestrator.run_validation",
-            return_value=ValidationVerdict(
-                verdict="PASS", confidence=0.9, summary="ok", task_type="f"
+        with (
+            patch("golem.orchestrator.resolve_work_dir", return_value="/work"),
+            patch.object(orch, "_preflight_check"),
+            patch("golem.orchestrator.invoke_cli_monitored", side_effect=_capture_cli),
+            patch("golem.orchestrator._write_prompt"),
+            patch("golem.orchestrator._write_trace"),
+            patch("golem.orchestrator._StreamingTraceWriter") as mock_sw,
+            patch("golem.orchestrator.run_verification", return_value=_pass_vr),
+            patch(
+                "golem.orchestrator.run_validation",
+                return_value=ValidationVerdict(
+                    verdict="PASS", confidence=0.9, summary="ok", task_type="f"
+                ),
             ),
-        ), patch(
-            "golem.orchestrator.commit_changes",
-            return_value=CommitResult(committed=True, sha="abc"),
-        ), patch(
-            "golem.orchestrator.save_checkpoint"
-        ), patch(
-            "golem.orchestrator.delete_checkpoint"
-        ), patch.object(
-            orch, "_write_report"
-        ), patch.object(
-            orch, "_record_run"
+            patch(
+                "golem.orchestrator.commit_changes",
+                return_value=CommitResult(committed=True, sha="abc"),
+            ),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch("golem.orchestrator.delete_checkpoint"),
+            patch.object(orch, "_write_report"),
+            patch.object(orch, "_record_run"),
         ):
             await orch._run_agent_monolithic()
 
@@ -954,8 +956,9 @@ class TestHandleAgentFailure:
         tracker = TaskEventTracker(session_id=42)
         exc = RuntimeError("something broke")
 
-        with patch("golem.orchestrator._write_prompt"), patch(
-            "golem.orchestrator._write_trace"
+        with (
+            patch("golem.orchestrator._write_prompt"),
+            patch("golem.orchestrator._write_trace"),
         ):
             orch._handle_agent_failure(
                 42, exc, time.time() - 10, tracker, None, "prompt"
@@ -973,8 +976,9 @@ class TestHandleAgentFailure:
         result = CLIResult(cost_usd=0.5, trace_events=[{"e": 1}])
         exc = ValueError("oops")
 
-        with patch("golem.orchestrator._write_prompt"), patch(
-            "golem.orchestrator._write_trace"
+        with (
+            patch("golem.orchestrator._write_prompt"),
+            patch("golem.orchestrator._write_trace"),
         ):
             orch._handle_agent_failure(42, exc, time.time() - 5, tracker, result, "p")
 
@@ -1006,14 +1010,12 @@ class TestRetryAgent:
             concerns=["issue A"],
         )
 
-        with patch(
-            "golem.orchestrator.invoke_cli_monitored", return_value=retry_result
-        ), patch("golem.orchestrator._write_prompt"), patch(
-            "golem.orchestrator._write_trace", return_value="/rt"
-        ), patch(
-            "golem.orchestrator._StreamingTraceWriter"
-        ), patch(
-            "golem.orchestrator.run_validation", return_value=retry_verdict
+        with (
+            patch("golem.orchestrator.invoke_cli_monitored", return_value=retry_result),
+            patch("golem.orchestrator._write_prompt"),
+            patch("golem.orchestrator._write_trace", return_value="/rt"),
+            patch("golem.orchestrator._StreamingTraceWriter"),
+            patch("golem.orchestrator.run_validation", return_value=retry_verdict),
         ):
             await orch._retry_agent(initial_verdict, "/work", [])
 
@@ -1040,14 +1042,12 @@ class TestRetryAgent:
             summary="needs work",
         )
 
-        with patch(
-            "golem.orchestrator.invoke_cli_monitored", return_value=retry_result
-        ), patch("golem.orchestrator._write_prompt"), patch(
-            "golem.orchestrator._write_trace"
-        ), patch(
-            "golem.orchestrator._StreamingTraceWriter"
-        ), patch(
-            "golem.orchestrator.run_validation", return_value=retry_verdict
+        with (
+            patch("golem.orchestrator.invoke_cli_monitored", return_value=retry_result),
+            patch("golem.orchestrator._write_prompt"),
+            patch("golem.orchestrator._write_trace"),
+            patch("golem.orchestrator._StreamingTraceWriter"),
+            patch("golem.orchestrator.run_validation", return_value=retry_verdict),
         ):
             await orch._retry_agent(initial_verdict, "/work", [])
 
@@ -1071,12 +1071,12 @@ class TestRetryAgent:
             summary="needs work",
         )
 
-        with patch("golem.orchestrator.invoke_cli_monitored", return_value=None), patch(
-            "golem.orchestrator._write_prompt"
-        ), patch("golem.orchestrator._write_trace"), patch(
-            "golem.orchestrator._StreamingTraceWriter"
-        ), patch(
-            "golem.orchestrator.run_validation", return_value=retry_verdict
+        with (
+            patch("golem.orchestrator.invoke_cli_monitored", return_value=None),
+            patch("golem.orchestrator._write_prompt"),
+            patch("golem.orchestrator._write_trace"),
+            patch("golem.orchestrator._StreamingTraceWriter"),
+            patch("golem.orchestrator.run_validation", return_value=retry_verdict),
         ):
             await orch._retry_agent(initial_verdict, "/work", [])
 
@@ -1101,14 +1101,12 @@ class TestRetryAgent:
             concerns=["c1", "c2"],
         )
 
-        with patch(
-            "golem.orchestrator.invoke_cli_monitored", return_value=retry_result
-        ), patch("golem.orchestrator._write_prompt"), patch(
-            "golem.orchestrator._write_trace"
-        ), patch(
-            "golem.orchestrator._StreamingTraceWriter"
-        ), patch(
-            "golem.orchestrator.run_validation", return_value=retry_verdict
+        with (
+            patch("golem.orchestrator.invoke_cli_monitored", return_value=retry_result),
+            patch("golem.orchestrator._write_prompt"),
+            patch("golem.orchestrator._write_trace"),
+            patch("golem.orchestrator._StreamingTraceWriter"),
+            patch("golem.orchestrator.run_validation", return_value=retry_verdict),
         ):
             await orch._retry_agent(initial_verdict, "/work", ["mcp1"])
 
@@ -1342,8 +1340,9 @@ class TestSaveSessionsAtomicFailure:
         sessions = {1: TaskSession(parent_issue_id=1)}
         path = tmp_path / "sessions.json"
 
-        with patch("os.replace", side_effect=OSError("disk full")), patch(
-            "os.unlink", side_effect=OSError("unlink fail")
+        with (
+            patch("os.replace", side_effect=OSError("disk full")),
+            patch("os.unlink", side_effect=OSError("unlink fail")),
         ):
             with pytest.raises(OSError, match="disk full"):
                 save_sessions(sessions, path)
@@ -1500,9 +1499,12 @@ class TestInfraErrorReraised:
         profile.tool_provider.servers_for_subject.return_value = []
         orch = _make_orch(session, profile=profile)
 
-        with patch("golem.orchestrator.resolve_work_dir", return_value="/work"), patch(
-            "golem.orchestrator.TaskOrchestrator._preflight_check",
-            side_effect=InfrastructureError("cwd gone"),
+        with (
+            patch("golem.orchestrator.resolve_work_dir", return_value="/work"),
+            patch(
+                "golem.orchestrator.TaskOrchestrator._preflight_check",
+                side_effect=InfrastructureError("cwd gone"),
+            ),
         ):
             with pytest.raises(InfrastructureError, match="cwd gone"):
                 await orch._run_agent_monolithic()
@@ -1517,21 +1519,18 @@ class TestInfraErrorReraised:
         profile.tool_provider.servers_for_subject.return_value = []
         orch = _make_orch(session, profile=profile)
 
-        with patch(
-            "golem.orchestrator.resolve_work_dir", return_value="/work"
-        ), patch.object(orch, "_preflight_check"), patch(
-            "golem.orchestrator.invoke_cli_monitored",
-            side_effect=InfrastructureError("event loop dead"),
-        ), patch(
-            "golem.orchestrator._write_prompt"
-        ), patch(
-            "golem.orchestrator._write_trace"
-        ), patch(
-            "golem.orchestrator._StreamingTraceWriter"
-        ), patch.object(
-            orch, "_write_report"
-        ), patch.object(
-            orch, "_record_run"
+        with (
+            patch("golem.orchestrator.resolve_work_dir", return_value="/work"),
+            patch.object(orch, "_preflight_check"),
+            patch(
+                "golem.orchestrator.invoke_cli_monitored",
+                side_effect=InfrastructureError("event loop dead"),
+            ),
+            patch("golem.orchestrator._write_prompt"),
+            patch("golem.orchestrator._write_trace"),
+            patch("golem.orchestrator._StreamingTraceWriter"),
+            patch.object(orch, "_write_report"),
+            patch.object(orch, "_record_run"),
         ):
             with pytest.raises(InfrastructureError, match="event loop dead"):
                 await orch._run_agent_monolithic()
@@ -1602,22 +1601,19 @@ class TestCheckpointIntegration:
         orch = _make_orch(session, profile=profile)
 
         deps = self._mock_deps()
-        with patch("golem.orchestrator.save_checkpoint") as m_save, patch(
-            "golem.orchestrator.delete_checkpoint"
-        ), deps["resolve"], deps["invoke"], deps["run_verification"], deps[
-            "run_val"
-        ], deps[
-            "commit"
-        ], deps[
-            "write_prompt"
-        ], deps[
-            "write_trace"
-        ], deps[
-            "preflight"
-        ], patch.object(
-            orch, "_write_report"
-        ), patch.object(
-            orch, "_record_run"
+        with (
+            patch("golem.orchestrator.save_checkpoint") as m_save,
+            patch("golem.orchestrator.delete_checkpoint"),
+            deps["resolve"],
+            deps["invoke"],
+            deps["run_verification"],
+            deps["run_val"],
+            deps["commit"],
+            deps["write_prompt"],
+            deps["write_trace"],
+            deps["preflight"],
+            patch.object(orch, "_write_report"),
+            patch.object(orch, "_record_run"),
         ):
             await orch._run_agent_monolithic()
 
@@ -1635,9 +1631,11 @@ class TestCheckpointIntegration:
         verdict = ValidationVerdict(
             verdict="PASS", confidence=0.9, summary="good", cost_usd=0.1
         )
-        with patch("golem.orchestrator.save_checkpoint") as m_save, patch(
-            "golem.orchestrator.delete_checkpoint"
-        ), patch.object(orch, "_run_validation_in_executor", return_value=verdict):
+        with (
+            patch("golem.orchestrator.save_checkpoint") as m_save,
+            patch("golem.orchestrator.delete_checkpoint"),
+            patch.object(orch, "_run_validation_in_executor", return_value=verdict),
+        ):
             await orch._run_validation(42, "/work")
 
         phases = [c.kwargs["phase"] for c in m_save.call_args_list]
@@ -1658,15 +1656,16 @@ class TestCheckpointIntegration:
             verdict="PARTIAL", confidence=0.5, summary="needs work"
         )
 
-        with patch("golem.orchestrator.save_checkpoint") as m_save, patch(
-            "golem.orchestrator.invoke_cli_monitored",
-            return_value=CLIResult(cost_usd=0.3, trace_events=[]),
-        ), patch("golem.orchestrator._write_prompt"), patch(
-            "golem.orchestrator._write_trace"
-        ), patch(
-            "golem.orchestrator._StreamingTraceWriter"
-        ), patch(
-            "golem.orchestrator.run_validation", return_value=retry_verdict
+        with (
+            patch("golem.orchestrator.save_checkpoint") as m_save,
+            patch(
+                "golem.orchestrator.invoke_cli_monitored",
+                return_value=CLIResult(cost_usd=0.3, trace_events=[]),
+            ),
+            patch("golem.orchestrator._write_prompt"),
+            patch("golem.orchestrator._write_trace"),
+            patch("golem.orchestrator._StreamingTraceWriter"),
+            patch("golem.orchestrator.run_validation", return_value=retry_verdict),
         ):
             await orch._retry_agent(initial_verdict, "/work", [])
 
@@ -1683,9 +1682,10 @@ class TestCheckpointIntegration:
         orch = _make_orch(session, profile=profile)
 
         deps = self._mock_deps()
-        with patch("golem.orchestrator.save_checkpoint"), patch(
-            "golem.orchestrator.delete_checkpoint"
-        ) as m_del:
+        with (
+            patch("golem.orchestrator.save_checkpoint"),
+            patch("golem.orchestrator.delete_checkpoint") as m_del,
+        ):
             with (
                 deps["resolve"],
                 deps["invoke"],
@@ -1713,27 +1713,22 @@ class TestCheckpointIntegration:
         orch = _make_orch(session, profile=profile)
 
         deps = self._mock_deps()
-        with patch(
-            "golem.orchestrator.save_checkpoint",
-            side_effect=OSError("disk full"),
-        ), patch("golem.orchestrator.delete_checkpoint"), deps["resolve"], deps[
-            "invoke"
-        ], deps[
-            "run_verification"
-        ], deps[
-            "run_val"
-        ], deps[
-            "commit"
-        ], deps[
-            "write_prompt"
-        ], deps[
-            "write_trace"
-        ], deps[
-            "preflight"
-        ], patch.object(
-            orch, "_write_report"
-        ), patch.object(
-            orch, "_record_run"
+        with (
+            patch(
+                "golem.orchestrator.save_checkpoint",
+                side_effect=OSError("disk full"),
+            ),
+            patch("golem.orchestrator.delete_checkpoint"),
+            deps["resolve"],
+            deps["invoke"],
+            deps["run_verification"],
+            deps["run_val"],
+            deps["commit"],
+            deps["write_prompt"],
+            deps["write_trace"],
+            deps["preflight"],
+            patch.object(orch, "_write_report"),
+            patch.object(orch, "_record_run"),
         ):
             # Should not raise despite save_checkpoint failing
             await orch._run_agent_monolithic()
@@ -1750,23 +1745,22 @@ class TestCheckpointIntegration:
         orch = _make_orch(session, profile=profile)
 
         deps = self._mock_deps()
-        with patch("golem.orchestrator.save_checkpoint"), patch(
-            "golem.orchestrator.delete_checkpoint",
-            side_effect=OSError("disk full"),
-        ), deps["resolve"], deps["invoke"], deps["run_verification"], deps[
-            "run_val"
-        ], deps[
-            "commit"
-        ], deps[
-            "write_prompt"
-        ], deps[
-            "write_trace"
-        ], deps[
-            "preflight"
-        ], patch.object(
-            orch, "_write_report"
-        ), patch.object(
-            orch, "_record_run"
+        with (
+            patch("golem.orchestrator.save_checkpoint"),
+            patch(
+                "golem.orchestrator.delete_checkpoint",
+                side_effect=OSError("disk full"),
+            ),
+            deps["resolve"],
+            deps["invoke"],
+            deps["run_verification"],
+            deps["run_val"],
+            deps["commit"],
+            deps["write_prompt"],
+            deps["write_trace"],
+            deps["preflight"],
+            patch.object(orch, "_write_report"),
+            patch.object(orch, "_record_run"),
         ):
             # Should not raise despite delete_checkpoint failing
             await orch._run_agent_monolithic()
@@ -1788,20 +1782,19 @@ class TestCheckpointIntegration:
             verdict="PARTIAL", confidence=0.5, summary="needs work"
         )
 
-        with patch(
-            "golem.orchestrator.save_checkpoint",
-            side_effect=OSError("disk full"),
-        ), patch(
-            "golem.orchestrator.invoke_cli_monitored",
-            return_value=CLIResult(cost_usd=0.3, trace_events=[]),
-        ), patch(
-            "golem.orchestrator._write_prompt"
-        ), patch(
-            "golem.orchestrator._write_trace"
-        ), patch(
-            "golem.orchestrator._StreamingTraceWriter"
-        ), patch(
-            "golem.orchestrator.run_validation", return_value=retry_verdict
+        with (
+            patch(
+                "golem.orchestrator.save_checkpoint",
+                side_effect=OSError("disk full"),
+            ),
+            patch(
+                "golem.orchestrator.invoke_cli_monitored",
+                return_value=CLIResult(cost_usd=0.3, trace_events=[]),
+            ),
+            patch("golem.orchestrator._write_prompt"),
+            patch("golem.orchestrator._write_trace"),
+            patch("golem.orchestrator._StreamingTraceWriter"),
+            patch("golem.orchestrator.run_validation", return_value=retry_verdict),
         ):
             await orch._retry_agent(initial_verdict, "/work", [])
 
@@ -1997,8 +1990,9 @@ class TestRunVerification:
             coverage_pct=100.0,
             duration_s=5.0,
         )
-        with patch("golem.orchestrator.run_verification", return_value=vr), patch(
-            "golem.orchestrator.save_checkpoint"
+        with (
+            patch("golem.orchestrator.run_verification", return_value=vr),
+            patch("golem.orchestrator.save_checkpoint"),
         ):
             result = await orch._run_verification("/work")
 
@@ -2025,8 +2019,9 @@ class TestRunVerification:
             failures=["test_foo.py::test_bar"],
             duration_s=3.0,
         )
-        with patch("golem.orchestrator.run_verification", return_value=vr), patch(
-            "golem.orchestrator.save_checkpoint"
+        with (
+            patch("golem.orchestrator.run_verification", return_value=vr),
+            patch("golem.orchestrator.save_checkpoint"),
         ):
             result = await orch._run_verification("/work")
 
@@ -2049,9 +2044,12 @@ class TestRunVerification:
             pytest_output="",
             duration_s=1.0,
         )
-        with patch("golem.orchestrator.run_verification", return_value=vr), patch(
-            "golem.orchestrator.save_checkpoint",
-            side_effect=OSError("disk full"),
+        with (
+            patch("golem.orchestrator.run_verification", return_value=vr),
+            patch(
+                "golem.orchestrator.save_checkpoint",
+                side_effect=OSError("disk full"),
+            ),
         ):
             result = await orch._run_verification("/work")
 
@@ -2160,18 +2158,18 @@ class TestVerificationInPipeline:
             duration_s=3.0,
         )
         deps = self._mock_deps()
-        with deps["resolve"], deps["invoke"], deps["preflight"], deps[
-            "write_prompt"
-        ], deps["write_trace"], deps["commit"], patch(
-            "golem.orchestrator.run_verification", return_value=vr
-        ), patch(
-            "golem.orchestrator.save_checkpoint"
-        ), patch(
-            "golem.orchestrator.delete_checkpoint"
-        ), patch.object(
-            orch, "_write_report"
-        ), patch.object(
-            orch, "_record_run"
+        with (
+            deps["resolve"],
+            deps["invoke"],
+            deps["preflight"],
+            deps["write_prompt"],
+            deps["write_trace"],
+            deps["commit"],
+            patch("golem.orchestrator.run_verification", return_value=vr),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch("golem.orchestrator.delete_checkpoint"),
+            patch.object(orch, "_write_report"),
+            patch.object(orch, "_record_run"),
         ):
             await orch._run_agent_monolithic()
 
@@ -2201,18 +2199,17 @@ class TestVerificationInPipeline:
             duration_s=2.0,
         )
         deps = self._mock_deps()
-        with deps["resolve"], deps["invoke"], deps["preflight"], deps[
-            "write_prompt"
-        ], deps["write_trace"], patch(
-            "golem.orchestrator.run_verification", return_value=vr
-        ), patch(
-            "golem.orchestrator.save_checkpoint"
-        ), patch(
-            "golem.orchestrator.delete_checkpoint"
-        ), patch.object(
-            orch, "_write_report"
-        ), patch.object(
-            orch, "_record_run"
+        with (
+            deps["resolve"],
+            deps["invoke"],
+            deps["preflight"],
+            deps["write_prompt"],
+            deps["write_trace"],
+            patch("golem.orchestrator.run_verification", return_value=vr),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch("golem.orchestrator.delete_checkpoint"),
+            patch.object(orch, "_write_report"),
+            patch.object(orch, "_record_run"),
         ):
             await orch._run_agent_monolithic()
 

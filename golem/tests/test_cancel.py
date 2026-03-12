@@ -14,7 +14,6 @@ from golem.core.control_api import wire_control_api
 from golem.errors import TaskNotCancelableError, TaskNotFoundError
 from golem.orchestrator import TaskSession, TaskSessionState
 
-
 # ---------------------------------------------------------------------------
 # Helpers (reuse test_flow patterns)
 # ---------------------------------------------------------------------------

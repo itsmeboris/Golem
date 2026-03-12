@@ -38,7 +38,6 @@ from golem.orchestrator import (
 from golem.poller import get_issue_subject, is_agent_task
 from golem.prompts import format_prompt, load_prompt
 
-
 # -- Config parsing ---------------------------------------------------------
 
 

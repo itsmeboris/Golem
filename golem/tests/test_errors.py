@@ -1,5 +1,6 @@
 # pylint: disable=too-few-public-methods
 """Tests for golem.errors — error taxonomy and hierarchy."""
+
 import pytest
 
 from golem.errors import (

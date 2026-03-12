@@ -57,10 +57,10 @@ class _StreamingTraceWriter:
         trace_dir = TRACES_DIR / flow_name
         trace_dir.mkdir(parents=True, exist_ok=True)
         self._path: Path = trace_dir / f"{safe_id}.jsonl"
-        self._fh: IO[
-            str
-        ] | None = open(  # noqa: SIM115  # pylint: disable=consider-using-with
-            self._path, "w", encoding="utf-8"
+        self._fh: IO[str] | None = (
+            open(  # noqa: SIM115  # pylint: disable=consider-using-with
+                self._path, "w", encoding="utf-8"
+            )
         )
         self._lock = threading.Lock()
         self.relative_path = str(self._path.relative_to(DATA_DIR.parent))

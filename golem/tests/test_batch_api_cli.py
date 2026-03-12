@@ -12,7 +12,6 @@ from golem.core.config import Config, GolemFlowConfig
 from golem.core.control_api import wire_control_api
 from golem.orchestrator import TaskSessionState
 
-
 # ---------------------------------------------------------------------------
 # Helpers — same patterns as test_flow_coordination.py
 # ---------------------------------------------------------------------------

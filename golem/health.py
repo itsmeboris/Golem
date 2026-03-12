@@ -49,8 +49,7 @@ class HealthNotifier(Protocol):
         message: str,
         *,
         details: dict[str, Any] | None = None,
-    ) -> None:
-        ...  # pragma: no cover
+    ) -> None: ...  # pragma: no cover
 
 
 class HealthMonitor:

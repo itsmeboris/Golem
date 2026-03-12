@@ -419,8 +419,11 @@ class TestSetupGitHooks:
         """_setup_git_hooks returns early when .githooks/ doesn't exist."""
         from golem.init_wizard import _setup_git_hooks
 
-        with patch("pathlib.Path.is_dir", return_value=False), patch(
-            "golem.init_wizard.subprocess.run",
-        ) as mock_run:
+        with (
+            patch("pathlib.Path.is_dir", return_value=False),
+            patch(
+                "golem.init_wizard.subprocess.run",
+            ) as mock_run,
+        ):
             _setup_git_hooks()
         mock_run.assert_not_called()

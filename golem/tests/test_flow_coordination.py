@@ -1,5 +1,6 @@
 # pylint: disable=too-few-public-methods
 """Tests for golem.flow cross-task coordination — infra retry, deps, merge, batch."""
+
 import asyncio
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch

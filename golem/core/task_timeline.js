@@ -9,23 +9,92 @@ async function renderDetail(eventId, prefetchedTrace) {
   const trace = prefetchedTrace || await fetchParsedTrace(eventId);
   const running = isTaskRunning(session);
 
-  if (!trace) {
-    if (!running) return;
-    // Pre-flight: show session status while waiting for trace data
+  const hasPhases = trace && trace.phases && trace.phases.length > 0;
+
+  if (!trace || (!hasPhases && (running || session.state === 'failed'))) {
+    // Pre-flight or failed before agent ran: render as a proper phase
     const el = document.getElementById('timeline-scroll');
     if (el) {
       const events = (session && session.event_log) || [];
-      let html = '<div style="padding:1.5rem">';
-      html += '<div class="tl-live-badge" style="margin-bottom:1rem"><span class="live-dot"></span>Starting</div>';
-      for (const ev of events) {
-        html += `<div style="padding:0.25rem 0;font-size:0.78rem;color:var(--text-secondary)">${esc(ev.summary || '')}</div>`;
+      const isFailed = session.state === 'failed';
+      const phaseColor = isFailed ? 'var(--danger, #e55)' : 'var(--blue)';
+
+      let html = '';
+
+      // Phase divider — identical to build/plan/review phases
+      html += `<div class="tl-phase" data-phase="preflight">
+        <span class="tl-phase-chevron">▾</span>
+        <span class="tl-phase-line" style="border-color:${phaseColor}"></span>
+        <span class="tl-phase-name" style="color:${phaseColor}">PRE-FLIGHT</span>
+        <span class="tl-phase-line" style="border-color:${phaseColor}"></span>
+      </div>`;
+      html += '<div class="tl-phase-content">';
+
+      if (running) {
+        html += `<div id="tl-live-cursor" style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;margin:0.25rem 0">
+          <div class="ov-trace-cursor" style="margin:0"></div>
+          <span style="font-size:0.72rem;color:var(--text-muted);font-family:var(--font-mono)">starting...</span>
+        </div>`;
       }
-      if (!events.length) html += '<div style="color:var(--text-muted);font-size:0.78rem">Waiting for trace data\u2026</div>';
-      html += '<div class="ov-trace-cursor" style="margin-top:0.75rem"></div>';
-      html += '</div>';
+
+      // Render each step as a tool-call-style block
+      const steps = events.filter(ev => !ev.is_error);
+      for (const ev of steps) {
+        const icon = ev.summary.includes('worktree') ? '🌿' : ev.summary.includes('verification') ? '🔍' : '⚙';
+        html += `<div class="tl-tool">
+          <div class="tl-tool-header">
+            <span class="tl-tool-icon">${icon}</span>
+            <span class="tl-tool-name bash">supervisor</span>
+            <span class="tl-tool-summary">${esc(ev.summary || '')}</span>
+          </div>
+        </div>`;
+      }
+
+      // Error events — render as expandable tool-call blocks per checker
+      const errors = events.filter(ev => ev.is_error);
+      for (const ev of errors) {
+        const msg = ev.summary || '';
+        // Split into per-checker sections for readability
+        const sections = msg.split(/(?=\b(?:black|pylint|pytest):)/i).filter(Boolean);
+        // Leading text (e.g. "Supervisor failed: ...") as summary
+        const leadSection = sections.length > 0 && !/^(black|pylint|pytest):/i.test(sections[0]) ? sections.shift() : '';
+
+        if (leadSection) {
+          html += `<div class="tl-text" style="color:var(--danger, #e55);font-weight:600;font-size:0.82rem;margin:0.5rem 0">${esc(leadSection.replace(/[;,]\s*$/, '').trim())}</div>`;
+        }
+
+        for (const section of sections) {
+          const match = section.match(/^(\w+):\s*([\s\S]*)$/);
+          const checker = match ? match[1] : 'error';
+          const body = match ? match[2].replace(/[;,]\s*$/, '').trim() : section.trim();
+          const passed = false;
+          const icon = passed ? '✓' : '✗';
+          const nameColor = passed ? 'var(--green)' : 'var(--danger, #e55)';
+
+          html += `<div class="tl-tool" onclick="this.classList.toggle('expanded')">
+            <div class="tl-tool-header">
+              <span class="tl-tool-icon" style="color:${nameColor}">${icon}</span>
+              <span class="tl-tool-name" style="color:${nameColor}">${esc(checker)}</span>
+              <span class="tl-tool-summary" style="color:var(--danger, #e55)">${esc(truncText(body, 100))}</span>
+              <span class="tl-tool-chevron">▸</span>
+            </div>
+            <div class="tl-tool-body">
+              <pre>${esc(body)}</pre>
+            </div>
+          </div>`;
+        }
+      }
+
+      if (!events.length) html += '<div class="tl-text" style="color:var(--text-muted)">Waiting for trace data\u2026</div>';
+
+      html += '</div>'; // end tl-phase-content
       el.innerHTML = html;
     }
-    return;
+    if (!hasPhases) {
+      renderDetailHeader(session, trace || {phases:[]}, running);
+      renderInfoTabs(trace || {phases:[]}, session, running);
+      return;
+    }
   }
 
   // Cache completed traces client-side

@@ -53,6 +53,9 @@ golem = "golem.cli:main"
 [tool.setuptools.packages.find]
 include = ["golem*"]
 
+[tool.black]
+target-version = ["py312"]
+
 [tool.pylint."messages control"]
 disable = [
     "import-outside-toplevel",

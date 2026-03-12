@@ -101,6 +101,7 @@ html,body{height:100%;font-family:var(--font-sans);background:var(--bg-base);col
 .tl-phase[data-phase="build"] .tl-phase-name{color:var(--accent)}
 .tl-phase[data-phase="review"] .tl-phase-name{color:var(--orange)}
 .tl-phase[data-phase="verify"] .tl-phase-name{color:var(--green)}
+.tl-phase[data-phase="preflight"] .tl-phase-name{color:var(--orange)}
 
 /* System Init */
 .tl-init{font-size:0.78rem;font-family:var(--font-mono);color:var(--text-muted);padding:0.5rem 0.75rem;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);margin-bottom:0.75rem}

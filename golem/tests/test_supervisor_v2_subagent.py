@@ -1,5 +1,6 @@
 # pylint: disable=too-few-public-methods,too-many-lines
 """Tests for golem.supervisor_v2_subagent — full coverage."""
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

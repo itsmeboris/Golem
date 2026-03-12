@@ -1,5 +1,6 @@
 # pylint: disable=too-few-public-methods,redefined-outer-name
 """Tests for golem.health — HealthMonitor and HealthNotifier protocol."""
+
 from unittest.mock import MagicMock, patch
 
 import pytest

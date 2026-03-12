@@ -1,5 +1,6 @@
 # pylint: disable=too-few-public-methods
 """Tests for golem.core.config."""
+
 from unittest.mock import patch
 
 from golem.core.config import (

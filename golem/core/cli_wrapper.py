@@ -551,11 +551,11 @@ def _get_subprocess_env(config: CLIConfig):
     scope = _ScopedHome(config.mcp_servers)
     env = scope.__enter__()  # pylint: disable=unnecessary-dunder-call
 
-    def _cleanup():
+    def _cleanup_sandbox():
         scope.__exit__(None, None, None)
         shutil.rmtree(sandbox, ignore_errors=True)
 
-    return env, sandbox, _cleanup
+    return env, sandbox, _cleanup_sandbox
 
 
 def _build_agent_command(config: CLIConfig, output_format: str = "json") -> list[str]:

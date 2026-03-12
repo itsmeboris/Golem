@@ -16,7 +16,6 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
-
 # ---------------------------------------------------------------------------
 # Canonical task status strings
 # ---------------------------------------------------------------------------
@@ -120,8 +119,9 @@ class StateBackend(Protocol):
 class Notifier(Protocol):
     """Sends lifecycle notifications to an external channel."""
 
-    def notify_started(self, task_id: int | str, subject: str) -> None:
-        ...  # pragma: no cover
+    def notify_started(
+        self, task_id: int | str, subject: str
+    ) -> None: ...  # pragma: no cover
 
     def notify_completed(
         self,
@@ -136,8 +136,7 @@ class Notifier(Protocol):
         concerns: list[str] | None = None,
         commit_sha: str = "",
         retry_count: int = 0,
-    ) -> None:
-        ...  # pragma: no cover
+    ) -> None: ...  # pragma: no cover
 
     def notify_failed(
         self,
@@ -147,8 +146,7 @@ class Notifier(Protocol):
         *,
         cost_usd: float = 0.0,
         duration_s: float = 0.0,
-    ) -> None:
-        ...  # pragma: no cover
+    ) -> None: ...  # pragma: no cover
 
     def notify_escalated(
         self,
@@ -161,8 +159,7 @@ class Notifier(Protocol):
         cost_usd: float = 0.0,
         duration_s: float = 0.0,
         retry_count: int = 0,
-    ) -> None:
-        ...  # pragma: no cover
+    ) -> None: ...  # pragma: no cover
 
     def notify_batch_submitted(self, group_id: str, task_count: int) -> None:
         """Notify that a batch of tasks has been submitted."""

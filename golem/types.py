@@ -33,7 +33,9 @@ class TrackerExportDict(TypedDict):
     Consumers: orchestrator.py _populate_session_from_tracker()
     """
 
-    session_id: int  # TaskEventTracker.session_id (issue_id), not TrackerState.session_id
+    session_id: (
+        int  # TaskEventTracker.session_id (issue_id), not TrackerState.session_id
+    )
     tools_called: list[str]
     mcp_tools_called: list[str]
     errors: list[str]

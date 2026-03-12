@@ -1,5 +1,6 @@
 # pylint: disable=too-few-public-methods,not-callable,too-many-lines
 """Tests for golem.cli — full coverage."""
+
 import asyncio
 import json
 import signal
@@ -651,9 +652,10 @@ class TestEnsureDaemon:
     @patch("golem.cli.read_pid", return_value=None)
     @patch("golem.cli.time.sleep")
     def test_starts_daemon(self, mock_sleep, mock_pid, mock_health, tmp_path):
-        with patch("golem.cli.DATA_DIR", tmp_path), patch(
-            "subprocess.Popen"
-        ) as mock_popen:
+        with (
+            patch("golem.cli.DATA_DIR", tmp_path),
+            patch("subprocess.Popen") as mock_popen,
+        ):
             mock_popen.return_value = MagicMock()
             args = SimpleNamespace(config=None)
             config = MagicMock()
@@ -781,9 +783,10 @@ class TestEnsureDaemonEdgeCases:
     def test_pid_exists_but_health_fails(
         self, mock_sleep, mock_kill, mock_pid, mock_health, tmp_path, capsys
     ):
-        with patch("golem.cli.DATA_DIR", tmp_path), patch(
-            "subprocess.Popen"
-        ) as mock_popen:
+        with (
+            patch("golem.cli.DATA_DIR", tmp_path),
+            patch("subprocess.Popen") as mock_popen,
+        ):
             mock_popen.return_value = MagicMock()
             args = SimpleNamespace(config=None)
             config = MagicMock()
@@ -807,9 +810,10 @@ class TestEnsureDaemonEdgeCases:
         tmp_path,
         capsys,
     ):
-        with patch("golem.cli.DATA_DIR", tmp_path), patch(
-            "subprocess.Popen"
-        ) as mock_popen:
+        with (
+            patch("golem.cli.DATA_DIR", tmp_path),
+            patch("subprocess.Popen") as mock_popen,
+        ):
             mock_popen.return_value = MagicMock()
             args = SimpleNamespace(config=None)
             config = MagicMock()
@@ -821,9 +825,10 @@ class TestEnsureDaemonEdgeCases:
     @patch("golem.cli.read_pid", return_value=None)
     @patch("golem.cli.time.sleep")
     def test_with_config_path(self, mock_sleep, mock_pid, mock_health, tmp_path):
-        with patch("golem.cli.DATA_DIR", tmp_path), patch(
-            "subprocess.Popen"
-        ) as mock_popen:
+        with (
+            patch("golem.cli.DATA_DIR", tmp_path),
+            patch("subprocess.Popen") as mock_popen,
+        ):
             mock_popen.return_value = MagicMock()
             args = SimpleNamespace(config="/my/config.yaml")
             config = MagicMock()

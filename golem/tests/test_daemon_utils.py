@@ -1,5 +1,6 @@
 # pylint: disable=too-few-public-methods,consider-using-with
 """Tests for golem.core.daemon_utils."""
+
 import io
 import logging
 import os
@@ -189,12 +190,13 @@ class TestDaemonize:
         fake_stderr = open(tmp_path / "fake_err.txt", "w", encoding="utf-8")
         fake_stdin = open(tmp_path / "fake_in.txt", "r", encoding="utf-8")
 
-        with patch("os.fork", return_value=0), patch("os.setsid"), patch(
-            "os.dup2"
-        ), patch.object(sys, "stdout", fake_stdout), patch.object(
-            sys, "stderr", fake_stderr
-        ), patch.object(
-            sys, "stdin", fake_stdin
+        with (
+            patch("os.fork", return_value=0),
+            patch("os.setsid"),
+            patch("os.dup2"),
+            patch.object(sys, "stdout", fake_stdout),
+            patch.object(sys, "stderr", fake_stderr),
+            patch.object(sys, "stdin", fake_stdin),
         ):
             daemonize(log_path)
 

@@ -1,5 +1,6 @@
 # pylint: disable=too-few-public-methods,too-many-lines
 """Tests for golem.core.cli_wrapper — full coverage."""
+
 import json
 import signal
 import subprocess
@@ -188,8 +189,9 @@ class TestScopedHome:
         )
         (real_cursor / "extensions.json").write_text("{}")
 
-        with patch("golem.core.cli_wrapper._SOURCE_MCP_JSON", source_mcp), patch(
-            "pathlib.Path.home", return_value=real_home
+        with (
+            patch("golem.core.cli_wrapper._SOURCE_MCP_JSON", source_mcp),
+            patch("pathlib.Path.home", return_value=real_home),
         ):
             with _ScopedHome(["redmine", "jenkins"]) as env:
                 assert "HOME" in env
@@ -209,8 +211,9 @@ class TestScopedHome:
         source_mcp.write_text(json.dumps({"mcpServers": {"a": {}}}))
         (real_cursor / "settings.json").write_text("{}")
 
-        with patch("golem.core.cli_wrapper._SOURCE_MCP_JSON", source_mcp), patch(
-            "pathlib.Path.home", return_value=real_home
+        with (
+            patch("golem.core.cli_wrapper._SOURCE_MCP_JSON", source_mcp),
+            patch("pathlib.Path.home", return_value=real_home),
         ):
             with _ScopedHome(["a"]) as env:
                 fake_home = Path(env["HOME"])
@@ -225,8 +228,9 @@ class TestScopedHome:
         source_mcp = real_cursor / "mcp.json"
         source_mcp.write_text(json.dumps({"mcpServers": {"a": {}}}))
 
-        with patch("golem.core.cli_wrapper._SOURCE_MCP_JSON", source_mcp), patch(
-            "pathlib.Path.home", return_value=real_home
+        with (
+            patch("golem.core.cli_wrapper._SOURCE_MCP_JSON", source_mcp),
+            patch("pathlib.Path.home", return_value=real_home),
         ):
             with _ScopedHome(["a"]) as env:
                 fake_home = Path(env["HOME"])
@@ -252,9 +256,11 @@ class TestScopedHome:
                 raise OSError("symlink failed")
             return original_symlink(self_path, target)
 
-        with patch("golem.core.cli_wrapper._SOURCE_MCP_JSON", source_mcp), patch(
-            "pathlib.Path.home", return_value=real_home
-        ), patch.object(Path, "symlink_to", patched_symlink):
+        with (
+            patch("golem.core.cli_wrapper._SOURCE_MCP_JSON", source_mcp),
+            patch("pathlib.Path.home", return_value=real_home),
+            patch.object(Path, "symlink_to", patched_symlink),
+        ):
             with _ScopedHome(["a"]) as env:
                 fake_home = Path(env["HOME"])
                 assert (fake_home / ".cursor" / "other.txt").read_text() == "content"
@@ -269,10 +275,11 @@ class TestPrepareWorkDir:
     def test_nothing_created_returns_noop(self, tmp_path):
         target = tmp_path / "work"
         target.mkdir()
-        with patch("golem.core.cli_wrapper._PROJECT_ROOT", tmp_path / "proj"), patch(
-            "golem.core.cli_wrapper._copy_mcp_json"
-        ), patch("golem.core.cli_wrapper._copy_mcp_env"), patch(
-            "golem.core.cli_wrapper._copy_claude_dir"
+        with (
+            patch("golem.core.cli_wrapper._PROJECT_ROOT", tmp_path / "proj"),
+            patch("golem.core.cli_wrapper._copy_mcp_json"),
+            patch("golem.core.cli_wrapper._copy_mcp_env"),
+            patch("golem.core.cli_wrapper._copy_claude_dir"),
         ):
             cleanup = _prepare_work_dir(str(target), [])
             cleanup()
@@ -281,11 +288,12 @@ class TestPrepareWorkDir:
         target = tmp_path / "work"
         target.mkdir()
 
-        with patch("golem.core.cli_wrapper._PROJECT_ROOT", tmp_path / "proj"), patch(
-            "golem.core.cli_wrapper._copy_mcp_json"
-        ), patch("golem.core.cli_wrapper._copy_mcp_env"), patch(
-            "golem.core.cli_wrapper._copy_claude_dir"
-        ) as mock_claude:
+        with (
+            patch("golem.core.cli_wrapper._PROJECT_ROOT", tmp_path / "proj"),
+            patch("golem.core.cli_wrapper._copy_mcp_json"),
+            patch("golem.core.cli_wrapper._copy_mcp_env"),
+            patch("golem.core.cli_wrapper._copy_claude_dir") as mock_claude,
+        ):
             sentinel_file = target / "sentinel.txt"
             sentinel_file.write_text("x")
 
@@ -308,11 +316,12 @@ class TestPrepareWorkDirCleanup:
         created_dir = target / "testdir"
         created_dir.mkdir()
 
-        with patch("golem.core.cli_wrapper._PROJECT_ROOT", tmp_path / "proj"), patch(
-            "golem.core.cli_wrapper._copy_mcp_json"
-        ), patch("golem.core.cli_wrapper._copy_mcp_env"), patch(
-            "golem.core.cli_wrapper._copy_claude_dir"
-        ) as mock_cd:
+        with (
+            patch("golem.core.cli_wrapper._PROJECT_ROOT", tmp_path / "proj"),
+            patch("golem.core.cli_wrapper._copy_mcp_json"),
+            patch("golem.core.cli_wrapper._copy_mcp_env"),
+            patch("golem.core.cli_wrapper._copy_claude_dir") as mock_cd,
+        ):
 
             def populate(cwd_path, created):
                 created.append(created_dir)
@@ -332,11 +341,12 @@ class TestPrepareWorkDirCleanup:
         created_dir.mkdir()
         (created_dir / "child.txt").write_text("x")
 
-        with patch("golem.core.cli_wrapper._PROJECT_ROOT", tmp_path / "proj"), patch(
-            "golem.core.cli_wrapper._copy_mcp_json"
-        ), patch("golem.core.cli_wrapper._copy_mcp_env"), patch(
-            "golem.core.cli_wrapper._copy_claude_dir"
-        ) as mock_cd:
+        with (
+            patch("golem.core.cli_wrapper._PROJECT_ROOT", tmp_path / "proj"),
+            patch("golem.core.cli_wrapper._copy_mcp_json"),
+            patch("golem.core.cli_wrapper._copy_mcp_env"),
+            patch("golem.core.cli_wrapper._copy_claude_dir") as mock_cd,
+        ):
 
             def populate(cwd_path, created):
                 created.append(created_dir)
@@ -351,11 +361,12 @@ class TestPrepareWorkDirCleanup:
         target = tmp_path / "work"
         target.mkdir()
 
-        with patch("golem.core.cli_wrapper._PROJECT_ROOT", tmp_path / "proj"), patch(
-            "golem.core.cli_wrapper._copy_mcp_json"
-        ), patch("golem.core.cli_wrapper._copy_mcp_env"), patch(
-            "golem.core.cli_wrapper._copy_claude_dir"
-        ) as mock_cd:
+        with (
+            patch("golem.core.cli_wrapper._PROJECT_ROOT", tmp_path / "proj"),
+            patch("golem.core.cli_wrapper._copy_mcp_json"),
+            patch("golem.core.cli_wrapper._copy_mcp_env"),
+            patch("golem.core.cli_wrapper._copy_claude_dir") as mock_cd,
+        ):
             bad_path = MagicMock(spec=Path)
             bad_path.is_symlink.side_effect = OSError("broken")
 
@@ -375,11 +386,12 @@ class TestPrepareWorkDirCleanup:
         link = target / "link.txt"
         link.symlink_to(real_file)
 
-        with patch("golem.core.cli_wrapper._PROJECT_ROOT", tmp_path / "proj"), patch(
-            "golem.core.cli_wrapper._copy_mcp_json"
-        ), patch("golem.core.cli_wrapper._copy_mcp_env"), patch(
-            "golem.core.cli_wrapper._copy_claude_dir"
-        ) as mock_cd:
+        with (
+            patch("golem.core.cli_wrapper._PROJECT_ROOT", tmp_path / "proj"),
+            patch("golem.core.cli_wrapper._copy_mcp_json"),
+            patch("golem.core.cli_wrapper._copy_mcp_env"),
+            patch("golem.core.cli_wrapper._copy_claude_dir") as mock_cd,
+        ):
 
             def populate(cwd_path, created):
                 created.append(link)
@@ -400,13 +412,13 @@ class TestCopyClaudeDirFull:
         target.mkdir()
         created: list[Path] = []
 
-        with patch("golem.core.cli_wrapper._PROJECT_CLAUDE_DIR", proj_claude), patch(
-            "golem.core.cli_wrapper._write_settings_local"
-        ) as m1, patch("golem.core.cli_wrapper._write_settings_json") as m2, patch(
-            "golem.core.cli_wrapper._copy_hooks_filtered"
-        ) as m3, patch(
-            "golem.core.cli_wrapper._copy_subdir"
-        ) as m4:
+        with (
+            patch("golem.core.cli_wrapper._PROJECT_CLAUDE_DIR", proj_claude),
+            patch("golem.core.cli_wrapper._write_settings_local") as m1,
+            patch("golem.core.cli_wrapper._write_settings_json") as m2,
+            patch("golem.core.cli_wrapper._copy_hooks_filtered") as m3,
+            patch("golem.core.cli_wrapper._copy_subdir") as m4,
+        ):
             _copy_claude_dir(target, created)
 
         claude_dir = target / ".claude"
@@ -425,12 +437,12 @@ class TestCopyClaudeDirFull:
         (target / ".claude").mkdir()
         created: list[Path] = []
 
-        with patch("golem.core.cli_wrapper._PROJECT_CLAUDE_DIR", proj_claude), patch(
-            "golem.core.cli_wrapper._write_settings_local"
-        ) as m1, patch("golem.core.cli_wrapper._write_settings_json"), patch(
-            "golem.core.cli_wrapper._copy_hooks_filtered"
-        ), patch(
-            "golem.core.cli_wrapper._copy_subdir"
+        with (
+            patch("golem.core.cli_wrapper._PROJECT_CLAUDE_DIR", proj_claude),
+            patch("golem.core.cli_wrapper._write_settings_local") as m1,
+            patch("golem.core.cli_wrapper._write_settings_json"),
+            patch("golem.core.cli_wrapper._copy_hooks_filtered"),
+            patch("golem.core.cli_wrapper._copy_subdir"),
         ):
             _copy_claude_dir(target, created)
 
@@ -471,8 +483,9 @@ class TestCopyMcpJsonEdgeCases:
         target.mkdir()
         created: list[Path] = []
 
-        with patch("golem.core.cli_wrapper._PROJECT_MCP_JSON", source), patch.object(
-            Path, "write_text", side_effect=OSError("disk full")
+        with (
+            patch("golem.core.cli_wrapper._PROJECT_MCP_JSON", source),
+            patch.object(Path, "write_text", side_effect=OSError("disk full")),
         ):
             _copy_mcp_json(target, None, created)
 
@@ -529,8 +542,9 @@ class TestCopyMcpEnv:
         target.mkdir()
         created: list[Path] = []
 
-        with patch("golem.core.cli_wrapper._PROJECT_ROOT", project), patch.object(
-            Path, "symlink_to", side_effect=OSError("nope")
+        with (
+            patch("golem.core.cli_wrapper._PROJECT_ROOT", project),
+            patch.object(Path, "symlink_to", side_effect=OSError("nope")),
         ):
             _copy_mcp_env(target, created)
 
@@ -551,9 +565,10 @@ class TestCopyClaudeDir:
         target.mkdir()
         created: list[Path] = []
 
-        with patch(
-            "golem.core.cli_wrapper._PROJECT_CLAUDE_DIR", proj_claude
-        ), patch.object(Path, "mkdir", side_effect=OSError("no perm")):
+        with (
+            patch("golem.core.cli_wrapper._PROJECT_CLAUDE_DIR", proj_claude),
+            patch.object(Path, "mkdir", side_effect=OSError("no perm")),
+        ):
             _copy_claude_dir(target, created)
 
         assert not created
@@ -604,8 +619,9 @@ class TestWriteSettingsJsonEdgeCases:
 
     def test_oserror_on_write(self, tmp_path):
         created: list[Path] = []
-        with patch.object(Path, "is_file", return_value=False), patch.object(
-            Path, "write_text", side_effect=OSError("disk full")
+        with (
+            patch.object(Path, "is_file", return_value=False),
+            patch.object(Path, "write_text", side_effect=OSError("disk full")),
         ):
             _write_settings_json(tmp_path, created)
         assert not created
@@ -647,9 +663,10 @@ class TestCopyHooksFiltered:
                 raise OSError("no perm")
             return original_mkdir(self_path, *args, **kwargs)
 
-        with patch(
-            "golem.core.cli_wrapper._PROJECT_CLAUDE_DIR", proj_claude
-        ), patch.object(Path, "mkdir", patched_mkdir):
+        with (
+            patch("golem.core.cli_wrapper._PROJECT_CLAUDE_DIR", proj_claude),
+            patch.object(Path, "mkdir", patched_mkdir),
+        ):
             _copy_hooks_filtered(target, created)
 
         assert not created
@@ -702,9 +719,10 @@ class TestCopyHooksFiltered:
                 raise OSError("nope")
             return original_symlink(self_path, tgt)
 
-        with patch(
-            "golem.core.cli_wrapper._PROJECT_CLAUDE_DIR", proj_claude
-        ), patch.object(Path, "symlink_to", patched_symlink):
+        with (
+            patch("golem.core.cli_wrapper._PROJECT_CLAUDE_DIR", proj_claude),
+            patch.object(Path, "symlink_to", patched_symlink),
+        ):
             _copy_hooks_filtered(target, created)
 
         hooks_dir = target / "hooks"
@@ -763,8 +781,9 @@ class TestCopySubdir:
         target.mkdir()
         created: list[Path] = []
 
-        with patch("golem.core.cli_wrapper._PROJECT_CLAUDE_DIR", proj_claude), patch(
-            "shutil.copytree", side_effect=OSError("fail")
+        with (
+            patch("golem.core.cli_wrapper._PROJECT_CLAUDE_DIR", proj_claude),
+            patch("shutil.copytree", side_effect=OSError("fail")),
         ):
             _copy_subdir(target, "skills", created)
 
@@ -788,8 +807,9 @@ class TestGetSubprocessEnvAgent:
         source_mcp = real_cursor / "mcp.json"
         source_mcp.write_text(json.dumps({"mcpServers": {"s1": {}}}))
 
-        with patch("golem.core.cli_wrapper._SOURCE_MCP_JSON", source_mcp), patch(
-            "pathlib.Path.home", return_value=real_home
+        with (
+            patch("golem.core.cli_wrapper._SOURCE_MCP_JSON", source_mcp),
+            patch("pathlib.Path.home", return_value=real_home),
         ):
             config = CLIConfig(cli_type=CLIType.AGENT, mcp_servers=["s1"])
             env, cwd, cleanup = _get_subprocess_env(config)
@@ -844,9 +864,12 @@ class TestInvokeCliQuiet:
         )
         proc = _make_mock_popen(stdout_text=result_json + "\n", returncode=0)
 
-        with patch("subprocess.Popen", return_value=proc), patch(
-            "golem.core.cli_wrapper._get_subprocess_env",
-            return_value=({}, "/tmp/sandbox", lambda: None),
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._get_subprocess_env",
+                return_value=({}, "/tmp/sandbox", lambda: None),
+            ),
         ):
             result = _invoke_cli_quiet("test prompt", CLIConfig())
 
@@ -862,19 +885,23 @@ class TestInvokeCliQuiet:
         ]
         proc.kill.return_value = None
 
-        with patch("subprocess.Popen", return_value=proc), patch(
-            "golem.core.cli_wrapper._get_subprocess_env",
-            return_value=({}, "/tmp/sandbox", lambda: None),
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._get_subprocess_env",
+                return_value=({}, "/tmp/sandbox", lambda: None),
+            ),
         ):
             with pytest.raises(CLIError, match="timed out"):
                 _invoke_cli_quiet("test", CLIConfig(timeout_seconds=5))
 
     def test_file_not_found(self):
-        with patch(
-            "subprocess.Popen", side_effect=FileNotFoundError("not found")
-        ), patch(
-            "golem.core.cli_wrapper._get_subprocess_env",
-            return_value=({}, "/tmp/sandbox", lambda: None),
+        with (
+            patch("subprocess.Popen", side_effect=FileNotFoundError("not found")),
+            patch(
+                "golem.core.cli_wrapper._get_subprocess_env",
+                return_value=({}, "/tmp/sandbox", lambda: None),
+            ),
         ):
             with pytest.raises(CLIError, match="not found"):
                 _invoke_cli_quiet("test", CLIConfig())
@@ -884,9 +911,12 @@ class TestInvokeCliQuiet:
             stdout_text="err output\n", stderr_text="bad", returncode=1
         )
 
-        with patch("subprocess.Popen", return_value=proc), patch(
-            "golem.core.cli_wrapper._get_subprocess_env",
-            return_value=({}, "/tmp/sandbox", lambda: None),
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._get_subprocess_env",
+                return_value=({}, "/tmp/sandbox", lambda: None),
+            ),
         ):
             with pytest.raises(CLIError, match="exit code 1"):
                 _invoke_cli_quiet("test", CLIConfig())
@@ -901,9 +931,12 @@ class TestInvokeCliQuiet:
         )
         proc = _make_mock_popen(stdout_text=result_json + "\n", returncode=0)
 
-        with patch("subprocess.Popen", return_value=proc), patch(
-            "golem.core.cli_wrapper._get_subprocess_env",
-            return_value=({}, "/tmp/sandbox", lambda: None),
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._get_subprocess_env",
+                return_value=({}, "/tmp/sandbox", lambda: None),
+            ),
         ):
             with pytest.raises(CLIError, match="something went wrong"):
                 _invoke_cli_quiet("test", CLIConfig())
@@ -912,9 +945,12 @@ class TestInvokeCliQuiet:
         cleanup = MagicMock()
         proc = _make_mock_popen(returncode=0, stdout_text='{"type":"result"}\n')
 
-        with patch("subprocess.Popen", return_value=proc), patch(
-            "golem.core.cli_wrapper._get_subprocess_env",
-            return_value=({}, "/tmp/sandbox", cleanup),
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._get_subprocess_env",
+                return_value=({}, "/tmp/sandbox", cleanup),
+            ),
         ):
             _invoke_cli_quiet("test", CLIConfig())
 
@@ -922,9 +958,12 @@ class TestInvokeCliQuiet:
 
     def test_cleanup_called_on_error(self):
         cleanup = MagicMock()
-        with patch("subprocess.Popen", side_effect=FileNotFoundError()), patch(
-            "golem.core.cli_wrapper._get_subprocess_env",
-            return_value=({}, "/tmp/sandbox", cleanup),
+        with (
+            patch("subprocess.Popen", side_effect=FileNotFoundError()),
+            patch(
+                "golem.core.cli_wrapper._get_subprocess_env",
+                return_value=({}, "/tmp/sandbox", cleanup),
+            ),
         ):
             with pytest.raises(CLIError):
                 _invoke_cli_quiet("test", CLIConfig())
@@ -964,10 +1003,14 @@ class TestInvokeCliVerbose:
         ]
         proc = self._make_streaming_proc(lines, returncode=0)
 
-        with patch("subprocess.Popen", return_value=proc), patch(
-            "golem.core.cli_wrapper._get_subprocess_env",
-            return_value=({}, "/tmp/sandbox", lambda: None),
-        ), patch("golem.core.cli_wrapper._StreamPrinter"):
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._get_subprocess_env",
+                return_value=({}, "/tmp/sandbox", lambda: None),
+            ),
+            patch("golem.core.cli_wrapper._StreamPrinter"),
+        ):
             result = _invoke_cli_verbose("test", CLIConfig())
 
         assert result.cost_usd == 0.3
@@ -979,18 +1022,26 @@ class TestInvokeCliVerbose:
         ]
         proc = self._make_streaming_proc(lines, returncode=2, stderr_text="bad stuff")
 
-        with patch("subprocess.Popen", return_value=proc), patch(
-            "golem.core.cli_wrapper._get_subprocess_env",
-            return_value=({}, "/tmp/sandbox", lambda: None),
-        ), patch("golem.core.cli_wrapper._StreamPrinter"):
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._get_subprocess_env",
+                return_value=({}, "/tmp/sandbox", lambda: None),
+            ),
+            patch("golem.core.cli_wrapper._StreamPrinter"),
+        ):
             with pytest.raises(CLIError, match="exit code 2"):
                 _invoke_cli_verbose("test", CLIConfig())
 
     def test_file_not_found(self):
-        with patch("subprocess.Popen", side_effect=FileNotFoundError()), patch(
-            "golem.core.cli_wrapper._get_subprocess_env",
-            return_value=({}, "/tmp/sandbox", lambda: None),
-        ), patch("golem.core.cli_wrapper._StreamPrinter"):
+        with (
+            patch("subprocess.Popen", side_effect=FileNotFoundError()),
+            patch(
+                "golem.core.cli_wrapper._get_subprocess_env",
+                return_value=({}, "/tmp/sandbox", lambda: None),
+            ),
+            patch("golem.core.cli_wrapper._StreamPrinter"),
+        ):
             with pytest.raises(CLIError, match="not found"):
                 _invoke_cli_verbose("test", CLIConfig())
 
@@ -1000,10 +1051,14 @@ class TestInvokeCliVerbose:
         ]
         proc = self._make_streaming_proc(lines, returncode=0)
 
-        with patch("subprocess.Popen", return_value=proc), patch(
-            "golem.core.cli_wrapper._get_subprocess_env",
-            return_value=({}, "/tmp/sandbox", lambda: None),
-        ), patch("golem.core.cli_wrapper._StreamPrinter"):
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._get_subprocess_env",
+                return_value=({}, "/tmp/sandbox", lambda: None),
+            ),
+            patch("golem.core.cli_wrapper._StreamPrinter"),
+        ):
             result = _invoke_cli_verbose("test", CLIConfig())
 
         assert result.output.get("parse_error") is True
@@ -1019,10 +1074,14 @@ class TestInvokeCliVerbose:
         proc.__enter__ = MagicMock(return_value=proc)
         proc.__exit__ = MagicMock(return_value=False)
 
-        with patch("subprocess.Popen", return_value=proc), patch(
-            "golem.core.cli_wrapper._get_subprocess_env",
-            return_value=({}, "/tmp/sandbox", lambda: None),
-        ), patch("golem.core.cli_wrapper._StreamPrinter"):
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._get_subprocess_env",
+                return_value=({}, "/tmp/sandbox", lambda: None),
+            ),
+            patch("golem.core.cli_wrapper._StreamPrinter"),
+        ):
             with pytest.raises(CLIError, match="stdout"):
                 _invoke_cli_verbose("test", CLIConfig())
 
@@ -1033,10 +1092,14 @@ class TestInvokeCliVerbose:
         ]
         proc = self._make_streaming_proc(lines, returncode=0)
 
-        with patch("subprocess.Popen", return_value=proc), patch(
-            "golem.core.cli_wrapper._get_subprocess_env",
-            return_value=({}, "/tmp/sandbox", lambda: None),
-        ), patch("golem.core.cli_wrapper._StreamPrinter"):
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._get_subprocess_env",
+                return_value=({}, "/tmp/sandbox", lambda: None),
+            ),
+            patch("golem.core.cli_wrapper._StreamPrinter"),
+        ):
             result = _invoke_cli_verbose("test", CLIConfig())
 
         assert result.output["result"] == "ok"
@@ -1047,9 +1110,12 @@ class TestInvokeCliRaw:
     def test_success(self):
         proc = _make_mock_popen(stdout_text="raw output here", returncode=0)
 
-        with patch("subprocess.Popen", return_value=proc), patch(
-            "golem.core.cli_wrapper._cwd_for_cli",
-            return_value=("/tmp/sandbox", lambda: None),
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._cwd_for_cli",
+                return_value=("/tmp/sandbox", lambda: None),
+            ),
         ):
             result = invoke_cli_raw("test", CLIConfig())
 
@@ -1064,17 +1130,23 @@ class TestInvokeCliRaw:
         ]
         proc.kill.return_value = None
 
-        with patch("subprocess.Popen", return_value=proc), patch(
-            "golem.core.cli_wrapper._cwd_for_cli",
-            return_value=("/tmp/sandbox", lambda: None),
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._cwd_for_cli",
+                return_value=("/tmp/sandbox", lambda: None),
+            ),
         ):
             with pytest.raises(CLIError, match="timed out"):
                 invoke_cli_raw("test", CLIConfig())
 
     def test_file_not_found(self):
-        with patch("subprocess.Popen", side_effect=FileNotFoundError()), patch(
-            "golem.core.cli_wrapper._cwd_for_cli",
-            return_value=("/tmp/sandbox", lambda: None),
+        with (
+            patch("subprocess.Popen", side_effect=FileNotFoundError()),
+            patch(
+                "golem.core.cli_wrapper._cwd_for_cli",
+                return_value=("/tmp/sandbox", lambda: None),
+            ),
         ):
             with pytest.raises(CLIError, match="not found"):
                 invoke_cli_raw("test", CLIConfig())
@@ -1082,9 +1154,12 @@ class TestInvokeCliRaw:
     def test_nonzero_exit(self):
         proc = _make_mock_popen(stdout_text="", stderr_text="error msg", returncode=1)
 
-        with patch("subprocess.Popen", return_value=proc), patch(
-            "golem.core.cli_wrapper._cwd_for_cli",
-            return_value=("/tmp/sandbox", lambda: None),
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._cwd_for_cli",
+                return_value=("/tmp/sandbox", lambda: None),
+            ),
         ):
             with pytest.raises(CLIError, match="error msg"):
                 invoke_cli_raw("test", CLIConfig())
@@ -1099,9 +1174,12 @@ class TestInvokeCliRaw:
         ]
         proc.kill.return_value = None
 
-        with patch("subprocess.Popen", return_value=proc), patch(
-            "golem.core.cli_wrapper._cwd_for_cli",
-            return_value=("/tmp/sandbox", cleanup),
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._cwd_for_cli",
+                return_value=("/tmp/sandbox", cleanup),
+            ),
         ):
             with pytest.raises(CLIError):
                 invoke_cli_raw("test", CLIConfig())
@@ -1132,9 +1210,12 @@ class TestInvokeCliStreaming:
         proc = self._make_streaming_proc(lines)
         events = []
 
-        with patch("subprocess.Popen", return_value=proc), patch(
-            "golem.core.cli_wrapper._cwd_for_cli",
-            return_value=("/tmp/sandbox", lambda: None),
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._cwd_for_cli",
+                return_value=("/tmp/sandbox", lambda: None),
+            ),
         ):
             result = invoke_cli_streaming("test", CLIConfig(), callback=events.append)
 
@@ -1148,9 +1229,12 @@ class TestInvokeCliStreaming:
         ]
         proc = self._make_streaming_proc(lines)
 
-        with patch("subprocess.Popen", return_value=proc), patch(
-            "golem.core.cli_wrapper._cwd_for_cli",
-            return_value=("/tmp/sandbox", lambda: None),
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._cwd_for_cli",
+                return_value=("/tmp/sandbox", lambda: None),
+            ),
         ):
             result = invoke_cli_streaming("test", CLIConfig(), callback=None)
 
@@ -1164,9 +1248,12 @@ class TestInvokeCliStreaming:
         ]
         proc = self._make_streaming_proc(lines)
 
-        with patch("subprocess.Popen", return_value=proc), patch(
-            "golem.core.cli_wrapper._cwd_for_cli",
-            return_value=("/tmp/sandbox", lambda: None),
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._cwd_for_cli",
+                return_value=("/tmp/sandbox", lambda: None),
+            ),
         ):
             result = invoke_cli_streaming("test", CLIConfig())
 
@@ -1178,17 +1265,23 @@ class TestInvokeCliStreaming:
         lines = [json.dumps({"type": "assistant"}) + "\n"]
         proc = self._make_streaming_proc(lines, returncode=1, stderr_text="fail")
 
-        with patch("subprocess.Popen", return_value=proc), patch(
-            "golem.core.cli_wrapper._cwd_for_cli",
-            return_value=("/tmp/sandbox", lambda: None),
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._cwd_for_cli",
+                return_value=("/tmp/sandbox", lambda: None),
+            ),
         ):
             with pytest.raises(CLIError, match="exit code 1"):
                 invoke_cli_streaming("test", CLIConfig())
 
     def test_file_not_found(self):
-        with patch("subprocess.Popen", side_effect=FileNotFoundError()), patch(
-            "golem.core.cli_wrapper._cwd_for_cli",
-            return_value=("/tmp/sandbox", lambda: None),
+        with (
+            patch("subprocess.Popen", side_effect=FileNotFoundError()),
+            patch(
+                "golem.core.cli_wrapper._cwd_for_cli",
+                return_value=("/tmp/sandbox", lambda: None),
+            ),
         ):
             with pytest.raises(CLIError, match="not found"):
                 invoke_cli_streaming("test", CLIConfig())
@@ -1204,9 +1297,12 @@ class TestInvokeCliStreaming:
         proc.__enter__ = MagicMock(return_value=proc)
         proc.__exit__ = MagicMock(return_value=False)
 
-        with patch("subprocess.Popen", return_value=proc), patch(
-            "golem.core.cli_wrapper._cwd_for_cli",
-            return_value=("/tmp/sandbox", lambda: None),
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._cwd_for_cli",
+                return_value=("/tmp/sandbox", lambda: None),
+            ),
         ):
             with pytest.raises(CLIError, match="stdout"):
                 invoke_cli_streaming("test", CLIConfig())
@@ -1216,9 +1312,12 @@ class TestInvokeCliStreaming:
         lines = [json.dumps({"type": "result"}) + "\n"]
         proc = self._make_streaming_proc(lines)
 
-        with patch("subprocess.Popen", return_value=proc), patch(
-            "golem.core.cli_wrapper._cwd_for_cli",
-            return_value=("/tmp/sandbox", cleanup),
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._cwd_for_cli",
+                return_value=("/tmp/sandbox", cleanup),
+            ),
         ):
             invoke_cli_streaming("test", CLIConfig())
 
@@ -1258,9 +1357,12 @@ class TestInvokeCliMonitored:
         proc = self._make_streaming_proc(lines)
         events = []
 
-        with patch("subprocess.Popen", return_value=proc), patch(
-            "golem.core.cli_wrapper._get_subprocess_env",
-            return_value=({}, "/tmp/sandbox", lambda: None),
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._get_subprocess_env",
+                return_value=({}, "/tmp/sandbox", lambda: None),
+            ),
         ):
             result = invoke_cli_monitored("test", CLIConfig(), callback=events.append)
 
@@ -1275,9 +1377,12 @@ class TestInvokeCliMonitored:
         ]
         proc = self._make_streaming_proc(lines)
 
-        with patch("subprocess.Popen", return_value=proc), patch(
-            "golem.core.cli_wrapper._get_subprocess_env",
-            return_value=({}, "/tmp/sandbox", lambda: None),
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._get_subprocess_env",
+                return_value=({}, "/tmp/sandbox", lambda: None),
+            ),
         ):
             result = invoke_cli_monitored("test", CLIConfig(), callback=None)
 
@@ -1287,17 +1392,23 @@ class TestInvokeCliMonitored:
         lines = [json.dumps({"type": "assistant"}) + "\n"]
         proc = self._make_streaming_proc(lines, returncode=3, stderr_text="oops")
 
-        with patch("subprocess.Popen", return_value=proc), patch(
-            "golem.core.cli_wrapper._get_subprocess_env",
-            return_value=({}, "/tmp/sandbox", lambda: None),
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._get_subprocess_env",
+                return_value=({}, "/tmp/sandbox", lambda: None),
+            ),
         ):
             with pytest.raises(CLIError, match="exit code 3"):
                 invoke_cli_monitored("test", CLIConfig())
 
     def test_file_not_found(self):
-        with patch("subprocess.Popen", side_effect=FileNotFoundError()), patch(
-            "golem.core.cli_wrapper._get_subprocess_env",
-            return_value=({}, "/tmp/sandbox", lambda: None),
+        with (
+            patch("subprocess.Popen", side_effect=FileNotFoundError()),
+            patch(
+                "golem.core.cli_wrapper._get_subprocess_env",
+                return_value=({}, "/tmp/sandbox", lambda: None),
+            ),
         ):
             with pytest.raises(CLIError, match="not found"):
                 invoke_cli_monitored("test", CLIConfig())
@@ -1308,9 +1419,12 @@ class TestInvokeCliMonitored:
         ]
         proc = self._make_streaming_proc(lines)
 
-        with patch("subprocess.Popen", return_value=proc), patch(
-            "golem.core.cli_wrapper._get_subprocess_env",
-            return_value=({}, "/tmp/sandbox", lambda: None),
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._get_subprocess_env",
+                return_value=({}, "/tmp/sandbox", lambda: None),
+            ),
         ):
             result = invoke_cli_monitored("test", CLIConfig())
 
@@ -1327,9 +1441,12 @@ class TestInvokeCliMonitored:
         proc.__enter__ = MagicMock(return_value=proc)
         proc.__exit__ = MagicMock(return_value=False)
 
-        with patch("subprocess.Popen", return_value=proc), patch(
-            "golem.core.cli_wrapper._get_subprocess_env",
-            return_value=({}, "/tmp/sandbox", lambda: None),
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._get_subprocess_env",
+                return_value=({}, "/tmp/sandbox", lambda: None),
+            ),
         ):
             with pytest.raises(CLIError, match="stdout"):
                 invoke_cli_monitored("test", CLIConfig())
@@ -1341,9 +1458,12 @@ class TestInvokeCliMonitored:
         ]
         proc = self._make_streaming_proc(lines)
 
-        with patch("subprocess.Popen", return_value=proc), patch(
-            "golem.core.cli_wrapper._get_subprocess_env",
-            return_value=({}, "/tmp/sandbox", lambda: None),
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._get_subprocess_env",
+                return_value=({}, "/tmp/sandbox", lambda: None),
+            ),
         ):
             result = invoke_cli_monitored("test", CLIConfig())
 
@@ -1357,9 +1477,12 @@ class TestInvokeCliMonitored:
         ]
         proc = self._make_streaming_proc(lines)
 
-        with patch("subprocess.Popen", return_value=proc), patch(
-            "golem.core.cli_wrapper._get_subprocess_env",
-            return_value=({}, "/tmp/sandbox", lambda: None),
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._get_subprocess_env",
+                return_value=({}, "/tmp/sandbox", lambda: None),
+            ),
         ):
             result = invoke_cli_monitored("test", CLIConfig())
 
@@ -1370,9 +1493,12 @@ class TestInvokeCliMonitored:
         lines = [json.dumps({"type": "result", "cost_usd": 0.1}) + "\n"]
         proc = self._make_streaming_proc(lines)
 
-        with patch("subprocess.Popen", return_value=proc), patch(
-            "golem.core.cli_wrapper._get_subprocess_env",
-            return_value=({}, "/tmp/sandbox", cleanup),
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._get_subprocess_env",
+                return_value=({}, "/tmp/sandbox", cleanup),
+            ),
         ):
             invoke_cli_monitored("test", CLIConfig())
 

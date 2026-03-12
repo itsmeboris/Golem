@@ -1,5 +1,6 @@
 # pylint: disable=too-few-public-methods
 """Tests for golem.committer."""
+
 import subprocess
 from unittest.mock import patch
 
