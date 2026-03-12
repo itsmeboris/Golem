@@ -2,11 +2,18 @@
 # Auto-format staged Python files with black before commit.
 set -euo pipefail
 
+# Use python3 if available, fall back to python
+PYTHON="$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)"
+if [[ -z "$PYTHON" ]]; then
+    echo "pre-commit: no python interpreter found, skipping black" >&2
+    exit 0
+fi
+
 staged_py=$(git diff --cached --name-only --diff-filter=d -- '*.py' || true)
 if [[ -z "$staged_py" ]]; then
     exit 0
 fi
 
 # Format and re-stage
-echo "$staged_py" | xargs python3 -m black --quiet
+echo "$staged_py" | xargs "$PYTHON" -m black --quiet
 echo "$staged_py" | xargs git add
