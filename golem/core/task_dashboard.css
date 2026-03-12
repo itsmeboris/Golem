@@ -272,8 +272,8 @@ html,body{height:100%;font-family:var(--font-sans);background:var(--bg-base);col
 
 /* Overview task list */
 .overview-layout{display:flex;flex:1;overflow:hidden;gap:0}
-.ov-left{flex:1;border-right:1px solid var(--border-subtle);display:flex;flex-direction:column}
-.ov-right{flex:1;display:flex;flex-direction:column}
+.ov-left{flex:1;min-width:0;border-right:1px solid var(--border-subtle);display:flex;flex-direction:column}
+.ov-right{flex:1;min-width:0;display:flex;flex-direction:column}
 .ov-header{padding:0.75rem 1rem;font-weight:600;font-size:0.85rem;border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;gap:0.75rem}
 .ov-header .count{font-size:0.72rem;color:var(--text-muted);font-weight:400}
 .ov-list{overflow-y:auto;flex:1}
