@@ -73,9 +73,9 @@ html,body{height:100%;font-family:var(--font-sans);background:var(--bg-base);col
 .timeline-container{display:flex;flex:1;overflow:hidden}
 
 /* Phase Sidebar */
-.phase-sidebar{width:130px;min-width:130px;border-right:1px solid var(--border-subtle);display:flex;flex-direction:column;padding:0.75rem 0;overflow-y:auto}
+.phase-sidebar{width:145px;min-width:145px;border-right:1px solid var(--border-subtle);display:flex;flex-direction:column;padding:0.75rem 0;overflow-y:auto}
 .phase-nav{display:flex;flex-direction:column;gap:2px;padding:0 0.5rem}
-.phase-link{display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0.6rem;border-radius:var(--radius-sm);cursor:pointer;font-size:0.78rem;font-weight:500;color:var(--text-secondary);transition:all 0.15s;border:none;background:none;text-align:left;font-family:inherit;width:100%}
+.phase-link{display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0.6rem;border-radius:var(--radius-sm);cursor:pointer;font-size:0.78rem;font-weight:500;color:var(--text-secondary);transition:all 0.15s;border:none;background:none;text-align:left;font-family:inherit;width:100%;white-space:nowrap}
 .phase-link:hover{background:var(--bg-hover);color:var(--text-primary)}
 .phase-link.active{background:var(--accent-bg);color:var(--accent)}
 .phase-link .ph-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
