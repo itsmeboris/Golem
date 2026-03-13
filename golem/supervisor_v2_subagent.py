@@ -39,6 +39,8 @@ from .worktree_manager import (
     cleanup_worktree,
     create_worktree,
 )
+from .pitfall_extractor import extract_pitfalls
+from .pitfall_writer import update_agents_md
 
 logger = logging.getLogger("golem.supervisor_v2_subagent")
 
@@ -683,6 +685,34 @@ class SubagentSupervisor:
             self.session.total_cost_usd,
             self.session.validation_verdict,
         )
+
+        # -- Post-task learning: extract pitfalls into AGENTS.md -----------
+        try:
+            loop = asyncio.get_running_loop()
+            loop.run_in_executor(None, self._extract_pitfalls)
+        except Exception:  # noqa: BLE001
+            self._slog.warning("Pitfall extraction failed (non-fatal)", exc_info=True)
+
+    def _extract_pitfalls(self) -> None:
+        """Extract pitfalls from recent sessions and update AGENTS.md."""
+        from .orchestrator import load_sessions  # lazy import to avoid circular
+
+        sessions = load_sessions()
+        completed = [
+            s.to_dict()
+            for s in sessions.values()
+            if s.state == TaskSessionState.COMPLETED
+        ]
+        # Include current session
+        current = self.session.to_dict()
+        if current not in completed:
+            completed.append(current)
+        # Limit to last 20
+        completed = completed[-20:]
+
+        pitfalls = extract_pitfalls(completed)
+        if pitfalls:
+            update_agents_md(pitfalls)
 
     # -- Escalation ------------------------------------------------------------
 
