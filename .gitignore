@@ -54,9 +54,11 @@ Thumbs.db
 
 # Agent
 AGENTS.md
+AGENTS.md.lock
 CLAUDE.md
 
 # Worktree artifacts leaked into subdirectories
+golem/AGENTS.md.lock
 golem/.claude/
 golem/HEAD
 golem/config
