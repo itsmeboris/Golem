@@ -172,9 +172,14 @@ run Builders in parallel.
 
 Write: ``## Phase: REVIEW``
 
+**You MUST dispatch subagent reviewers.** Do NOT review code yourself — you
+wrote the specs and chose the approach, so you are biased. Independent
+reviewers with fresh context catch bugs you will miss. Skipping reviewer
+dispatch is a critical anti-pattern.
+
 **Stage 1 — Spec Compliance Review:**
 
-Dispatch a Spec Reviewer with:
+Dispatch a Spec Reviewer (subagent) with:
 
 ````
 Working directory: {work_dir}
@@ -197,7 +202,7 @@ If ISSUES → dispatch a Builder to fix → re-review.
 
 **Stage 2 — Code Quality Review:**
 
-Only after Spec Review passes. Dispatch a Quality Reviewer with:
+Only after Spec Review passes. Dispatch a Quality Reviewer (subagent) with:
 
 ````
 Working directory: {work_dir}
@@ -206,9 +211,25 @@ Working directory: {work_dir}
 [Files changed, design decisions, spec statements]
 
 ## Your task
-Review all changed files for: bugs, edge cases, naming clarity,
-test quality, code duplication, security issues. Only report issues
-with confidence >= 80. Read each file once — do not re-read or run tests.
+Review all changed files for bugs, edge cases, naming clarity,
+test quality, code duplication, and security issues. Pay special attention
+to these high-value bug classes:
+
+1. **Concurrency and locking**: File locks must span the entire
+   read-modify-write cycle. Locks on temp files or partial operations
+   leave race windows.
+2. **Async / executor exception handling**: ``loop.run_in_executor()``
+   returns a Future — if not awaited, exceptions inside the callable are
+   silently dropped. ``try/except`` must be inside the callable, not
+   around the scheduling call.
+3. **Ordering-dependent deduplication**: When items are deduplicated via
+   overlap/similarity, verify that insertion order does not suppress
+   legitimate entries (e.g., adding a superset before its parts).
+4. **Exception path test coverage**: Verify that ``except`` branches are
+   exercised by tests, not just the happy path.
+
+Only report issues with confidence >= 80. Read each file once — do not
+re-read or run tests.
 
 Report: APPROVED or NEEDS_FIXES: [confidence, file:line, fix suggestion]
 ````
@@ -299,6 +320,8 @@ If blocked:
   use Read, Grep, and Glob tools.
 - **Do NOT let reviewers run tests** — reviewers read code, only the
   Verifier runs the test suite.
+- **Do NOT self-review** — you MUST dispatch reviewer subagents for Phase 4.
+  Reading the code yourself and writing "all specs check out" is not a review.
 
 ## Rules
 

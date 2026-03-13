@@ -54,6 +54,16 @@ successfully completed task #{issue_id}.
    - *I/O calls without error handling*: File, network, or subprocess calls
      (``open``, ``requests.get``, ``subprocess.run``, etc.) not wrapped in a
      ``try/except`` block — verify that error handling exists nearby.
+   - *Lock scope mismatch*: File locks (``fcntl.flock``, ``threading.Lock``)
+     that do not span the entire read-modify-write cycle — the lock must be
+     held from the first read through the final write/rename.
+   - *Unawaited executor Futures*: ``loop.run_in_executor()`` returns a
+     Future; if not awaited, exceptions inside the callable are silently
+     dropped. ``try/except`` must be inside the callable, not around the
+     scheduling call.
+   - *Ordering-dependent dedup*: When deduplicating via overlap/similarity,
+     inserting a superset before its parts suppresses the parts. Verify
+     insertion order does not cause unintended suppression.
    - *Data contract mismatches*: camelCase dict key access in Python code
      (suggesting frontend/backend naming convention mismatch) or direct
      ``.json()["key"]`` / ``.json().get("key")`` access on API responses
