@@ -37,6 +37,7 @@ flows:
     validation_timeout_seconds: 600  # 10 min (0 = unlimited)
     retry_budget_usd: 5.0         # budget for retry agent (0 = unlimited)
     max_retries: 1                 # retry once on PARTIAL verdict
+    validator_fix_depth: 3         # fix iterations per retry before escalating
     auto_commit: true              # commit on PASS verdict
 
     # Subagent orchestration: single Claude session with Agent tool delegation

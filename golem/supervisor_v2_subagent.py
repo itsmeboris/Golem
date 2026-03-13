@@ -166,11 +166,14 @@ class SubagentSupervisor:
                 self.session.supervisor_phase = "committing"
                 self._emit_event("Finalizing task...")
                 await self._commit_and_complete(issue_id, work_dir, verdict)
-            elif (
-                verdict.verdict == "PARTIAL"
-                and self.session.retry_count < self.task_config.max_retries
-            ):
-                await self._retry_with_resume(verdict, work_dir, issue_id)
+            elif verdict.verdict == "PARTIAL":
+                verdict = await self._fix_loop(verdict, work_dir, issue_id, description)
+                if verdict.verdict == "PASS":
+                    self.session.supervisor_phase = "committing"
+                    self._emit_event("Finalizing task...")
+                    await self._commit_and_complete(issue_id, work_dir, verdict)
+                else:
+                    self._escalate(verdict)
             else:
                 self._escalate(verdict)
 
@@ -485,6 +488,86 @@ class SubagentSupervisor:
             verdict.verdict,
             verdict.confidence,
         )
+        return verdict
+
+    # -- Fix loop (inner fix cycle) --------------------------------------------
+
+    async def _fix_loop(
+        self,
+        verdict: ValidationVerdict,
+        work_dir: str,
+        issue_id: int,
+        description: str,
+    ) -> ValidationVerdict:
+        """Inner fix loop: retry with validator concerns up to validator_fix_depth times."""
+        depth = self.task_config.validator_fix_depth
+        for i in range(depth):
+            self.session.fix_iteration = i + 1
+            self.session.state = TaskSessionState.RETRYING
+            self.session.updated_at = _now_iso()
+
+            self._emit_event(
+                f"Fix iteration {i + 1}/{depth}: addressing validator concerns..."
+            )
+
+            concerns_text = (
+                "\n".join(f"- {c}" for c in verdict.concerns) or "- (none specified)"
+            )
+            use_resume = self.task_config.resume_on_partial and bool(
+                self.session.cli_session_id
+            )
+            retry_prompt, resume_id = self._build_retry_prompt(
+                use_resume, verdict, concerns_text, issue_id
+            )
+
+            cli_config = CLIConfig(
+                cli_type=CLIType.CLAUDE,
+                model=self.task_config.orchestrate_model or self.task_config.task_model,
+                max_budget_usd=self.task_config.retry_budget_usd,
+                timeout_seconds=self.task_config.orchestrate_timeout_seconds,
+                mcp_servers=self._get_mcp_servers(self.session.parent_subject),
+                cwd=work_dir,
+                resume_session_id=resume_id,
+            )
+
+            tracker = TaskEventTracker(
+                session_id=issue_id,
+                on_milestone=self._on_milestone,
+            )
+            callback = self._chain_event_callback(tracker.handle_event)
+
+            async with self._work_dir_lock:
+                retry_result = await asyncio.get_running_loop().run_in_executor(
+                    None, invoke_cli_monitored, retry_prompt, cli_config, callback
+                )
+
+            self.session.total_cost_usd += retry_result.cost_usd
+
+            # Persist fix iteration trace
+            _write_prompt("golem", f"golem-{issue_id}-fix{i + 1}", retry_prompt)
+            if retry_result.trace_events:
+                self.session.retry_trace_file = _write_trace(
+                    "golem", f"golem-{issue_id}-fix{i + 1}", retry_result.trace_events
+                )
+            self._save_checkpoint(issue_id, "post_execute")
+
+            # Capture updated session_id for next iteration
+            if retry_result.session_id:
+                self.session.cli_session_id = retry_result.session_id
+
+            # Re-validate
+            verdict = await self._run_overall_validation(
+                issue_id, description, work_dir
+            )
+            self._emit_event(
+                f"Fix iteration {i + 1}/{depth} validation: {verdict.verdict} "
+                f"(confidence {verdict.confidence:.0%})"
+            )
+            self._save_checkpoint(issue_id, "post_validate")
+
+            if verdict.verdict != "PARTIAL":
+                return verdict
+
         return verdict
 
     # -- Retry with --resume ---------------------------------------------------

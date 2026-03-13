@@ -117,6 +117,7 @@ class TaskSession:
     validation_cost_usd: float = 0.0
     verification_result: dict | None = None  # VerificationResultDict
     retry_count: int = 0
+    fix_iteration: int = 0
     commit_sha: str = ""
     trace_file: str = ""
     retry_trace_file: str = ""
@@ -180,6 +181,7 @@ class TaskSession:
             validation_cost_usd=data.get("validation_cost_usd", 0.0),
             verification_result=data.get("verification_result"),
             retry_count=data.get("retry_count", 0),
+            fix_iteration=data.get("fix_iteration", 0),
             commit_sha=data.get("commit_sha", ""),
             trace_file=data.get("trace_file", ""),
             retry_trace_file=data.get("retry_trace_file", ""),

@@ -56,6 +56,7 @@ class GolemFlowConfig(FlowConfig):
     validation_timeout_seconds: int = 600
     retry_budget_usd: float = 5.0
     max_retries: int = 1
+    validator_fix_depth: int = 3
     auto_commit: bool = True
     # Subagent orchestration mode
     supervisor_mode: bool = True
@@ -261,6 +262,7 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
         validation_timeout_seconds=data.get("validation_timeout_seconds", 600),
         retry_budget_usd=data.get("retry_budget_usd", 5.0),
         max_retries=data.get("max_retries", 1),
+        validator_fix_depth=data.get("validator_fix_depth", 3),
         auto_commit=data.get("auto_commit", True),
         # Subagent orchestration
         supervisor_mode=data.get("supervisor_mode", True),

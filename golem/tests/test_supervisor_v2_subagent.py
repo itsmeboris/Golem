@@ -173,9 +173,11 @@ class TestRunPipeline:
         _patches["val"].assert_called_once()
 
     async def test_full_pipeline_partial_retry(self, _patches):
-        """invoke → validate(PARTIAL) → resume → validate(PASS)."""
+        """invoke → validate(PARTIAL) → fix loop → validate(PASS)."""
         session = TaskSession(parent_issue_id=42, parent_subject="Test task")
-        config = _make_config(max_retries=1, resume_on_partial=True)
+        config = _make_config(
+            max_retries=1, resume_on_partial=True, validator_fix_depth=1
+        )
         sup = _make_supervisor(session=session, config=config)
 
         _patches["val"].side_effect = [
@@ -195,9 +197,9 @@ class TestRunPipeline:
 
         await sup.run()
 
-        assert session.retry_count == 1
+        assert session.fix_iteration == 1
         assert session.state == TaskSessionState.COMPLETED
-        # Two CLI calls: orchestration + retry
+        # Two CLI calls: orchestration + fix loop iteration
         assert _patches["cli"].call_count == 2
 
     async def test_full_pipeline_fail(self, _patches):
@@ -896,7 +898,7 @@ class TestCheckpointResume:
         assert session.state == TaskSessionState.COMPLETED
 
     async def test_resume_post_validate_partial_retries(self, _patches):
-        """checkpoint_phase='post_validate' + PARTIAL verdict goes to retry."""
+        """checkpoint_phase='post_validate' + PARTIAL verdict goes to fix loop."""
         session = TaskSession(
             parent_issue_id=42,
             parent_subject="Test",
@@ -906,7 +908,7 @@ class TestCheckpointResume:
             validation_summary="partial",
             validation_concerns=["issue"],
         )
-        config = _make_config(max_retries=1)
+        config = _make_config(max_retries=1, validator_fix_depth=1)
         sup = _make_supervisor(session=session, config=config)
 
         _patches["val"].return_value = ValidationVerdict(
@@ -915,9 +917,9 @@ class TestCheckpointResume:
 
         await sup.run()
 
-        # CLI called once for retry, not for initial execution
+        # CLI called once for fix loop iteration, not for initial execution
         assert _patches["cli"].call_count == 1
-        assert session.retry_count == 1
+        assert session.fix_iteration == 1
         assert session.state == TaskSessionState.COMPLETED
 
     async def test_checkpoint_phase_cleared_after_use(self, _patches):
@@ -1078,3 +1080,421 @@ class TestEnsembleRetryBranch:
         ):
             await sup._retry_with_resume(MagicMock(), "/work", 42)
             mock_esc.assert_called_once_with(retry_verdict)
+
+
+class TestFixLoop:
+    """Tests for the _fix_loop inner fix cycle."""
+
+    @pytest.fixture()
+    def _patches(self):
+        with (
+            patch("golem.supervisor_v2_subagent.invoke_cli_monitored") as mock_cli,
+            patch("golem.supervisor_v2_subagent.run_validation") as mock_val,
+            patch("golem.supervisor_v2_subagent._write_prompt"),
+            patch("golem.supervisor_v2_subagent._write_trace"),
+            patch("golem.supervisor_v2_subagent._StreamingTraceWriter"),
+        ):
+            mock_cli.return_value = _make_cli_result(cost=0.1, session_id="sess-fix")
+            yield {
+                "cli": mock_cli,
+                "val": mock_val,
+            }
+
+    async def test_pass_on_first_iteration(self, _patches):
+        """Fix loop returns PASS immediately when first iteration passes."""
+        config = _make_config(validator_fix_depth=3, resume_on_partial=True)
+        session = TaskSession(
+            parent_issue_id=42,
+            parent_subject="Test",
+            cli_session_id="sess-orig",
+        )
+        sup = _make_supervisor(session=session, config=config)
+        sup._worktree_path = ""
+
+        _patches["val"].return_value = ValidationVerdict(
+            verdict="PASS", confidence=0.95, summary="fixed", task_type="feature"
+        )
+
+        initial_verdict = ValidationVerdict(
+            verdict="PARTIAL", confidence=0.5, summary="partial", concerns=["issue1"]
+        )
+
+        result = await sup._fix_loop(initial_verdict, "/work", 42, "desc")
+
+        assert result.verdict == "PASS"
+        assert session.fix_iteration == 1
+        assert _patches["cli"].call_count == 1
+        assert _patches["val"].call_count == 1
+
+    async def test_pass_on_second_iteration(self, _patches):
+        """Fix loop tries again when first iteration is PARTIAL, passes on second."""
+        config = _make_config(validator_fix_depth=3, resume_on_partial=True)
+        session = TaskSession(
+            parent_issue_id=42,
+            parent_subject="Test",
+            cli_session_id="sess-orig",
+        )
+        sup = _make_supervisor(session=session, config=config)
+        sup._worktree_path = ""
+
+        _patches["val"].side_effect = [
+            ValidationVerdict(
+                verdict="PARTIAL",
+                confidence=0.6,
+                summary="still partial",
+                concerns=["remaining"],
+            ),
+            ValidationVerdict(
+                verdict="PASS", confidence=0.9, summary="ok", task_type="feature"
+            ),
+        ]
+
+        initial_verdict = ValidationVerdict(
+            verdict="PARTIAL", confidence=0.5, summary="partial", concerns=["issue1"]
+        )
+
+        result = await sup._fix_loop(initial_verdict, "/work", 42, "desc")
+
+        assert result.verdict == "PASS"
+        assert session.fix_iteration == 2
+        assert _patches["cli"].call_count == 2
+
+    async def test_exhausted_returns_partial(self, _patches):
+        """All iterations return PARTIAL → returns last PARTIAL verdict."""
+        config = _make_config(validator_fix_depth=2, resume_on_partial=True)
+        session = TaskSession(
+            parent_issue_id=42,
+            parent_subject="Test",
+            cli_session_id="sess-orig",
+        )
+        sup = _make_supervisor(session=session, config=config)
+        sup._worktree_path = ""
+
+        partial1 = ValidationVerdict(
+            verdict="PARTIAL", confidence=0.5, summary="still bad 1", concerns=["c1"]
+        )
+        partial2 = ValidationVerdict(
+            verdict="PARTIAL", confidence=0.6, summary="still bad 2", concerns=["c2"]
+        )
+        _patches["val"].side_effect = [partial1, partial2]
+
+        initial_verdict = ValidationVerdict(
+            verdict="PARTIAL", confidence=0.4, summary="initial", concerns=["issue"]
+        )
+
+        result = await sup._fix_loop(initial_verdict, "/work", 42, "desc")
+
+        assert result.verdict == "PARTIAL"
+        assert result.summary == "still bad 2"
+        assert session.fix_iteration == 2
+        assert _patches["cli"].call_count == 2
+
+    async def test_fix_iteration_tracked_in_session(self, _patches):
+        """fix_iteration is set on each loop iteration."""
+        config = _make_config(validator_fix_depth=1, resume_on_partial=True)
+        session = TaskSession(
+            parent_issue_id=42,
+            parent_subject="Test",
+            cli_session_id="sess-orig",
+        )
+        sup = _make_supervisor(session=session, config=config)
+        sup._worktree_path = ""
+
+        _patches["val"].return_value = ValidationVerdict(
+            verdict="PASS", confidence=0.9, summary="ok", task_type="feature"
+        )
+
+        initial = ValidationVerdict(
+            verdict="PARTIAL", confidence=0.5, summary="p", concerns=["x"]
+        )
+
+        await sup._fix_loop(initial, "/work", 42, "desc")
+
+        assert session.fix_iteration == 1
+
+    async def test_emits_events_per_iteration(self, _patches):
+        """Each iteration emits start and result events."""
+        config = _make_config(validator_fix_depth=1, resume_on_partial=True)
+        session = TaskSession(
+            parent_issue_id=42,
+            parent_subject="Test",
+            cli_session_id="sess-orig",
+        )
+        sup = _make_supervisor(session=session, config=config)
+        sup._worktree_path = ""
+
+        _patches["val"].return_value = ValidationVerdict(
+            verdict="PASS", confidence=0.9, summary="ok", task_type="feature"
+        )
+
+        initial = ValidationVerdict(
+            verdict="PARTIAL", confidence=0.5, summary="p", concerns=["x"]
+        )
+
+        await sup._fix_loop(initial, "/work", 42, "desc")
+
+        summaries = [e["summary"] for e in session.event_log]
+        assert any("Fix iteration 1/1" in s and "addressing" in s for s in summaries)
+        assert any("Fix iteration 1/1 validation: PASS" in s for s in summaries)
+
+    async def test_session_id_updated_between_iterations(self, _patches):
+        """Session ID is updated from CLI result for subsequent iterations."""
+        config = _make_config(validator_fix_depth=2, resume_on_partial=True)
+        session = TaskSession(
+            parent_issue_id=42,
+            parent_subject="Test",
+            cli_session_id="sess-orig",
+        )
+        sup = _make_supervisor(session=session, config=config)
+        sup._worktree_path = ""
+
+        _patches["cli"].return_value = _make_cli_result(
+            cost=0.1, session_id="sess-updated"
+        )
+        _patches["val"].side_effect = [
+            ValidationVerdict(
+                verdict="PARTIAL", confidence=0.5, summary="p", concerns=["c"]
+            ),
+            ValidationVerdict(
+                verdict="PASS", confidence=0.9, summary="ok", task_type="f"
+            ),
+        ]
+
+        initial = ValidationVerdict(
+            verdict="PARTIAL", confidence=0.5, summary="p", concerns=["x"]
+        )
+
+        await sup._fix_loop(initial, "/work", 42, "desc")
+
+        assert session.cli_session_id == "sess-updated"
+
+    async def test_trace_file_saved_on_fix_iteration(self, _patches):
+        """When trace_events exist, retry_trace_file is set."""
+        config = _make_config(validator_fix_depth=1, resume_on_partial=True)
+        session = TaskSession(
+            parent_issue_id=42,
+            parent_subject="Test",
+            cli_session_id="sess-orig",
+        )
+        sup = _make_supervisor(session=session, config=config)
+        sup._worktree_path = ""
+
+        _patches["cli"].return_value = _make_cli_result(
+            cost=0.1, session_id="sess-fix", trace_events=[{"type": "trace"}]
+        )
+        _patches["val"].return_value = ValidationVerdict(
+            verdict="PASS", confidence=0.9, summary="ok", task_type="f"
+        )
+
+        with patch(
+            "golem.supervisor_v2_subagent._write_trace",
+            return_value="/tmp/fix_trace.jsonl",
+        ):
+            initial = ValidationVerdict(
+                verdict="PARTIAL", confidence=0.5, summary="p", concerns=["x"]
+            )
+            await sup._fix_loop(initial, "/work", 42, "desc")
+
+        assert session.retry_trace_file == "/tmp/fix_trace.jsonl"
+
+    async def test_zero_depth_returns_immediately(self, _patches):
+        """validator_fix_depth=0 means no fix iterations, returns input verdict."""
+        config = _make_config(validator_fix_depth=0, resume_on_partial=True)
+        session = TaskSession(
+            parent_issue_id=42,
+            parent_subject="Test",
+            cli_session_id="sess-orig",
+        )
+        sup = _make_supervisor(session=session, config=config)
+        sup._worktree_path = ""
+
+        initial = ValidationVerdict(
+            verdict="PARTIAL", confidence=0.5, summary="p", concerns=["x"]
+        )
+
+        result = await sup._fix_loop(initial, "/work", 42, "desc")
+
+        assert result.verdict == "PARTIAL"
+        assert _patches["cli"].call_count == 0
+        assert session.fix_iteration == 0
+
+    async def test_fail_mid_loop_exits_early(self, _patches):
+        """FAIL verdict during fix loop exits immediately."""
+        config = _make_config(validator_fix_depth=3, resume_on_partial=True)
+        session = TaskSession(
+            parent_issue_id=42,
+            parent_subject="Test",
+            cli_session_id="sess-orig",
+        )
+        sup = _make_supervisor(session=session, config=config)
+        sup._worktree_path = ""
+
+        _patches["val"].return_value = ValidationVerdict(
+            verdict="FAIL", confidence=0.1, summary="broken", concerns=["fatal"]
+        )
+
+        initial = ValidationVerdict(
+            verdict="PARTIAL", confidence=0.5, summary="p", concerns=["x"]
+        )
+
+        result = await sup._fix_loop(initial, "/work", 42, "desc")
+
+        assert result.verdict == "FAIL"
+        assert session.fix_iteration == 1
+        assert _patches["cli"].call_count == 1
+        assert _patches["val"].call_count == 1
+
+
+class TestRunWithFixLoop:
+    """Test the run() method uses _fix_loop for PARTIAL verdicts."""
+
+    @pytest.fixture()
+    def _patches(self):
+        with (
+            patch("golem.supervisor_v2_subagent.invoke_cli_monitored") as mock_cli,
+            patch("golem.supervisor_v2_subagent.run_validation") as mock_val,
+            patch("golem.supervisor_v2_subagent.commit_changes") as mock_commit,
+            patch("golem.supervisor_v2_subagent._write_prompt"),
+            patch("golem.supervisor_v2_subagent._write_trace"),
+            patch("golem.supervisor_v2_subagent._StreamingTraceWriter"),
+            patch(
+                "golem.supervisor_v2_subagent.resolve_work_dir",
+                return_value="/tmp/test",
+            ),
+            patch("golem.supervisor_v2_subagent.create_worktree"),
+            patch("golem.supervisor_v2_subagent.cleanup_worktree"),
+            patch(
+                "golem.supervisor_v2_subagent.run_verification",
+                return_value=MagicMock(passed=True, duration_s=0.1),
+            ),
+        ):
+            mock_cli.return_value = _make_cli_result(
+                output_result='{"status": "COMPLETE", "summary": "done"}',
+                session_id="sess-123",
+            )
+            mock_commit.return_value = CommitResult(committed=True, sha="abc123")
+            yield {
+                "cli": mock_cli,
+                "val": mock_val,
+                "commit": mock_commit,
+            }
+
+    async def test_partial_then_pass_via_fix_loop(self, _patches):
+        """PARTIAL → fix loop returns PASS → commit and complete."""
+        session = TaskSession(parent_issue_id=42, parent_subject="Test")
+        config = _make_config(validator_fix_depth=3)
+        sup = _make_supervisor(session=session, config=config)
+
+        _patches["val"].side_effect = [
+            # Initial validation
+            ValidationVerdict(
+                verdict="PARTIAL",
+                confidence=0.5,
+                summary="partial",
+                concerns=["issue1"],
+            ),
+            # Fix loop iteration 1
+            ValidationVerdict(
+                verdict="PASS", confidence=0.9, summary="ok", task_type="feature"
+            ),
+        ]
+
+        await sup.run()
+
+        assert session.state == TaskSessionState.COMPLETED
+        assert session.fix_iteration == 1
+
+    async def test_partial_exhausted_escalates(self, _patches):
+        """PARTIAL → fix loop exhausted → escalate."""
+        session = TaskSession(parent_issue_id=42, parent_subject="Test")
+        config = _make_config(validator_fix_depth=2)
+        sup = _make_supervisor(session=session, config=config)
+
+        _patches["val"].side_effect = [
+            # Initial validation
+            ValidationVerdict(
+                verdict="PARTIAL",
+                confidence=0.5,
+                summary="partial",
+                concerns=["issue1"],
+            ),
+            # Fix loop iteration 1
+            ValidationVerdict(
+                verdict="PARTIAL",
+                confidence=0.5,
+                summary="still partial 1",
+                concerns=["c1"],
+            ),
+            # Fix loop iteration 2
+            ValidationVerdict(
+                verdict="PARTIAL",
+                confidence=0.6,
+                summary="still partial 2",
+                concerns=["c2"],
+            ),
+        ]
+
+        await sup.run()
+
+        assert session.state == TaskSessionState.FAILED
+        assert session.fix_iteration == 2
+
+
+class TestValidatorFixDepthConfig:
+    """Config parsing for validator_fix_depth."""
+
+    def test_default_value(self):
+        cfg = GolemFlowConfig()
+        assert cfg.validator_fix_depth == 3
+
+    def test_custom_value(self):
+        cfg = GolemFlowConfig(validator_fix_depth=5)
+        assert cfg.validator_fix_depth == 5
+
+    def test_parsed_from_yaml_data(self):
+        from golem.core.config import _parse_golem_config
+
+        data = {"validator_fix_depth": 7, "projects": ["test"]}
+        cfg = _parse_golem_config(data)
+        assert cfg.validator_fix_depth == 7
+
+    def test_default_when_missing_from_yaml(self):
+        from golem.core.config import _parse_golem_config
+
+        data = {"projects": ["test"]}
+        cfg = _parse_golem_config(data)
+        assert cfg.validator_fix_depth == 3
+
+
+class TestFixIterationSerialization:
+    """TaskSession fix_iteration field serialization."""
+
+    def test_to_dict_includes_fix_iteration(self):
+        session = TaskSession(parent_issue_id=1, parent_subject="t")
+        session.fix_iteration = 2
+        d = session.to_dict()
+        assert d["fix_iteration"] == 2
+
+    def test_from_dict_reads_fix_iteration(self):
+        data = {
+            "parent_issue_id": 1,
+            "state": "detected",
+            "fix_iteration": 5,
+        }
+        session = TaskSession.from_dict(data)
+        assert session.fix_iteration == 5
+
+    def test_from_dict_default_when_missing(self):
+        data = {
+            "parent_issue_id": 1,
+            "state": "detected",
+        }
+        session = TaskSession.from_dict(data)
+        assert session.fix_iteration == 0
+
+    def test_roundtrip(self):
+        session = TaskSession(parent_issue_id=1, parent_subject="t")
+        session.fix_iteration = 3
+        d = session.to_dict()
+        restored = TaskSession.from_dict(d)
+        assert restored.fix_iteration == 3
