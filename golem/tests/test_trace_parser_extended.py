@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from golem.trace_parser import _extract_thinking_blocks, parse_trace
+from golem.trace_parser import _extract_thinking_blocks, _parse_issues, parse_trace
 
 from golem.tests.test_trace_parser import (
     _agent_tool_use,
@@ -493,6 +493,45 @@ class TestThinkingBlockPopulation:
 # ---------------------------------------------------------------------------
 # Phase duration estimation edge cases
 # ---------------------------------------------------------------------------
+
+
+class TestParseIssues:
+    """Tests for _parse_issues with primary and fallback regex."""
+
+    def test_confidence_tagged_issues(self):
+        output = (
+            "NEEDS_FIXES\n\n"
+            "[95%] golem/utils.py:16 — ms truncation bug\n"
+            "[80%] golem/tests/test_utils.py:45 — missing boundary test\n"
+        )
+        issues = _parse_issues(output)
+        assert len(issues) == 2
+        assert issues[0]["confidence"] == 95
+        assert issues[0]["file"] == "golem/utils.py:16"
+        assert "truncation" in issues[0]["text"]
+
+    def test_fallback_numbered_issues(self):
+        output = (
+            "NEEDS_FIXES\n\n"
+            "1. golem/utils.py:16 — ms truncation bug\n"
+            "2. golem/tests/test_utils.py:45 — missing boundary test\n"
+            "3. golem/core/config.py — unused import\n"
+        )
+        issues = _parse_issues(output)
+        assert len(issues) == 3
+        assert issues[0]["confidence"] == 0
+        assert issues[0]["file"] == "golem/utils.py:16"
+        assert "truncation" in issues[0]["text"]
+
+    def test_fallback_bulleted_issues(self):
+        output = "NEEDS_FIXES\n\n- golem/flow.py:10 — error handling missing\n"
+        issues = _parse_issues(output)
+        assert len(issues) == 1
+        assert issues[0]["file"] == "golem/flow.py:10"
+
+    def test_empty_output(self):
+        assert _parse_issues("") == []
+        assert _parse_issues("APPROVED\nAll good.") == []
 
 
 class TestPhaseDurationEstimation:
