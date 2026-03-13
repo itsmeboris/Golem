@@ -3,7 +3,12 @@
 
 from __future__ import annotations
 
-from golem.trace_parser import _extract_thinking_blocks, _parse_issues, parse_trace
+from golem.trace_parser import (
+    _extract_thinking_blocks,
+    _parse_issues,
+    _trim_text_to_phase,
+    parse_trace,
+)
 
 from golem.tests.test_trace_parser import (
     _agent_tool_use,
@@ -493,6 +498,33 @@ class TestThinkingBlockPopulation:
 # ---------------------------------------------------------------------------
 # Phase duration estimation edge cases
 # ---------------------------------------------------------------------------
+
+
+class TestTrimTextToPhase:
+    """Tests for _trim_text_to_phase helper."""
+
+    def test_single_marker_returns_full_text(self):
+        text = "## Phase: BUILD\nDispatching builder..."
+        assert _trim_text_to_phase(text, "BUILD", None) == text
+
+    def test_no_marker_returns_full_text(self):
+        text = "Some random text without markers"
+        assert _trim_text_to_phase(text, "BUILD", None) == text
+
+    def test_phase_not_found_returns_full_text(self):
+        """When the requested phase is not among the markers, return full text."""
+        text = "## Phase: PLAN\nSpecs\n\n## Phase: BUILD\nDispatch"
+        result = _trim_text_to_phase(text, "REVIEW", None)
+        assert result == text
+
+    def test_splits_plan_from_build(self):
+        text = "## Phase: PLAN\nSPEC-1: do X\n\n## Phase: BUILD\nDispatching..."
+        plan = _trim_text_to_phase(text, "PLAN", "BUILD")
+        build = _trim_text_to_phase(text, "BUILD", None)
+        assert "SPEC-1" in plan
+        assert "Dispatching" not in plan
+        assert "Dispatching" in build
+        assert "SPEC-1" not in build
 
 
 class TestParseIssues:

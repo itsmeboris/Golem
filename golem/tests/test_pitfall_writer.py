@@ -160,6 +160,30 @@ def test_update_cleans_up_ignores_unlink_error(tmp_path):
                 update_agents_md(["will fail"], agents_md_path=agents_md)
 
 
+def test_update_cleans_up_temp_on_replace_error(tmp_path):
+    """When os.replace fails inside the lock, temp file is removed and error re-raised."""
+    agents_md = tmp_path / "AGENTS.md"
+    with patch(
+        "golem.pitfall_writer.os.replace", side_effect=OSError("replace failed")
+    ):
+        with pytest.raises(OSError, match="replace failed"):
+            update_agents_md(["will fail"], agents_md_path=agents_md)
+    assert not agents_md.exists()
+    temp_files = list(tmp_path.glob(".agents_md_*"))
+    assert temp_files == []
+
+
+def test_update_cleans_up_temp_ignores_unlink_error_on_replace_fail(tmp_path):
+    """When both os.replace and os.unlink fail, the original error propagates."""
+    agents_md = tmp_path / "AGENTS.md"
+    with (
+        patch("golem.pitfall_writer.os.replace", side_effect=OSError("replace failed")),
+        patch("golem.pitfall_writer.os.unlink", side_effect=OSError("unlink failed")),
+    ):
+        with pytest.raises(OSError, match="replace failed"):
+            update_agents_md(["will fail"], agents_md_path=agents_md)
+
+
 def test_integration_mock_session(tmp_path):
     """Mock a completed session, extract pitfalls, verify AGENTS.md updated."""
     from golem.pitfall_extractor import extract_pitfalls
