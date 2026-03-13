@@ -29,7 +29,6 @@ Manual actions that cannot be automated. Complete in order.
   - [ ] `demo-dashboard.gif` — dashboard showing a task in progress
   - [ ] `demo-status.gif` — `golem status` output
 - [ ] Save to `assets/` and update README GIF placeholders
-- [ ] Document any failure modes in `examples/demo-microservice/README.md`
 
 ### Verification
 - [ ] Verify `pip install -e .` works from clean clone

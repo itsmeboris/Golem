@@ -187,16 +187,6 @@ golem dashboard --port 8081
     Total: 47  Success: 89.4%  Avg: 2m 22s  Cost: $15.82
 ```
 
-### Try the Demo
-
-Want to see Golem work before running it on your own code? Try the [demo microservice](examples/demo-microservice/):
-
-```bash
-cd examples/demo-microservice
-pip install -r requirements.txt
-golem run -f prompts/add-logging.md    # ~$0.50-$1.00, ~2 min
-```
-
 ---
 
 ## How It Works

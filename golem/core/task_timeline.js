@@ -635,7 +635,7 @@ function renderTimeline(trace, running, session) {
         testsHtml = '<div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.3rem">' +
           Object.entries(testsObj).map(([name, val]) => {
             const pass = val === 'pass' || val === true;
-            const skip = val === 'not_applicable' || val === 'skipped';
+            const skip = val === 'not_applicable' || val === 'skipped' || val === 'not_run';
             const color = skip ? 'var(--text-muted)' : (pass ? 'var(--green)' : 'var(--danger, #e55)');
             const icon = skip ? '—' : (pass ? '✓' : '✗');
             return `<span style="color:${color};font-size:0.7rem">${icon} ${esc(name)}</span>`;
@@ -887,7 +887,7 @@ function renderResultBlock(result, trace) {
   if (Object.keys(testsObj).length > 0) {
     testsHtml = Object.entries(testsObj).map(([name, val]) => {
       const pass = val === 'pass' || val === true;
-      const skip = val === 'not_applicable' || val === 'skipped';
+      const skip = val === 'not_applicable' || val === 'skipped' || val === 'not_run';
       const cls = skip ? 'skip' : (pass ? 'pass' : 'fail');
       const icon = skip ? '—' : (pass ? '✓' : '✗');
       return `<span class="tl-test ${cls}">${icon} ${esc(name)}</span>`;

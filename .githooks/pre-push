@@ -76,8 +76,7 @@ for f in "${changed_files[@]+"${changed_files[@]}"}"; do
     fi
 
     # Any other .py file not already captured (e.g. scripts at repo root)
-    # Skip examples/ — standalone demo projects with their own import context
-    if [[ "$f" =~ \.py$ && $classified -eq 0 && ! "$f" =~ ^examples/ ]]; then
+    if [[ "$f" =~ \.py$ && $classified -eq 0 ]]; then
         py_all+=("$f")
         classified=1
     fi
