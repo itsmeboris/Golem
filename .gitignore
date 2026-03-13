@@ -29,6 +29,7 @@ tasks/
 .claude/settings.local.json
 .claude/hooks/
 .claude/memory/
+.claude/state/
 .mcp.json
 .superpowers/
 .vscode
