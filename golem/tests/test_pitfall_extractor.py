@@ -162,6 +162,22 @@ def test_extract_skips_empty_strings():
     assert "real concern" in result
 
 
+def test_extract_retry_with_multi_sentence_summary():
+    """Sentences from validation_summary are not suppressed by retry_count full-summary entry."""
+    sessions = [
+        {
+            "validation_concerns": [],
+            "validation_test_failures": [],
+            "errors": [],
+            "retry_count": 2,
+            "validation_summary": "Missing imports. Broken test assertion",
+        }
+    ]
+    result = extract_pitfalls(sessions)
+    assert "missing imports" in result
+    assert "broken test assertion" in result
+
+
 def test_extract_cap_120_chars():
     long_concern = "x" * 200
     sessions = [

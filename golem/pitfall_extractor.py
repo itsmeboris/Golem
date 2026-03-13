@@ -53,8 +53,17 @@ def extract_pitfalls(sessions: list[dict]) -> list[str]:
             if error and error.strip():
                 candidates.append(normalize_pitfall(error))
 
-        retry_count = session.get("retry_count", 0)
         validation_summary = session.get("validation_summary", "")
+
+        # Add individual sentences first so the full summary doesn't
+        # suppress them via dedup (the full string overlaps every sentence).
+        if validation_summary and validation_summary.strip():
+            for sentence in validation_summary.split(". "):
+                sentence = sentence.strip()
+                if sentence:
+                    candidates.append(normalize_pitfall(sentence))
+
+        retry_count = session.get("retry_count", 0)
         if (
             retry_count
             and retry_count > 0
@@ -62,12 +71,6 @@ def extract_pitfalls(sessions: list[dict]) -> list[str]:
             and validation_summary.strip()
         ):
             candidates.append(normalize_pitfall(validation_summary))
-
-        if validation_summary and validation_summary.strip():
-            for sentence in validation_summary.split(". "):
-                sentence = sentence.strip()
-                if sentence:
-                    candidates.append(normalize_pitfall(sentence))
 
     deduplicated: list[str] = []
     for candidate in candidates:

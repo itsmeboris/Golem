@@ -66,37 +66,42 @@ def update_agents_md(
         return
 
     path = agents_md_path or PROJECT_ROOT / "AGENTS.md"
-
-    if path.exists():
-        existing_content = path.read_text(encoding="utf-8")
-    else:
-        existing_content = _HEADER
-
-    before, existing_pitfalls, after = parse_pitfalls_section(existing_content)
-
-    # Merge: add new pitfalls not already present
-    merged = list(existing_pitfalls)
-    for pitfall in new_pitfalls:
-        if not _is_duplicate(pitfall, merged):
-            merged.append(pitfall)
-
-    section = format_pitfalls_section(merged)
-    new_content = before + section + after
-
-    # Atomic write with file locking
     dir_path = path.parent
     dir_path.mkdir(parents=True, exist_ok=True)
+    lock_path = str(path) + ".lock"
 
-    fd, tmp_path = tempfile.mkstemp(dir=dir_path, prefix=".agents_md_")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            fcntl.flock(f, fcntl.LOCK_EX)
-            f.write(new_content)
-            fcntl.flock(f, fcntl.LOCK_UN)
-        os.replace(tmp_path, path)
-    except Exception:
+    # Hold an exclusive lock across the entire read-modify-write cycle
+    # so concurrent tasks don't overwrite each other's pitfalls.
+    with open(lock_path, "w") as lock_f:
+        fcntl.flock(lock_f, fcntl.LOCK_EX)
         try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-        raise
+            if path.exists():
+                existing_content = path.read_text(encoding="utf-8")
+            else:
+                existing_content = _HEADER
+
+            before, existing_pitfalls, after = parse_pitfalls_section(existing_content)
+
+            # Merge: add new pitfalls not already present
+            merged = list(existing_pitfalls)
+            for pitfall in new_pitfalls:
+                if not _is_duplicate(pitfall, merged):
+                    merged.append(pitfall)
+
+            section = format_pitfalls_section(merged)
+            new_content = before + section + after
+
+            # Atomic write: temp file + rename
+            fd, tmp_path = tempfile.mkstemp(dir=dir_path, prefix=".agents_md_")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(new_content)
+                os.replace(tmp_path, path)
+            except Exception:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
+        finally:
+            fcntl.flock(lock_f, fcntl.LOCK_UN)

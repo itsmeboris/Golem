@@ -1004,6 +1004,42 @@ class TestClarityGate:
             await sup._execute_phases(42, "desc", "/work", 0.0)
 
 
+class TestExtractPitfalls:
+    """Cover the _extract_pitfalls exception handling branch."""
+
+    def test_extract_pitfalls_logs_warning_on_error(self):
+        session = TaskSession(parent_issue_id=42, parent_subject="Test")
+        sup = _make_supervisor(session=session)
+        with patch(
+            "golem.orchestrator.load_sessions",
+            side_effect=RuntimeError("db unavailable"),
+        ):
+            # Should not raise — exception is caught and logged
+            sup._extract_pitfalls()
+
+    def test_extract_pitfalls_happy_path(self):
+        session = TaskSession(parent_issue_id=42, parent_subject="Test")
+        sup = _make_supervisor(session=session)
+        mock_session = MagicMock()
+        mock_session.state = TaskSessionState.COMPLETED
+        mock_session.to_dict.return_value = {
+            "validation_concerns": ["Always run tests"],
+            "validation_test_failures": [],
+            "errors": [],
+            "retry_count": 0,
+            "validation_summary": "",
+        }
+        with (
+            patch(
+                "golem.orchestrator.load_sessions",
+                return_value={"s1": mock_session},
+            ),
+            patch("golem.supervisor_v2_subagent.update_agents_md") as mock_update,
+        ):
+            sup._extract_pitfalls()
+            mock_update.assert_called_once()
+
+
 class TestEnsembleRetryBranch:
     """Cover the not-yet-implemented ensemble retry branch."""
 
