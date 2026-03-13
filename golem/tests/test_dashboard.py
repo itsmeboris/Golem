@@ -1018,6 +1018,14 @@ class TestFormatTaskDetailText:
         assert "(none)" in result
 
     @patch("golem.core.dashboard.load_sessions")
+    def test_detail_shows_fix_iteration_and_retry(self, mock_sessions):
+        sess = _make_session(fix_iteration=3, retry_count=1)
+        mock_sessions.return_value = {12345: sess}
+        result = format_task_detail_text(12345)
+        assert "Fix iters:    3" in result
+        assert "Full retries: 1" in result
+
+    @patch("golem.core.dashboard.load_sessions")
     def test_detail_with_validation(self, mock_sessions):
         sess = _make_session(
             validation_verdict="PASS",
@@ -1650,6 +1658,41 @@ class TestReadAndParseTrace:
         assert result is not None
         assert "retry" in result
         assert str(retry_file) == result["retry"]["trace_file"]
+
+    def test_includes_fix_iteration_traces(self, tmp_path):
+        traces = tmp_path / "traces" / "golem"
+        traces.mkdir(parents=True)
+        trace_file = traces / "golem-42-20260101.jsonl"
+        _make_minimal_trace_jsonl(trace_file)
+
+        fix1 = traces / "golem-42-20260101-fix1.jsonl"
+        _make_minimal_trace_jsonl(fix1)
+        fix2 = traces / "golem-42-20260101-fix2.jsonl"
+        _make_minimal_trace_jsonl(fix2)
+
+        with patch("golem.core.dashboard.TRACES_DIR", tmp_path / "traces"):
+            with patch("golem.core.dashboard.REPORTS_DIR", tmp_path / "reports"):
+                result = _read_and_parse_trace("golem-42-20260101")
+
+        assert result is not None
+        assert "fix_iterations" in result
+        assert len(result["fix_iterations"]) == 2
+        assert result["fix_iterations"][0]["iteration"] == 1
+        assert result["fix_iterations"][1]["iteration"] == 2
+        assert str(fix1) == result["fix_iterations"][0]["trace_file"]
+
+    def test_no_fix_iterations_key_when_none_exist(self, tmp_path):
+        traces = tmp_path / "traces" / "golem"
+        traces.mkdir(parents=True)
+        trace_file = traces / "golem-42-20260101.jsonl"
+        _make_minimal_trace_jsonl(trace_file)
+
+        with patch("golem.core.dashboard.TRACES_DIR", tmp_path / "traces"):
+            with patch("golem.core.dashboard.REPORTS_DIR", tmp_path / "reports"):
+                result = _read_and_parse_trace("golem-42-20260101")
+
+        assert result is not None
+        assert "fix_iterations" not in result
 
     def test_completed_trace_is_cached(self, tmp_path):
         traces = tmp_path / "traces" / "golem"

@@ -46,6 +46,7 @@ class TeamsNotifier:
         concerns: list[str] | None = None,
         commit_sha: str = "",
         retry_count: int = 0,
+        fix_iteration: int = 0,
     ) -> None:
         """Send a task-completed card to Teams."""
         card = build_task_completed_card(
@@ -59,6 +60,7 @@ class TeamsNotifier:
             concerns=concerns,
             commit_sha=commit_sha,
             retry_count=retry_count,
+            fix_iteration=fix_iteration,
         )
         self._send(card)
 
@@ -92,6 +94,7 @@ class TeamsNotifier:
         cost_usd: float = 0.0,
         duration_s: float = 0.0,
         retry_count: int = 0,
+        fix_iteration: int = 0,
     ) -> None:
         """Send a task-escalation card to Teams."""
         card = build_task_escalation_card(
@@ -103,6 +106,7 @@ class TeamsNotifier:
             cost_usd=cost_usd,
             duration_s=duration_s,
             retry_count=retry_count,
+            fix_iteration=fix_iteration,
         )
         self._send(card)
 

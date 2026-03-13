@@ -348,6 +348,7 @@ class TestSlackNotifier:
             confidence=0.95,
             commit_sha="abc123",
             retry_count=1,
+            fix_iteration=2,
         )
         client.send_to_channel.assert_called_once()
         payload = client.send_to_channel.call_args[0][1]
@@ -355,6 +356,8 @@ class TestSlackNotifier:
         assert "$1.50" in text
         assert "PASS" in text
         assert "`abc123`" in text
+        assert "Fix iterations" in text
+        assert "Full retries" in text
 
     def test_notify_completed_with_concerns(self):
         notifier, client = self._make_notifier()
@@ -392,11 +395,13 @@ class TestSlackNotifier:
             concerns=["c1"],
             cost_usd=2.0,
             retry_count=1,
+            fix_iteration=2,
         )
         payload = client.send_to_channel.call_args[0][1]
         text = json.dumps(payload["blocks"])
         assert "c1" in text
-        assert "Yes" in text  # retried = Yes
+        assert "Full retries" in text
+        assert "Fix iterations" in text
 
     def test_send_failure_does_not_raise(self):
         notifier, client = self._make_notifier()

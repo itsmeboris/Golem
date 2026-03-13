@@ -121,6 +121,7 @@ class TaskSession:
     commit_sha: str = ""
     trace_file: str = ""
     retry_trace_file: str = ""
+    fix_trace_files: list[str] = field(default_factory=list)
     # Subagent orchestration
     execution_mode: str = ""  # "subagent" | "monolithic" | "prompt"
     # "orchestrating" | "validating" | "committing"
@@ -185,6 +186,7 @@ class TaskSession:
             commit_sha=data.get("commit_sha", ""),
             trace_file=data.get("trace_file", ""),
             retry_trace_file=data.get("retry_trace_file", ""),
+            fix_trace_files=data.get("fix_trace_files", []),
             execution_mode=data.get("execution_mode", ""),
             supervisor_phase=data.get("supervisor_phase", ""),
             depends_on=data.get("depends_on", []),

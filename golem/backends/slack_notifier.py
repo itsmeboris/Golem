@@ -62,9 +62,12 @@ class SlackNotifier:
         concerns: list[str] | None = None,
         commit_sha: str = "",
         retry_count: int = 0,
+        fix_iteration: int = 0,
     ) -> None:
         emoji = (
-            ":white_check_mark:" if retry_count == 0 else ":arrows_counterclockwise:"
+            ":white_check_mark:"
+            if retry_count == 0 and fix_iteration == 0
+            else ":arrows_counterclockwise:"
         )
         blocks: list[dict[str, Any]] = [
             _header(f"Golem Completed: #{task_id}", emoji),
@@ -80,8 +83,10 @@ class SlackNotifier:
             facts.append(("Verdict", f"{verdict} ({confidence:.0%})"))
         if commit_sha:
             facts.append(("Commit", f"`{commit_sha}`"))
+        if fix_iteration:
+            facts.append(("Fix iterations", str(fix_iteration)))
         if retry_count:
-            facts.append(("Retries", str(retry_count)))
+            facts.append(("Full retries", str(retry_count)))
         blocks.append(_fields(facts))
 
         if concerns:
@@ -123,6 +128,7 @@ class SlackNotifier:
         cost_usd: float = 0.0,
         duration_s: float = 0.0,
         retry_count: int = 0,
+        fix_iteration: int = 0,
     ) -> None:
         blocks: list[dict[str, Any]] = [
             _header(f"Golem Needs Review: #{task_id}", ":warning:"),
@@ -132,7 +138,8 @@ class SlackNotifier:
                     ("Verdict", verdict),
                     ("Cost", f"${cost_usd:.2f}"),
                     ("Duration", _fmt_duration(duration_s)),
-                    ("Retried", "Yes" if retry_count else "No"),
+                    ("Fix iterations", str(fix_iteration)),
+                    ("Full retries", str(retry_count)),
                 ]
             ),
         ]

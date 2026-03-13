@@ -56,11 +56,13 @@ class TestBuildTaskCompletedCard:
             confidence=0.95,
             commit_sha="abc123",
             retry_count=2,
+            fix_iteration=3,
         )
         body_str = str(card)
         assert "PASS" in body_str
         assert "abc123" in body_str
-        assert "Retries" in body_str
+        assert "Full retries" in body_str
+        assert "Fix iterations" in body_str
 
     def test_with_concerns(self):
         card = build_task_completed_card(

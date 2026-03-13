@@ -136,6 +136,7 @@ class Notifier(Protocol):
         concerns: list[str] | None = None,
         commit_sha: str = "",
         retry_count: int = 0,
+        fix_iteration: int = 0,
     ) -> None: ...  # pragma: no cover
 
     def notify_failed(
@@ -159,6 +160,7 @@ class Notifier(Protocol):
         cost_usd: float = 0.0,
         duration_s: float = 0.0,
         retry_count: int = 0,
+        fix_iteration: int = 0,
     ) -> None: ...  # pragma: no cover
 
     def notify_batch_submitted(self, group_id: str, task_count: int) -> None:

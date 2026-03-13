@@ -51,9 +51,10 @@ def build_task_completed_card(
     concerns: list[str] | None = None,
     commit_sha: str = "",
     retry_count: int = 0,
+    fix_iteration: int = 0,
 ) -> dict[str, Any]:
     """Card sent when session completes successfully (with validation details)."""
-    color = "good" if retry_count == 0 else "accent"
+    color = "good" if retry_count == 0 and fix_iteration == 0 else "accent"
     body: list[dict[str, Any]] = [
         _header_block(f"Golem Completed: #{parent_id}", color=color),
         _text_block(subject),
@@ -68,8 +69,10 @@ def build_task_completed_card(
         facts.append(("Verdict", f"{verdict} ({confidence:.0%})"))
     if commit_sha:
         facts.append(("Commit", commit_sha))
+    if fix_iteration:
+        facts.append(("Fix iterations", str(fix_iteration)))
     if retry_count:
-        facts.append(("Retries", str(retry_count)))
+        facts.append(("Full retries", str(retry_count)))
     body.append(_fact_set(facts))
 
     if concerns:
@@ -139,6 +142,7 @@ def build_task_escalation_card(
     cost_usd: float = 0.0,
     duration_s: float = 0.0,
     retry_count: int = 0,
+    fix_iteration: int = 0,
 ) -> dict[str, Any]:
     """Card sent when validation fails and the task is escalated for human review."""
     body: list[dict[str, Any]] = [
@@ -149,7 +153,8 @@ def build_task_escalation_card(
                 ("Verdict", verdict),
                 ("Cost", f"${cost_usd:.2f}"),
                 ("Duration", _fmt_duration(duration_s)),
-                ("Retried", "Yes" if retry_count else "No"),
+                ("Fix iterations", str(fix_iteration)),
+                ("Full retries", str(retry_count)),
             ]
         ),
     ]

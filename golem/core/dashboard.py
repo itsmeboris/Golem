@@ -168,6 +168,25 @@ def _read_and_parse_trace(event_id: str, since_event: int = 0) -> dict[str, Any]
             "totals": retry_parsed["totals"],
         }
 
+    # Check for fix iteration traces (fix1, fix2, ...)
+    fix_traces: list[dict[str, Any]] = []
+    for i in range(1, 20):  # practical upper bound
+        fix_path = trace_path.with_name(f"{trace_path.stem}-fix{i}.jsonl")
+        fix_events = _read_jsonl_events(fix_path)
+        if not fix_events:
+            break
+        fix_parsed = _parse_trace_structured(fix_events)
+        fix_traces.append(
+            {
+                "iteration": i,
+                "trace_file": str(fix_path),
+                "phases": fix_parsed["phases"],
+                "totals": fix_parsed["totals"],
+            }
+        )
+    if fix_traces:
+        result["fix_iterations"] = fix_traces
+
     # Auto-cache if trace has a result event (task completed)
     if result.get("result_meta") is not None:
         if len(_parsed_trace_cache) >= _MAX_TRACE_CACHE:
@@ -933,7 +952,8 @@ def format_task_detail_text(task_id: int) -> str:
         "  EXECUTION:",
         f"    Mode:         {sess.execution_mode}",
         f"    Phase:        {sess.supervisor_phase}",
-        f"    Retry:        {sess.retry_count}",
+        f"    Fix iters:    {sess.fix_iteration}",
+        f"    Full retries: {sess.retry_count}",
         f"    Worktree:     {sess.worktree_path}",
     ]
 

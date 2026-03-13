@@ -170,12 +170,14 @@ function renderDetailHeader(session, trace, running) {
     const durMs = meta.duration_ms || ((session && session.duration_seconds) ? session.duration_seconds * 1000 : 0);
     const commitSha = !running && session && session.commit_sha;
     const retryCount = session && session.retry_count;
+    const fixIter = session && session.fix_iteration;
 
     const parts = [];
     if (cost) parts.push(`<span style="color:var(--green)">${fmtCost(cost)}</span> cost`);
     if (durMs) parts.push(fmtDurationMs(durMs));
     if (commitSha) parts.push(`<code style="font-family:var(--font-mono);font-size:0.72rem;background:var(--bg-elevated);padding:0.1rem 0.3rem;border-radius:3px">${esc(String(commitSha).slice(0, 7))}</code>`);
-    if (retryCount) parts.push(`${retryCount} retr${retryCount === 1 ? 'y' : 'ies'}`);
+    if (fixIter) parts.push(`<span style="color:var(--orange)">${fixIter} fix iter</span>`);
+    if (retryCount) parts.push(`${retryCount} full retr${retryCount === 1 ? 'y' : 'ies'}`);
 
     if (parts.length > 0) {
       statsHtml = `<div class="td-stats">${parts.join(' <span style="color:var(--text-muted);margin:0 0.25rem">·</span> ')}</div>`;
@@ -214,7 +216,10 @@ function renderMetrics(trace, session) {
   const tools = totals.tool_calls || totals.total_tool_calls || 0;
   const tokens = totals.tokens || totals.total_tokens || 0;
   const fixCycles = (trace.phases || []).reduce((n, p) => n + (p.fix_cycles || []).length, 0);
-  const fixColor = fixCycles > 0 ? 'style="color:var(--orange)"' : '';
+  const fixIter = session && session.fix_iteration || 0;
+  const retryCount = session && session.retry_count || 0;
+  const fixColor = (fixCycles + fixIter) > 0 ? 'style="color:var(--orange)"' : '';
+  const retryColor = retryCount > 0 ? 'style="color:var(--orange)"' : '';
 
   el.innerHTML = `
     <div class="metric"><span class="metric-label">Cost</span><span class="metric-value">${fmtCost(cost)}</span></div>
@@ -223,6 +228,8 @@ function renderMetrics(trace, session) {
     <div class="metric"><span class="metric-label">Tools</span><span class="metric-value">${tools}</span></div>
     <div class="metric"><span class="metric-label">Tokens</span><span class="metric-value">${fmtTokens(tokens)}</span></div>
     <div class="metric"><span class="metric-label">Fix Cycles</span><span class="metric-value" ${fixColor}>${fixCycles}</span></div>
+    <div class="metric"><span class="metric-label">Fix Iters</span><span class="metric-value" ${fixColor}>${fixIter}</span></div>
+    <div class="metric"><span class="metric-label">Full Retries</span><span class="metric-value" ${retryColor}>${retryCount}</span></div>
   `;
 }
 

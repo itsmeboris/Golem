@@ -81,6 +81,111 @@ class TestBuildPrompt:
         assert result == "prompt text"
 
 
+class TestBuildRetryPrompt:
+    """Tests for enriched retry prompts."""
+
+    def test_warm_prompt_includes_iteration_context(self):
+        session = TaskSession(
+            parent_issue_id=42, parent_subject="Test", cli_session_id="sess-1"
+        )
+        config = _make_config(resume_on_partial=True)
+        sup = _make_supervisor(session=session, config=config)
+
+        verdict = ValidationVerdict(
+            verdict="PARTIAL",
+            confidence=0.5,
+            summary="missing tests",
+            concerns=["no unit tests"],
+            files_to_fix=["foo.py"],
+            test_failures=["test_bar"],
+        )
+
+        prompt, sid = sup._build_retry_prompt(
+            True, verdict, "- no unit tests", 42, fix_iteration=2, fix_depth=3
+        )
+
+        assert "Fix iteration**: 2/3" in prompt
+        assert "1 attempt(s) remaining" in prompt
+        assert "- foo.py" in prompt
+        assert "- test_bar" in prompt
+        assert sid == "sess-1"
+
+    def test_warm_prompt_without_iteration(self):
+        session = TaskSession(
+            parent_issue_id=42, parent_subject="Test", cli_session_id="sess-1"
+        )
+        sup = _make_supervisor(session=session)
+
+        verdict = ValidationVerdict(
+            verdict="PARTIAL", confidence=0.5, summary="partial", concerns=["c"]
+        )
+
+        prompt, _ = sup._build_retry_prompt(True, verdict, "- c", 42)
+
+        assert "Fix iteration" not in prompt
+        assert "Verdict**: PARTIAL" in prompt
+
+    def test_cold_prompt_passes_all_template_vars(self):
+        session = TaskSession(
+            parent_issue_id=42,
+            parent_subject="Test",
+            verification_result={"passed": False, "stdout": "FAILED test_x"},
+        )
+        profile = _make_profile()
+        sup = _make_supervisor(session=session, profile=profile)
+
+        verdict = ValidationVerdict(
+            verdict="PARTIAL",
+            confidence=0.5,
+            summary="partial",
+            concerns=["c"],
+            files_to_fix=["a.py"],
+            test_failures=["test_x"],
+        )
+
+        sup._build_retry_prompt(False, verdict, "- c", 42, fix_iteration=1, fix_depth=3)
+
+        call_kwargs = profile.prompt_provider.format.call_args[1]
+        assert call_kwargs["fix_iteration"] == 1
+        assert call_kwargs["fix_depth"] == 3
+        assert "- a.py" in call_kwargs["files_to_fix"]
+        assert "- test_x" in call_kwargs["test_failures"]
+        assert "FAILED test_x" in call_kwargs["verification_feedback"]
+
+
+class TestVerificationFeedback:
+    """Tests for _verification_feedback helper."""
+
+    def test_no_verification_result(self):
+        session = TaskSession(parent_issue_id=1, parent_subject="t")
+        sup = _make_supervisor(session=session)
+        assert sup._verification_feedback() == "(no verification failures)"
+
+    def test_passed_verification(self):
+        session = TaskSession(
+            parent_issue_id=1,
+            parent_subject="t",
+            verification_result={"passed": True},
+        )
+        sup = _make_supervisor(session=session)
+        assert sup._verification_feedback() == "(verification passed)"
+
+    def test_failed_verification_with_output(self):
+        session = TaskSession(
+            parent_issue_id=1,
+            parent_subject="t",
+            verification_result={
+                "passed": False,
+                "stdout": "FAIL test_foo",
+                "stderr": "error details",
+            },
+        )
+        sup = _make_supervisor(session=session)
+        result = sup._verification_feedback()
+        assert "FAIL test_foo" in result
+        assert "error details" in result
+
+
 # -- Report parsing ---------------------------------------------------------
 
 
@@ -1269,7 +1374,7 @@ class TestFixLoop:
         assert session.cli_session_id == "sess-updated"
 
     async def test_trace_file_saved_on_fix_iteration(self, _patches):
-        """When trace_events exist, retry_trace_file is set."""
+        """When trace_events exist, fix_trace_files is appended."""
         config = _make_config(validator_fix_depth=1, resume_on_partial=True)
         session = TaskSession(
             parent_issue_id=42,
@@ -1295,7 +1400,41 @@ class TestFixLoop:
             )
             await sup._fix_loop(initial, "/work", 42, "desc")
 
-        assert session.retry_trace_file == "/tmp/fix_trace.jsonl"
+        assert session.fix_trace_files == ["/tmp/fix_trace.jsonl"]
+
+    async def test_multiple_traces_appended(self, _patches):
+        """Multiple fix iterations append to fix_trace_files."""
+        config = _make_config(validator_fix_depth=2, resume_on_partial=True)
+        session = TaskSession(
+            parent_issue_id=42,
+            parent_subject="Test",
+            cli_session_id="sess-orig",
+        )
+        sup = _make_supervisor(session=session, config=config)
+        sup._worktree_path = ""
+
+        _patches["cli"].return_value = _make_cli_result(
+            cost=0.1, session_id="sess-fix", trace_events=[{"type": "trace"}]
+        )
+        _patches["val"].side_effect = [
+            ValidationVerdict(
+                verdict="PARTIAL", confidence=0.5, summary="p", concerns=["c"]
+            ),
+            ValidationVerdict(
+                verdict="PASS", confidence=0.9, summary="ok", task_type="f"
+            ),
+        ]
+
+        with patch(
+            "golem.supervisor_v2_subagent._write_trace",
+            side_effect=["/tmp/fix1.jsonl", "/tmp/fix2.jsonl"],
+        ):
+            initial = ValidationVerdict(
+                verdict="PARTIAL", confidence=0.5, summary="p", concerns=["x"]
+            )
+            await sup._fix_loop(initial, "/work", 42, "desc")
+
+        assert session.fix_trace_files == ["/tmp/fix1.jsonl", "/tmp/fix2.jsonl"]
 
     async def test_zero_depth_returns_immediately(self, _patches):
         """validator_fix_depth=0 means no fix iterations, returns input verdict."""
@@ -1404,10 +1543,10 @@ class TestRunWithFixLoop:
         assert session.state == TaskSessionState.COMPLETED
         assert session.fix_iteration == 1
 
-    async def test_partial_exhausted_escalates(self, _patches):
-        """PARTIAL → fix loop exhausted → escalate."""
+    async def test_partial_exhausted_no_retries_escalates(self, _patches):
+        """PARTIAL → fix loop exhausted → max_retries=0 → escalate."""
         session = TaskSession(parent_issue_id=42, parent_subject="Test")
-        config = _make_config(validator_fix_depth=2)
+        config = _make_config(validator_fix_depth=2, max_retries=0)
         sup = _make_supervisor(session=session, config=config)
 
         _patches["val"].side_effect = [
@@ -1438,6 +1577,75 @@ class TestRunWithFixLoop:
 
         assert session.state == TaskSessionState.FAILED
         assert session.fix_iteration == 2
+        assert session.retry_count == 0
+
+    async def test_partial_exhausted_falls_back_to_full_retry(self, _patches):
+        """PARTIAL → fix loop exhausted → full retry → PASS → complete."""
+        session = TaskSession(parent_issue_id=42, parent_subject="Test")
+        config = _make_config(validator_fix_depth=1, max_retries=1)
+        sup = _make_supervisor(session=session, config=config)
+
+        _patches["val"].side_effect = [
+            # Initial validation
+            ValidationVerdict(
+                verdict="PARTIAL",
+                confidence=0.5,
+                summary="partial",
+                concerns=["issue1"],
+            ),
+            # Fix loop iteration 1 (still PARTIAL → exhausted)
+            ValidationVerdict(
+                verdict="PARTIAL",
+                confidence=0.5,
+                summary="still partial",
+                concerns=["c1"],
+            ),
+            # Full retry validation → PASS
+            ValidationVerdict(
+                verdict="PASS", confidence=0.9, summary="ok", task_type="feature"
+            ),
+        ]
+
+        await sup.run()
+
+        assert session.state == TaskSessionState.COMPLETED
+        assert session.fix_iteration == 1
+        assert session.retry_count == 1
+        # 3 CLI calls: orchestration + fix iteration + full retry
+        assert _patches["cli"].call_count == 3
+
+    async def test_partial_exhausted_full_retry_also_fails_escalates(self, _patches):
+        """PARTIAL → fix exhausted → full retry → FAIL → escalate."""
+        session = TaskSession(parent_issue_id=42, parent_subject="Test")
+        config = _make_config(validator_fix_depth=1, max_retries=1)
+        sup = _make_supervisor(session=session, config=config)
+
+        _patches["val"].side_effect = [
+            # Initial validation
+            ValidationVerdict(
+                verdict="PARTIAL",
+                confidence=0.5,
+                summary="partial",
+                concerns=["issue1"],
+            ),
+            # Fix loop iteration 1 (still PARTIAL → exhausted)
+            ValidationVerdict(
+                verdict="PARTIAL",
+                confidence=0.5,
+                summary="still partial",
+                concerns=["c1"],
+            ),
+            # Full retry validation → FAIL
+            ValidationVerdict(
+                verdict="FAIL", confidence=0.2, summary="broken", concerns=["fatal"]
+            ),
+        ]
+
+        await sup.run()
+
+        assert session.state == TaskSessionState.FAILED
+        assert session.fix_iteration == 1
+        assert session.retry_count == 1
 
 
 class TestValidatorFixDepthConfig:
@@ -1498,3 +1706,37 @@ class TestFixIterationSerialization:
         d = session.to_dict()
         restored = TaskSession.from_dict(d)
         assert restored.fix_iteration == 3
+
+
+class TestFixTraceFilesSerialization:
+    """TaskSession fix_trace_files field serialization."""
+
+    def test_to_dict_includes_fix_trace_files(self):
+        session = TaskSession(parent_issue_id=1, parent_subject="t")
+        session.fix_trace_files = ["/tmp/a.jsonl", "/tmp/b.jsonl"]
+        d = session.to_dict()
+        assert d["fix_trace_files"] == ["/tmp/a.jsonl", "/tmp/b.jsonl"]
+
+    def test_from_dict_reads_fix_trace_files(self):
+        data = {
+            "parent_issue_id": 1,
+            "state": "detected",
+            "fix_trace_files": ["/tmp/trace1.jsonl"],
+        }
+        session = TaskSession.from_dict(data)
+        assert session.fix_trace_files == ["/tmp/trace1.jsonl"]
+
+    def test_from_dict_default_when_missing(self):
+        data = {
+            "parent_issue_id": 1,
+            "state": "detected",
+        }
+        session = TaskSession.from_dict(data)
+        assert session.fix_trace_files == []
+
+    def test_roundtrip(self):
+        session = TaskSession(parent_issue_id=1, parent_subject="t")
+        session.fix_trace_files = ["/tmp/fix1.jsonl", "/tmp/fix2.jsonl"]
+        d = session.to_dict()
+        restored = TaskSession.from_dict(d)
+        assert restored.fix_trace_files == ["/tmp/fix1.jsonl", "/tmp/fix2.jsonl"]

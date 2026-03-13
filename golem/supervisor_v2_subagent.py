@@ -162,6 +162,11 @@ class SubagentSupervisor:
             )
 
             # Phase 5: Handle verdict
+            #   PASS  → commit
+            #   PARTIAL → fix loop (up to validator_fix_depth)
+            #           → if still PARTIAL: full retry (up to max_retries)
+            #           → escalate
+            #   FAIL  → escalate
             if verdict.verdict == "PASS":
                 self.session.supervisor_phase = "committing"
                 self._emit_event("Finalizing task...")
@@ -172,6 +177,11 @@ class SubagentSupervisor:
                     self.session.supervisor_phase = "committing"
                     self._emit_event("Finalizing task...")
                     await self._commit_and_complete(issue_id, work_dir, verdict)
+                elif (
+                    verdict.verdict == "PARTIAL"
+                    and self.session.retry_count < self.task_config.max_retries
+                ):
+                    await self._retry_with_resume(verdict, work_dir, issue_id)
                 else:
                     self._escalate(verdict)
             else:
@@ -517,7 +527,12 @@ class SubagentSupervisor:
                 self.session.cli_session_id
             )
             retry_prompt, resume_id = self._build_retry_prompt(
-                use_resume, verdict, concerns_text, issue_id
+                use_resume,
+                verdict,
+                concerns_text,
+                issue_id,
+                fix_iteration=i + 1,
+                fix_depth=depth,
             )
 
             cli_config = CLIConfig(
@@ -546,9 +561,10 @@ class SubagentSupervisor:
             # Persist fix iteration trace
             _write_prompt("golem", f"golem-{issue_id}-fix{i + 1}", retry_prompt)
             if retry_result.trace_events:
-                self.session.retry_trace_file = _write_trace(
+                trace_path = _write_trace(
                     "golem", f"golem-{issue_id}-fix{i + 1}", retry_result.trace_events
                 )
+                self.session.fix_trace_files.append(trace_path)
             self._save_checkpoint(issue_id, "post_execute")
 
             # Capture updated session_id for next iteration
@@ -578,21 +594,47 @@ class SubagentSupervisor:
         verdict: ValidationVerdict,
         concerns_text: str,
         issue_id: int,
+        *,
+        fix_iteration: int = 0,
+        fix_depth: int = 0,
     ) -> tuple[str, str]:
-        """Build retry prompt and resume session id."""
+        """Build retry prompt and resume session id.
+
+        When *fix_iteration* > 0 the prompt includes iteration context so
+        the agent knows how many attempts remain and can prioritise accordingly.
+        """
+        files_text = (
+            "\n".join(f"- {f}" for f in verdict.files_to_fix) or "- (none specified)"
+        )
+        tests_text = "\n".join(f"- {t}" for t in verdict.test_failures) or "- (none)"
+
         if use_resume:
             self._slog.info(
                 "Warm retry with --resume (session %s)",
                 self.session.cli_session_id,
             )
             self._emit_event("Warm retry with --resume...")
+            iteration_header = ""
+            if fix_iteration:
+                remaining = fix_depth - fix_iteration
+                iteration_header = (
+                    f"**Fix iteration**: {fix_iteration}/{fix_depth} "
+                    f"({remaining} attempt(s) remaining before escalation)\n\n"
+                )
             prompt = (
                 f"The external validator reviewed your work and found issues.\n\n"
+                f"{iteration_header}"
                 f"**Verdict**: {verdict.verdict}\n"
                 f"**Summary**: {verdict.summary}\n\n"
                 f"**Concerns**:\n{concerns_text}\n\n"
-                f"Address ONLY these concerns. Then re-run tests and produce "
-                f"an updated JSON completion report."
+                f"**Files to fix**:\n{files_text}\n\n"
+                f"**Test failures**:\n{tests_text}\n\n"
+                f"Address ONLY these concerns — do not redo work that already "
+                f"passed review. Investigate each concern to understand the root "
+                f"cause before applying fixes. After fixing, re-run "
+                f"``black --check .``, ``pylint --errors-only golem/``, and "
+                f"``pytest`` to confirm your changes. Then produce an updated "
+                f"JSON completion report."
             )
             return prompt, self.session.cli_session_id
 
@@ -605,8 +647,26 @@ class SubagentSupervisor:
             validation_verdict=verdict.verdict,
             validation_summary=verdict.summary,
             concerns=concerns_text,
+            files_to_fix=files_text,
+            test_failures=tests_text,
+            verification_feedback=self._verification_feedback(),
+            fix_iteration=fix_iteration,
+            fix_depth=fix_depth,
         )
         return prompt, ""
+
+    def _verification_feedback(self) -> str:
+        """Format verification result for prompt injection."""
+        vr = self.session.verification_result
+        if not vr:
+            return "(no verification failures)"
+        parts = []
+        if not vr.get("passed", True):
+            if vr.get("stdout"):
+                parts.append(f"stdout:\n{vr['stdout']}")
+            if vr.get("stderr"):
+                parts.append(f"stderr:\n{vr['stderr']}")
+        return "\n".join(parts) if parts else "(verification passed)"
 
     async def _retry_with_resume(
         self,
@@ -747,8 +807,10 @@ class SubagentSupervisor:
         extras = ""
         if self.session.commit_sha:
             extras += f", commit {self.session.commit_sha}"
+        if self.session.fix_iteration:
+            extras += f", {self.session.fix_iteration} fix iteration(s)"
         if self.session.retry_count:
-            extras += f", {self.session.retry_count} retry"
+            extras += f", {self.session.retry_count} full retry"
 
         self._emit_event(f"Task completed: ${self.session.total_cost_usd:.2f}{extras}")
 
@@ -817,7 +879,8 @@ class SubagentSupervisor:
                 f"Concerns:\n{concerns_text}\n\n"
                 f"Cost: ${self.session.total_cost_usd:.2f} | "
                 f"Duration: {format_duration(self.session.duration_seconds)} | "
-                f"Retries: {self.session.retry_count}"
+                f"Fix iterations: {self.session.fix_iteration} | "
+                f"Full retries: {self.session.retry_count}"
             ),
         )
         self._slog.warning(
