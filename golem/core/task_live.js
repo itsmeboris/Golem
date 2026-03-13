@@ -27,12 +27,16 @@ async function _flushSSEUpdates() {
       } else if (S.view === 'detail' && S.selectedTaskId) {
         S.sessions = await fetchSessions();
         const session = S.sessions[S.selectedTaskId];
-        if (_needsTraceUpdate && isTaskRunning(session)) {
-          const trace = await fetchParsedTrace(S.selectedTaskId, true);
+        if (isTaskRunning(session)) {
+          // Running task — always re-render for live cost/duration/phase updates
+          const trace = _needsTraceUpdate
+            ? await fetchParsedTrace(S.selectedTaskId, true)
+            : undefined;
           await renderDetail(S.selectedTaskId, trace || undefined);
           updateLiveCursor();
           autoScrollIfAtBottom();
         } else {
+          // Task just completed or session updated — full render
           await renderDetail(S.selectedTaskId);
         }
       }
@@ -82,7 +86,12 @@ function connectSSE() {
   es.addEventListener('trace_update', (event) => {
     try {
       const data = JSON.parse(event.data);
-      if (data && data.event_id === S.selectedTaskId) {
+      const eid = (data && data.event_id) || '';
+      // Trace file stems are "golem-123" but S.selectedTaskId is "123".
+      // Match if event_id contains the selected task ID.
+      const selected = S.selectedTaskId || '';
+      const isCurrentTask = selected && (eid === selected || eid.includes(selected));
+      if (S.view === 'overview' || isCurrentTask) {
         _needsTraceUpdate = true;
         _scheduleRender();
       }

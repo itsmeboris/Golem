@@ -882,18 +882,33 @@ class TestTotals:
         # 27+7+14+13+8+3 = 72
         assert self._totals()["tool_calls"] == 72
 
-    def test_phase_duration_includes_orchestrator_overhead(self):
-        """Phase duration = subagent time + proportional orchestrator time."""
+    def test_phase_duration_from_subagents_without_timestamps(self):
+        """Without event timestamps, phase duration = sum of subagent durations."""
         result = parse_trace(_build_simple_trace())
         build = next(p for p in result["phases"] if p["name"] == "BUILD")
-        # Raw subagent time is 222000; orchestrator overhead is distributed
-        # proportionally by assistant turn count, so BUILD gets more than 222000.
-        assert build["duration_ms"] >= 222000
-        # All phase durations should sum to ~total run time (rounding tolerance)
-        total_phase_ms = sum(p["duration_ms"] for p in result["phases"])
-        assert abs(total_phase_ms - result["result_meta"]["duration_ms"]) <= len(
-            result["phases"]
-        )
+        # BUILD has one subagent at 222000ms
+        assert build["duration_ms"] == 222000
+        # UNDERSTAND/PLAN have no subagents and no timestamps → 0
+        understand = next(p for p in result["phases"] if p["name"] == "UNDERSTAND")
+        assert understand["duration_ms"] == 0
+
+    def test_phase_duration_from_timestamps(self):
+        """With event timestamps, phase duration = next_phase_start - this_phase_start."""
+        events = _build_simple_trace()
+        # Inject timestamps: each event 10s apart
+        base_ts = 1700000000.0
+        for i, ev in enumerate(events):
+            ev["ts"] = base_ts + i * 10.0
+        result = parse_trace(events)
+        understand = next(p for p in result["phases"] if p["name"] == "UNDERSTAND")
+        # UNDERSTAND starts at event 1, PLAN starts at event 6 → 5 × 10s = 50s
+        assert understand["duration_ms"] == 50000
+        plan = next(p for p in result["phases"] if p["name"] == "PLAN")
+        # PLAN starts at event 6, BUILD starts at event 7 → 1 × 10s = 10s
+        assert plan["duration_ms"] == 10000
+        # All phases with timestamps should have non-zero duration
+        for phase in result["phases"]:
+            assert phase["duration_ms"] > 0
 
     def test_phase_tokens_from_subagents(self):
         result = parse_trace(_build_simple_trace())

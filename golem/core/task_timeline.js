@@ -107,7 +107,7 @@ async function renderDetail(eventId, prefetchedTrace) {
   }
 
   renderDetailHeader(session, trace, running);
-  renderMetrics(trace);
+  renderMetrics(trace, session);
   renderLiveStrip(session, trace, running);
   renderPhaseSidebar(trace, running, session);
   renderToolbar();
@@ -162,13 +162,13 @@ function renderDetailHeader(session, trace, running) {
     depsHtml = `<div class="td-deps">${sections}</div>`;
   }
 
-  // Stats row for completed/failed tasks
+  // Stats row — show cost/duration for both running and completed tasks
   let statsHtml = '';
-  if (!running && trace) {
-    const meta = trace.result_meta || {};
+  if (session || trace) {
+    const meta = (trace && trace.result_meta) || {};
     const cost = meta.total_cost_usd || (session && session.total_cost_usd);
     const durMs = meta.duration_ms || ((session && session.duration_seconds) ? session.duration_seconds * 1000 : 0);
-    const commitSha = session && session.commit_sha;
+    const commitSha = !running && session && session.commit_sha;
     const retryCount = session && session.retry_count;
 
     const parts = [];
@@ -201,14 +201,15 @@ function renderDetailHeader(session, trace, running) {
 }
 
 // ── Metrics ────────────────────────────────────
-function renderMetrics(trace) {
+function renderMetrics(trace, session) {
   const el = document.getElementById('td-metrics');
   if (!el) return;
 
   const totals = trace.totals || {};
   const meta = trace.result_meta || {};
-  const cost = meta.total_cost_usd || totals.total_cost_usd;
-  const duration = totals.duration_ms || totals.total_duration_ms || meta.duration_ms || 0;
+  const cost = meta.total_cost_usd || (session && session.total_cost_usd) || totals.total_cost_usd;
+  const duration = totals.duration_ms || meta.duration_ms
+    || ((session && session.duration_seconds) ? session.duration_seconds * 1000 : 0);
   const agents = totals.subagent_count || totals.total_agents || 0;
   const tools = totals.tool_calls || totals.total_tool_calls || 0;
   const tokens = totals.tokens || totals.total_tokens || 0;
@@ -240,12 +241,14 @@ function renderLiveStrip(session, trace, running) {
   const lastPhase = phases.length > 0 ? phases[phases.length - 1] : null;
   const phaseName = lastPhase ? esc(lastPhase.name || '') : '';
   const elapsed = session ? fmtDurationMs((session.duration_seconds || 0) * 1000) : '';
+  const cost = session && session.total_cost_usd ? fmtCost(session.total_cost_usd) : '';
 
   el.innerHTML = `
     <span class="td-live-dot"></span>
     <span class="td-live-text">Auto-updating</span>
     <span class="td-live-phase">${phaseName} phase</span>
     <span class="td-live-elapsed">${elapsed} elapsed</span>
+    ${cost ? `<span class="td-live-cost" style="color:var(--green)">${cost}</span>` : ''}
   `;
 }
 
@@ -808,7 +811,7 @@ function renderAgentBlock(agent) {
 // ── Fix Cycle ──────────────────────────────────
 function renderFixCycle(cycle) {
   const issues = cycle.issues || [];
-  const fixBuilder = cycle.fix_agent || cycle.builder || null;
+  const fixBuilder = cycle.fix_builder || cycle.fix_agent || cycle.builder || null;
   const cycleNum = cycle.cycle_number || cycle.index || 1;
   const dur = cycle.duration_ms ? fmtDurationMs(cycle.duration_ms) : '';
   const tokens = cycle.total_tokens ? fmtTokens(cycle.total_tokens) : '';

@@ -15,10 +15,18 @@ PHASE_NAMES = ("UNDERSTAND", "PLAN", "BUILD", "REVIEW", "VERIFY")
 PHASE_MARKER_RE = re.compile(r"## Phase:\s*(UNDERSTAND|PLAN|BUILD|REVIEW|VERIFY)")
 
 _ISSUE_RE = re.compile(
-    r"\[(\d+)%\]\s+"  # confidence
+    r"\[(\d+)%?\]\s+"  # confidence (% optional)
     r"([\w/.]+(?::\d+)?)"  # file:line
-    r"\s*[—–-]\s*"  # separator
+    r"\s*[—–:\-]\s*"  # separator (colon also accepted)
     r"(.+)"  # description
+)
+# Fallback: numbered/bulleted issue lines (e.g. "1. file:line — description")
+_ISSUE_FALLBACK_RE = re.compile(
+    r"^\s*(?:\d+[\.\)]\s*|[-*]\s+)"  # numbered or bulleted prefix
+    r"([\w/.]+(?::\d+)?)"  # file:line
+    r"\s*[—–:\-]\s*"  # separator
+    r"(.+)",  # description
+    re.MULTILINE,
 )
 
 _JSON_BLOCK_RE = re.compile(r"```json\s*\n(.*?)\n```", re.DOTALL)
@@ -177,19 +185,24 @@ def _build_tool_timeline(progress_events: list[dict[str, Any]]) -> list[dict[str
 
 
 def _parse_issues(output: str) -> list[dict[str, Any]]:
-    """Parse issue lines from a reviewer output using _ISSUE_RE."""
+    """Parse issue lines from a reviewer output.
+
+    Tries ``_ISSUE_RE`` first (confidence-tagged lines).  Falls back to
+    ``_ISSUE_FALLBACK_RE`` (numbered/bulleted ``file:line — description``).
+    """
     issues: list[dict[str, Any]] = []
     for match in _ISSUE_RE.finditer(output):
         confidence = int(match.group(1))
         file_ref = match.group(2)
         description = match.group(3).strip()
-        issues.append(
-            {
-                "confidence": confidence,
-                "file": file_ref,
-                "text": description,
-            }
-        )
+        issues.append({"confidence": confidence, "file": file_ref, "text": description})
+    if issues:
+        return issues
+    # Fallback: numbered/bulleted lines with file:line references
+    for match in _ISSUE_FALLBACK_RE.finditer(output):
+        file_ref = match.group(1)
+        description = match.group(2).strip()
+        issues.append({"confidence": 0, "file": file_ref, "text": description})
     return issues
 
 
@@ -353,19 +366,27 @@ def _populate_phases(
         phase["orchestrator_thinking"] = thinking_parts
         phase["orchestrator_tools"] = orch_tools
         phase["subagents"] = subagents
-        phase["_assistant_turns"] = sum(
-            1
-            for idx in range(phase["start_event"], phase["end_event"] + 1)
-            if events[idx].get("type") == "assistant"
-        )
 
         # Detect fix cycles for REVIEW phases
         if phase["name"] == "REVIEW":
             phase["fix_cycles"] = _detect_fix_cycles(subagents)
 
-        # Compute per-phase totals (subagent time only — orchestrator time added later)
-        phase["duration_ms"] = sum(s["duration_ms"] for s in subagents)
         phase["tokens"] = sum(s["tokens"] for s in subagents)
+
+    # Compute phase durations from event timestamps (injected by trace writer).
+    # For each phase except the last, duration = start of next phase - start of
+    # this phase.  For the last phase, duration = last event ts - start ts.
+    # Falls back to summing subagent durations for old traces without timestamps.
+    for i, phase in enumerate(phases):
+        start_ts = events[phase["start_event"]].get("ts", 0)
+        if i + 1 < len(phases):
+            end_ts = events[phases[i + 1]["start_event"]].get("ts", 0)
+        else:
+            end_ts = events[phase["end_event"]].get("ts", 0)
+        if start_ts and end_ts and end_ts > start_ts:
+            phase["duration_ms"] = round((end_ts - start_ts) * 1000)
+        else:
+            phase["duration_ms"] = sum(s["duration_ms"] for s in phase["subagents"])
 
 
 def _infer_phase_from_description(description: str) -> str | None:
@@ -453,34 +474,6 @@ def _extract_final_report(events: list[dict[str, Any]]) -> dict[str, Any] | None
     return None
 
 
-def _estimate_phase_durations(
-    phases: list[dict[str, Any]],
-    result_meta: dict[str, Any] | None,
-) -> None:
-    """Estimate orchestrator phase durations when per-event timestamps are absent.
-
-    Subagent durations are already known from task_notification events.
-    The remaining time (total - subagent) is distributed across phases
-    proportionally by assistant turn count.
-    """
-    if not result_meta:
-        return
-    total_ms = result_meta.get("duration_ms", 0)
-    if total_ms <= 0:
-        return
-
-    subagent_ms = sum(p["duration_ms"] for p in phases)
-    orchestrator_ms = max(0, total_ms - subagent_ms)
-
-    total_turns = sum(p.get("_assistant_turns", 0) for p in phases)
-    if total_turns <= 0:
-        return
-
-    for phase in phases:
-        turns = phase.get("_assistant_turns", 0)
-        phase["duration_ms"] += round(orchestrator_ms * turns / total_turns)
-
-
 def _compute_totals(
     phases: list[dict[str, Any]],
     result_meta: dict[str, Any] | None,
@@ -490,7 +483,10 @@ def _compute_totals(
     total_tokens = sum(s["tokens"] for p in phases for s in p["subagents"])
     total_tool_calls = sum(s["tool_count"] for p in phases for s in p["subagents"])
     fix_cycles = sum(len(p["fix_cycles"]) for p in phases)
-    duration_ms = result_meta["duration_ms"] if result_meta else 0
+    if result_meta:
+        duration_ms = result_meta["duration_ms"]
+    else:
+        duration_ms = sum(p["duration_ms"] for p in phases)
     return {
         "duration_ms": duration_ms,
         "tokens": total_tokens,
@@ -500,7 +496,10 @@ def _compute_totals(
     }
 
 
-def parse_trace(events: list[dict[str, Any]], since_event: int = 0) -> dict[str, Any]:
+def parse_trace(
+    events: list[dict[str, Any]],
+    since_event: int = 0,
+) -> dict[str, Any]:
     """Parse JSONL trace events into structured ParsedTrace dict.
 
     Args:
@@ -518,10 +517,6 @@ def parse_trace(events: list[dict[str, Any]], since_event: int = 0) -> dict[str,
 
     result_meta = _extract_result_meta(events)
     final_report = _extract_final_report(events)
-
-    # Estimate orchestrator phase durations from total time minus subagent time,
-    # distributed proportionally by assistant turn count.
-    _estimate_phase_durations(phases, result_meta)
 
     totals = _compute_totals(phases, result_meta)
 

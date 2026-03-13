@@ -496,10 +496,10 @@ class TestThinkingBlockPopulation:
 
 
 class TestPhaseDurationEstimation:
-    """Tests for _estimate_phase_durations edge cases."""
+    """Tests for phase duration computation edge cases."""
 
-    def test_zero_duration_skips_estimation(self):
-        """result_meta with duration_ms=0 skips orchestrator time distribution."""
+    def test_no_timestamps_uses_subagent_durations(self):
+        """Without event timestamps, phase duration = sum of subagent durations."""
         events = [
             _system_init(),
             _assistant_text("## Phase: BUILD\nDispatching..."),

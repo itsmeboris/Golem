@@ -7,6 +7,7 @@ import them without a cross-package dependency.
 import json
 import logging
 import threading
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -66,9 +67,15 @@ class _StreamingTraceWriter:
         self.relative_path = str(self._path.relative_to(DATA_DIR.parent))
 
     def append(self, event: dict) -> None:
-        """Write a single event as a JSON line, flushing to disk."""
+        """Write a single event as a JSON line, flushing to disk.
+
+        Injects a ``ts`` (epoch seconds) field so the trace parser can
+        compute wall-clock phase durations without estimation.
+        """
         with self._lock:
             if self._fh is not None:
+                if "ts" not in event:
+                    event = {**event, "ts": time.time()}
                 self._fh.write(json.dumps(event, default=str) + "\n")
                 self._fh.flush()
 
