@@ -324,6 +324,36 @@ def _build_subagent_dict(
     }
 
 
+def _trim_text_to_phase(text: str, phase_name: str, next_phase_name: str | None) -> str:
+    """Extract only the portion of *text* belonging to *phase_name*.
+
+    When multiple ``## Phase:`` markers appear in the same text block, this
+    trims to the segment starting at ``## Phase: {phase_name}`` and ending
+    before the next phase marker.
+    """
+    # Find all phase markers in the text
+    markers = list(PHASE_MARKER_RE.finditer(text))
+    if len(markers) <= 1:
+        return text  # No ambiguity — single or no marker
+
+    # Find where *this* phase starts
+    start_pos = 0
+    end_pos = len(text)
+    found = False
+    for i, m in enumerate(markers):
+        if m.group(1) == phase_name:
+            start_pos = m.start()
+            # End at the next marker (if any)
+            if i + 1 < len(markers):
+                end_pos = markers[i + 1].start()
+            found = True
+            break
+
+    if not found:
+        return text
+    return text[start_pos:end_pos]
+
+
 def _populate_phases(
     phases: list[dict[str, Any]],
     events: list[dict[str, Any]],
@@ -332,7 +362,11 @@ def _populate_phases(
     """Populate orchestrator_text, orchestrator_tools, and subagents for each phase."""
     lifecycle = _build_lifecycle_maps(events)
 
-    for phase in phases:
+    # Build set of event indices shared by multiple phases for quick lookup
+    phase_starts = {p["start_event"] for p in phases}
+
+    for pi, phase in enumerate(phases):
+        next_name = phases[pi + 1]["name"] if pi + 1 < len(phases) else None
         text_parts: list[str] = []
         thinking_parts: list[str] = []
         orch_tools: list[dict[str, Any]] = []
@@ -340,7 +374,15 @@ def _populate_phases(
 
         for idx in range(phase["start_event"], phase["end_event"] + 1):
             event = events[idx]
-            text_parts.extend(_extract_text_blocks(event))
+            raw_texts = _extract_text_blocks(event)
+            # When the start event contains multiple phase markers (e.g. PLAN
+            # and BUILD written in one assistant turn), trim each text block so
+            # this phase only gets its own content.
+            if idx == phase["start_event"]:
+                raw_texts = [
+                    _trim_text_to_phase(t, phase["name"], next_name) for t in raw_texts
+                ]
+            text_parts.extend(raw_texts)
             thinking_parts.extend(_extract_thinking_blocks(event))
 
             for tool_use in _extract_tool_uses(event):

@@ -348,6 +348,30 @@ class TestPhaseDetection:
         assert "PLAN" in names
         assert "BUILD" in names
 
+    def test_two_markers_in_one_event_text_split(self):
+        """When PLAN+BUILD share an event, each phase gets only its own text."""
+        events = [
+            _system_init(),
+            _assistant_text("## Phase: UNDERSTAND\nReading key files..."),
+            _assistant_text(
+                "Summary of findings.\n\n"
+                "## Phase: PLAN\nSPEC-1: do X\nSPEC-2: do Y\n\n"
+                "## Phase: BUILD\nDispatching Builder..."
+            ),
+            _result_event(),
+        ]
+        result = parse_trace(events)
+        plan = next(p for p in result["phases"] if p["name"] == "PLAN")
+        build = next(p for p in result["phases"] if p["name"] == "BUILD")
+        plan_text = " ".join(plan["orchestrator_text"])
+        build_text = " ".join(build["orchestrator_text"])
+        # PLAN should have its specs but NOT BUILD's content
+        assert "SPEC-1" in plan_text
+        assert "Dispatching" not in plan_text
+        # BUILD should have its content but NOT PLAN's specs
+        assert "Dispatching" in build_text
+        assert "SPEC-1" not in build_text
+
     def test_boundary_event_belongs_to_new_phase_only(self):
         """When a new phase marker appears at idx, the previous phase ends at idx-1."""
         events = [
