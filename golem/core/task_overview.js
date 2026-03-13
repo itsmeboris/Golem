@@ -46,7 +46,7 @@ function renderTaskRow(eventId, session) {
   const chipClass = _stateToChipClass(state);
   const stateLabel = state.toLowerCase();
   const issueId = session.parent_issue_id || session.id || '';
-  const subject = session.subject || session.parent_subject || eventId;
+  const subject = subjectTitle(session) || eventId;
   const cost = session.total_cost_usd != null ? fmtCost(session.total_cost_usd) : '—';
   const phase = session.supervisor_phase || '';
   const activity = phase ? esc(phase) : '';
@@ -115,7 +115,7 @@ async function renderPreview(eventId) {
 
   const running = isTaskRunning(session);
   const issueId = session.parent_issue_id || session.id || '';
-  const subject = session.subject || session.parent_subject || eventId;
+  const subject = subjectTitle(session) || eventId;
   const cost = session.total_cost_usd != null ? fmtCost(session.total_cost_usd) : '—';
   const dur = session.duration_seconds ? fmtDuration(session.duration_seconds) : '';
 

@@ -85,6 +85,14 @@ function selectTask(eventId) {
 }
 
 // ── Helpers ────────────────────────────────────
+function subjectTitle(session) {
+  const raw = (session && (session.subject || session.parent_subject)) || '';
+  // Strip detection tag, markdown heading markers, then take first non-empty line
+  return raw.split('\n')
+    .map(l => l.replace(/^\[AGENT\]\s*/i, '').replace(/^#+\s*/, '').trim())
+    .find(l => l) || raw;
+}
+
 const PHASE_COLORS = {
   PREFLIGHT: 'var(--cyan, #5eead4)',
   UNDERSTAND: 'var(--blue)', PLAN: 'var(--purple)',

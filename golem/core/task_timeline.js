@@ -122,7 +122,7 @@ function renderDetailHeader(session, trace, running) {
 
   const state = session ? session.state : '';
   const chipClass = _stateToChipClass(state);
-  const subject = session ? esc(session.subject || session.parent_subject || '') : '';
+  const subject = esc(truncText(subjectTitle(session), 120));
   const taskId = session ? esc(String(session.parent_issue_id || session.id || '')) : '';
   const mode = session ? esc(session.execution_mode || 'subagent') : 'subagent';
   const liveHtml = running
