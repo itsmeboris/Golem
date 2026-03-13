@@ -1,5 +1,6 @@
-/* golem/core/task_live.js — Polling loop, incremental DOM updates, live cursor, auto-scroll.
- * Depends on: task_api.js (S, fetchParsedTrace, isTaskRunning),
+/* golem/core/task_live.js — SSE live updates with polling fallback, incremental DOM updates,
+ * live cursor, auto-scroll.
+ * Depends on: task_api.js (S, fetchSessions, fetchParsedTrace, isTaskRunning),
  *             task_overview.js (renderOverview), task_timeline.js (renderDetail).
  * Loaded last — wires up DOMContentLoaded.
  */
@@ -7,10 +8,109 @@
 
 let _pollInFlight = false;
 
-function startPolling() {
+// ── SSE state ──────────────────────────────────
+let _eventSource = null;
+let _renderTimeout = null;
+let _needsSessionUpdate = false;
+let _needsTraceUpdate = false;
+let _reconnectTimeout = null;
+
+// ── Batched SSE flush ──────────────────────────
+async function _flushSSEUpdates() {
+  _renderTimeout = null;
+  if (_pollInFlight) return;
+  _pollInFlight = true;
+  try {
+    if (_needsSessionUpdate || _needsTraceUpdate) {
+      if (S.view === 'overview') {
+        await renderOverview();
+      } else if (S.view === 'detail' && S.selectedTaskId) {
+        S.sessions = await fetchSessions();
+        const session = S.sessions[S.selectedTaskId];
+        if (_needsTraceUpdate && isTaskRunning(session)) {
+          const trace = await fetchParsedTrace(S.selectedTaskId, true);
+          await renderDetail(S.selectedTaskId, trace || undefined);
+          updateLiveCursor();
+          autoScrollIfAtBottom();
+        } else {
+          await renderDetail(S.selectedTaskId);
+        }
+      }
+    }
+  } finally {
+    _pollInFlight = false;
+    _needsSessionUpdate = false;
+    _needsTraceUpdate = false;
+  }
+}
+
+// ── Debounce helper ────────────────────────────
+function _scheduleRender() {
+  if (_renderTimeout !== null) return; // already scheduled within 500ms window
+  _renderTimeout = setTimeout(_flushSSEUpdates, 500);
+}
+
+// ── SSE connection ─────────────────────────────
+function connectSSE() {
+  if (_reconnectTimeout !== null) {
+    clearTimeout(_reconnectTimeout);
+    _reconnectTimeout = null;
+  }
+  if (_eventSource) {
+    _eventSource.close();
+    _eventSource = null;
+  }
+
+  const es = new EventSource('/api/events');
+  _eventSource = es;
+
+  es.addEventListener('open', () => {
+    // SSE connected — stop fallback polling if it was running
+    stopPolling();
+    // Clear any pending reconnect attempt
+    if (_reconnectTimeout !== null) {
+      clearTimeout(_reconnectTimeout);
+      _reconnectTimeout = null;
+    }
+  });
+
+  es.addEventListener('session_update', () => {
+    _needsSessionUpdate = true;
+    _scheduleRender();
+  });
+
+  es.addEventListener('trace_update', (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data && data.event_id === S.selectedTaskId) {
+        _needsTraceUpdate = true;
+        _scheduleRender();
+      }
+    } catch (_e) {
+      // Malformed data — ignore
+    }
+  });
+
+  es.addEventListener('error', () => {
+    es.close();
+    _eventSource = null;
+    // Fall back to polling while SSE is down
+    _startFallbackPolling();
+    // Attempt to reconnect SSE after 5s
+    if (_reconnectTimeout === null) {
+      _reconnectTimeout = setTimeout(() => {
+        _reconnectTimeout = null;
+        connectSSE();
+      }, 5000);
+    }
+  });
+}
+
+// ── Fallback polling ───────────────────────────
+function _startFallbackPolling() {
   if (S.pollTimer) return;
   S.pollTimer = setInterval(async () => {
-    if (_pollInFlight) return;  // prevent concurrent ticks
+    if (_pollInFlight) return; // prevent concurrent ticks
     _pollInFlight = true;
     try {
       if (S.view === 'overview') {
@@ -35,6 +135,17 @@ function startPolling() {
       _pollInFlight = false;
     }
   }, 5000);
+}
+
+function startPolling() {
+  _startFallbackPolling();
+}
+
+function stopPolling() {
+  if (S.pollTimer) {
+    clearInterval(S.pollTimer);
+    S.pollTimer = null;
+  }
 }
 
 // ── Live cursor update ─────────────────────────
@@ -100,5 +211,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  startPolling();
+  // Use SSE for live updates; fall back to polling if EventSource is unavailable
+  if (typeof EventSource === 'undefined') {
+    startPolling();
+  } else {
+    connectSSE();
+  }
 });

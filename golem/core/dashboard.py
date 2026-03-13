@@ -32,7 +32,12 @@ logger = logging.getLogger("golem.core.dashboard")
 
 try:
     from fastapi import Query
-    from fastapi.responses import HTMLResponse, JSONResponse, Response
+    from fastapi.responses import (
+        HTMLResponse,
+        JSONResponse,
+        Response,
+        StreamingResponse,
+    )
 
     FASTAPI_AVAILABLE = True
 except ImportError:  # pragma: no cover
@@ -41,6 +46,7 @@ except ImportError:  # pragma: no cover
     HTMLResponse = None
     JSONResponse = None
     Response = None
+    StreamingResponse = None
 
 
 # ---------------------------------------------------------------------------
@@ -447,6 +453,79 @@ def _read_log_tail(lines: int = 200) -> dict:
         return {"lines": [], "file": ""}
 
 
+async def _sse_event_stream():
+    """Async generator that yields SSE-formatted events.
+
+    - Polls every ~1 s for session-file and trace-file mtime changes.
+    - Emits ``event: session_update`` when the sessions file changes.
+    - Emits ``event: trace_update`` (with the file stem as ``event_id``) when
+      any ``.jsonl`` file inside ``TRACES_DIR`` is created or modified.
+    - Emits a heartbeat ``data: {"type": "heartbeat"}`` every 15 s when no
+      other event has been sent.
+    - Exits cleanly on ``GeneratorExit`` or ``asyncio.CancelledError``.
+    """
+    # Snapshot initial state so only *changes* trigger events.
+    sessions_mtime: float | None = None
+    if _SESSIONS_FILE.exists():
+        try:
+            sessions_mtime = _SESSIONS_FILE.stat().st_mtime
+        except OSError:
+            sessions_mtime = None
+
+    trace_mtimes: dict[str, float] = {}
+    if TRACES_DIR.exists():
+        for p in TRACES_DIR.rglob("*.jsonl"):
+            try:
+                trace_mtimes[str(p)] = p.stat().st_mtime
+            except OSError:
+                pass
+
+    heartbeat_counter = 0
+    try:
+        while True:
+            await asyncio.sleep(1)
+            heartbeat_counter += 1
+            sent_event = False
+
+            # --- session file ---
+            new_sessions_mtime: float | None = None
+            if _SESSIONS_FILE.exists():
+                try:
+                    new_sessions_mtime = _SESSIONS_FILE.stat().st_mtime
+                except OSError:
+                    new_sessions_mtime = None
+            if new_sessions_mtime is not None and new_sessions_mtime != sessions_mtime:
+                sessions_mtime = new_sessions_mtime
+                yield 'event: session_update\ndata: {"type": "session_update"}\n\n'
+                sent_event = True
+                heartbeat_counter = 0
+
+            # --- trace files ---
+            if TRACES_DIR.exists():
+                for p in TRACES_DIR.rglob("*.jsonl"):
+                    path_str = str(p)
+                    try:
+                        mtime = p.stat().st_mtime
+                    except OSError:
+                        continue
+                    if path_str not in trace_mtimes or trace_mtimes[path_str] != mtime:
+                        trace_mtimes[path_str] = mtime
+                        event_id = p.stem
+                        payload = json.dumps(
+                            {"type": "trace_update", "event_id": event_id}
+                        )
+                        yield f"event: trace_update\ndata: {payload}\n\n"
+                        sent_event = True
+                        heartbeat_counter = 0
+
+            # --- heartbeat ---
+            if not sent_event and heartbeat_counter >= 15:
+                yield 'data: {"type": "heartbeat"}\n\n'
+                heartbeat_counter = 0
+    except (GeneratorExit, asyncio.CancelledError):
+        return
+
+
 def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
     app: Any,
     config_snapshot: dict | None = None,
@@ -499,6 +578,14 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
     @app.get("/api/ping")
     async def api_ping() -> JSONResponse:
         return JSONResponse(content={"status": "ok", "timestamp": int(time.time())})
+
+    @app.get("/api/events")
+    async def api_events() -> StreamingResponse:
+        return StreamingResponse(
+            _sse_event_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     @app.get("/api/analytics")
     async def api_analytics() -> JSONResponse:
