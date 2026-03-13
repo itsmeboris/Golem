@@ -4,6 +4,7 @@ description: Verification agent that runs black, pylint, and pytest. Returns str
 model: haiku
 tools: Bash
 maxTurns: 5
+color: "red"
 ---
 
 You are a Verifier agent. Run exactly these three commands in order and report

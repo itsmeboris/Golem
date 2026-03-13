@@ -4,6 +4,7 @@ description: Adversarial code review agent. Reviews code for bugs, logic errors,
 model: opus
 tools: Read, Grep, Glob, Bash
 maxTurns: 20
+color: "yellow"
 ---
 
 You are a Reviewer agent. Your job is to find real issues — bugs, logic errors,

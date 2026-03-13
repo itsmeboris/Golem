@@ -812,6 +812,9 @@ class SubagentSupervisor:
         if self.session.retry_count:
             extras += f", {self.session.retry_count} full retry"
 
+        # -- Post-task learning: extract pitfalls into AGENTS.md -----------
+        await self._run_post_task_learning()
+
         self._emit_event(f"Task completed: ${self.session.total_cost_usd:.2f}{extras}")
 
         self._update_task(
@@ -831,33 +834,51 @@ class SubagentSupervisor:
             self.session.validation_verdict,
         )
 
-        # -- Post-task learning: extract pitfalls into AGENTS.md -----------
-        loop = asyncio.get_running_loop()
-        loop.run_in_executor(None, self._extract_pitfalls)
+    async def _run_post_task_learning(self) -> None:
+        """Extract pitfalls from recent sessions and update AGENTS.md.
 
-    def _extract_pitfalls(self) -> None:
-        """Extract pitfalls from recent sessions and update AGENTS.md."""
+        Runs as an awaited step before the final 'Task completed' event so
+        that dashboard events appear in the correct order.  Failures are
+        logged and emitted but never block the pipeline.
+        """
+        self._emit_event("Running post-task learning...")
         try:
-            from .orchestrator import load_sessions  # lazy import to avoid circular
-
-            sessions = load_sessions()
-            completed = [
-                s.to_dict()
-                for s in sessions.values()
-                if s.state == TaskSessionState.COMPLETED
-            ]
-            # Include current session
-            current = self.session.to_dict()
-            if current not in completed:
-                completed.append(current)
-            # Limit to last 20
-            completed = completed[-20:]
-
-            pitfalls = extract_pitfalls(completed)
-            if pitfalls:
-                update_agents_md(pitfalls)
+            loop = asyncio.get_running_loop()
+            count = await loop.run_in_executor(None, self._extract_pitfalls)
+            if count:
+                self._emit_event(
+                    "Post-task learning: %d pitfall(s) written to AGENTS.md" % count
+                )
+            else:
+                self._emit_event("Post-task learning: no new pitfalls found")
         except Exception:  # noqa: BLE001
             self._slog.warning("Pitfall extraction failed (non-fatal)", exc_info=True)
+            self._emit_event("Post-task learning failed (non-fatal)", is_error=True)
+
+    def _extract_pitfalls(self) -> int:
+        """Extract pitfalls from recent sessions and update AGENTS.md.
+
+        Returns the number of pitfalls written, or 0 if none.
+        """
+        from .orchestrator import load_sessions  # lazy import to avoid circular
+
+        sessions = load_sessions()
+        completed = [
+            s.to_dict()
+            for s in sessions.values()
+            if s.state == TaskSessionState.COMPLETED
+        ]
+        # Include current session
+        current = self.session.to_dict()
+        if current not in completed:
+            completed.append(current)
+        # Limit to last 20
+        completed = completed[-20:]
+
+        pitfalls = extract_pitfalls(completed)
+        if pitfalls:
+            update_agents_md(pitfalls)
+        return len(pitfalls)
 
     # -- Escalation ------------------------------------------------------------
 

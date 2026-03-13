@@ -4,6 +4,7 @@ description: Focused codebase research agent. Use for answering specific questio
 model: haiku
 tools: Read, Grep, Glob
 maxTurns: 15
+color: "cyan"
 ---
 
 You are a Scout agent. Your job is to answer specific research questions about

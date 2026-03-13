@@ -1112,17 +1112,17 @@ class TestClarityGate:
 
 
 class TestExtractPitfalls:
-    """Cover the _extract_pitfalls exception handling branch."""
+    """Cover _extract_pitfalls and _run_post_task_learning."""
 
-    def test_extract_pitfalls_logs_warning_on_error(self):
+    def test_extract_pitfalls_raises_on_error(self):
         session = TaskSession(parent_issue_id=42, parent_subject="Test")
         sup = _make_supervisor(session=session)
         with patch(
             "golem.orchestrator.load_sessions",
             side_effect=RuntimeError("db unavailable"),
         ):
-            # Should not raise — exception is caught and logged
-            sup._extract_pitfalls()
+            with pytest.raises(RuntimeError, match="db unavailable"):
+                sup._extract_pitfalls()
 
     def test_extract_pitfalls_happy_path(self):
         session = TaskSession(parent_issue_id=42, parent_subject="Test")
@@ -1130,7 +1130,7 @@ class TestExtractPitfalls:
         mock_session = MagicMock()
         mock_session.state = TaskSessionState.COMPLETED
         mock_session.to_dict.return_value = {
-            "validation_concerns": ["Always run tests"],
+            "validation_concerns": ["antipattern: dead code after return in module"],
             "validation_test_failures": [],
             "errors": [],
             "retry_count": 0,
@@ -1143,8 +1143,48 @@ class TestExtractPitfalls:
             ),
             patch("golem.supervisor_v2_subagent.update_agents_md") as mock_update,
         ):
-            sup._extract_pitfalls()
+            count = sup._extract_pitfalls()
             mock_update.assert_called_once()
+            assert count > 0
+
+    def test_extract_pitfalls_returns_zero_when_no_pitfalls(self):
+        session = TaskSession(parent_issue_id=42, parent_subject="Test")
+        sup = _make_supervisor(session=session)
+        with patch(
+            "golem.orchestrator.load_sessions",
+            return_value={},
+        ):
+            count = sup._extract_pitfalls()
+            assert count == 0
+
+    @pytest.mark.asyncio
+    async def test_run_post_task_learning_happy(self):
+        session = TaskSession(parent_issue_id=42, parent_subject="Test")
+        sup = _make_supervisor(session=session)
+        with patch.object(sup, "_extract_pitfalls", return_value=3):
+            await sup._run_post_task_learning()
+        events = [e["summary"] for e in session.event_log]
+        assert any("Running post-task learning" in e for e in events)
+        assert any("3 pitfall(s)" in e for e in events)
+
+    @pytest.mark.asyncio
+    async def test_run_post_task_learning_no_pitfalls(self):
+        session = TaskSession(parent_issue_id=42, parent_subject="Test")
+        sup = _make_supervisor(session=session)
+        with patch.object(sup, "_extract_pitfalls", return_value=0):
+            await sup._run_post_task_learning()
+        events = [e["summary"] for e in session.event_log]
+        assert any("no new pitfalls" in e for e in events)
+
+    @pytest.mark.asyncio
+    async def test_run_post_task_learning_catches_error(self):
+        session = TaskSession(parent_issue_id=42, parent_subject="Test")
+        sup = _make_supervisor(session=session)
+        with patch.object(sup, "_extract_pitfalls", side_effect=RuntimeError("boom")):
+            # Should not raise — exception is caught and emitted
+            await sup._run_post_task_learning()
+        events = [e["summary"] for e in session.event_log]
+        assert any("failed (non-fatal)" in e for e in events)
 
 
 class TestEnsembleRetryBranch:

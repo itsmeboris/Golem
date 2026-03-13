@@ -1,10 +1,77 @@
-"""Extract and deduplicate pitfall strings from task session dicts."""
+"""Extract, classify, and deduplicate pitfall strings from task session dicts."""
+
+# ---------------------------------------------------------------------------
+# Categories used by the writer to organize AGENTS.md sections.
+# ---------------------------------------------------------------------------
+CATEGORY_ANTIPATTERNS = "antipatterns"
+CATEGORY_COVERAGE = "coverage"
+CATEGORY_ARCHITECTURE = "architecture"
+
+# ---------------------------------------------------------------------------
+# Noise filter — positive outcomes and uninformative snippets
+# ---------------------------------------------------------------------------
+_NOISE_PHRASES = [
+    "implemented correctly",
+    "requirements implemented",
+    "code is clean",
+    "no regressions",
+    "follows project conventions",
+    "well-structured",
+    "always run tests",
+]
+
+_MIN_PITFALL_LENGTH = 15
+
+
+def _is_noise(text: str) -> bool:
+    """Return True for positive outcomes and uninformative snippets."""
+    stripped = text.strip().lower()
+    if len(stripped) < _MIN_PITFALL_LENGTH:
+        return True
+    for phrase in _NOISE_PHRASES:
+        if phrase in stripped:
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Classification
+# ---------------------------------------------------------------------------
+_ANTIPATTERN_KEYWORDS = [
+    "antipattern",
+    "dead code",
+    "empty exception",
+    "string-matching control flow",
+    "tightly coupling",
+    "silently swallows",
+    "unused",
+]
+
+_COVERAGE_KEYWORDS = [
+    "no independent verification",
+    "coverage",
+    "no end-to-end test",
+    "test pass claims",
+    "verification was not",
+]
+
+
+def classify_pitfall(text: str) -> str:
+    """Classify a pitfall string into a category."""
+    lower = text.lower()
+    for kw in _ANTIPATTERN_KEYWORDS:
+        if kw in lower:
+            return CATEGORY_ANTIPATTERNS
+    for kw in _COVERAGE_KEYWORDS:
+        if kw in lower:
+            return CATEGORY_COVERAGE
+    return CATEGORY_ARCHITECTURE
 
 
 def normalize_pitfall(text: str) -> str:
-    """Normalize a pitfall string: lowercase, strip, truncate to 120 chars."""
+    """Normalize a pitfall string: lowercase, strip, truncate to 200 chars."""
     normalized = text.lower().strip()
-    return normalized[:120]
+    return normalized[:200]
 
 
 def _token_overlap(a: str, b: str) -> float:
@@ -27,7 +94,7 @@ def _is_duplicate(candidate: str, existing: list[str], threshold: float = 0.6) -
 
 
 def extract_pitfalls(sessions: list[dict]) -> list[str]:
-    """Extract and deduplicate pitfall strings from session dicts.
+    """Extract, filter, and deduplicate pitfall strings from session dicts.
 
     Extracts from:
     - validation_concerns
@@ -36,7 +103,8 @@ def extract_pitfalls(sessions: list[dict]) -> list[str]:
     - retry_count > 0 (use validation_summary as the pitfall)
     - validation_summary sentences (split on '. ')
 
-    Returns deduplicated list of concise pitfall strings.
+    Filters out positive outcomes and noise, then deduplicates.
+    Returns list of concise pitfall strings.
     """
     candidates: list[str] = []
 
@@ -72,8 +140,11 @@ def extract_pitfalls(sessions: list[dict]) -> list[str]:
         ):
             candidates.append(normalize_pitfall(validation_summary))
 
+    # Filter noise before dedup
+    filtered = [c for c in candidates if not _is_noise(c)]
+
     deduplicated: list[str] = []
-    for candidate in candidates:
+    for candidate in filtered:
         if not _is_duplicate(candidate, deduplicated):
             deduplicated.append(candidate)
 
