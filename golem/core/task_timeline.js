@@ -400,8 +400,10 @@ function _captureTimelineState() {
   scroll.querySelectorAll('.tl-agent-section-btn.open').forEach(btn => {
     openSections.push(btn.textContent.trim());
   });
+  const wasAtBottom = scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - 50;
   return {
     scrollTop: scroll.scrollTop,
+    wasAtBottom,
     collapsed,
     expandedTools,
     openSections,
@@ -432,8 +434,12 @@ function _restoreTimelineState(state) {
   // Restore prompt visibility
   const prompt = document.getElementById('prompt-section');
   if (prompt && state.promptVisible) prompt.style.display = '';
-  // Restore scroll position
-  scroll.scrollTop = state.scrollTop;
+  // Restore scroll position — if user was at bottom, stay at bottom (for live tailing)
+  if (state.wasAtBottom) {
+    scroll.scrollTop = scroll.scrollHeight;
+  } else {
+    scroll.scrollTop = state.scrollTop;
+  }
 }
 
 // ── Pre-flight event extraction ────────────────
