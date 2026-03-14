@@ -55,18 +55,27 @@ def test_token_overlap_empty():
 # -- _is_duplicate -----------------------------------------------------------
 
 
-def test_is_duplicate_true():
+def test_is_duplicate_returns_index_on_match():
     existing = ["the test failed due to missing dependency"]
-    assert _is_duplicate("test failed due to missing dependency", existing)
+    result = _is_duplicate("test failed due to missing dependency", existing)
+    assert result is not None
+    assert result == 0  # index of matched entry
 
 
-def test_is_duplicate_false():
+def test_is_duplicate_returns_index_not_first():
+    existing = ["unrelated entry", "the test failed due to missing dependency"]
+    result = _is_duplicate("test failed due to missing dependency", existing)
+    assert result == 1
+
+
+def test_is_duplicate_returns_none_on_no_match():
     existing = ["completely unrelated sentence"]
-    assert not _is_duplicate("totally different content here", existing)
+    result = _is_duplicate("totally different content here", existing)
+    assert result is None
 
 
-def test_is_duplicate_empty_list():
-    assert not _is_duplicate("any candidate", [])
+def test_is_duplicate_returns_none_for_empty():
+    assert _is_duplicate("any candidate", []) is None
 
 
 # -- _is_noise ---------------------------------------------------------------

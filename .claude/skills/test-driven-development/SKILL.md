@@ -109,3 +109,8 @@ If coverage drops below 100%, find the uncovered lines and add tests.
 | Test too complicated | Design too complicated — simplify the interface |
 | Must mock everything | Code too coupled — use dependency injection |
 | Test setup huge | Extract fixtures. Still complex? Simplify design |
+
+## Related Skills
+
+- **systematic-debugging**: Invoke when a test fails unexpectedly during the red-green-refactor cycle. Do not guess at fixes - investigate root cause first.
+- **verification-before-completion**: Invoke before reporting that TDD work is done. Fresh verification evidence is required.

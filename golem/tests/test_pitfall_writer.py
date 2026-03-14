@@ -1,5 +1,6 @@
 """Tests for golem.pitfall_writer — full coverage."""
 
+from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 
@@ -15,8 +16,11 @@ from golem.pitfall_writer import (
     _HEADER,
     _LEGACY_COMMENT,
     _LEGACY_SECTION,
+    _apply_decay,
+    _parse_metadata,
     _parse_section_bullets,
     _preamble,
+    _strip_metadata,
     format_agents_md,
     parse_agents_md,
     update_agents_md,
@@ -353,3 +357,148 @@ def test_integration_mock_session(tmp_path):
     content = agents_md.read_text()
     assert "antipattern: dead code after return in module" in content
     assert "## Recurring Antipatterns\n" in content
+
+
+# -- _parse_metadata ---------------------------------------------------------
+
+
+def test_parse_metadata_with_tags():
+    entry = "empty exception handler <!-- seen:3 last:2026-03-15 -->"
+    seen, last = _parse_metadata(entry)
+    assert seen == 3
+    assert last == "2026-03-15"
+
+
+def test_parse_metadata_without_tags():
+    entry = "empty exception handler"
+    seen, last = _parse_metadata(entry)
+    assert seen == 1
+    assert last is None
+
+
+# -- _strip_metadata ---------------------------------------------------------
+
+
+def test_strip_metadata():
+    entry = "empty exception handler <!-- seen:3 last:2026-03-15 -->"
+    assert _strip_metadata(entry) == "empty exception handler"
+
+
+def test_strip_metadata_no_tags():
+    entry = "empty exception handler"
+    assert _strip_metadata(entry) == "empty exception handler"
+
+
+# -- _apply_decay ------------------------------------------------------------
+
+
+def test_decay_removes_stale():
+    """Entries with seen < 3 and last > 30 days ago are removed."""
+    entries = [
+        "old stale entry <!-- seen:1 last:2026-01-01 -->",
+        "recent entry <!-- seen:1 last:2026-03-14 -->",
+    ]
+    result = _apply_decay(entries, today="2026-03-15")
+    assert len(result) == 1
+    assert "recent entry" in result[0]
+
+
+def test_decay_preserves_established():
+    """Entries with seen >= 5 are never removed regardless of age."""
+    entries = [
+        "old but established <!-- seen:5 last:2026-01-01 -->",
+    ]
+    result = _apply_decay(entries, today="2026-03-15")
+    assert len(result) == 1
+
+
+def test_decay_preserves_moderate():
+    """Entries with seen in [3, 4] persist regardless of age."""
+    entries = [
+        "moderate recurrence <!-- seen:3 last:2026-01-01 -->",
+        "moderate recurrence two <!-- seen:4 last:2026-01-01 -->",
+    ]
+    result = _apply_decay(entries, today="2026-03-15")
+    assert len(result) == 2
+
+
+def test_decay_preserves_entries_without_metadata():
+    """Bare entries (no metadata) are kept during decay (migration case)."""
+    entries = ["bare entry with no tags"]
+    result = _apply_decay(entries, today="2026-03-15")
+    assert len(result) == 1
+
+
+def test_decay_uses_today_when_no_date_given():
+    """When today is not provided, decay uses the current date."""
+    entries = ["bare entry with no tags"]
+    result = _apply_decay(entries)
+    assert len(result) == 1
+
+
+# -- update_agents_md metadata integration -----------------------------------
+
+
+def test_dedup_ignores_metadata_in_comparison(tmp_path):
+    """Entries differing only in metadata tags should be treated as duplicates."""
+    agents_md = tmp_path / "AGENTS.md"
+    agents_md.write_text(
+        _HEADER
+        + "\n"
+        + "## Recurring Antipatterns\n"
+        + "- antipattern: empty exception handler in dashboard <!-- seen:2 last:2026-03-10 -->\n"
+    )
+    update_agents_md(
+        ["antipattern: empty exception handler in dashboard"],
+        agents_md_path=agents_md,
+    )
+    content = agents_md.read_text()
+    pitfall_lines = [line for line in content.splitlines() if line.startswith("- ")]
+    assert len(pitfall_lines) == 1
+    assert "seen:3" in pitfall_lines[0]
+
+
+@patch("golem.pitfall_writer.date")
+def test_update_increments_seen_on_duplicate(mock_date, tmp_path):
+    """Duplicate detection increments seen and updates last date."""
+    mock_date.today.return_value = date(2026, 3, 15)
+    mock_date.fromisoformat = date.fromisoformat
+    agents_md = tmp_path / "AGENTS.md"
+    agents_md.write_text(
+        _HEADER
+        + "\n"
+        + "## Recurring Antipatterns\n"
+        + "- antipattern: dead code found here <!-- seen:1 last:2026-03-01 -->\n"
+    )
+    update_agents_md(
+        ["antipattern: dead code found here"],
+        agents_md_path=agents_md,
+    )
+    content = agents_md.read_text()
+    pitfall_lines = [line for line in content.splitlines() if line.startswith("- ")]
+    assert len(pitfall_lines) == 1
+    assert "seen:2" in pitfall_lines[0]
+    assert "last:2026-03-15" in pitfall_lines[0]
+
+
+@patch("golem.pitfall_writer.date")
+def test_migration_adds_metadata_to_bare_entries(mock_date, tmp_path):
+    """First run after deployment adds seen:1 last:today to existing entries."""
+    mock_date.today.return_value = date(2026, 3, 15)
+    mock_date.fromisoformat = date.fromisoformat
+    agents_md = tmp_path / "AGENTS.md"
+    agents_md.write_text(
+        _HEADER
+        + "\n"
+        + "## Recurring Antipatterns\n"
+        + "- antipattern: existing bare entry\n"
+    )
+    update_agents_md(
+        ["cross-module private access in new module"],
+        agents_md_path=agents_md,
+    )
+    content = agents_md.read_text()
+    for line in content.splitlines():
+        if line.startswith("- ") and "existing bare entry" in line:
+            assert "seen:1" in line
+            assert "last:2026-03-15" in line

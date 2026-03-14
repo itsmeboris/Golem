@@ -1,0 +1,57 @@
+# Orchestration Report Format
+
+After verification passes (or circuit breaker triggers), read this template
+and produce the exact JSON block as your final message in a ```json code fence.
+
+## COMPLETE report
+
+```json
+{{
+  "status": "COMPLETE",
+  "summary": "Brief description of what was accomplished",
+  "files_changed": ["list", "of", "files"],
+  "test_results": {{
+    "black": "pass",
+    "pylint": "pass",
+    "pytest": "pass"
+  }},
+  "specs_satisfied": {{
+    "SPEC-1": true,
+    "SPEC-2": true,
+    "SPEC-3": "partial - edge case not covered"
+  }},
+  "concerns": []
+}}
+```
+
+## BLOCKED report
+
+When reporting BLOCKED, include root_cause and escalation_hint to help
+the orchestrator route the failure:
+
+```json
+{{
+  "status": "BLOCKED",
+  "summary": "What was accomplished before blocking",
+  "files_changed": ["list", "of", "files"],
+  "test_results": {{
+    "black": "pass or fail or not_run",
+    "pylint": "pass or fail or not_run",
+    "pytest": "fail"
+  }},
+  "root_cause": "<one of: test_flake, missing_dependency, unclear_spec, environment_issue, circular_failure>",
+  "escalation_hint": "One-sentence suggestion for the human",
+  "concerns": ["Specific failure that could not be resolved"]
+}}
+```
+
+## Post-completion: Fix Cycles
+
+After your session ends, the supervisor may re-invoke you with validator
+feedback if the external validation verdict is PARTIAL. This is a fix cycle
+- up to {validator_fix_depth} iterations of build->review->fix before escalation.
+
+When you receive a retry prompt with validator concerns:
+- Focus ONLY on the specific concerns listed - do not redo the entire task.
+- The prompt will include the iteration number (e.g. "Fix iteration 2/3").
+- Address each concern, re-run verification, and produce a fresh Report JSON.

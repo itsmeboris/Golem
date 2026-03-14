@@ -81,3 +81,7 @@ ALWAYS before:
 You are running as an autonomous agent in an isolated git worktree.
 The orchestrator handles commits after your work is validated.
 Your job: make changes, verify they work, report honestly.
+
+## Related Skills
+
+- **systematic-debugging**: If verification fails, do not retry blindly. Invoke this skill to investigate the root cause before attempting another fix.

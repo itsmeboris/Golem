@@ -1,0 +1,29 @@
+# Builder Dispatch Template
+
+Each Builder prompt MUST include ALL of these sections:
+
+Working directory: {work_dir}
+
+## Skills
+Invoke the 'test-driven-development' skill before writing any code.
+[For bug-fix tasks, add: Invoke the 'systematic-debugging' skill first.]
+
+## Specification
+[All SPEC statements from Phase 2]
+
+## Context from exploration
+[Phase 1 findings - file structures, patterns, key code snippets]
+
+## Prior build output (if this is Builder #2+)
+[Summary from previous Builder: files created, key decisions, test patterns]
+
+## Your task
+[Specific instructions: what to implement, which files to modify]
+
+## Self-verification
+Before reporting back, run ONLY these - nothing more:
+1. pytest path/to/your/test_file.py -x  (targeted, NOT full suite)
+2. black --check path/to/changed/files
+3. pylint --errors-only path/to/changed/files
+Do NOT run pytest --cov, pytest without a path, or the full test suite.
+The Verifier handles that.

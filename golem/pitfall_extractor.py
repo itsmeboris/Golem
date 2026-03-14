@@ -85,12 +85,19 @@ def _token_overlap(a: str, b: str) -> float:
     return len(intersection) / len(union)
 
 
-def _is_duplicate(candidate: str, existing: list[str], threshold: float = 0.6) -> bool:
-    """Check if candidate is a duplicate of any existing pitfall."""
-    for item in existing:
+def _is_duplicate(
+    candidate: str, existing: list[str], threshold: float = 0.6
+) -> int | None:
+    """Check if candidate is a duplicate of any existing pitfall.
+
+    Returns the index of the matched entry, or None if no match.
+    Callers must use ``is None`` / ``is not None`` - never truthiness
+    (index 0 is falsy).
+    """
+    for i, item in enumerate(existing):
         if _token_overlap(candidate, item) >= threshold:
-            return True
-    return False
+            return i
+    return None
 
 
 def extract_pitfalls(sessions: list[dict]) -> list[str]:
@@ -145,7 +152,7 @@ def extract_pitfalls(sessions: list[dict]) -> list[str]:
 
     deduplicated: list[str] = []
     for candidate in filtered:
-        if not _is_duplicate(candidate, deduplicated):
+        if _is_duplicate(candidate, deduplicated) is None:
             deduplicated.append(candidate)
 
     return deduplicated

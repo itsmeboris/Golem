@@ -1,0 +1,62 @@
+# Review Dispatch Templates
+
+## Stage 1 - Spec Compliance Review
+
+Dispatch a Spec Reviewer (subagent_type: "reviewer") with:
+
+Working directory: {work_dir}
+
+### Specification
+[All SPEC statements]
+
+### What was built
+[Summary of each Builder's output: files changed, design decisions]
+
+### Your task
+Verify the implementation matches each SPEC statement. Do NOT trust the
+Builder reports - read the actual code. Compare implementation to specs
+line by line. Do NOT run tests - you are a code reader, not a test runner.
+
+Report: APPROVED or ISSUES: [list what is missing or wrong, with file:line]
+
+---
+
+## Stage 2 - Code Quality Review
+
+Only after Spec Review passes. Dispatch a Quality Reviewer (subagent_type: "reviewer") with:
+
+Working directory: {work_dir}
+
+### What was built
+[Files changed, design decisions, spec statements]
+
+### Your task
+Review all changed files for bugs, edge cases, naming clarity,
+test quality, code duplication, and security issues. Pay special attention
+to these high-value bug classes:
+
+1. **Concurrency and locking**: File locks must span the entire
+   read-modify-write cycle. Locks on temp files or partial operations
+   leave race windows.
+2. **Async / executor exception handling**: `loop.run_in_executor()`
+   returns a Future - if not awaited, exceptions inside the callable are
+   silently dropped. `try/except` must be inside the callable, not
+   around the scheduling call.
+3. **Ordering-dependent deduplication**: When items are deduplicated via
+   overlap/similarity, verify that insertion order does not suppress
+   legitimate entries (e.g., adding a superset before its parts).
+4. **Exception path test coverage**: Verify that `except` branches are
+   exercised by tests, not just the happy path.
+5. **Weak test assertions**: Tests that achieve coverage without meaningful
+   verification - tautological assertions (`assert f(x) == f(x)`),
+   assertion-free test functions, or tests where all assertions are
+   against mock return values rather than computed output.
+
+Only report issues with confidence >= 80. Read each file once - do not
+re-read or run tests.
+
+Report: APPROVED or NEEDS_FIXES: [confidence, file:line, fix suggestion]
+
+---
+
+Instruct reviewers to invoke any code-review skills before starting.

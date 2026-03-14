@@ -1,7 +1,9 @@
 """Write extracted pitfalls to AGENTS.md with categorization and atomic writes."""
 
 import os
+import re
 import tempfile
+from datetime import date, timedelta
 from pathlib import Path
 
 from .core.config import PROJECT_ROOT
@@ -32,6 +34,60 @@ _LEGACY_COMMENT = (
     "<!-- Auto-maintained by Golem's post-task learning loop."
     " Do not edit this section manually. -->\n"
 )
+
+_METADATA_RE = re.compile(r"\s*<!--\s*seen:(\d+)\s+last:(\d{4}-\d{2}-\d{2})\s*-->$")
+_DECAY_DAYS = 30
+_DECAY_MIN_SEEN = 3
+
+
+def _parse_metadata(entry: str) -> tuple[int, str | None]:
+    """Parse seen count and last date from an entry's metadata tag.
+
+    Returns (seen, last_date_str). Missing metadata returns (1, None).
+    """
+    match = _METADATA_RE.search(entry)
+    if match:
+        return int(match.group(1)), match.group(2)
+    return 1, None
+
+
+def _strip_metadata(entry: str) -> str:
+    """Remove metadata tag from entry for comparison."""
+    return _METADATA_RE.sub("", entry).rstrip()
+
+
+def _format_metadata(entry_text: str, seen: int, last_date: str) -> str:
+    """Append metadata tag to a bare entry string."""
+    bare = _strip_metadata(entry_text)
+    return f"{bare} <!-- seen:{seen} last:{last_date} -->"
+
+
+def _apply_decay(entries: list[str], today: str | None = None) -> list[str]:
+    """Remove stale entries based on seen count and age.
+
+    - seen < 3 and last > 30 days ago: removed
+    - seen in [3, 4]: persists regardless of age
+    - seen >= 5: established, never removed
+    - No metadata (migration): kept
+    """
+    if today is None:
+        today = date.today().isoformat()
+    today_date = date.fromisoformat(today)
+    cutoff = today_date - timedelta(days=_DECAY_DAYS)
+
+    result = []
+    for entry in entries:
+        seen, last_str = _parse_metadata(entry)
+        if seen >= _DECAY_MIN_SEEN:
+            result.append(entry)
+            continue
+        if last_str is None:
+            result.append(entry)
+            continue
+        last_date_val = date.fromisoformat(last_str)
+        if last_date_val >= cutoff:
+            result.append(entry)
+    return result
 
 
 def _parse_section_bullets(text: str, header: str) -> tuple[list[str], str]:
@@ -144,11 +200,33 @@ def update_agents_md(
     categorized = parse_agents_md(existing_content)
     preamble = _preamble(existing_content)
 
-    # Classify and merge new pitfalls
+    today = date.today().isoformat()
+
+    # Migration: add metadata to bare entries (single pass)
+    for cat in categorized:
+        categorized[cat] = [
+            _format_metadata(item, 1, today) if "<!-- seen:" not in item else item
+            for item in categorized[cat]
+        ]
+
+    # Add/increment new pitfalls first (before decay)
     for pitfall in new_pitfalls:
         cat = classify_pitfall(pitfall)
-        if not _is_duplicate(pitfall, categorized[cat]):
-            categorized[cat].append(pitfall)
+        # Strip metadata from existing entries for fair comparison
+        stripped_existing = [_strip_metadata(e) for e in categorized[cat]]
+        match_idx = _is_duplicate(pitfall, stripped_existing)
+        if match_idx is not None:
+            old_entry = categorized[cat][match_idx]
+            seen, _ = _parse_metadata(old_entry)
+            categorized[cat][match_idx] = _format_metadata(
+                _strip_metadata(old_entry), seen + 1, today
+            )
+        else:
+            categorized[cat].append(_format_metadata(pitfall, 1, today))
+
+    # Decay: remove stale entries after adding new ones
+    for cat in categorized:
+        categorized[cat] = _apply_decay(categorized[cat], today)
 
     new_content = format_agents_md(preamble, categorized)
 

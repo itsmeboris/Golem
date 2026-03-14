@@ -72,3 +72,8 @@ If fix doesn't work after 3 attempts: report status as **blocked** with an expla
 | 2. Pattern | Find working examples, compare differences | Identified the gap |
 | 3. Hypothesis | Form theory, test one variable | Confirmed or new hypothesis |
 | 4. Implementation | Failing test, single fix, full verification | Bug resolved, all tests pass |
+
+## Related Skills
+
+- **verification-before-completion**: After fixing the root cause, invoke before claiming the fix is complete. Fresh passing output from all three checks required.
+- **test-driven-development**: If the bug lacks a reproduction test, write one before attempting the fix.
