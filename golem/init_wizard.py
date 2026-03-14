@@ -78,9 +78,19 @@ def _collect_inputs(use_defaults: bool) -> dict[str, str]:
         print("Budget must be a positive number.")
 
     result["work_dir"] = ask("Default working directory?", default=default_work_dir)
-    result["projects"] = ask(
-        "Project identifiers (comma-separated, or empty):", default=""
-    )
+
+    if result["profile"] == "github":
+        result["projects"] = ask(
+            "GitHub repos to poll (owner/repo, comma-separated):", default=""
+        )
+        result["detection_tag"] = ask(
+            "Issue label for agent-eligible tasks?", default="agent"
+        )
+    else:
+        result["projects"] = ask(
+            "Project identifiers (comma-separated, or empty):", default=""
+        )
+        result["detection_tag"] = ""
     result["slack_enabled"] = ask(
         "Enable Slack notifications?", default="n", choices=["y", "n"]
     )
@@ -124,17 +134,21 @@ def _build_config(inputs: dict[str, str]) -> dict[str, Any]:
     if inputs["teams_enabled"] == "y" and inputs["teams_webhook_url"]:
         teams_webhooks["default"] = inputs["teams_webhook_url"]
 
+    flow_config: dict[str, Any] = {
+        "enabled": True,
+        "profile": inputs["profile"],
+        "projects": projects,
+        "task_model": inputs["task_model"],
+        "budget_per_task_usd": float(inputs["budget"]),
+        "default_work_dir": inputs["work_dir"],
+        "work_dirs": work_dirs,
+    }
+    if inputs.get("detection_tag"):
+        flow_config["detection_tag"] = inputs["detection_tag"]
+
     return {
         "flows": {
-            "golem": {
-                "enabled": True,
-                "profile": inputs["profile"],
-                "projects": projects,
-                "task_model": inputs["task_model"],
-                "budget_per_task_usd": float(inputs["budget"]),
-                "default_work_dir": inputs["work_dir"],
-                "work_dirs": work_dirs,
-            }
+            "golem": flow_config,
         },
         "claude": {
             "model": inputs["task_model"],
@@ -179,6 +193,9 @@ def _run_wizard_impl(output_path: Path, use_defaults: bool) -> int:
     if projects:
         print(f"  projects: {', '.join(projects)}")
     print(f"  port:     {inputs['dashboard_port']}")
+
+    if inputs["profile"] == "github":
+        print("\nGitHub profile requires the gh CLI: run 'gh auth login' if needed.")
 
     _setup_git_hooks()
 

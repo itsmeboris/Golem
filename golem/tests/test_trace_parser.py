@@ -907,14 +907,18 @@ class TestTotals:
         assert self._totals()["tool_calls"] == 72
 
     def test_phase_duration_from_subagents_without_timestamps(self):
-        """Without event timestamps, phase duration = sum of subagent durations."""
+        """Without event timestamps, phase duration = sum of subagent durations.
+
+        Phases with orchestrator text but no subagents and no timestamps get
+        a minimum display duration (1s floor) for dashboard visibility.
+        """
         result = parse_trace(_build_simple_trace())
         build = next(p for p in result["phases"] if p["name"] == "BUILD")
         # BUILD has one subagent at 222000ms
         assert build["duration_ms"] == 222000
-        # UNDERSTAND/PLAN have no subagents and no timestamps → 0
+        # UNDERSTAND has text content but no subagents/timestamps → min floor
         understand = next(p for p in result["phases"] if p["name"] == "UNDERSTAND")
-        assert understand["duration_ms"] == 0
+        assert understand["duration_ms"] == 1000
 
     def test_phase_duration_from_timestamps(self):
         """With event timestamps, phase duration = next_phase_start - this_phase_start."""
@@ -933,6 +937,44 @@ class TestTotals:
         # All phases with timestamps should have non-zero duration
         for phase in result["phases"]:
             assert phase["duration_ms"] > 0
+
+    def test_same_event_phases_get_minimum_duration(self):
+        """When PLAN+BUILD share one event with same timestamp, PLAN gets min duration."""
+        events = [
+            _system_init(),
+            _assistant_text("## Phase: UNDERSTAND\nReading key files..."),
+            _assistant_tool_use(
+                "Read", {"file_path": "golem/utils.py"}, tool_use_id="tu_r1"
+            ),
+            _user_tool_result("tu_r1", "def foo(): ..."),
+            # PLAN + BUILD in the same assistant turn (real-world pattern)
+            _assistant_text(
+                "Summary.\n\n## Phase: PLAN\n"
+                "SPEC-1: do X\nSPEC-2: do Y\n\n"
+                "## Phase: BUILD\nDispatching Builder..."
+            ),
+            _agent_tool_use(
+                "Implement feature",
+                tool_use_id="tu_b1",
+                description="Implement feature",
+                model="sonnet",
+            ),
+            _task_started("tu_b1", task_id="task_b1"),
+            _task_notification("task_b1", "tu_b1", 120000, 30000, 15),
+            _user_tool_result("tu_b1", "Done."),
+            _assistant_text("## Phase: REVIEW\nSkipped: trivial."),
+            _assistant_text("## Phase: VERIFY\nSkipped: trivial."),
+            _result_event(),
+        ]
+        # Inject timestamps — PLAN and BUILD share event 4
+        base_ts = 1700000000.0
+        for i, ev in enumerate(events):
+            ev["ts"] = base_ts + i * 10.0
+        result = parse_trace(events)
+        plan = next(p for p in result["phases"] if p["name"] == "PLAN")
+        # PLAN has text content but shares start event with BUILD —
+        # should still get a minimum duration for display visibility
+        assert plan["duration_ms"] > 0
 
     def test_phase_tokens_from_subagents(self):
         result = parse_trace(_build_simple_trace())

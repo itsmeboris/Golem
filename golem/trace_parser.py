@@ -419,6 +419,10 @@ def _populate_phases(
     # For each phase except the last, duration = start of next phase - start of
     # this phase.  For the last phase, duration = last event ts - start ts.
     # Falls back to summing subagent durations for old traces without timestamps.
+    # When consecutive phases share the same start event (e.g. PLAN+BUILD written
+    # in one assistant turn), the earlier phase gets a minimum display duration
+    # if it has content, so the dashboard can show it.
+    _MIN_DISPLAY_MS = 1000  # 1 second floor for phases with content
     for i, phase in enumerate(phases):
         start_ts = events[phase["start_event"]].get("ts", 0)
         if i + 1 < len(phases):
@@ -429,6 +433,10 @@ def _populate_phases(
             phase["duration_ms"] = round((end_ts - start_ts) * 1000)
         else:
             phase["duration_ms"] = sum(s["duration_ms"] for s in phase["subagents"])
+        # Floor: phases with orchestrator content but 0 duration (same-event
+        # overlap) get a minimum so the dashboard renders them visibly.
+        if phase["duration_ms"] == 0 and any(phase["orchestrator_text"]):
+            phase["duration_ms"] = _MIN_DISPLAY_MS
 
 
 def _infer_phase_from_description(description: str) -> str | None:
