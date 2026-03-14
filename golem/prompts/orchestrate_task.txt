@@ -323,6 +323,17 @@ If blocked:
 - **Do NOT self-review** — you MUST dispatch reviewer subagents for Phase 4.
   Reading the code yourself and writing "all specs check out" is not a review.
 
+## Post-completion: Fix Cycles
+
+After your session ends, the supervisor may re-invoke you with validator
+feedback if the external validation verdict is PARTIAL. This is a **fix cycle**
+— up to {validator_fix_depth} iterations of build→review→fix before escalation.
+
+When you receive a retry prompt with validator concerns:
+- Focus ONLY on the specific concerns listed — do not redo the entire task.
+- The prompt will include the iteration number (e.g. "Fix iteration 2/3").
+- Address each concern, re-run verification, and produce a fresh Report JSON.
+
 ## Rules
 
 - You MUST produce the JSON report as your final output.
@@ -332,6 +343,10 @@ If blocked:
 - Keep subagent prompts specific — include file paths, code snippets, and context.
 - When running parallel agents, use a single message with multiple Agent tool calls.
 - If the task description references a TODO item, update TODO.md to mark it done.
+- If the task description references a GitHub issue (e.g. a URL like
+  ``https://github.com/<owner>/<repo>/issues/<number>``), close it when the
+  task is complete using: ``gh issue close <number> --repo <owner>/<repo> --comment "Resolved by Golem agent"``
+  If the task is BLOCKED, do NOT close the issue — leave it open for human follow-up.
 - Write ``## Phase: NAME`` headers for ALL 5 phases, even if skipping one.
   When skipping, include a one-line reason (e.g. "Skipped: trivial task").
 - Between dispatches, write a brief note explaining your decision (what you are

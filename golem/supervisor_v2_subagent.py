@@ -372,6 +372,7 @@ class SubagentSupervisor:
             task_description=description,
             work_dir=work_dir,
             inner_retry_max=self.task_config.inner_retry_max,
+            validator_fix_depth=self.task_config.validator_fix_depth,
         )
 
     # -- CLI invocation --------------------------------------------------------

@@ -9,10 +9,7 @@
 | 10  | [ ]    | **Task replay + dashboard controls** — re-run button + edit-and-resubmit modal in task detail view; also wire the cancel button to the UI (API exists but button is missing)                                  | Medium | P2           |
 | 21  | [ ]    | **State management audit rule** — detect innerHTML replacement without state preservation, polling without concurrency guards, shared mutable state in async code                                              | Medium | P2           |
 | 22  | [ ]    | **Codebase contract linting** — static check that function return types match consumer expectations (e.g. list vs string) across module boundaries                                                            | Medium | P2           |
-| 23  | [ ]    | **Post-task learning loop** — after each completed task, extract what the validator/verifier caught and append to AGENTS.md as "known pitfalls" so future agents avoid the same mistakes                      | Medium | P2           |
 | 13  | [ ]    | **Prompt versioning & analytics** — hash prompts into `RunRecord`, add `/api/analytics/by-prompt` endpoint, dashboard prompt comparison view for data-driven prompt engineering                                | Medium | P3           |
-| 24  | [ ]    | **Validator fix-cycle depth** — allow validator to produce testable fix items and loop (build→review→fix) up to N iterations within a single task, rather than one-shot retry                                  | Medium | P3           |
-| 25  | [ ]    | **SSE-based dashboard live updates** — replace 5s polling with Server-Sent Events (SSE) for real-time dashboard updates; emit events from supervisor milestones and trace writer appends                       | Medium | P3           |
 
 ## Completed
 
@@ -35,3 +32,6 @@
 | 7   | **Agent context injection** — auto-inject AGENTS.md + CLAUDE.md into agent sessions as system prompt context; write-back mechanism for agents to persist discoveries into AGENTS.md                                                                                       | High   | P1       |
 | 19  | **Expanded antipattern detection** — add validation rules for hardcoded UI states, dead/unreachable code, data contract mismatches (backend returns X, frontend expects Y), missing error/edge-case handling                                                              | High   | P1       |
 | 6   | **Adoption & outreach plan** — strategy to advertise, gather feedback, and grow the user base                                                                                                                                                                            | High   | P2       |
+| 23  | **Post-task learning loop** — after each completed task, extract what the validator/verifier caught and append to AGENTS.md as "known pitfalls" so future agents avoid the same mistakes                                                                                  | Medium | P2       |
+| 24  | **Validator fix-cycle depth** — allow validator to produce testable fix items and loop (build→review→fix) up to N iterations within a single task, rather than one-shot retry                                                                                              | Medium | P3       |
+| 25  | **SSE-based dashboard live updates** — replace 5s polling with Server-Sent Events (SSE) for real-time dashboard updates; emit events from supervisor milestones and trace writer appends                                                                                  | Medium | P3       |

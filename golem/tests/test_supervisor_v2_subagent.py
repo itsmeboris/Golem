@@ -77,6 +77,7 @@ class TestBuildPrompt:
             task_description="desc",
             work_dir="/work",
             inner_retry_max=3,
+            validator_fix_depth=3,
         )
         assert result == "prompt text"
 
