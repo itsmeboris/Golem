@@ -10,8 +10,13 @@ flows:
     # Built-in profiles:
     #   "local"   — file-based submissions, no external services
     #   "redmine" — Redmine issue tracking + Slack/Teams + MCP
+    #   "github"  — GitHub Issues via gh CLI (requires `gh auth login`)
     # For prompt-only mode, just use: golem run -p "your task here"
     profile: local
+    # profile: github
+    # projects:
+    #   - owner/repo            # GitHub "owner/repo" for issue polling
+    # detection_tag: agent      # label to detect agent-eligible issues
     # profile_config: {}          # profile-specific overrides
 
     # MCP servers: enable/disable all MCP tool servers

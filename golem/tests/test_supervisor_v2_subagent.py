@@ -1775,6 +1775,347 @@ class TestFixTraceFilesSerialization:
         session = TaskSession.from_dict(data)
         assert session.fix_trace_files == []
 
+
+# -- assign_issue on pickup --------------------------------------------------
+
+
+class TestAssignIssueOnPickup:
+    """Supervisor calls assign_issue on task pickup when backend supports it."""
+
+    @pytest.fixture()
+    def _patches(self):
+        with (
+            patch("golem.supervisor_v2_subagent.invoke_cli_monitored") as mock_cli,
+            patch("golem.supervisor_v2_subagent.run_validation") as mock_val,
+            patch("golem.supervisor_v2_subagent.commit_changes") as mock_commit,
+            patch("golem.supervisor_v2_subagent._write_prompt"),
+            patch("golem.supervisor_v2_subagent._write_trace"),
+            patch("golem.supervisor_v2_subagent._StreamingTraceWriter"),
+            patch(
+                "golem.supervisor_v2_subagent.resolve_work_dir",
+                return_value="/tmp/test",
+            ),
+            patch("golem.supervisor_v2_subagent.create_worktree"),
+            patch("golem.supervisor_v2_subagent.cleanup_worktree"),
+            patch(
+                "golem.supervisor_v2_subagent.run_verification",
+                return_value=MagicMock(passed=True, duration_s=0.1),
+            ),
+        ):
+            mock_cli.return_value = _make_cli_result(
+                output_result='{"status": "COMPLETE", "summary": "done"}',
+            )
+            mock_val.return_value = ValidationVerdict(
+                verdict="PASS",
+                confidence=0.95,
+                summary="ok",
+                task_type="feature",
+            )
+            mock_commit.return_value = CommitResult(committed=True, sha="abc123")
+            yield {"cli": mock_cli, "val": mock_val, "commit": mock_commit}
+
+    async def test_assign_issue_called_when_backend_supports_it(self, _patches):
+        """assign_issue is called on task pickup when backend has the method."""
+        profile = _make_profile()
+        profile.state_backend.assign_issue = MagicMock(return_value=True)
+
+        session = TaskSession(parent_issue_id=42, parent_subject="Test task")
+        sup = _make_supervisor(session=session, profile=profile)
+
+        await sup.run()
+
+        profile.state_backend.assign_issue.assert_called_once_with(42)
+
+    async def test_assign_issue_not_called_when_backend_lacks_method(self, _patches):
+        """assign_issue is not called when backend doesn't have the method."""
+        profile = _make_profile()
+        # Ensure assign_issue is not present (MagicMock has it by default, so delete it)
+        del profile.state_backend.assign_issue
+
+        session = TaskSession(parent_issue_id=42, parent_subject="Test task")
+        sup = _make_supervisor(session=session, profile=profile)
+
+        await sup.run()
+
+        # No AttributeError and pipeline completes
+        assert session.state == TaskSessionState.COMPLETED
+
+    async def test_assign_issue_failure_is_non_fatal(self, _patches):
+        """assign_issue failure does not block the pipeline."""
+        profile = _make_profile()
+        profile.state_backend.assign_issue = MagicMock(
+            side_effect=RuntimeError("API error")
+        )
+
+        session = TaskSession(parent_issue_id=42, parent_subject="Test task")
+        sup = _make_supervisor(session=session, profile=profile)
+
+        await sup.run()
+
+        # Pipeline completes despite assign_issue failure
+        assert session.state == TaskSessionState.COMPLETED
+
+
+# -- create_pull_request after commit ----------------------------------------
+
+
+class TestDetectBaseBranch:
+    """Tests for _detect_base_branch static method."""
+
+    @pytest.mark.parametrize(
+        "returncode,stdout,expected",
+        [
+            (0, "refs/remotes/origin/main\n", "main"),
+            (0, "refs/remotes/origin/master\n", "master"),
+            (0, "refs/remotes/origin/develop\n", "develop"),
+            (1, "", "master"),
+            (128, "", "master"),
+        ],
+    )
+    def test_detect_base_branch(self, returncode, stdout, expected):
+        """Returns correct branch or defaults to master on failure."""
+        mock_result = MagicMock(returncode=returncode, stdout=stdout)
+        with patch(
+            "golem.supervisor_v2_subagent.subprocess.run",
+            return_value=mock_result,
+        ):
+            result = SubagentSupervisor._detect_base_branch("/work")
+            assert result == expected
+
+
+class TestCreatePullRequestAfterCommit:
+    """Supervisor calls create_pull_request after a successful commit."""
+
+    @pytest.fixture()
+    def _base_patches(self):
+        with (
+            patch("golem.supervisor_v2_subagent._write_prompt"),
+            patch("golem.supervisor_v2_subagent._write_trace"),
+            patch("golem.supervisor_v2_subagent._StreamingTraceWriter"),
+        ):
+            yield
+
+    @pytest.mark.asyncio
+    async def test_create_pr_called_after_commit(self, _base_patches):
+        """create_pull_request is called when backend supports it and commit succeeded."""
+        profile = _make_profile()
+        profile.state_backend.create_pull_request = MagicMock(
+            return_value="https://github.com/org/repo/pull/7"
+        )
+
+        session = TaskSession(parent_issue_id=42, parent_subject="Test task")
+        config = _make_config(auto_commit=True)
+        sup = _make_supervisor(session=session, config=config, profile=profile)
+        sup._worktree_path = ""
+
+        verdict = ValidationVerdict(
+            verdict="PASS", confidence=0.9, summary="ok", task_type="feature"
+        )
+
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.commit_changes",
+                return_value=CommitResult(committed=True, sha="abc"),
+            ),
+            patch.object(
+                SubagentSupervisor,
+                "_detect_base_branch",
+                return_value="main",
+            ),
+        ):
+            await sup._commit_and_complete(42, "/work", verdict)
+
+        profile.state_backend.create_pull_request.assert_called_once_with(
+            head="agent/42",
+            base="main",
+            title="#42: Test task",
+            body=profile.state_backend.create_pull_request.call_args[1]["body"],
+        )
+
+    @pytest.mark.asyncio
+    async def test_pr_url_included_in_completion_comment(self, _base_patches):
+        """PR URL is appended to the completion comment."""
+        profile = _make_profile()
+        profile.state_backend.create_pull_request = MagicMock(
+            return_value="https://github.com/org/repo/pull/7"
+        )
+
+        session = TaskSession(parent_issue_id=42, parent_subject="Test task")
+        config = _make_config(auto_commit=True)
+        sup = _make_supervisor(session=session, config=config, profile=profile)
+        sup._worktree_path = ""
+
+        verdict = ValidationVerdict(
+            verdict="PASS", confidence=0.9, summary="ok", task_type="feature"
+        )
+
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.commit_changes",
+                return_value=CommitResult(committed=True, sha="abc"),
+            ),
+            patch.object(
+                SubagentSupervisor,
+                "_detect_base_branch",
+                return_value="main",
+            ),
+        ):
+            await sup._commit_and_complete(42, "/work", verdict)
+
+        comment_call = profile.state_backend.post_comment.call_args
+        assert comment_call is not None
+        comment_text = comment_call[0][1]
+        assert "https://github.com/org/repo/pull/7" in comment_text
+
+    @pytest.mark.asyncio
+    async def test_pr_event_emitted_when_pr_url_returned(self, _base_patches):
+        """An event is emitted with the PR URL when creation succeeds."""
+        profile = _make_profile()
+        profile.state_backend.create_pull_request = MagicMock(
+            return_value="https://github.com/org/repo/pull/99"
+        )
+
+        session = TaskSession(parent_issue_id=42, parent_subject="Test task")
+        config = _make_config(auto_commit=True)
+        sup = _make_supervisor(session=session, config=config, profile=profile)
+        sup._worktree_path = ""
+
+        verdict = ValidationVerdict(
+            verdict="PASS", confidence=0.9, summary="ok", task_type="feature"
+        )
+
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.commit_changes",
+                return_value=CommitResult(committed=True, sha="abc"),
+            ),
+            patch.object(
+                SubagentSupervisor,
+                "_detect_base_branch",
+                return_value="main",
+            ),
+        ):
+            await sup._commit_and_complete(42, "/work", verdict)
+
+        event_summaries = [e["summary"] for e in session.event_log]
+        assert any("Created PR:" in s for s in event_summaries)
+
+    @pytest.mark.asyncio
+    async def test_create_pr_not_called_when_backend_lacks_method(self, _base_patches):
+        """create_pull_request is not called when backend doesn't have the method."""
+        profile = _make_profile()
+        del profile.state_backend.create_pull_request
+
+        session = TaskSession(parent_issue_id=42, parent_subject="Test task")
+        config = _make_config(auto_commit=True)
+        sup = _make_supervisor(session=session, config=config, profile=profile)
+        sup._worktree_path = ""
+
+        verdict = ValidationVerdict(
+            verdict="PASS", confidence=0.9, summary="ok", task_type="feature"
+        )
+
+        with patch(
+            "golem.supervisor_v2_subagent.commit_changes",
+            return_value=CommitResult(committed=True, sha="abc"),
+        ):
+            await sup._commit_and_complete(42, "/work", verdict)
+
+        assert session.state == TaskSessionState.COMPLETED
+
+    @pytest.mark.asyncio
+    async def test_create_pr_not_called_when_no_commit(self, _base_patches):
+        """create_pull_request is not called when there was nothing to commit."""
+        profile = _make_profile()
+        profile.state_backend.create_pull_request = MagicMock(return_value="")
+
+        session = TaskSession(parent_issue_id=42, parent_subject="Test task")
+        config = _make_config(auto_commit=True)
+        sup = _make_supervisor(session=session, config=config, profile=profile)
+        sup._worktree_path = ""
+
+        verdict = ValidationVerdict(
+            verdict="PASS", confidence=0.9, summary="ok", task_type="feature"
+        )
+
+        with patch(
+            "golem.supervisor_v2_subagent.commit_changes",
+            return_value=CommitResult(committed=False, message="No changes"),
+        ):
+            await sup._commit_and_complete(42, "/work", verdict)
+
+        profile.state_backend.create_pull_request.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_create_pr_failure_is_non_fatal(self, _base_patches):
+        """create_pull_request failure does not block pipeline completion."""
+        profile = _make_profile()
+        profile.state_backend.create_pull_request = MagicMock(
+            side_effect=RuntimeError("GitHub API error")
+        )
+
+        session = TaskSession(parent_issue_id=42, parent_subject="Test task")
+        config = _make_config(auto_commit=True)
+        sup = _make_supervisor(session=session, config=config, profile=profile)
+        sup._worktree_path = ""
+
+        verdict = ValidationVerdict(
+            verdict="PASS", confidence=0.9, summary="ok", task_type="feature"
+        )
+
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.commit_changes",
+                return_value=CommitResult(committed=True, sha="abc"),
+            ),
+            patch.object(
+                SubagentSupervisor,
+                "_detect_base_branch",
+                return_value="main",
+            ),
+        ):
+            await sup._commit_and_complete(42, "/work", verdict)
+
+        # Pipeline completes and comment does NOT contain PR URL
+        assert session.state == TaskSessionState.COMPLETED
+        comment_call = profile.state_backend.post_comment.call_args
+        assert comment_call is not None
+        comment_text = comment_call[0][1]
+        assert "PR:" not in comment_text
+
+    @pytest.mark.asyncio
+    async def test_no_pr_note_in_comment_when_pr_url_empty(self, _base_patches):
+        """When create_pull_request returns empty string, comment has no PR note."""
+        profile = _make_profile()
+        profile.state_backend.create_pull_request = MagicMock(return_value="")
+
+        session = TaskSession(parent_issue_id=42, parent_subject="Test task")
+        config = _make_config(auto_commit=True)
+        sup = _make_supervisor(session=session, config=config, profile=profile)
+        sup._worktree_path = ""
+
+        verdict = ValidationVerdict(
+            verdict="PASS", confidence=0.9, summary="ok", task_type="feature"
+        )
+
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.commit_changes",
+                return_value=CommitResult(committed=True, sha="abc"),
+            ),
+            patch.object(
+                SubagentSupervisor,
+                "_detect_base_branch",
+                return_value="main",
+            ),
+        ):
+            await sup._commit_and_complete(42, "/work", verdict)
+
+        comment_call = profile.state_backend.post_comment.call_args
+        assert comment_call is not None
+        comment_text = comment_call[0][1]
+        assert "\nPR:" not in comment_text
+
     def test_roundtrip(self):
         session = TaskSession(parent_issue_id=1, parent_subject="t")
         session.fix_trace_files = ["/tmp/fix1.jsonl", "/tmp/fix2.jsonl"]

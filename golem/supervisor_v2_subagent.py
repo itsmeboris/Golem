@@ -12,6 +12,7 @@ verdicts, ``--resume`` enables warm retries instead of cold-starting.
 
 import asyncio
 import logging
+import subprocess
 import time
 from typing import Any
 
@@ -142,6 +143,13 @@ class SubagentSupervisor:
 
         try:
             self._emit_event("Task picked up, starting setup...")
+            # Assign issue to Golem on pickup (GitHub-specific)
+            backend = self.profile.state_backend
+            if hasattr(backend, "assign_issue"):
+                try:
+                    backend.assign_issue(issue_id)
+                except Exception:  # pylint: disable=broad-exception-caught
+                    self._slog.debug("assign_issue failed (non-fatal)", exc_info=True)
             description = self._get_description(issue_id)
             work_dir = await self._setup_work_dir(issue_id, description)
 
@@ -750,6 +758,7 @@ class SubagentSupervisor:
     async def _commit_and_complete(
         self, issue_id: int, work_dir: str, verdict: ValidationVerdict
     ) -> None:
+        pr_url = ""
         if self.task_config.auto_commit and verdict.verdict == "PASS":
             task_type = verdict.task_type
             from functools import partial
@@ -769,6 +778,28 @@ class SubagentSupervisor:
             if cr.committed:
                 self.session.commit_sha = cr.sha
                 self._slog.info("Committed %s", cr.sha)
+                # Create PR if backend supports it (GitHub-specific)
+                if hasattr(self.profile.state_backend, "create_pull_request"):
+                    try:
+                        branch = f"agent/{issue_id}"
+                        base_branch = self._detect_base_branch(work_dir)
+                        pr_url = self.profile.state_backend.create_pull_request(
+                            head=branch,
+                            base=base_branch,
+                            title=f"#{issue_id}: {self.session.parent_subject}",
+                            body=(
+                                f"Resolves #{issue_id}\n\n"
+                                f"**Verdict**: {self.session.validation_verdict}\n"
+                                f"**Cost**: ${self.session.total_cost_usd:.2f}\n"
+                                f"**Duration**: {format_duration(self.session.duration_seconds)}"
+                            ),
+                        )
+                        if pr_url:
+                            self._emit_event(f"Created PR: {pr_url}")
+                    except Exception:  # pylint: disable=broad-exception-caught
+                        self._slog.debug(
+                            "create_pull_request failed (non-fatal)", exc_info=True
+                        )
             elif cr.error:
                 self._slog.warning("Commit failed: %s", cr.error)
                 self.session.state = TaskSessionState.FAILED
@@ -818,6 +849,7 @@ class SubagentSupervisor:
 
         self._emit_event(f"Task completed: ${self.session.total_cost_usd:.2f}{extras}")
 
+        pr_note = f"\nPR: {pr_url}" if pr_url else ""
         self._update_task(
             issue_id,
             status=TaskStatus.CLOSED,
@@ -826,7 +858,7 @@ class SubagentSupervisor:
                 f"Task completed by agent (subagent orchestration)\n"
                 f"Cost: ${self.session.total_cost_usd:.2f}, "
                 f"Duration: {format_duration(self.session.duration_seconds)}, "
-                f"Validation: {self.session.validation_verdict}{extras}"
+                f"Validation: {self.session.validation_verdict}{extras}{pr_note}"
             ),
         )
         self._slog.info(
@@ -911,6 +943,21 @@ class SubagentSupervisor:
         )
 
     # -- Helpers ---------------------------------------------------------------
+
+    @staticmethod
+    def _detect_base_branch(work_dir: str) -> str:
+        """Detect the default branch from git remote."""
+        result = subprocess.run(
+            ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=work_dir,
+        )
+        if result.returncode == 0:
+            ref = result.stdout.strip()
+            return ref.replace("refs/remotes/origin/", "")
+        return "master"
 
     def _emit_event(self, summary: str, *, is_error: bool = False) -> None:
         event = {

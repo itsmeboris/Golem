@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, call, patch
 
+import pytest
+
 from golem.backends.github import (
     GitHubStateBackend,
     GitHubTaskSource,
@@ -40,6 +42,14 @@ class TestGhHelper:
 
 class TestGitHubTaskSource:
     """Tests for GitHubTaskSource."""
+
+    def test_default_repo(self):
+        source = GitHubTaskSource()
+        assert source._repo == ""
+
+    def test_repo_arg_stored(self):
+        source = GitHubTaskSource(repo="owner/repo")
+        assert source._repo == "owner/repo"
 
     @patch("golem.backends.github.subprocess.run")
     def test_poll_tasks_success(self, mock_run):
@@ -121,6 +131,20 @@ class TestGitHubTaskSource:
         assert source.get_task_subject(42) == ""
 
     @patch("golem.backends.github.subprocess.run")
+    def test_get_task_subject_with_repo(self, mock_run):
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout='{"title": "My Issue"}', stderr=""
+        )
+        source = GitHubTaskSource(repo="owner/repo")
+        assert source.get_task_subject(42) == "My Issue"
+        mock_run.assert_called_once_with(
+            ["gh", "issue", "view", "42", "--json", "title", "--repo", "owner/repo"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    @patch("golem.backends.github.subprocess.run")
     def test_get_task_description_success(self, mock_run):
         mock_run.return_value = MagicMock(
             returncode=0, stdout='{"body": "Description text"}', stderr=""
@@ -148,6 +172,20 @@ class TestGitHubTaskSource:
         source = GitHubTaskSource()
         assert source.get_task_description(42) == ""
 
+    @patch("golem.backends.github.subprocess.run")
+    def test_get_task_description_with_repo(self, mock_run):
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout='{"body": "text"}', stderr=""
+        )
+        source = GitHubTaskSource(repo="owner/repo")
+        assert source.get_task_description(42) == "text"
+        mock_run.assert_called_once_with(
+            ["gh", "issue", "view", "42", "--json", "body", "--repo", "owner/repo"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
     def test_get_child_tasks_returns_empty(self):
         source = GitHubTaskSource()
         assert not source.get_child_tasks(42)
@@ -156,16 +194,104 @@ class TestGitHubTaskSource:
         source = GitHubTaskSource()
         assert source.create_child_task(42, "sub", "desc") is None
 
+    @patch("golem.backends.github.subprocess.run")
+    def test_get_task_comments_success(self, mock_run):
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout='{"comments": [{"author": {"login": "alice"}, "body": "hello", "createdAt": "2024-01-02T00:00:00Z"}]}',
+            stderr="",
+        )
+        source = GitHubTaskSource()
+        comments = source.get_task_comments(42)
+        assert comments == [
+            {"author": "alice", "body": "hello", "created_at": "2024-01-02T00:00:00Z"}
+        ]
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_get_task_comments_empty(self, mock_run):
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout='{"comments": []}',
+            stderr="",
+        )
+        source = GitHubTaskSource()
+        comments = source.get_task_comments(42)
+        assert comments == []
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_get_task_comments_since_filter(self, mock_run):
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=(
+                '{"comments": ['
+                '{"author": {"login": "alice"}, "body": "old", "createdAt": "2024-01-01T00:00:00Z"},'
+                '{"author": {"login": "bob"}, "body": "new", "createdAt": "2024-01-03T00:00:00Z"}'
+                "]}"
+            ),
+            stderr="",
+        )
+        source = GitHubTaskSource()
+        comments = source.get_task_comments(42, since="2024-01-02T00:00:00Z")
+        assert len(comments) == 1
+        assert comments[0]["author"] == "bob"
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_get_task_comments_failure(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="err")
+        source = GitHubTaskSource()
+        comments = source.get_task_comments(42)
+        assert comments == []
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_get_task_comments_os_error(self, mock_run):
+        mock_run.side_effect = OSError("fail")
+        source = GitHubTaskSource()
+        comments = source.get_task_comments(42)
+        assert comments == []
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_get_task_comments_with_repo(self, mock_run):
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout='{"comments": []}',
+            stderr="",
+        )
+        source = GitHubTaskSource(repo="owner/repo")
+        source.get_task_comments(42)
+        mock_run.assert_called_once_with(
+            [
+                "gh",
+                "issue",
+                "view",
+                "42",
+                "--json",
+                "comments",
+                "--repo",
+                "owner/repo",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
 
 class TestGitHubStateBackend:
     """Tests for GitHubStateBackend."""
+
+    def test_default_repo(self):
+        backend = GitHubStateBackend()
+        assert backend._repo == ""
+
+    def test_repo_arg_stored(self):
+        backend = GitHubStateBackend(repo="owner/repo")
+        assert backend._repo == "owner/repo"
 
     @patch("golem.backends.github.subprocess.run")
     def test_update_status_success(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
         backend = GitHubStateBackend()
         assert backend.update_status(42, "in_progress") is True
-        # Should have called remove-label for other statuses + add-label for target
+        # Should have called reopen + remove-label for other statuses + add-label for target
         add_call = call(
             ["gh", "issue", "edit", "42", "--add-label", "in-progress"],
             capture_output=True,
@@ -217,6 +343,115 @@ class TestGitHubStateBackend:
         assert backend.update_status(42, "in_progress") is True
 
     @patch("golem.backends.github.subprocess.run")
+    def test_update_status_closed_closes_issue(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        backend = GitHubStateBackend()
+        assert backend.update_status(42, "closed") is True
+        close_call = call(
+            ["gh", "issue", "close", "42"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert close_call in mock_run.call_args_list
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_update_status_closed_close_fails(self, mock_run):
+        """If issue close OSError, label is still attempted."""
+
+        def side_effect(cmd, **kwargs):
+            if "close" in cmd:
+                raise OSError("fail")
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        mock_run.side_effect = side_effect
+        backend = GitHubStateBackend()
+        # Should still succeed (close failure is best-effort)
+        assert backend.update_status(42, "closed") is True
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_update_status_closed_close_nonzero_returncode(self, mock_run):
+        """Non-zero returncode from gh issue close is logged but non-fatal."""
+
+        def side_effect(cmd, **kwargs):
+            if "close" in cmd:
+                return MagicMock(returncode=1, stdout="", stderr="already closed")
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        mock_run.side_effect = side_effect
+        backend = GitHubStateBackend()
+        assert backend.update_status(42, "closed") is True
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_update_status_in_progress_reopens(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        backend = GitHubStateBackend()
+        assert backend.update_status(42, "in_progress") is True
+        reopen_call = call(
+            ["gh", "issue", "reopen", "42"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert reopen_call in mock_run.call_args_list
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_update_status_in_progress_reopen_fails(self, mock_run):
+        """If issue reopen OSError, label is still attempted."""
+
+        def side_effect(cmd, **kwargs):
+            if "reopen" in cmd:
+                raise OSError("fail")
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        mock_run.side_effect = side_effect
+        backend = GitHubStateBackend()
+        # Should still succeed (reopen failure is best-effort)
+        assert backend.update_status(42, "in_progress") is True
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_update_status_in_progress_reopen_nonzero_returncode(self, mock_run):
+        """Non-zero returncode from gh issue reopen is logged but non-fatal."""
+
+        def side_effect(cmd, **kwargs):
+            if "reopen" in cmd:
+                return MagicMock(returncode=1, stdout="", stderr="already open")
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        mock_run.side_effect = side_effect
+        backend = GitHubStateBackend()
+        assert backend.update_status(42, "in_progress") is True
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_update_status_with_repo(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        backend = GitHubStateBackend(repo="owner/repo")
+        assert backend.update_status(42, "closed") is True
+        close_call = call(
+            ["gh", "issue", "close", "42", "--repo", "owner/repo"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert close_call in mock_run.call_args_list
+        add_call = call(
+            [
+                "gh",
+                "issue",
+                "edit",
+                "42",
+                "--add-label",
+                "closed",
+                "--repo",
+                "owner/repo",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert add_call in mock_run.call_args_list
+
+    @patch("golem.backends.github.subprocess.run")
     def test_post_comment_success(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
         backend = GitHubStateBackend()
@@ -241,12 +476,134 @@ class TestGitHubStateBackend:
         assert backend.post_comment(42, "hello") is False
 
     @patch("golem.backends.github.subprocess.run")
+    def test_post_comment_with_repo(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        backend = GitHubStateBackend(repo="owner/repo")
+        assert backend.post_comment(42, "hello") is True
+        mock_run.assert_called_once_with(
+            [
+                "gh",
+                "issue",
+                "comment",
+                "42",
+                "--body",
+                "hello",
+                "--repo",
+                "owner/repo",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    @patch("golem.backends.github.subprocess.run")
     def test_update_progress(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
         backend = GitHubStateBackend()
         assert backend.update_progress(42, 50) is True
         mock_run.assert_called_once_with(
             ["gh", "issue", "comment", "42", "--body", "Progress: 50%"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_assign_issue_success(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        backend = GitHubStateBackend()
+        assert backend.assign_issue(42) is True
+        mock_run.assert_called_once_with(
+            ["gh", "issue", "edit", "42", "--add-assignee", "@me"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_assign_issue_failure(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="err")
+        backend = GitHubStateBackend()
+        assert backend.assign_issue(42) is False
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_assign_issue_os_error(self, mock_run):
+        mock_run.side_effect = OSError("fail")
+        backend = GitHubStateBackend()
+        assert backend.assign_issue(42) is False
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_assign_issue_with_repo(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        backend = GitHubStateBackend(repo="owner/repo")
+        assert backend.assign_issue(42, "alice") is True
+        mock_run.assert_called_once_with(
+            [
+                "gh",
+                "issue",
+                "edit",
+                "42",
+                "--add-assignee",
+                "alice",
+                "--repo",
+                "owner/repo",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_create_pull_request_success(self, mock_run):
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="https://github.com/owner/repo/pull/1\n",
+            stderr="",
+        )
+        backend = GitHubStateBackend()
+        url = backend.create_pull_request("feature-branch", "main", "My PR", "PR body")
+        assert url == "https://github.com/owner/repo/pull/1"
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_create_pull_request_failure(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="err")
+        backend = GitHubStateBackend()
+        url = backend.create_pull_request("feature", "main", "PR", "body")
+        assert url == ""
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_create_pull_request_os_error(self, mock_run):
+        mock_run.side_effect = OSError("fail")
+        backend = GitHubStateBackend()
+        url = backend.create_pull_request("feature", "main", "PR", "body")
+        assert url == ""
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_create_pull_request_with_repo(self, mock_run):
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="https://github.com/owner/repo/pull/2\n",
+            stderr="",
+        )
+        backend = GitHubStateBackend(repo="owner/repo")
+        url = backend.create_pull_request("feature", "main", "PR", "body")
+        assert url == "https://github.com/owner/repo/pull/2"
+        mock_run.assert_called_once_with(
+            [
+                "gh",
+                "pr",
+                "create",
+                "--head",
+                "feature",
+                "--base",
+                "main",
+                "--title",
+                "PR",
+                "--body",
+                "body",
+                "--repo",
+                "owner/repo",
+            ],
             capture_output=True,
             text=True,
             check=False,
@@ -274,3 +631,55 @@ class TestBuildGitHubProfile:
         assert profile.name == "github"
         assert isinstance(profile.task_source, GitHubTaskSource)
         assert isinstance(profile.state_backend, GitHubStateBackend)
+
+    @patch("golem.backends.profiles._build_notifier")
+    def test_build_github_profile_with_projects(self, mock_notifier):
+        from golem.backends.local import LogNotifier
+        from golem.profile import build_profile
+
+        mock_notifier.return_value = LogNotifier()
+        config = MagicMock()
+        task_config = MagicMock()
+        task_config.projects = ["owner/repo"]
+        task_config.prompts_dir = ""
+        task_config.mcp_enabled = False
+        config.get_flow_config.return_value = task_config
+        profile = build_profile("github", config)
+        assert profile.task_source._repo == "owner/repo"
+        assert profile.state_backend._repo == "owner/repo"
+
+    @patch("golem.backends.profiles._build_notifier")
+    def test_build_github_profile_no_projects(self, mock_notifier):
+        from golem.backends.local import LogNotifier
+        from golem.profile import build_profile
+
+        mock_notifier.return_value = LogNotifier()
+        config = MagicMock()
+        task_config = MagicMock()
+        task_config.projects = []
+        task_config.prompts_dir = ""
+        task_config.mcp_enabled = False
+        config.get_flow_config.return_value = task_config
+        profile = build_profile("github", config)
+        assert profile.task_source._repo == ""
+        assert profile.state_backend._repo == ""
+
+    @patch("golem.backends.profiles._build_notifier")
+    def test_build_github_profile_multi_repo_warns(self, mock_notifier, caplog):
+        from golem.backends.local import LogNotifier
+        from golem.profile import build_profile
+
+        mock_notifier.return_value = LogNotifier()
+        config = MagicMock()
+        task_config = MagicMock()
+        task_config.projects = ["owner/repo1", "owner/repo2"]
+        task_config.prompts_dir = ""
+        task_config.mcp_enabled = False
+        config.get_flow_config.return_value = task_config
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="golem.backends.profiles"):
+            profile = build_profile("github", config)
+        assert profile.task_source._repo == "owner/repo1"
+        assert "only first repo" in caplog.text
+        assert "poll-only" in caplog.text

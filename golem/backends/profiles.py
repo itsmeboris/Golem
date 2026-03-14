@@ -5,9 +5,12 @@ Importing this module registers the ``redmine``, ``local``, and ``github`` profi
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from ..interfaces import Notifier
+
+logger = logging.getLogger("golem.backends.profiles")
 from ..profile import GolemProfile, register_profile
 
 
@@ -88,11 +91,19 @@ def _build_github_profile(config: Any) -> GolemProfile:
     task_config = config.get_flow_config("golem")
     prompts_dir = task_config.prompts_dir if task_config else ""
     mcp_enabled = task_config.mcp_enabled if task_config else False
+    projects = task_config.projects if task_config else []
+    repo = projects[0] if projects else ""
+    if len(projects) > 1:
+        logger.warning(
+            "GitHub profile: only first repo %r used for task source "
+            "and state backend; remaining repos are poll-only",
+            projects[0],
+        )
 
     return GolemProfile(
         name="github",
-        task_source=GitHubTaskSource(),
-        state_backend=GitHubStateBackend(),
+        task_source=GitHubTaskSource(repo=repo),
+        state_backend=GitHubStateBackend(repo=repo),
         notifier=_build_notifier(config),
         tool_provider=KeywordToolProvider() if mcp_enabled else NullToolProvider(),
         prompt_provider=FilePromptProvider(prompts_dir or None),

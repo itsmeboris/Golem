@@ -38,6 +38,14 @@ def _gh(
 class GitHubTaskSource:
     """Discover and read tasks from GitHub Issues via the ``gh`` CLI."""
 
+    def __init__(self, repo: str = "") -> None:
+        self._repo = repo
+
+    @property
+    def _repo_args(self) -> list[str]:
+        """Return ``--repo <repo>`` args when a repo is configured."""
+        return ["--repo", self._repo] if self._repo else []
+
     def poll_tasks(
         self,
         projects: list[str],
@@ -76,7 +84,9 @@ class GitHubTaskSource:
     def get_task_subject(self, task_id: int | str) -> str:
         """Fetch issue title."""
         try:
-            result = _gh("issue", "view", str(task_id), "--json", "title")
+            result = _gh(
+                "issue", "view", str(task_id), "--json", "title", *self._repo_args
+            )
             if result.returncode != 0:
                 logger.warning("gh issue view failed: %s", result.stderr)
                 return ""
@@ -89,7 +99,9 @@ class GitHubTaskSource:
     def get_task_description(self, task_id: int | str) -> str:
         """Fetch issue body."""
         try:
-            result = _gh("issue", "view", str(task_id), "--json", "body")
+            result = _gh(
+                "issue", "view", str(task_id), "--json", "body", *self._repo_args
+            )
             if result.returncode != 0:
                 logger.warning("gh issue view failed: %s", result.stderr)
                 return ""
@@ -118,12 +130,8 @@ class GitHubTaskSource:
     ) -> list[dict[str, Any]]:
         """Fetch comments on a GitHub issue via ``gh`` CLI."""
         try:
-            raw = subprocess.run(
-                ["gh", "issue", "view", str(task_id), "--json", "comments"],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                check=False,
+            raw = _gh(
+                "issue", "view", str(task_id), "--json", "comments", *self._repo_args
             )
             if raw.returncode != 0:
                 return []
@@ -154,12 +162,47 @@ class GitHubTaskSource:
 class GitHubStateBackend:
     """Update issue state via the ``gh`` CLI."""
 
+    def __init__(self, repo: str = "") -> None:
+        self._repo = repo
+
+    @property
+    def _repo_args(self) -> list[str]:
+        """Return ``--repo <repo>`` args when a repo is configured."""
+        return ["--repo", self._repo] if self._repo else []
+
     def update_status(self, task_id: int | str, status: str) -> bool:
         """Add a status label and remove other status labels."""
         label = _STATUS_LABELS.get(status)
         if label is None:
             logger.warning("Unknown status %r for issue %s", status, task_id)
             return False
+
+        repo_args = self._repo_args
+
+        # Close or reopen the issue based on the target status
+        if status == "closed":
+            try:
+                result = _gh("issue", "close", str(task_id), *repo_args)
+                if result.returncode != 0:
+                    logger.debug(
+                        "gh issue close %s failed (non-fatal): %s",
+                        task_id,
+                        result.stderr,
+                    )
+            except OSError as exc:
+                logger.debug("gh issue close %s failed (non-fatal): %s", task_id, exc)
+        elif status == "in_progress":
+            try:
+                result = _gh("issue", "reopen", str(task_id), *repo_args)
+                if result.returncode != 0:
+                    logger.debug(
+                        "gh issue reopen %s failed (non-fatal): %s",
+                        task_id,
+                        result.stderr,
+                    )
+            except OSError as exc:
+                logger.debug("gh issue reopen %s failed (non-fatal): %s", task_id, exc)
+
         # Remove other status labels first
         for other_status, other_label in _STATUS_LABELS.items():
             if other_status != status:
@@ -170,12 +213,15 @@ class GitHubStateBackend:
                         str(task_id),
                         "--remove-label",
                         other_label,
+                        *repo_args,
                     )
                 except OSError:
                     pass
         # Add the new status label
         try:
-            result = _gh("issue", "edit", str(task_id), "--add-label", label)
+            result = _gh(
+                "issue", "edit", str(task_id), "--add-label", label, *repo_args
+            )
             if result.returncode != 0:
                 logger.warning(
                     "Failed to set label %s on issue %s: %s",
@@ -192,7 +238,9 @@ class GitHubStateBackend:
     def post_comment(self, task_id: int | str, text: str) -> bool:
         """Post a comment on the issue."""
         try:
-            result = _gh("issue", "comment", str(task_id), "--body", text)
+            result = _gh(
+                "issue", "comment", str(task_id), "--body", text, *self._repo_args
+            )
             if result.returncode != 0:
                 logger.warning(
                     "Failed to comment on issue %s: %s", task_id, result.stderr
@@ -206,3 +254,51 @@ class GitHubStateBackend:
     def update_progress(self, task_id: int | str, percent: int) -> bool:
         """Post a progress comment on the issue."""
         return self.post_comment(task_id, f"Progress: {percent}%")
+
+    def assign_issue(self, task_id: int | str, assignee: str = "@me") -> bool:
+        """Assign the issue to a user (default: authenticated user)."""
+        try:
+            result = _gh(
+                "issue",
+                "edit",
+                str(task_id),
+                "--add-assignee",
+                assignee,
+                *self._repo_args,
+            )
+            if result.returncode != 0:
+                logger.warning(
+                    "Failed to assign issue %s to %s: %s",
+                    task_id,
+                    assignee,
+                    result.stderr,
+                )
+                return False
+        except OSError as exc:
+            logger.warning("Failed to assign issue %s: %s", task_id, exc)
+            return False
+        return True
+
+    def create_pull_request(self, head: str, base: str, title: str, body: str) -> str:
+        """Create a PR and return its URL. Returns empty string on failure."""
+        try:
+            result = _gh(
+                "pr",
+                "create",
+                "--head",
+                head,
+                "--base",
+                base,
+                "--title",
+                title,
+                "--body",
+                body,
+                *self._repo_args,
+            )
+            if result.returncode != 0:
+                logger.warning("Failed to create PR: %s", result.stderr)
+                return ""
+            return result.stdout.strip()
+        except OSError as exc:
+            logger.warning("Failed to create pull request: %s", exc)
+            return ""
