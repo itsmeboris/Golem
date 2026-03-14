@@ -59,7 +59,7 @@ The `scripts/session-end-hook.sh` fires after significant sessions:
 2. Checks turn threshold (8+ user turns, configurable via `CL_MIN_TURNS`)
 3. Checks incremental index (skips already-processed sessions)
 4. Backgrounds the analysis (SessionEnd timeout is 1.5s)
-5. Invokes `claude -p --model haiku` to analyze and update AGENTS.md
+5. Invokes `claude -p --model sonnet` to analyze and update AGENTS.md
 6. Updates the incremental index
 
 ### Hook installation

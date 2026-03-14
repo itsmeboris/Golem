@@ -105,7 +105,7 @@ fi
     [ -f "$AGENTS_MD" ] && CURRENT=$(cat "$AGENTS_MD")
 
     # Invoke claude (haiku) to analyze the conversation
-    UPDATED=$(claude -p --model haiku <<PROMPT
+    UPDATED=$(claude -p --model sonnet <<PROMPT
 Analyze this Claude Code conversation transcript and update AGENTS.md with durable learnings.
 
 ## Current AGENTS.md
