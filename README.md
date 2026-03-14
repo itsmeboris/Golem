@@ -139,9 +139,33 @@ pip install -e .
 ### 2. Configure
 
 ```bash
-cp .env.example .env                   # add your API keys
+golem init                             # interactive wizard
+# or manually:
 cp config.yaml.example config.yaml     # tweak settings
 ```
+
+<details>
+<summary><strong>GitHub Issues setup</strong></summary>
+
+To have Golem poll GitHub Issues instead of local file drops:
+
+```bash
+gh auth login                          # authenticate the gh CLI
+golem init                             # select "github" profile, enter owner/repo
+```
+
+Or set it manually in `config.yaml`:
+
+```yaml
+profile: github
+projects:
+  - owner/repo
+detection_tag: agent                   # label on issues Golem should pick up
+```
+
+Golem assigns issues to itself on pickup, closes them on completion, and creates a PR for each committed task.
+
+</details>
 
 ### 3. Run
 

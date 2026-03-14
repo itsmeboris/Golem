@@ -385,6 +385,10 @@ When you receive a retry prompt with validator concerns:
 - ALWAYS chain context forward: Phase 1 findings → Builders → Reviewers.
 - Keep subagent prompts specific — include file paths, code snippets, and context.
 - When running parallel agents, use a single message with multiple Agent tool calls.
+- If the task adds or changes user-facing configuration (new profiles, backends,
+  config keys, CLI flags), update the init wizard (``golem/init_wizard.py``) and
+  relevant docs (README, ``config.yaml.example``) to reflect the change. Include
+  tests for any wizard changes.
 - If the task description references a TODO item, update TODO.md to mark it done.
 - If the task description references a GitHub issue (e.g. a URL like
   ``https://github.com/<owner>/<repo>/issues/<number>``), close it when the

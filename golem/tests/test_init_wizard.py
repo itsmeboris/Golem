@@ -378,6 +378,104 @@ class TestCmdInitHandler:
         assert result == 1
 
 
+class TestGitHubProfile:
+    def test_github_interactive(self, tmp_path):
+        output = tmp_path / "config.yaml"
+        inputs = [
+            "github",  # profile
+            "sonnet",  # model
+            "10.0",  # budget
+            "/tmp",  # work dir
+            "owner/repo",  # GitHub repos
+            "agent",  # detection label
+            "n",  # slack
+            "n",  # teams
+            "8081",  # port
+        ]
+        with patch("builtins.input", side_effect=inputs):
+            result = run_wizard(output, use_defaults=False)
+        assert result == 0
+        data = yaml.safe_load(output.read_text())
+        assert data["flows"]["golem"]["profile"] == "github"
+        assert data["flows"]["golem"]["projects"] == ["owner/repo"]
+        assert data["flows"]["golem"]["detection_tag"] == "agent"
+
+    def test_github_detection_tag_default(self, tmp_path):
+        output = tmp_path / "config.yaml"
+        inputs = [
+            "github",  # profile
+            "sonnet",  # model
+            "10.0",  # budget
+            "/tmp",  # work dir
+            "owner/repo",  # GitHub repos
+            "",  # detection label — accept default
+            "n",  # slack
+            "n",  # teams
+            "8081",  # port
+        ]
+        with patch("builtins.input", side_effect=inputs):
+            result = run_wizard(output, use_defaults=False)
+        assert result == 0
+        data = yaml.safe_load(output.read_text())
+        assert data["flows"]["golem"]["detection_tag"] == "agent"
+
+    def test_github_shows_gh_hint(self, tmp_path, capsys):
+        output = tmp_path / "config.yaml"
+        inputs = [
+            "github",  # profile
+            "sonnet",  # model
+            "10.0",  # budget
+            "/tmp",  # work dir
+            "owner/repo",  # repos
+            "agent",  # label
+            "n",  # slack
+            "n",  # teams
+            "8081",  # port
+        ]
+        with patch("builtins.input", side_effect=inputs):
+            run_wizard(output, use_defaults=False)
+        out = capsys.readouterr().out
+        assert "gh auth login" in out
+
+    def test_local_no_detection_tag(self, tmp_path):
+        output = tmp_path / "config.yaml"
+        inputs = [
+            "local",  # profile
+            "sonnet",  # model
+            "10.0",  # budget
+            "/tmp",  # work dir
+            "",  # projects
+            "n",  # slack
+            "n",  # teams
+            "8081",  # port
+        ]
+        with patch("builtins.input", side_effect=inputs):
+            result = run_wizard(output, use_defaults=False)
+        assert result == 0
+        data = yaml.safe_load(output.read_text())
+        assert "detection_tag" not in data["flows"]["golem"]
+
+    def test_github_multiple_repos(self, tmp_path):
+        output = tmp_path / "config.yaml"
+        inputs = [
+            "github",  # profile
+            "sonnet",  # model
+            "10.0",  # budget
+            "/tmp",  # work dir
+            "owner/repo1, owner/repo2",  # multiple repos
+            "bot",  # custom label
+            "n",  # slack
+            "n",  # teams
+            "8081",  # port
+        ]
+        with patch("builtins.input", side_effect=inputs):
+            result = run_wizard(output, use_defaults=False)
+        assert result == 0
+        data = yaml.safe_load(output.read_text())
+        assert data["flows"]["golem"]["projects"] == ["owner/repo1", "owner/repo2"]
+        assert data["flows"]["golem"]["detection_tag"] == "bot"
+
+
 class TestSetupGitHooks:
     def test_configures_hooks_path(self):
         """_setup_git_hooks sets core.hooksPath when .githooks/ exists."""
