@@ -349,22 +349,45 @@ function renderLiveTraceStream(trace) {
 
 function renderSummaryCard(trace, session) {
   const totals = trace.totals || {};
-  const result = trace.result || {};
+  const result = trace.result || trace.final_report || {};
   const agents = trace.phases
     ? trace.phases.flatMap(p => p.agents || [])
     : [];
 
-  const specs = result.specs || [];
-  const specsHtml = specs.map(s => {
-    const pass = s.pass !== false;
-    return `<span class="tl-spec ${pass ? 'pass' : 'fail'}" style="font-size:0.7rem">${pass ? '✓' : '✗'} ${esc(s.id || s.name || '')}</span>`;
-  }).join('');
+  // Specs: support both array [{id, pass}] and object {SPEC-1: true}
+  const specsObj = result.specs_satisfied || {};
+  const specsArr = result.specs || [];
+  let specsHtml = '';
+  if (Object.keys(specsObj).length > 0) {
+    specsHtml = Object.entries(specsObj).map(([id, pass]) =>
+      `<span class="tl-spec ${pass ? 'pass' : 'fail'}" style="font-size:0.7rem">${pass ? '✓' : '✗'} ${esc(id)}</span>`
+    ).join('');
+  } else if (specsArr.length > 0) {
+    specsHtml = specsArr.map(s => {
+      const pass = s.pass !== false;
+      return `<span class="tl-spec ${pass ? 'pass' : 'fail'}" style="font-size:0.7rem">${pass ? '✓' : '✗'} ${esc(s.id || s.name || '')}</span>`;
+    }).join('');
+  }
 
-  const tests = result.tests || [];
-  const testsHtml = tests.map(t => {
-    const pass = t.pass !== false;
-    return `<span class="tl-test ${pass ? 'pass' : 'fail'}" style="font-size:0.68rem">${esc(t.name || t.label || '')}: ${pass ? 'pass' : 'fail'}</span>`;
-  }).join('');
+  // Tests: support both array [{name, pass}] and object {black: "pass"}
+  const testsObj = result.test_results || {};
+  const testsArr = result.tests || [];
+  let testsHtml = '';
+  if (Object.keys(testsObj).length > 0) {
+    testsHtml = Object.entries(testsObj).map(([name, val]) => {
+      const lower = String(val).toLowerCase();
+      const pass = val === true || (/\bpass/i.test(lower) && !/\bfail/i.test(lower));
+      const skip = lower === 'not_applicable' || lower === 'skipped' || lower === 'not_run';
+      const cls = skip ? 'skip' : (pass ? 'pass' : 'fail');
+      const icon = skip ? '—' : (pass ? '✓' : '✗');
+      return `<span class="tl-test ${cls}" style="font-size:0.68rem">${icon} ${esc(name)}</span>`;
+    }).join('');
+  } else if (testsArr.length > 0) {
+    testsHtml = testsArr.map(t => {
+      const pass = t.pass !== false;
+      return `<span class="tl-test ${pass ? 'pass' : 'fail'}" style="font-size:0.68rem">${esc(t.name || t.label || '')}: ${pass ? 'pass' : 'fail'}</span>`;
+    }).join('');
+  }
 
   const files = result.files_changed || (session && session.files_changed) || [];
   const filesHtml = files.length > 0
