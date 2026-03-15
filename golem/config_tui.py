@@ -27,7 +27,7 @@ try:
     from prompt_toolkit.layout import Layout  # pragma: no cover
     from prompt_toolkit.layout.containers import HSplit, Window  # pragma: no cover
     from prompt_toolkit.layout.controls import FormattedTextControl  # pragma: no cover
-except ImportError:
+except ImportError:  # pragma: no cover
     Application = None  # type: ignore[assignment,misc]
 
 
