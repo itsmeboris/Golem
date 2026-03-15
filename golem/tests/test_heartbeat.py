@@ -14,6 +14,7 @@ from golem.core.config import GolemFlowConfig
 
 def _make_config(**overrides) -> GolemFlowConfig:
     defaults = dict(
+        profile="github",
         projects=["test/repo"],
         heartbeat_enabled=True,
         heartbeat_interval_seconds=60,
@@ -462,11 +463,10 @@ class TestCallHaiku:
         mock_response.content = [MagicMock(text='{"candidates": []}')]
         mock_response.usage = MagicMock(input_tokens=100, output_tokens=50)
 
-        with patch("golem.heartbeat.Anthropic") as mock_client_cls:
-            mock_client = MagicMock()
-            mock_client.messages.create.return_value = mock_response
-            mock_client_cls.return_value = mock_client
-            result = await mgr._call_haiku("prompt", "data")
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = mock_response
+        mgr._haiku_client = mock_client
+        result = await mgr._call_haiku("prompt", "data")
 
         assert mgr._daily_spend_usd > 0
         assert result == {"candidates": []}
@@ -478,11 +478,10 @@ class TestCallHaiku:
         mock_response.content = [MagicMock(text="not json")]
         mock_response.usage = MagicMock(input_tokens=10, output_tokens=5)
 
-        with patch("golem.heartbeat.Anthropic") as mock_client_cls:
-            mock_client = MagicMock()
-            mock_client.messages.create.return_value = mock_response
-            mock_client_cls.return_value = mock_client
-            result = await mgr._call_haiku("prompt", "data")
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = mock_response
+        mgr._haiku_client = mock_client
+        result = await mgr._call_haiku("prompt", "data")
 
         assert result == "not json"
 
@@ -493,11 +492,10 @@ class TestCallHaiku:
         mock_response.content = []
         mock_response.usage = MagicMock(input_tokens=10, output_tokens=0)
 
-        with patch("golem.heartbeat.Anthropic") as mock_client_cls:
-            mock_client = MagicMock()
-            mock_client.messages.create.return_value = mock_response
-            mock_client_cls.return_value = mock_client
-            result = await mgr._call_haiku("prompt", "data")
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = mock_response
+        mgr._haiku_client = mock_client
+        result = await mgr._call_haiku("prompt", "data")
 
         assert result == ""
 
@@ -508,11 +506,10 @@ class TestCallHaiku:
         mock_response = MagicMock(spec=[])  # no attributes at all
         mock_response.content = [MagicMock(text="{}")]
 
-        with patch("golem.heartbeat.Anthropic") as mock_client_cls:
-            mock_client = MagicMock()
-            mock_client.messages.create.return_value = mock_response
-            mock_client_cls.return_value = mock_client
-            result = await mgr._call_haiku("prompt", "data")
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = mock_response
+        mgr._haiku_client = mock_client
+        result = await mgr._call_haiku("prompt", "data")
 
         assert mgr._daily_spend_usd == 0.0  # no spend recorded
 
@@ -840,9 +837,9 @@ class TestTier2:
             result = mgr._scan_coverage()
         assert result == []
 
-    def test_scan_pitfalls_matches_agents_md_structure(self, tmp_path, monkeypatch):
+    def test_scan_pitfalls_matches_agents_md_structure(self, tmp_path):
         """Pitfall scanner matches real AGENTS.md structure under ## Recurring Antipatterns."""
-        mgr = _make_manager(tmp_path)
+        mgr = _make_manager(tmp_path, default_work_dir=str(tmp_path))
         agents_md = tmp_path / "AGENTS.md"
         agents_md.write_text(
             "# AGENTS.md\n\n"
@@ -852,39 +849,35 @@ class TestTier2:
             "\n## Other Section\n"
             "- This should not be matched\n"
         )
-        monkeypatch.chdir(tmp_path)  # so Path("AGENTS.md") resolves here
         result = mgr._scan_pitfalls()
         assert len(result) == 2
         assert "Empty exception handler" in result[0]
         assert "<!-- seen:" not in result[0]  # marker stripped
 
-    def test_scan_pitfalls_no_agents_md(self, tmp_path, monkeypatch):
-        mgr = _make_manager(tmp_path)
-        monkeypatch.chdir(tmp_path)
+    def test_scan_pitfalls_no_agents_md(self, tmp_path):
+        mgr = _make_manager(tmp_path, default_work_dir=str(tmp_path))
         result = mgr._scan_pitfalls()
         assert result == []
 
-    def test_scan_pitfalls_handles_os_error(self, tmp_path, monkeypatch):
-        mgr = _make_manager(tmp_path)
+    def test_scan_pitfalls_handles_os_error(self, tmp_path):
+        mgr = _make_manager(tmp_path, default_work_dir=str(tmp_path))
         agents_md = tmp_path / "AGENTS.md"
         agents_md.write_text(
             "## Recurring Antipatterns\n- test <!-- seen:1 last:2026 -->\n"
         )
-        monkeypatch.chdir(tmp_path)
         # Make the file unreadable by patching Path.read_text
         with patch.object(Path, "read_text", side_effect=OSError("permission denied")):
             result = mgr._scan_pitfalls()
         assert result == []
 
-    def test_scan_pitfalls_skips_deduped(self, tmp_path, monkeypatch):
-        mgr = _make_manager(tmp_path)
+    def test_scan_pitfalls_skips_deduped(self, tmp_path):
+        mgr = _make_manager(tmp_path, default_work_dir=str(tmp_path))
         agents_md = tmp_path / "AGENTS.md"
         content = (
             "## Recurring Antipatterns\n"
             "- **Bug A**: desc <!-- seen:1 last:2026-03-15 -->\n"
         )
         agents_md.write_text(content)
-        monkeypatch.chdir(tmp_path)
 
         # First scan: should find it
         result1 = mgr._scan_pitfalls()

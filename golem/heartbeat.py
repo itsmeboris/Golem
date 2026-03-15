@@ -23,7 +23,7 @@ except ImportError:  # pragma: no cover
     Anthropic = None  # type: ignore[assignment,misc]
 
 from .core.config import DATA_DIR, GolemFlowConfig
-from .types import HeartbeatSnapshotDict
+from .types import HeartbeatCandidateDict, HeartbeatSnapshotDict
 
 logger = logging.getLogger("golem.heartbeat")
 
@@ -72,6 +72,9 @@ class HeartbeatManager:
         )
         self._loop_task: Any = None  # asyncio.Task, set in start()
         self._flow: Any = None  # set in start()
+
+        # Reusable Haiku client — created once, avoids per-call overhead
+        self._haiku_client: Any = Anthropic() if Anthropic is not None else None
 
     # -- Budget ---------------------------------------------------------------
 
@@ -268,7 +271,7 @@ class HeartbeatManager:
         """
         import asyncio
 
-        client = Anthropic()
+        client = self._haiku_client
 
         def _sync_call():
             return client.messages.create(
@@ -300,7 +303,7 @@ class HeartbeatManager:
 
     def _validate_candidates(
         self, raw: Any, valid_complexities: tuple[str, ...] = ("small", "medium")
-    ) -> list[dict[str, Any]]:
+    ) -> list[HeartbeatCandidateDict]:
         """Validate and filter Haiku response per the output contract."""
         if not isinstance(raw, dict) or "candidates" not in raw:
             logger.warning("Haiku returned invalid response structure")
@@ -331,7 +334,7 @@ class HeartbeatManager:
 
     # -- Tier 1 ---------------------------------------------------------------
 
-    async def _run_tier1(self) -> list[dict[str, Any]]:
+    async def _run_tier1(self) -> list[HeartbeatCandidateDict]:
         """Tier 1: discover untagged issues and triage via Haiku."""
         try:
             issues = self._flow._profile.task_source.poll_untagged_tasks(
@@ -344,9 +347,10 @@ class HeartbeatManager:
             return []
 
         # Filter already-evaluated issues
+        backend = self._config.profile
         new_issues = []
         for issue in issues:
-            key = f"github:{issue['id']}"
+            key = f"{backend}:{issue['id']}"
             if not self.is_deduped(key):
                 new_issues.append(issue)
 
@@ -366,7 +370,7 @@ class HeartbeatManager:
         prompt = (
             "For each issue below, assess whether it can be completed autonomously "
             "by a coding agent. Respond with JSON matching this schema:\n"
-            '{"candidates": [{"id": "github:<number>", "automatable": bool, '
+            '{"candidates": [{"id": "' + backend + ':<number>", "automatable": bool, '
             '"confidence": float (0-1), "complexity": "small"|"medium"|"large", '
             '"reason": "..."}]}'
         )
@@ -375,7 +379,7 @@ class HeartbeatManager:
         candidates = self._validate_candidates(response)
 
         # Record all evaluated issues in dedup
-        evaluated_ids = {f"github:{i['id']}" for i in new_issues}
+        evaluated_ids = {f"{backend}:{i['id']}" for i in new_issues}
         candidate_ids = {c["id"] for c in candidates}
         for key in evaluated_ids:
             if key in candidate_ids:
@@ -391,6 +395,7 @@ class HeartbeatManager:
         """Find files with new TODO/FIXME since last scan via git log."""
         import subprocess
 
+        work_dir = self._config.default_work_dir or None
         since = self._last_scan_at if self._last_scan_at else "7.days.ago"
         try:
             result = subprocess.run(
@@ -408,6 +413,7 @@ class HeartbeatManager:
                 text=True,
                 timeout=30,
                 check=False,
+                cwd=work_dir,
             )
             if result.returncode != 0:
                 return []
@@ -420,6 +426,7 @@ class HeartbeatManager:
         """Return uncovered modules. Uses cached results keyed by HEAD hash."""
         import subprocess
 
+        work_dir = self._config.default_work_dir or None
         try:
             head = subprocess.run(
                 ["git", "rev-parse", "HEAD"],
@@ -427,6 +434,7 @@ class HeartbeatManager:
                 text=True,
                 timeout=10,
                 check=False,
+                cwd=work_dir,
             ).stdout.strip()
         except (OSError, subprocess.TimeoutExpired):
             return []
@@ -458,6 +466,7 @@ class HeartbeatManager:
                 text=True,
                 timeout=300,
                 check=False,
+                cwd=work_dir,
             )
         except (OSError, subprocess.TimeoutExpired):
             logger.warning("Tier 2: coverage scan timed out")
@@ -490,7 +499,8 @@ class HeartbeatManager:
         import hashlib
         import re
 
-        agents_path = Path("AGENTS.md")
+        work_dir = self._config.default_work_dir or "."
+        agents_path = Path(work_dir) / "AGENTS.md"
         if not agents_path.exists():
             return []
 
@@ -520,7 +530,7 @@ class HeartbeatManager:
 
     # -- Tier 2 ---------------------------------------------------------------
 
-    async def _run_tier2(self) -> list[dict[str, Any]]:
+    async def _run_tier2(self) -> list[HeartbeatCandidateDict]:
         """Tier 2: scan for self-improvement opportunities."""
         todos = self._scan_todos()
         coverage = self._scan_coverage()
