@@ -1475,6 +1475,29 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         assert resp.media_type == "text/css"
 
     @pytest.mark.asyncio
+    async def test_config_tab_js(self, handlers):
+        with patch.object(
+            _FileCache, "read", return_value="function initConfigTab(){}"
+        ):
+            resp = await handlers["/dashboard/config_tab.js"]()
+        assert resp.media_type == "application/javascript"
+
+    @pytest.mark.asyncio
+    async def test_config_tab_css(self, handlers):
+        with patch.object(_FileCache, "read", return_value=".config-container{}"):
+            resp = await handlers["/dashboard/config_tab.css"]()
+        assert resp.media_type == "text/css"
+
+    def test_dashboard_html_has_config_tab(self):
+        """Config tab nav button and view div must be in the HTML."""
+        html = Path(__file__).resolve().parent.parent / "core" / "task_dashboard.html"
+        body = html.read_text(encoding="utf-8")
+        assert 'data-view="config"' in body, "Missing config nav-tab button"
+        assert 'id="view-config"' in body, "Missing view-config div"
+        assert "config_tab.js" in body, "Missing config_tab.js script tag"
+        assert "config_tab.css" in body, "Missing config_tab.css link tag"
+
+    @pytest.mark.asyncio
     async def test_api_heartbeat_disabled(self, handlers):
         """When heartbeat is None, returns disabled stub."""
         resp = await handlers["/api/heartbeat"]()

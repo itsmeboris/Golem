@@ -286,3 +286,68 @@ class HeartbeatSnapshotDict(TypedDict):
     inflight_task_ids: list[int]
     candidate_count: int
     dedup_entry_count: int
+
+
+class FieldMetaDict(TypedDict):
+    """Metadata for a single config field in the editor registry.
+
+    Producers: config_editor.py FIELD_REGISTRY
+    Consumers: dashboard API GET /api/config, CLI TUI
+    """
+
+    category: str
+    field_type: str  # "choice" | "bool" | "int" | "float" | "str" | "list"
+    description: str
+    choices: list[str] | None
+    min_val: float | None
+    max_val: float | None
+    sensitive: bool
+
+
+class FieldInfoDict(TypedDict):
+    """A config field's current value plus its metadata.
+
+    Producers: config_editor.get_config_by_category()
+    Consumers: dashboard API, CLI TUI
+    """
+
+    key: str  # dotted path, e.g. "golem.task_model"
+    value: Any
+    meta: FieldMetaDict
+
+
+class SelfUpdateStateDict(TypedDict):
+    """Persisted state for the self-update manager.
+
+    Producers: self_update.py save_state()
+    Consumers: self_update.py load_state(), dashboard API /api/self-update
+    """
+
+    last_checked_sha: str
+    last_check_timestamp: str
+    last_update_sha: str
+    last_update_timestamp: str
+    last_review_verdict: str
+    last_review_reasoning: str
+    pre_update_sha: str | None
+    last_startup_timestamp: str | None
+    consecutive_crash_count: int
+    update_history: list[dict[str, Any]]
+
+
+class SelfUpdateSnapshotDict(TypedDict):
+    """Dashboard-safe snapshot of self-update state.
+
+    Producers: self_update.py snapshot()
+    Consumers: dashboard API /api/self-update
+    """
+
+    enabled: bool
+    branch: str
+    strategy: str
+    last_checked_sha: str
+    last_check_timestamp: str
+    last_review_verdict: str
+    last_review_reasoning: str
+    current_sha: str
+    update_history: list[dict[str, Any]]

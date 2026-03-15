@@ -102,6 +102,11 @@ class GolemFlowConfig(FlowConfig):
     heartbeat_max_inflight: int = 1
     heartbeat_candidate_limit: int = 5
     heartbeat_dedup_ttl_days: int = 30
+    # Self-update — daemon monitors its own repo for changes (opt-in)
+    self_update_enabled: bool = False
+    self_update_branch: str = "master"
+    self_update_interval_seconds: int = 600
+    self_update_strategy: str = "merged_only"  # "merged_only" | "any_commit"
 
 
 @dataclass
@@ -126,6 +131,7 @@ class DaemonConfig:
     http_submit_timeout: int = 10
     fallback_budget_usd: float = 10.0
     fallback_task_timeout_seconds: int = 3600
+    drain_timeout_seconds: int = 300
 
 
 @dataclass
@@ -548,5 +554,17 @@ def validate_config(config: Config) -> list[str]:
                 "golem.heartbeat_max_inflight must be >= 1, "
                 f"got {config.golem.heartbeat_max_inflight}"
             )
+
+    # Self-update validation (always run, not gated on enabled)
+    if config.golem.self_update_strategy not in ("merged_only", "any_commit"):
+        errors.append(
+            "golem.self_update_strategy must be 'merged_only' or 'any_commit', "
+            "got %r" % config.golem.self_update_strategy
+        )
+    if config.golem.self_update_interval_seconds <= 0:
+        errors.append(
+            "golem.self_update_interval_seconds must be positive, got %d"
+            % config.golem.self_update_interval_seconds
+        )
 
     return errors

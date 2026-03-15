@@ -6,6 +6,7 @@ from unittest.mock import patch
 from golem.core.config import (
     Config,
     ClaudeConfig,
+    DaemonConfig,
     GolemFlowConfig,
     FlowConfig,
     _expand_env_vars,
@@ -348,3 +349,31 @@ def test_heartbeat_config_validation_negative_interval():
     )
     errors = validate_config(cfg)
     assert any("heartbeat_interval_seconds" in e for e in errors)
+
+
+class TestSelfUpdateConfigFields:
+    """Tests for self_update_* fields on GolemFlowConfig."""
+
+    def test_self_update_defaults(self):
+        """All self_update fields have correct defaults."""
+        fc = GolemFlowConfig()
+        assert fc.self_update_enabled is False
+        assert fc.self_update_branch == "master"
+        assert fc.self_update_interval_seconds == 600
+        assert fc.self_update_strategy == "merged_only"
+
+    def test_drain_timeout_default(self):
+        dc = DaemonConfig()
+        assert dc.drain_timeout_seconds == 300
+
+    def test_validate_self_update_strategy_invalid(self):
+        config = load_config(None)
+        config.golem.self_update_strategy = "invalid"
+        errors = validate_config(config)
+        assert any("self_update_strategy" in e for e in errors)
+
+    def test_validate_self_update_interval_zero(self):
+        config = load_config(None)
+        config.golem.self_update_interval_seconds = 0
+        errors = validate_config(config)
+        assert any("self_update_interval" in e for e in errors)
