@@ -37,6 +37,9 @@ class DummyTaskSource:
     def get_task_comments(self, task_id, *, since=""):
         return []
 
+    def poll_untagged_tasks(self, projects, exclude_tag, limit=20, timeout=30):
+        return []
+
 
 class DummyStateBackend:
     def update_status(self, task_id, status):

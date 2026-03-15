@@ -247,9 +247,6 @@ class HeartbeatManager:
                         await self._run_heartbeat_tick()
                     else:
                         self._state = "idle"
-                else:
-                    self._state = "idle"
-                    idle_since = None
             except asyncio.CancelledError:
                 break
             except Exception:  # pylint: disable=broad-exception-caught

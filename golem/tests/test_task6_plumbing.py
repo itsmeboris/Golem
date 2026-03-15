@@ -126,7 +126,7 @@ class TestStartDashboardServerMergeQueueParam:
         captured = {}
 
         def fake_mount(
-            app, config_snapshot=None, live_state_file=None, merge_queue=None
+            app, config_snapshot=None, live_state_file=None, merge_queue=None, **kwargs
         ):
             captured["merge_queue"] = merge_queue
 
@@ -161,7 +161,7 @@ class TestStartDashboardServerMergeQueueParam:
         captured = {}
 
         def fake_mount(
-            app, config_snapshot=None, live_state_file=None, merge_queue=None
+            app, config_snapshot=None, live_state_file=None, merge_queue=None, **kwargs
         ):
             captured["merge_queue"] = merge_queue
 
