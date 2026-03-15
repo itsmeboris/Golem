@@ -499,6 +499,19 @@ class TestGitHubProfile:
         assert data["flows"]["golem"]["detection_tag"] == "bot"
 
 
+class TestSelfUpdateWizard:
+    def test_self_update_defaults_in_config(self, tmp_path):
+        output = tmp_path / "config.yaml"
+        run_wizard(output, use_defaults=True)
+        with open(output) as f:
+            cfg = yaml.safe_load(f)
+        flow = cfg["flows"]["golem"]
+        assert flow["self_update_enabled"] is False
+        assert flow["self_update_branch"] == "master"
+        assert flow["self_update_interval_seconds"] == 600
+        assert flow["self_update_strategy"] == "merged_only"
+
+
 class TestSetupGitHooks:
     def test_configures_hooks_path(self):
         """_setup_git_hooks sets core.hooksPath when .githooks/ exists."""

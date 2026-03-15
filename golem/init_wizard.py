@@ -150,6 +150,11 @@ def _build_config(inputs: dict[str, str]) -> dict[str, Any]:
         "heartbeat_max_inflight": 1,
         "heartbeat_candidate_limit": 5,
         "heartbeat_dedup_ttl_days": 30,
+        # Self-update — daemon monitors its own repo (opt-in)
+        "self_update_enabled": False,
+        "self_update_branch": "master",
+        "self_update_interval_seconds": 600,
+        "self_update_strategy": "merged_only",
     }
     if inputs.get("detection_tag"):
         flow_config["detection_tag"] = inputs["detection_tag"]
