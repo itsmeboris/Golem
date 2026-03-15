@@ -11,6 +11,7 @@ import logging
 import subprocess
 from collections import defaultdict
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable
 
 from .worktree_manager import (
@@ -21,6 +22,7 @@ from .worktree_manager import (
     merge_in_worktree,
 )
 from .merge_review import ReconciliationResult
+from .verifier import VerificationResult, run_verification
 
 logger = logging.getLogger("golem.merge_queue")
 
@@ -142,6 +144,7 @@ class MergeQueue:
         """Single merge attempt.  Returns None to signal 'retry'."""
         try:
             outcome = merge_in_worktree(entry.base_dir, entry.session_id)
+            resolution_occurred = False
 
             # --- Merge failed (empty sha + error) ---
             if not outcome.sha and outcome.error:
@@ -161,6 +164,26 @@ class MergeQueue:
                             entry.session_id,
                         )
                         if outcome2.sha:
+                            vr = await asyncio.to_thread(
+                                self._verify_merge,
+                                entry.base_dir,
+                                outcome2.merge_branch,
+                                entry.session_id,
+                            )
+                            if not vr.passed:
+                                logger.warning(
+                                    "Session %d: post-merge verification failed"
+                                    " after conflict resolution",
+                                    entry.session_id,
+                                )
+                                return MergeResult(
+                                    session_id=entry.session_id,
+                                    success=False,
+                                    merge_sha=outcome2.sha,
+                                    merge_branch=outcome2.merge_branch,
+                                    error="post-merge verification failed",
+                                    changed_files=entry.changed_files,
+                                )
                             return self._try_ff(entry, outcome2)
                         # Retry still failed
                         logger.warning(
@@ -217,6 +240,7 @@ class MergeQueue:
                             conflict_files=[m.file for m in outcome.missing_additions],
                         )
                     # Reconciliation succeeded — proceed to ff
+                    resolution_occurred = True
                 else:
                     logger.warning(
                         "Session %d: %d file(s) lost additions after merge, "
@@ -243,6 +267,27 @@ class MergeQueue:
                         changed_files=entry.changed_files,
                     )
 
+                if resolution_occurred:
+                    vr = await asyncio.to_thread(
+                        self._verify_merge,
+                        entry.base_dir,
+                        outcome.merge_branch,
+                        entry.session_id,
+                    )
+                    if not vr.passed:
+                        logger.warning(
+                            "Session %d: post-merge verification failed"
+                            " after reconciliation",
+                            entry.session_id,
+                        )
+                        return MergeResult(
+                            session_id=entry.session_id,
+                            success=False,
+                            merge_sha=outcome.sha,
+                            merge_branch=outcome.merge_branch,
+                            error="post-merge verification failed",
+                            changed_files=entry.changed_files,
+                        )
                 return self._try_ff(entry, outcome)
 
             # Empty sha with no error — no changes to merge
@@ -276,8 +321,62 @@ class MergeQueue:
             )
 
     @staticmethod
+    def _verify_merge(
+        base_dir: str, merge_branch: str, session_id: int
+    ) -> VerificationResult:
+        """Run verification in a temporary worktree created from the merge branch.
+
+        Creates a disposable worktree, runs black+pylint+pytest, and cleans up.
+        Returns the VerificationResult.
+        """
+        verify_wt_path = str(
+            Path(base_dir) / "data" / "agent" / "verify-worktrees" / str(session_id)
+        )
+        Path(verify_wt_path).parent.mkdir(parents=True, exist_ok=True)
+
+        # Clean stale worktree
+        if Path(verify_wt_path).exists():
+            _run_git(
+                ["worktree", "remove", "--force", verify_wt_path],
+                cwd=base_dir,
+                timeout=120,
+            )
+
+        wt_result = _run_git(
+            ["worktree", "add", "--detach", verify_wt_path, merge_branch],
+            cwd=base_dir,
+        )
+        if wt_result.returncode != 0:
+            logger.error(
+                "Session %d: failed to create verification worktree: %s",
+                session_id,
+                wt_result.stderr.strip(),
+            )
+            return VerificationResult(
+                passed=False,
+                black_ok=False,
+                black_output="verification worktree creation failed",
+                pylint_ok=False,
+                pylint_output="",
+                pytest_ok=False,
+                pytest_output="",
+            )
+
+        try:
+            return run_verification(verify_wt_path)
+        finally:
+            _run_git(
+                ["worktree", "remove", "--force", verify_wt_path],
+                cwd=base_dir,
+                timeout=120,
+            )
+            _run_git(["worktree", "prune"], cwd=base_dir)
+
+    @staticmethod
     def _try_ff(entry: MergeEntry, outcome: MergeOutcome) -> MergeResult:
-        ok, reason = fast_forward_if_safe(entry.base_dir, outcome.merge_branch)
+        ok, reason = fast_forward_if_safe(
+            entry.base_dir, outcome.merge_branch, stash_if_dirty=True
+        )
         if ok:
             # Clean up both branches
             _run_git(["branch", "-D", f"agent/{entry.session_id}"], cwd=entry.base_dir)

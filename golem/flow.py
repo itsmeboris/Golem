@@ -568,7 +568,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             if not session.merge_deferred or not session.merge_branch:
                 continue
             ok, _reason = fast_forward_if_safe(
-                session.base_work_dir, session.merge_branch
+                session.base_work_dir, session.merge_branch, stash_if_dirty=True
             )
             if ok:
                 merge_branch = session.merge_branch
