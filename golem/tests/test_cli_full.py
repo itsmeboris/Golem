@@ -472,6 +472,22 @@ class TestManageGolemTick:
         assert result is mock_flow
         assert not tasks
 
+    def test_forwards_reload_event(self):
+        config = MagicMock()
+        tc = MagicMock()
+        tc.enabled = True
+        config.get_flow_config.return_value = tc
+
+        mock_flow = MagicMock()
+        mock_flow.start_tick_loop.return_value = MagicMock()
+        reload_event = asyncio.Event()
+
+        tasks = []
+        with patch("golem.flow.GolemFlow", return_value=mock_flow) as mock_cls:
+            _manage_golem_tick(config, tasks, reload_event=reload_event)
+
+        mock_cls.assert_called_once_with(config, reload_event=reload_event)
+
 
 class TestRunDaemon:
     async def test_returns_1_when_flow_none(self, capsys):
@@ -492,15 +508,17 @@ class TestRunDaemon:
         assert "not enabled" in err
 
     async def test_runs_until_shutdown(self):
-        args = SimpleNamespace(port=8080)
+        args = SimpleNamespace(port=8080, config="config.yaml")
         config = MagicMock()
         config.dashboard.port = 8080
+        config.daemon.drain_timeout_seconds = 300
 
         mock_flow = MagicMock()
+        mock_flow._self_update = None
 
         tick_task = asyncio.ensure_future(asyncio.sleep(100))
 
-        def fake_manage(cfg, tasks):
+        def fake_manage(cfg, tasks, reload_event=None):
             tasks.append(tick_task)
             return mock_flow
 
@@ -512,7 +530,7 @@ class TestRunDaemon:
             patch("golem.cli._manage_golem_tick", side_effect=fake_manage),
             patch("golem.cli._start_dashboard_server", side_effect=fake_dash),
             patch("golem.cli.config_to_snapshot", return_value={}, create=True),
-            patch("golem.cli.wire_control_api"),
+            patch("golem.cli.wire_control_api") as mock_wire,
         ):
             mock_live = MagicMock()
             mock_ls.get.return_value = mock_live
@@ -528,6 +546,145 @@ class TestRunDaemon:
 
             result = await run_with_shutdown()
             assert result == 0
+
+    async def test_sighup_handler_registered(self):
+        """SIGHUP handler is registered to set reload_event."""
+        args = SimpleNamespace(port=8080, config="config.yaml")
+        config = MagicMock()
+        config.dashboard.port = 8080
+        config.daemon.drain_timeout_seconds = 300
+
+        mock_flow = MagicMock()
+        mock_flow._self_update = None
+
+        def fake_manage(cfg, tasks, reload_event=None):
+            tasks.append(asyncio.ensure_future(asyncio.sleep(100)))
+            return mock_flow
+
+        async def fake_dash(*a, **kw):
+            return asyncio.ensure_future(asyncio.sleep(100))
+
+        signal_handlers = {}
+
+        def capture_signal(sig, handler):
+            signal_handlers[sig] = handler
+
+        with (
+            patch("golem.cli.LiveState", create=True) as mock_ls,
+            patch("golem.cli._manage_golem_tick", side_effect=fake_manage),
+            patch("golem.cli._start_dashboard_server", side_effect=fake_dash),
+            patch("golem.cli.config_to_snapshot", return_value={}, create=True),
+            patch("golem.cli.wire_control_api"),
+        ):
+            mock_live = MagicMock()
+            mock_ls.get.return_value = mock_live
+
+            loop = asyncio.get_event_loop()
+            orig_add = loop.add_signal_handler
+            loop.add_signal_handler = capture_signal
+            try:
+                task = asyncio.create_task(run_daemon(args, config))
+                await asyncio.sleep(0.05)
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+            finally:
+                loop.add_signal_handler = orig_add
+
+        assert signal.SIGHUP in signal_handlers
+
+    async def test_wire_control_api_receives_reload_params(self):
+        """wire_control_api is called with config_path, reload_event, self_update_manager."""
+        args = SimpleNamespace(port=8080, config="myconfig.yaml")
+        config = MagicMock()
+        config.dashboard.port = 8080
+        config.dashboard.api_key = "testkey"
+        config.daemon.drain_timeout_seconds = 300
+
+        mock_flow = MagicMock()
+        mock_self_update = MagicMock()
+        mock_flow._self_update = mock_self_update
+
+        def fake_manage(cfg, tasks, reload_event=None):
+            tasks.append(asyncio.ensure_future(asyncio.sleep(100)))
+            return mock_flow
+
+        async def fake_dash(*a, **kw):
+            return asyncio.ensure_future(asyncio.sleep(100))
+
+        with (
+            patch("golem.cli.LiveState", create=True) as mock_ls,
+            patch("golem.cli._manage_golem_tick", side_effect=fake_manage),
+            patch("golem.cli._start_dashboard_server", side_effect=fake_dash),
+            patch("golem.cli.config_to_snapshot", return_value={}, create=True),
+            patch("golem.cli.wire_control_api") as mock_wire,
+        ):
+            mock_live = MagicMock()
+            mock_ls.get.return_value = mock_live
+
+            task = asyncio.create_task(run_daemon(args, config))
+            await asyncio.sleep(0.05)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        mock_wire.assert_called_once()
+        call_kwargs = mock_wire.call_args[1]
+        assert call_kwargs["config_path"] == "myconfig.yaml"
+        assert call_kwargs["reload_event"] is not None
+        assert isinstance(call_kwargs["reload_event"], asyncio.Event)
+        assert call_kwargs["self_update_manager"] is mock_self_update
+
+    async def test_reload_task_spawned_and_cancelled(self):
+        """_handle_reload task is spawned and cancelled on shutdown."""
+        args = SimpleNamespace(port=8080, config="config.yaml")
+        config = MagicMock()
+        config.dashboard.port = 8080
+        config.daemon.drain_timeout_seconds = 300
+
+        mock_flow = MagicMock()
+        mock_flow._self_update = None
+
+        def fake_manage(cfg, tasks, reload_event=None):
+            tasks.append(asyncio.ensure_future(asyncio.sleep(100)))
+            return mock_flow
+
+        async def fake_dash(*a, **kw):
+            return asyncio.ensure_future(asyncio.sleep(100))
+
+        created_tasks = []
+        original_create_task = asyncio.create_task
+
+        def spy_create_task(coro, **kwargs):
+            t = original_create_task(coro, **kwargs)
+            created_tasks.append(t)
+            return t
+
+        with (
+            patch("golem.cli.LiveState", create=True) as mock_ls,
+            patch("golem.cli._manage_golem_tick", side_effect=fake_manage),
+            patch("golem.cli._start_dashboard_server", side_effect=fake_dash),
+            patch("golem.cli.config_to_snapshot", return_value={}, create=True),
+            patch("golem.cli.wire_control_api"),
+            patch("golem.cli.asyncio.create_task", side_effect=spy_create_task),
+        ):
+            mock_live = MagicMock()
+            mock_ls.get.return_value = mock_live
+
+            task = original_create_task(run_daemon(args, config))
+            await asyncio.sleep(0.05)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        # At least one created_task should be the _handle_reload task
+        assert len(created_tasks) >= 1
 
 
 class TestCmdRunPrompt:

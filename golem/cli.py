@@ -376,7 +376,9 @@ async def _handle_reload(
 
 
 def _manage_golem_tick(
-    config: Config, tasks: list[asyncio.Task[Any]]
+    config: Config,
+    tasks: list[asyncio.Task[Any]],
+    reload_event: asyncio.Event | None = None,
 ) -> GolemFlow | None:
     """Start the golem tick loop via GolemFlow."""
     from .flow import GolemFlow
@@ -384,7 +386,7 @@ def _manage_golem_tick(
     tc = config.get_flow_config("golem")
     if not tc or not tc.enabled:
         return None
-    flow = GolemFlow(config)
+    flow = GolemFlow(config, reload_event=reload_event)
     if hasattr(flow, "start_tick_loop"):
         tasks.append(flow.start_tick_loop())
         print("Golem tick loop started")
@@ -430,10 +432,12 @@ async def run_daemon(args, config) -> int:
     """Start the golem daemon with tick loop and dashboard."""
     tasks: list[asyncio.Task] = []
     shutdown_event = asyncio.Event()
+    reload_event = asyncio.Event()
 
     loop = asyncio.get_event_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, shutdown_event.set)
+    loop.add_signal_handler(signal.SIGHUP, reload_event.set)
 
     # Enable LiveState persistence so the dashboard sees live activity.
     from .core.live_state import LiveState
@@ -441,12 +445,30 @@ async def run_daemon(args, config) -> int:
     live = LiveState.get()
     live.enable_persistence(DATA_DIR / "live_state.json")
 
-    flow = _manage_golem_tick(config, tasks)
+    flow = _manage_golem_tick(config, tasks, reload_event=reload_event)
     if flow is None:
         print("Golem is not enabled in config", file=sys.stderr)
         return 1
 
-    wire_control_api(golem_flow=flow, api_key=config.dashboard.api_key)
+    self_update = flow._self_update if flow else None
+    config_path = str(getattr(args, "config", "config.yaml"))
+
+    wire_control_api(
+        golem_flow=flow,
+        api_key=config.dashboard.api_key,
+        config_path=config_path,
+        reload_event=reload_event,
+        self_update_manager=self_update,
+    )
+
+    reload_task = asyncio.create_task(
+        _handle_reload(
+            reload_event,
+            flow=flow,
+            self_update_manager=self_update,
+            drain_timeout=config.daemon.drain_timeout_seconds,
+        )
+    )
 
     # Start dashboard
     from .core.dashboard import config_to_snapshot
@@ -469,6 +491,7 @@ async def run_daemon(args, config) -> int:
         pass
     finally:
         logger.info("Shutting down agent daemon...")
+        reload_task.cancel()
         if flow and hasattr(flow, "stop_tick_loop"):
             flow.stop_tick_loop()
         for task in tasks:
