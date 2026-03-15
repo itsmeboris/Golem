@@ -1,0 +1,21 @@
+/* Config tab styles */
+.config-container { padding: 1rem; }
+.config-categories { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+.config-cat-btn { padding: 0.4rem 0.8rem; border: 1px solid var(--border); border-radius: 4px;
+                  background: var(--bg-secondary); cursor: pointer; font-size: 0.85rem; }
+.config-cat-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.config-fields { display: flex; flex-direction: column; gap: 0.75rem; }
+.config-field { display: flex; align-items: center; gap: 1rem; padding: 0.5rem;
+                border: 1px solid var(--border); border-radius: 4px; }
+.config-field label { min-width: 200px; font-weight: 600; font-size: 0.85rem; }
+.config-field .field-desc { color: var(--text-secondary); font-size: 0.8rem; flex: 1; }
+.config-field input, .config-field select { padding: 0.3rem 0.5rem; border: 1px solid var(--border);
+                                            border-radius: 3px; font-size: 0.85rem; min-width: 150px; }
+.config-field .toggle { cursor: pointer; }
+.config-save-btn { margin-top: 1rem; padding: 0.5rem 1.5rem; background: var(--accent);
+                   color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
+.config-save-btn:hover { opacity: 0.9; }
+.config-toast { position: fixed; top: 1rem; right: 1rem; padding: 0.75rem 1.5rem;
+                border-radius: 4px; font-size: 0.85rem; z-index: 1000; animation: fadeIn 0.3s; }
+.config-toast.success { background: #2d7a2d; color: #fff; }
+.config-toast.error { background: #a33; color: #fff; }

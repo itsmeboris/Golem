@@ -792,6 +792,22 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
             headers=_NO_CACHE_HEADERS,
         )
 
+    @app.get("/dashboard/config_tab.js")
+    async def config_tab_js() -> Response:
+        return Response(
+            content=_config_tab_js_cache.read(),
+            media_type="application/javascript",
+            headers=_NO_CACHE_HEADERS,
+        )
+
+    @app.get("/dashboard/config_tab.css")
+    async def config_tab_css() -> Response:
+        return Response(
+            content=_config_tab_css_cache.read(),
+            media_type="text/css",
+            headers=_NO_CACHE_HEADERS,
+        )
+
     @app.get("/dashboard")
     async def dashboard() -> HTMLResponse:
         html = _task_dashboard_cache.read()
@@ -807,6 +823,8 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
             (_task_live_js_cache, "task_live.js"),
             (_merge_queue_js_cache, "merge_queue.js"),
             (_merge_queue_css_cache, "merge_queue.css"),
+            (_config_tab_js_cache, "config_tab.js"),
+            (_config_tab_css_cache, "config_tab.css"),
         ]:
             # Trigger a read so .version reflects current mtime
             cache.read()
@@ -902,6 +920,8 @@ _task_live_js_cache = _FileCache(Path(__file__).parent / "task_live.js")
 _elk_js_cache = _FileCache(Path(__file__).parent / "elk.min.js")
 _merge_queue_js_cache = _FileCache(Path(__file__).parent / "task_merge_queue.js")
 _merge_queue_css_cache = _FileCache(Path(__file__).parent / "task_merge_queue.css")
+_config_tab_js_cache = _FileCache(Path(__file__).parent / "config_tab.js")
+_config_tab_css_cache = _FileCache(Path(__file__).parent / "config_tab.css")
 
 
 _PID_FILE = DATA_DIR / "daemon.pid"

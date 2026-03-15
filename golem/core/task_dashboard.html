@@ -22,6 +22,7 @@
     <button class="nav-tab active" data-view="overview">Overview</button>
     <button class="nav-tab" data-view="detail">Task Detail</button>
     <button class="nav-tab" data-view="merge-queue">Merge Queue</button>
+    <button class="nav-tab" data-view="config">Config</button>
   </nav>
   <div class="top-stats" id="top-stats"></div>
   <button class="theme-btn" title="Theme" id="theme-toggle" onclick="toggleTheme()">&#9789;</button>
@@ -67,6 +68,14 @@
     <div class="mq-metrics" id="mq-metrics"></div>
     <div class="mq-content" id="mq-content"></div>
   </div>
+
+  <!-- Config View -->
+  <div id="view-config" style="display:none">
+    <div class="config-container">
+      <div id="config-categories" class="config-categories"></div>
+      <div id="config-fields" class="config-fields"></div>
+    </div>
+  </div>
 </div>
 
 <!-- Edit & Re-run Modal -->
@@ -96,5 +105,7 @@
 <script src="/dashboard/task_live.js"></script>
 <link rel="stylesheet" href="/dashboard/merge_queue.css">
 <script src="/dashboard/merge_queue.js"></script>
+<link rel="stylesheet" href="/dashboard/config_tab.css">
+<script src="/dashboard/config_tab.js"></script>
 </body>
 </html>
