@@ -1,1 +1,67 @@
-/* task_merge_queue.css — Merge Queue dashboard panel styles */
+/* ── Merge Queue Tab Styles ───────────────────── */
+/* Uses Golem design system variables from dashboard_shared.css */
+
+/* Layout */
+.mq-view{display:flex;flex-direction:column;flex:1;overflow:hidden}
+.mq-metrics{display:flex;gap:0.5rem;padding:0.6rem 1.25rem;border-bottom:1px solid var(--border-subtle);flex-wrap:wrap}
+.mq-content{flex:1;overflow-y:auto}
+
+/* Section headers — based on .tl-phase pattern */
+.mq-section{border-bottom:1px solid var(--border-subtle)}
+.mq-section-header{display:flex;align-items:center;gap:0.75rem;padding:0.5rem 1.25rem;background:var(--bg-surface);user-select:none;cursor:pointer;transition:background 0.12s}
+.mq-section-header:hover{background:var(--bg-hover)}
+.mq-section-label{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted)}
+.mq-section-count{font-size:0.68rem;font-family:var(--font-mono);color:var(--text-muted)}
+.mq-section-line{flex:1;height:1px;background:var(--border)}
+.mq-section-chevron{font-size:0.6rem;color:var(--text-muted);transition:transform 0.15s}
+.mq-section.collapsed .mq-section-chevron{transform:rotate(-90deg)}
+.mq-section.collapsed .mq-section-body{display:none}
+
+/* Entry rows — based on .ov-task pattern */
+.mq-entry{display:flex;align-items:center;gap:0.6rem;padding:0.55rem 1.25rem;border-bottom:1px solid var(--border-subtle);transition:background 0.12s;cursor:pointer}
+.mq-entry:hover{background:var(--bg-hover)}
+.mq-entry-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.mq-entry-dot.merging{background:var(--green);animation:pulse 1.5s ease-in-out infinite}
+.mq-entry-dot.pending{background:var(--yellow)}
+.mq-entry-dot.deferred{background:var(--orange)}
+.mq-entry-dot.conflict{background:var(--red)}
+.mq-entry-dot.success{background:var(--green)}
+.mq-entry-dot.failed{background:var(--red)}
+
+.mq-entry-id{font-family:var(--font-mono);font-size:0.78rem;font-weight:600;color:var(--text-secondary);min-width:45px}
+.mq-entry-branch{font-family:var(--font-mono);font-size:0.72rem;color:var(--purple);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px}
+.mq-entry-detail{flex:1;font-size:0.78rem;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mq-entry-badge{font-size:0.62rem;font-weight:600;padding:0.1rem 0.4rem;border-radius:8px;flex-shrink:0}
+.mq-entry-badge.merging{background:var(--green-bg);color:var(--green)}
+.mq-entry-badge.pending{background:var(--yellow-bg);color:var(--yellow)}
+.mq-entry-badge.deferred{background:var(--orange-bg);color:var(--orange)}
+.mq-entry-badge.conflict{background:var(--red-bg);color:var(--red)}
+.mq-entry-badge.success{background:var(--green-bg);color:var(--green)}
+.mq-entry-badge.failed{background:var(--red-bg);color:var(--red)}
+.mq-entry-files{font-size:0.72rem;font-family:var(--font-mono);color:var(--text-muted);min-width:50px;text-align:right}
+.mq-entry-time{font-size:0.72rem;font-family:var(--font-mono);color:var(--text-muted);min-width:50px;text-align:right}
+.mq-entry-chevron{font-size:0.6rem;color:var(--text-muted);transition:transform 0.15s;flex-shrink:0}
+.mq-entry-chevron.open{transform:rotate(90deg)}
+
+/* Expanded detail */
+.mq-entry-expand{display:none;padding:0.5rem 1.25rem 0.65rem 2.5rem;border-bottom:1px solid var(--border-subtle);background:var(--bg-surface);font-size:0.75rem}
+.mq-entry-expand.open{display:block}
+.mq-detail-row{display:flex;gap:0.5rem;padding:0.15rem 0}
+.mq-detail-label{font-size:0.65rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;min-width:80px;font-weight:600}
+.mq-detail-value{font-family:var(--font-mono);font-size:0.72rem;color:var(--text-secondary)}
+.mq-detail-value code{background:var(--bg-elevated);padding:0.1rem 0.35rem;border-radius:3px;color:var(--purple)}
+.mq-conflict-file{display:inline-block;background:var(--red-bg);color:var(--red);padding:0.1rem 0.4rem;border-radius:var(--radius-sm);font-family:var(--font-mono);font-size:0.72rem;margin:0.1rem 0.15rem}
+.mq-changed-file{display:inline-block;background:var(--bg-elevated);padding:0.1rem 0.4rem;border-radius:var(--radius-sm);font-family:var(--font-mono);font-size:0.72rem;margin:0.1rem 0.15rem;color:var(--text-secondary)}
+
+/* Retry button — uses existing .td-action-btn pattern */
+.mq-retry-btn{background:var(--bg-elevated);border:1px solid var(--border-subtle);color:var(--orange);padding:0.2rem 0.5rem;border-radius:var(--radius-sm);cursor:pointer;font:inherit;font-size:0.68rem;font-weight:500;transition:all 0.15s;flex-shrink:0}
+.mq-retry-btn:hover{background:var(--orange-bg);color:var(--orange)}
+.mq-retry-btn:disabled{opacity:0.5;cursor:not-allowed}
+
+/* Offline state */
+.mq-offline{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text-muted);gap:0.75rem}
+.mq-offline h2{font-size:1.1rem;font-weight:600;color:var(--text-secondary)}
+.mq-offline p{font-size:0.85rem}
+
+/* Commit SHA in recent entries */
+.mq-entry-sha{font-family:var(--font-mono);font-size:0.68rem;color:var(--text-muted);min-width:55px;text-align:right}
