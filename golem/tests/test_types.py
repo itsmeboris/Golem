@@ -6,6 +6,8 @@ from golem.types import (
     AlertDict,
     CompletedTaskDict,
     ConfigSnapshotDict,
+    HeartbeatCandidateDict,
+    HeartbeatSnapshotDict,
     LiveSnapshotDict,
     MilestoneDict,
     RunRecordDict,
@@ -220,3 +222,36 @@ class TestVerificationResultDict:
         }
         assert entry["passed"] is True
         assert entry["test_count"] == 189
+
+
+class TestHeartbeatCandidateDict:
+    def test_required_keys(self):
+        candidate: HeartbeatCandidateDict = {
+            "id": "github:42",
+            "subject": "Fix login bug",
+            "body": "Steps to reproduce...",
+            "automatable": True,
+            "confidence": 0.85,
+            "complexity": "small",
+            "reason": "Clear bug fix",
+            "tier": 1,
+        }
+        assert candidate["id"] == "github:42"
+        assert candidate["confidence"] == 0.85
+
+
+class TestHeartbeatSnapshotDict:
+    def test_required_keys(self):
+        snap: HeartbeatSnapshotDict = {
+            "enabled": True,
+            "state": "idle",
+            "last_scan_at": "2026-03-15T10:30:00Z",
+            "last_scan_tier": 1,
+            "daily_spend_usd": 0.03,
+            "daily_budget_usd": 1.0,
+            "inflight_task_ids": [],
+            "candidate_count": 3,
+            "dedup_entry_count": 12,
+        }
+        assert snap["enabled"] is True
+        assert snap["state"] == "idle"

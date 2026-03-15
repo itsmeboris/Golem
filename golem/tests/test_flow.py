@@ -1276,3 +1276,148 @@ class TestSaveState:
 
         flow = _make_flow(monkeypatch, tmp_path)
         assert type(flow._save_lock) is type(threading.Lock())
+
+
+class TestHeartbeatIntegration:
+    def test_flow_creates_heartbeat_when_enabled(self, monkeypatch, tmp_path):
+        """GolemFlow creates HeartbeatManager when heartbeat_enabled=True."""
+        flow = _make_flow(monkeypatch, tmp_path, heartbeat_enabled=True)
+        assert flow._heartbeat is not None
+
+    def test_flow_no_heartbeat_when_disabled(self, monkeypatch, tmp_path):
+        """GolemFlow does not create HeartbeatManager when heartbeat_enabled=False."""
+        flow = _make_flow(monkeypatch, tmp_path, heartbeat_enabled=False)
+        assert flow._heartbeat is None
+
+    def test_handle_state_transition_notifies_heartbeat_completed(
+        self, monkeypatch, tmp_path
+    ):
+        """Terminal COMPLETED state calls heartbeat.on_task_completed."""
+        flow = _make_flow(monkeypatch, tmp_path, heartbeat_enabled=True)
+        flow._heartbeat = MagicMock()
+
+        task_id = 1710489600000
+        session = MagicMock()
+        session.parent_issue_id = task_id
+        session.state = TaskSessionState.COMPLETED
+        session.parent_subject = "[HEARTBEAT] Fix bug"
+        session.total_cost_usd = 1.0
+        session.duration_seconds = 60
+        session.milestone_count = 5
+        session.validation_verdict = "pass"
+        session.validation_confidence = 0.95
+        session.validation_concerns = []
+        session.validation_summary = ""
+        session.commit_sha = "abc123"
+        session.retry_count = 0
+        session.errors = []
+        session.group_id = ""
+
+        flow._handle_state_transition(session, TaskSessionState.RUNNING)
+        flow._heartbeat.on_task_completed.assert_called_once_with(task_id, success=True)
+
+    def test_handle_state_transition_notifies_heartbeat_failed(
+        self, monkeypatch, tmp_path
+    ):
+        """Terminal FAILED state calls heartbeat.on_task_completed with success=False."""
+        flow = _make_flow(monkeypatch, tmp_path, heartbeat_enabled=True)
+        flow._heartbeat = MagicMock()
+
+        task_id = 1710489600000
+        session = MagicMock()
+        session.parent_issue_id = task_id
+        session.state = TaskSessionState.FAILED
+        session.parent_subject = "[HEARTBEAT] Fix bug"
+        session.total_cost_usd = 1.0
+        session.duration_seconds = 60
+        session.milestone_count = 0
+        session.validation_verdict = ""
+        session.validation_confidence = 0.0
+        session.validation_concerns = []
+        session.validation_summary = ""
+        session.commit_sha = ""
+        session.retry_count = 0
+        session.errors = ["Something went wrong"]
+        session.group_id = ""
+
+        flow._handle_state_transition(session, TaskSessionState.RUNNING)
+        flow._heartbeat.on_task_completed.assert_called_once_with(
+            task_id, success=False
+        )
+
+    def test_handle_state_transition_skips_non_terminal(self, monkeypatch, tmp_path):
+        """Non-terminal transitions do not notify heartbeat."""
+        flow = _make_flow(monkeypatch, tmp_path, heartbeat_enabled=True)
+        flow._heartbeat = MagicMock()
+
+        session = MagicMock()
+        session.parent_issue_id = 123
+        session.state = TaskSessionState.RUNNING
+        session.parent_subject = "[HEARTBEAT] Fix"
+        session.total_cost_usd = 0.0
+        session.group_id = ""
+
+        flow._handle_state_transition(session, TaskSessionState.DETECTED)
+        flow._heartbeat.on_task_completed.assert_not_called()
+
+    def test_no_heartbeat_callback_when_disabled(self, monkeypatch, tmp_path):
+        """When heartbeat is None, no callback on terminal state."""
+        flow = _make_flow(monkeypatch, tmp_path, heartbeat_enabled=False)
+        assert flow._heartbeat is None
+
+        session = MagicMock()
+        session.parent_issue_id = 123
+        session.state = TaskSessionState.COMPLETED
+        session.parent_subject = "Test"
+        session.total_cost_usd = 1.0
+        session.duration_seconds = 30
+        session.milestone_count = 1
+        session.validation_verdict = "pass"
+        session.validation_confidence = 0.9
+        session.validation_concerns = []
+        session.commit_sha = "abc"
+        session.retry_count = 0
+        session.errors = []
+        session.group_id = ""
+
+        # Should not raise even though heartbeat is None
+        flow._handle_state_transition(session, TaskSessionState.RUNNING)
+
+    async def test_start_tick_loop_starts_heartbeat(self, monkeypatch, tmp_path):
+        """start_tick_loop reconciles and starts heartbeat when enabled."""
+        flow = _make_flow(monkeypatch, tmp_path, heartbeat_enabled=True)
+        mock_heartbeat = MagicMock()
+        flow._heartbeat = mock_heartbeat
+
+        async def fake_detection_loop():
+            pass
+
+        monkeypatch.setattr(flow, "_detection_loop", fake_detection_loop)
+
+        task = flow.start_tick_loop()
+        mock_heartbeat.reconcile_inflight.assert_called_once_with(set())
+        mock_heartbeat.start.assert_called_once_with(flow)
+
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    def test_stop_tick_loop_stops_heartbeat(self, monkeypatch, tmp_path):
+        """stop_tick_loop calls heartbeat.stop() when heartbeat is present."""
+        flow = _make_flow(monkeypatch, tmp_path, heartbeat_enabled=True)
+        mock_heartbeat = MagicMock()
+        flow._heartbeat = mock_heartbeat
+
+        flow.stop_tick_loop()
+        mock_heartbeat.stop.assert_called_once()
+
+    def test_live_property_returns_live_state(self, monkeypatch, tmp_path):
+        """live property returns LiveState.get() result."""
+        from golem.core.live_state import LiveState
+
+        flow = _make_flow(monkeypatch, tmp_path)
+        mock_live = MagicMock()
+        monkeypatch.setattr("golem.flow.LiveState.get", lambda: mock_live)
+        assert flow.live is mock_live

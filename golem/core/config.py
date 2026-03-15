@@ -94,6 +94,14 @@ class GolemFlowConfig(FlowConfig):
     ensemble_candidates: int = 2  # number of parallel candidates
     # Workspace context injection
     context_injection: bool = True  # inject AGENTS.md + CLAUDE.md into agent sessions
+    # Heartbeat — self-directed work when idle
+    heartbeat_enabled: bool = False
+    heartbeat_interval_seconds: int = 300
+    heartbeat_idle_threshold_seconds: int = 900
+    heartbeat_daily_budget_usd: float = 1.0
+    heartbeat_max_inflight: int = 1
+    heartbeat_candidate_limit: int = 5
+    heartbeat_dedup_ttl_days: int = 30
 
 
 @dataclass
@@ -295,6 +303,16 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
         ensemble_on_second_retry=data.get("ensemble_on_second_retry", False),
         ensemble_candidates=data.get("ensemble_candidates", 2),
         context_injection=data.get("context_injection", True),
+        # Heartbeat
+        heartbeat_enabled=data.get("heartbeat_enabled", False),
+        heartbeat_interval_seconds=data.get("heartbeat_interval_seconds", 300),
+        heartbeat_idle_threshold_seconds=data.get(
+            "heartbeat_idle_threshold_seconds", 900
+        ),
+        heartbeat_daily_budget_usd=data.get("heartbeat_daily_budget_usd", 1.0),
+        heartbeat_max_inflight=data.get("heartbeat_max_inflight", 1),
+        heartbeat_candidate_limit=data.get("heartbeat_candidate_limit", 5),
+        heartbeat_dedup_ttl_days=data.get("heartbeat_dedup_ttl_days", 30),
     )
 
 
@@ -507,5 +525,28 @@ def validate_config(config: Config) -> list[str]:
 
     if not 1 <= config.webhook.port <= 65535:
         errors.append(f"webhook.port must be 1-65535, got {config.webhook.port}")
+
+    # Heartbeat validation (only when enabled)
+    if config.golem.heartbeat_enabled:
+        if config.golem.heartbeat_interval_seconds <= 0:
+            errors.append(
+                "golem.heartbeat_interval_seconds must be positive, "
+                f"got {config.golem.heartbeat_interval_seconds}"
+            )
+        if config.golem.heartbeat_daily_budget_usd <= 0:
+            errors.append(
+                "golem.heartbeat_daily_budget_usd must be positive, "
+                f"got {config.golem.heartbeat_daily_budget_usd}"
+            )
+        if config.golem.heartbeat_idle_threshold_seconds <= 0:
+            errors.append(
+                "golem.heartbeat_idle_threshold_seconds must be positive, "
+                f"got {config.golem.heartbeat_idle_threshold_seconds}"
+            )
+        if config.golem.heartbeat_max_inflight < 1:
+            errors.append(
+                "golem.heartbeat_max_inflight must be >= 1, "
+                f"got {config.golem.heartbeat_max_inflight}"
+            )
 
     return errors

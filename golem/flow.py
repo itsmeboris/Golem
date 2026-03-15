@@ -51,6 +51,7 @@ from .orchestrator import (
     _now_iso,
 )
 from .checkpoint import is_checkpoint_fresh, load_checkpoint
+from .heartbeat import HeartbeatManager
 from .priority_gate import PriorityGate
 from .profile import GolemProfile, build_profile
 from .prompts import FilePromptProvider
@@ -100,6 +101,15 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             config=config.health,
             notifier=self._profile.notifier,
         )
+
+        # Heartbeat — self-directed work when idle
+        if self._task_config.heartbeat_enabled:
+            self._heartbeat: HeartbeatManager | None = HeartbeatManager(
+                self._task_config
+            )
+        else:
+            self._heartbeat = None
+
         self._notified_batches: set[str] = set()
 
         self._submissions_dir = SUBMISSIONS_DIR
@@ -120,6 +130,11 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
     @property
     def health(self) -> HealthMonitor:
         return self._health
+
+    @property
+    def live(self) -> LiveState:
+        """Expose LiveState for heartbeat access."""
+        return LiveState.get()
 
     # -- BaseFlow interface ---------------------------------------------------
 
@@ -230,6 +245,9 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         self._running = True
         self._spawn_existing_sessions()
         self._detection_task = asyncio.create_task(self._detection_loop())
+        if self._heartbeat is not None:
+            self._heartbeat.reconcile_inflight(set(self._sessions.keys()))
+            self._heartbeat.start(self)
         logger.info(
             "Golem started (detection_interval=%ds, max_concurrent=%d)",
             self._task_config.tick_interval,
@@ -247,6 +265,9 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             task.cancel()
             logger.info("Cancelled session task #%d", sid)
         self._session_tasks.clear()
+
+        if self._heartbeat is not None:
+            self._heartbeat.stop()
 
         from .core.cli_wrapper import kill_all_active
 
@@ -678,6 +699,15 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                     duration_s=session.duration_seconds,
                 )
             self._health.record_task_result(success=False)
+
+        # Notify heartbeat of terminal states
+        if self._heartbeat is not None and session.state in (
+            TaskSessionState.COMPLETED,
+            TaskSessionState.FAILED,
+        ):
+            self._heartbeat.on_task_completed(
+                sid, success=(session.state == TaskSessionState.COMPLETED)
+            )
 
         # Update batch monitor if task belongs to a batch
         if session.group_id and self._batch_monitor.get(session.group_id):

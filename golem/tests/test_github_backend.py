@@ -683,3 +683,87 @@ class TestBuildGitHubProfile:
         assert profile.task_source._repo == "owner/repo1"
         assert "only first repo" in caplog.text
         assert "poll-only" in caplog.text
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_poll_untagged_tasks_filters_labeled(self, mock_run):
+        """poll_untagged_tasks excludes issues that have the exclude_tag label."""
+        import json
+
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=json.dumps(
+                [
+                    {
+                        "number": 1,
+                        "title": "Bug A",
+                        "body": "desc",
+                        "labels": [{"name": "bug"}],
+                    },
+                    {
+                        "number": 2,
+                        "title": "Agent task",
+                        "body": "desc",
+                        "labels": [{"name": "golem"}, {"name": "bug"}],
+                    },
+                    {
+                        "number": 3,
+                        "title": "Bug C",
+                        "body": "desc",
+                        "labels": [],
+                    },
+                ]
+            ),
+            stderr="",
+        )
+        source = GitHubTaskSource(repo="owner/repo")
+        result = source.poll_untagged_tasks(["owner/repo"], "golem")
+        ids = [r["id"] for r in result]
+        assert 1 in ids
+        assert 3 in ids
+        assert 2 not in ids  # has "golem" label, should be excluded
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_poll_untagged_tasks_nonzero_returncode(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="error")
+        source = GitHubTaskSource()
+        result = source.poll_untagged_tasks(["owner/repo"], "golem")
+        assert result == []
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_poll_untagged_tasks_os_error(self, mock_run):
+        mock_run.side_effect = OSError("gh not found")
+        source = GitHubTaskSource()
+        result = source.poll_untagged_tasks(["owner/repo"], "golem")
+        assert result == []
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_poll_untagged_tasks_json_error(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stdout="not json", stderr="")
+        source = GitHubTaskSource()
+        result = source.poll_untagged_tasks(["owner/repo"], "golem")
+        assert result == []
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_poll_untagged_tasks_empty(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stdout="  ", stderr="")
+        source = GitHubTaskSource()
+        result = source.poll_untagged_tasks(["owner/repo"], "golem")
+        assert result == []
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_poll_untagged_tasks_limits_results(self, mock_run):
+        """Results are capped at the limit parameter."""
+        import json
+
+        issues = [
+            {"number": i, "title": f"Issue {i}", "body": "", "labels": []}
+            for i in range(30)
+        ]
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=json.dumps(issues),
+            stderr="",
+        )
+        source = GitHubTaskSource()
+        result = source.poll_untagged_tasks(["owner/repo"], "golem", limit=5)
+        assert len(result) == 5

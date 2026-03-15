@@ -132,6 +132,17 @@ class LocalFileTaskSource:
         del task_id, since
         return []
 
+    def poll_untagged_tasks(
+        self,
+        projects: list[str],
+        exclude_tag: str,
+        limit: int = 20,
+        timeout: int = 30,
+    ) -> list[dict[str, Any]]:
+        """Local backend does not support untagged issue discovery."""
+        del projects, exclude_tag, limit, timeout
+        return []
+
     def _find_task(self, task_id: str) -> dict[str, Any] | None:
         for ext in (".yaml", ".yml", ".json"):
             candidate = self._tasks_dir / f"{task_id}{ext}"

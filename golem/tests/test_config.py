@@ -291,3 +291,60 @@ class TestValidateConfig:
         config = Config(golem=GolemFlowConfig(enabled=False, projects=[]))
         errors = validate_config(config)
         assert not any("projects" in e for e in errors)
+
+
+def test_heartbeat_config_defaults():
+    """Heartbeat fields exist on GolemFlowConfig with correct defaults."""
+    cfg = GolemFlowConfig()
+    assert cfg.heartbeat_enabled is False
+    assert cfg.heartbeat_interval_seconds == 300
+    assert cfg.heartbeat_idle_threshold_seconds == 900
+    assert cfg.heartbeat_daily_budget_usd == 1.0
+    assert cfg.heartbeat_max_inflight == 1
+    assert cfg.heartbeat_candidate_limit == 5
+    assert cfg.heartbeat_dedup_ttl_days == 30
+
+
+def test_heartbeat_config_parsed_from_yaml(tmp_path):
+    """Heartbeat settings are read from YAML config."""
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(
+        "flows:\n"
+        "  golem:\n"
+        "    projects: [test/repo]\n"
+        "    heartbeat_enabled: true\n"
+        "    heartbeat_interval_seconds: 600\n"
+        "    heartbeat_daily_budget_usd: 2.5\n"
+    )
+    config = load_config(cfg_file)
+    assert config.golem.heartbeat_enabled is True
+    assert config.golem.heartbeat_interval_seconds == 600
+    assert config.golem.heartbeat_daily_budget_usd == 2.5
+    # Non-overridden defaults preserved
+    assert config.golem.heartbeat_idle_threshold_seconds == 900
+
+
+def test_heartbeat_config_validation_negative_budget():
+    """Validation catches invalid heartbeat budget."""
+    cfg = Config(
+        golem=GolemFlowConfig(
+            projects=["test/repo"],
+            heartbeat_enabled=True,
+            heartbeat_daily_budget_usd=-1.0,
+        )
+    )
+    errors = validate_config(cfg)
+    assert any("heartbeat_daily_budget_usd" in e for e in errors)
+
+
+def test_heartbeat_config_validation_negative_interval():
+    """Validation catches invalid heartbeat interval."""
+    cfg = Config(
+        golem=GolemFlowConfig(
+            projects=["test/repo"],
+            heartbeat_enabled=True,
+            heartbeat_interval_seconds=0,
+        )
+    )
+    errors = validate_config(cfg)
+    assert any("heartbeat_interval_seconds" in e for e in errors)

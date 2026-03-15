@@ -251,3 +251,38 @@ class MergeQueueSnapshotDict(TypedDict):
     deferred: list[MergeEntryDict]
     conflicts: list[MergeEntryDict]
     history: list[MergeHistoryEntryDict]
+
+
+class HeartbeatCandidateDict(TypedDict):
+    """A candidate task discovered by the heartbeat scanner.
+
+    Producers: heartbeat.py _run_tier1(), _run_tier2()
+    Consumers: heartbeat.py _submit_top_candidate(), dashboard API
+    """
+
+    id: str  # e.g. "github:42" or "improvement:coverage:heartbeat"
+    subject: str
+    body: str
+    automatable: bool
+    confidence: float  # 0.0-1.0
+    complexity: str  # "small" | "medium" | "large"
+    reason: str
+    tier: int  # 1 or 2
+
+
+class HeartbeatSnapshotDict(TypedDict):
+    """Dashboard-safe snapshot of heartbeat state.
+
+    Producers: heartbeat.py snapshot()
+    Consumers: dashboard API /api/heartbeat
+    """
+
+    enabled: bool
+    state: str  # "idle" | "scanning" | "submitted" | "paused" | "budget_exhausted"
+    last_scan_at: str
+    last_scan_tier: int
+    daily_spend_usd: float
+    daily_budget_usd: float
+    inflight_task_ids: list[int]
+    candidate_count: int
+    dedup_entry_count: int

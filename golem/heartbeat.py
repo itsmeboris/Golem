@@ -1,0 +1,625 @@
+"""Heartbeat — self-directed work discovery when Golem is idle.
+
+Runs on its own async timer, discovers untagged issues (Tier 1) and
+self-improvement opportunities (Tier 2), and submits work via
+``GolemFlow.submit_task()``.
+
+State is persisted to ``data/heartbeat_state.json``.  Budget limits are
+read from ``GolemFlowConfig`` (read-only at runtime).
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+try:
+    from anthropic import Anthropic
+except ImportError:  # pragma: no cover
+    Anthropic = None  # type: ignore[assignment,misc]
+
+from .core.config import DATA_DIR, GolemFlowConfig
+from .types import HeartbeatSnapshotDict
+
+logger = logging.getLogger("golem.heartbeat")
+
+_24H = 86400  # seconds
+
+
+class HeartbeatManager:
+    """Discovers work when Golem is idle via a two-tier scanning system.
+
+    Budget limits come from *config* and are read-only at runtime.
+    Mutable state (spend, dedup, inflight) is persisted to *state_dir*.
+    """
+
+    def __init__(
+        self,
+        config: GolemFlowConfig,
+        state_dir: Path | None = None,
+    ) -> None:
+        self._config = config
+        self._state_dir = state_dir or DATA_DIR
+        self._state_file = self._state_dir / "heartbeat_state.json"
+
+        # Budget — limits from config (read-only), spend tracked here
+        self._daily_spend_usd: float = 0.0
+        self._daily_spend_reset_at: float = time.time()
+
+        # Inflight tracking
+        self._inflight_task_ids: list[int] = []
+
+        # Dedup memory — keyed by "backend:id" string
+        self._dedup_memory: dict[str, dict[str, Any]] = {}
+
+        # Candidates — overwritten each scan
+        self._candidates: list[dict[str, Any]] = []
+
+        # Coverage cache
+        self._coverage_cache: dict[str, Any] = {}
+
+        # Scan metadata
+        self._last_scan_at: str = ""
+        self._last_scan_tier: int = 0
+
+        # Runtime state
+        self._state: str = (
+            "idle"  # idle | scanning | submitted | paused | budget_exhausted
+        )
+        self._loop_task: Any = None  # asyncio.Task, set in start()
+        self._flow: Any = None  # set in start()
+
+    # -- Budget ---------------------------------------------------------------
+
+    def budget_allows(self) -> bool:
+        """Check if daily budget has remaining capacity."""
+        self._maybe_reset_budget()
+        return self._daily_spend_usd < self._config.heartbeat_daily_budget_usd
+
+    def record_spend(self, amount_usd: float) -> None:
+        """Add *amount_usd* to the daily spend counter."""
+        self._daily_spend_usd += amount_usd
+
+    def _maybe_reset_budget(self) -> None:
+        """Reset daily spend counter if 24h have elapsed."""
+        now = time.time()
+        if now - self._daily_spend_reset_at >= _24H:
+            self._daily_spend_usd = 0.0
+            self._daily_spend_reset_at = now
+
+    # -- Dedup ----------------------------------------------------------------
+
+    def is_deduped(self, issue_key: str) -> bool:
+        """Return True if *issue_key* has already been evaluated."""
+        return issue_key in self._dedup_memory
+
+    def record_dedup(self, issue_key: str, verdict: str, **extra: Any) -> None:
+        """Record an evaluation in dedup memory."""
+        self._dedup_memory[issue_key] = {
+            "evaluated_at": datetime.now(timezone.utc).isoformat(),
+            "verdict": verdict,
+            **extra,
+        }
+
+    def _prune_dedup(self) -> None:
+        """Remove dedup entries older than TTL."""
+        ttl_seconds = self._config.heartbeat_dedup_ttl_days * _24H
+        cutoff = time.time() - ttl_seconds
+        to_remove = []
+        for key, entry in self._dedup_memory.items():
+            try:
+                evaluated = datetime.fromisoformat(entry["evaluated_at"])
+                if evaluated.timestamp() < cutoff:
+                    to_remove.append(key)
+            except (KeyError, ValueError):
+                to_remove.append(key)
+        for key in to_remove:
+            del self._dedup_memory[key]
+
+    # -- Inflight -------------------------------------------------------------
+
+    def can_submit(self) -> bool:
+        """Return True if we're under the max inflight limit."""
+        return len(self._inflight_task_ids) < self._config.heartbeat_max_inflight
+
+    def on_task_completed(self, task_id: int, success: bool) -> None:
+        """Callback from GolemFlow when a session reaches terminal state."""
+        if task_id not in self._inflight_task_ids:
+            return
+        self._inflight_task_ids.remove(task_id)
+        # Update dedup entries that reference this task
+        for entry in self._dedup_memory.values():
+            if entry.get("task_id") == task_id:
+                entry["verdict"] = "completed" if success else "failed"
+        logger.info(
+            "Heartbeat task #%d %s", task_id, "completed" if success else "failed"
+        )
+
+    def reconcile_inflight(self, active_session_ids: set[int]) -> None:
+        """Remove inflight IDs not present in active sessions (startup recovery)."""
+        before = len(self._inflight_task_ids)
+        self._inflight_task_ids = [
+            tid for tid in self._inflight_task_ids if tid in active_session_ids
+        ]
+        removed = before - len(self._inflight_task_ids)
+        if removed:
+            logger.info(
+                "Heartbeat reconciliation: removed %d stale inflight IDs", removed
+            )
+
+    # -- State persistence ----------------------------------------------------
+
+    def save_state(self) -> None:
+        """Persist heartbeat state to disk."""
+        self._state_dir.mkdir(parents=True, exist_ok=True)
+        data = {
+            "last_scan_at": self._last_scan_at,
+            "last_scan_tier": self._last_scan_tier,
+            "daily_spend_usd": self._daily_spend_usd,
+            "daily_spend_reset_at": self._daily_spend_reset_at,
+            "inflight_task_ids": self._inflight_task_ids,
+            "dedup_memory": self._dedup_memory,
+            "coverage_cache": self._coverage_cache,
+            "candidates": self._candidates,
+        }
+        self._state_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    def load_state(self) -> None:
+        """Load heartbeat state from disk. Missing file = fresh state."""
+        if not self._state_file.exists():
+            return
+        try:
+            data = json.loads(self._state_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("Failed to load heartbeat state: %s", exc)
+            return
+        self._last_scan_at = data.get("last_scan_at", "")
+        self._last_scan_tier = data.get("last_scan_tier", 0)
+        self._daily_spend_usd = data.get("daily_spend_usd", 0.0)
+        self._daily_spend_reset_at = data.get("daily_spend_reset_at", time.time())
+        self._inflight_task_ids = data.get("inflight_task_ids", [])
+        self._dedup_memory = data.get("dedup_memory", {})
+        self._coverage_cache = data.get("coverage_cache", {})
+        self._candidates = data.get("candidates", [])
+        self._prune_dedup()
+
+    # -- Idle detection -------------------------------------------------------
+
+    def is_idle(self, snapshot: dict[str, Any]) -> bool:
+        """Return True if there are no external tasks active."""
+        active = snapshot.get("active_count", 0)
+        heartbeat_count = len(self._inflight_task_ids)
+        return active <= heartbeat_count
+
+    def has_external_tasks(self, snapshot: dict[str, Any]) -> bool:
+        """Return True if non-heartbeat tasks are active."""
+        active = snapshot.get("active_count", 0)
+        return active > len(self._inflight_task_ids)
+
+    # -- Async loop -----------------------------------------------------------
+
+    def start(self, flow: Any) -> None:
+        """Start the heartbeat async loop."""
+        import asyncio
+
+        self._flow = flow
+        self.load_state()
+        self._loop_task = asyncio.create_task(self._heartbeat_loop())
+        logger.info(
+            "Heartbeat started (interval=%ds, idle_threshold=%ds, budget=$%.2f/day)",
+            self._config.heartbeat_interval_seconds,
+            self._config.heartbeat_idle_threshold_seconds,
+            self._config.heartbeat_daily_budget_usd,
+        )
+
+    def stop(self) -> None:
+        """Stop the heartbeat loop and persist state."""
+        if self._loop_task is not None:
+            self._loop_task.cancel()
+            self._loop_task = None
+        self._state = "idle"
+        self.save_state()
+        logger.info("Heartbeat stopped")
+
+    async def _heartbeat_loop(self) -> None:
+        """Main async loop — runs on its own interval."""
+        import asyncio
+
+        idle_since: float | None = None
+        while True:
+            try:
+                snapshot = self._flow.live.snapshot()
+
+                if not self.budget_allows():
+                    self._state = "budget_exhausted"
+                elif self.has_external_tasks(snapshot):
+                    self._state = "paused"
+                    idle_since = None
+                elif self.is_idle(snapshot):
+                    if idle_since is None:
+                        idle_since = time.time()
+                    idle_duration = time.time() - idle_since
+                    if idle_duration >= self._config.heartbeat_idle_threshold_seconds:
+                        await self._run_heartbeat_tick()
+                    else:
+                        self._state = "idle"
+                else:
+                    self._state = "idle"
+                    idle_since = None
+            except asyncio.CancelledError:
+                break
+            except Exception:  # pylint: disable=broad-exception-caught
+                logger.exception("Error in heartbeat loop")
+            await asyncio.sleep(self._config.heartbeat_interval_seconds)
+
+    # -- Haiku integration ----------------------------------------------------
+
+    # Haiku pricing per token (USD).  Update when Anthropic changes rates.
+    # Source: https://docs.anthropic.com/en/docs/about-claude/models
+    HAIKU_MODEL = "claude-haiku-4-5-20251001"
+    HAIKU_INPUT_COST_PER_TOKEN = 0.80 / 1_000_000
+    HAIKU_OUTPUT_COST_PER_TOKEN = 4.00 / 1_000_000
+
+    async def _call_haiku(self, prompt: str, issues_json: str) -> Any:
+        """Call Haiku for triage. Returns parsed JSON or raw string on failure.
+
+        Cost is tracked from the API response usage field.
+        """
+        import asyncio
+
+        client = Anthropic()
+
+        def _sync_call():
+            return client.messages.create(
+                model=self.HAIKU_MODEL,
+                max_tokens=2048,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"{prompt}\n\nIssues:\n{issues_json}",
+                    }
+                ],
+            )
+
+        response = await asyncio.get_event_loop().run_in_executor(None, _sync_call)
+
+        # Track cost from usage
+        if hasattr(response, "usage"):
+            input_cost = response.usage.input_tokens * self.HAIKU_INPUT_COST_PER_TOKEN
+            output_cost = (
+                response.usage.output_tokens * self.HAIKU_OUTPUT_COST_PER_TOKEN
+            )
+            self.record_spend(input_cost + output_cost)
+
+        text = response.content[0].text if response.content else ""
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            return text
+
+    def _validate_candidates(
+        self, raw: Any, valid_complexities: tuple[str, ...] = ("small", "medium")
+    ) -> list[dict[str, Any]]:
+        """Validate and filter Haiku response per the output contract."""
+        if not isinstance(raw, dict) or "candidates" not in raw:
+            logger.warning("Haiku returned invalid response structure")
+            return []
+
+        valid = []
+        for c in raw["candidates"]:
+            if not isinstance(c, dict):
+                continue
+            if not c.get("automatable", False):
+                continue
+            conf = c.get("confidence", 0.0)
+            if not isinstance(conf, (int, float)):
+                continue
+            conf = max(0.0, min(1.0, float(conf)))
+            c["confidence"] = conf
+
+            complexity = c.get("complexity", "")
+            if complexity not in ("small", "medium", "large"):
+                continue
+            if complexity not in valid_complexities:
+                continue
+
+            if conf >= 0.7:
+                valid.append(c)
+
+        return sorted(valid, key=lambda x: x["confidence"], reverse=True)
+
+    # -- Tier 1 ---------------------------------------------------------------
+
+    async def _run_tier1(self) -> list[dict[str, Any]]:
+        """Tier 1: discover untagged issues and triage via Haiku."""
+        try:
+            issues = self._flow._profile.task_source.poll_untagged_tasks(
+                self._config.projects,
+                self._config.detection_tag,
+                limit=self._config.heartbeat_candidate_limit,
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.exception("Tier 1: failed to poll untagged tasks")
+            return []
+
+        # Filter already-evaluated issues
+        new_issues = []
+        for issue in issues:
+            key = f"github:{issue['id']}"
+            if not self.is_deduped(key):
+                new_issues.append(issue)
+
+        if not new_issues:
+            return []
+
+        if not self.budget_allows():
+            return []
+
+        issues_json = json.dumps(
+            [
+                {"id": i["id"], "subject": i["subject"], "body": i.get("body", "")}
+                for i in new_issues
+            ],
+            indent=2,
+        )
+        prompt = (
+            "For each issue below, assess whether it can be completed autonomously "
+            "by a coding agent. Respond with JSON matching this schema:\n"
+            '{"candidates": [{"id": "github:<number>", "automatable": bool, '
+            '"confidence": float (0-1), "complexity": "small"|"medium"|"large", '
+            '"reason": "..."}]}'
+        )
+
+        response = await self._call_haiku(prompt, issues_json)
+        candidates = self._validate_candidates(response)
+
+        # Record all evaluated issues in dedup
+        evaluated_ids = {f"github:{i['id']}" for i in new_issues}
+        candidate_ids = {c["id"] for c in candidates}
+        for key in evaluated_ids:
+            if key in candidate_ids:
+                self.record_dedup(key, "candidate")
+            else:
+                self.record_dedup(key, "not_automatable")
+
+        return candidates
+
+    # -- Tier 2 scanners (deterministic) --------------------------------------
+
+    def _scan_todos(self) -> list[str]:
+        """Find files with new TODO/FIXME since last scan via git log."""
+        import subprocess
+
+        since = self._last_scan_at if self._last_scan_at else "7.days.ago"
+        try:
+            result = subprocess.run(
+                [
+                    "git",
+                    "log",
+                    f"--since={since}",
+                    "--diff-filter=A",
+                    "-G",
+                    "TODO|FIXME",
+                    "--name-only",
+                    "--format=",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            if result.returncode != 0:
+                return []
+            files = [f.strip() for f in result.stdout.strip().split("\n") if f.strip()]
+            return list(set(files))
+        except (OSError, subprocess.TimeoutExpired):
+            return []
+
+    def _scan_coverage(self) -> list[str]:
+        """Return uncovered modules. Uses cached results keyed by HEAD hash."""
+        import subprocess
+
+        try:
+            head = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            ).stdout.strip()
+        except (OSError, subprocess.TimeoutExpired):
+            return []
+
+        cached_hash = self._coverage_cache.get("commit_hash", "")
+        cached_at = self._coverage_cache.get("ran_at", "")
+
+        # Use cache if same commit and ran within the last hour
+        if cached_hash == head and cached_at:
+            try:
+                ran_ts = datetime.fromisoformat(cached_at).timestamp()
+                if time.time() - ran_ts < 3600:
+                    return self._coverage_cache.get("uncovered_modules", [])
+            except ValueError:
+                pass
+
+        # Run pytest --cov with timeout
+        try:
+            result = subprocess.run(
+                [
+                    "pytest",
+                    "golem/tests/",
+                    "--cov=golem",
+                    "--cov-report=term-missing",
+                    "-q",
+                    "--no-header",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=300,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            logger.warning("Tier 2: coverage scan timed out")
+            return []
+
+        # Parse output for modules below 100%
+        uncovered = []
+        for line in result.stdout.split("\n"):
+            if "%" in line and "100%" not in line:
+                parts = line.split()
+                if parts and parts[0].startswith("golem/"):
+                    uncovered.append(parts[0])
+
+        self._coverage_cache = {
+            "commit_hash": head,
+            "ran_at": datetime.now(timezone.utc).isoformat(),
+            "uncovered_modules": uncovered,
+        }
+        return uncovered
+
+    def _scan_pitfalls(self) -> list[str]:
+        """Parse AGENTS.md for antipattern entries under '## Recurring Antipatterns'.
+
+        Real entries look like:
+          - **Empty exception handler**: description <!-- seen:4 last:2026-03-15 -->
+
+        We match lines that start with ``- `` after the heading and contain
+        the ``<!-- seen:N last:DATE -->`` marker.
+        """
+        import hashlib
+        import re
+
+        agents_path = Path("AGENTS.md")
+        if not agents_path.exists():
+            return []
+
+        try:
+            content = agents_path.read_text(encoding="utf-8")
+        except OSError:
+            return []
+
+        pitfalls = []
+        in_section = False
+        for line in content.split("\n"):
+            stripped = line.strip()
+            if stripped.startswith("## Recurring Antipatterns"):
+                in_section = True
+                continue
+            if in_section and stripped.startswith("## "):
+                break  # next section
+            if not in_section:
+                continue
+            if stripped.startswith("- ") and "<!-- seen:" in stripped:
+                key = f"pitfall:{hashlib.sha256(stripped.encode()).hexdigest()[:12]}"
+                if not self.is_deduped(key):
+                    # Strip the HTML comment marker for the Haiku prompt
+                    clean = re.sub(r"\s*<!--.*?-->", "", stripped)
+                    pitfalls.append(clean)
+        return pitfalls
+
+    # -- Tier 2 ---------------------------------------------------------------
+
+    async def _run_tier2(self) -> list[dict[str, Any]]:
+        """Tier 2: scan for self-improvement opportunities."""
+        todos = self._scan_todos()
+        coverage = self._scan_coverage()
+        pitfalls = self._scan_pitfalls()
+
+        if not todos and not coverage and not pitfalls:
+            return []
+
+        if not self.budget_allows():
+            return []
+
+        findings = []
+        for f in todos:
+            findings.append(f"TODO/FIXME found in: {f}")
+        for m in coverage:
+            findings.append(f"Module below 100% coverage: {m}")
+        for p in pitfalls:
+            findings.append(f"Unresolved pitfall: {p}")
+
+        prompt = (
+            "Rank these improvement opportunities by impact and estimated effort. "
+            "For each, assess if a coding agent can complete it autonomously.\n"
+            "Respond with JSON matching this schema:\n"
+            '{"candidates": [{"id": "improvement:<type>:<name>", "automatable": bool, '
+            '"confidence": float (0-1), "complexity": "small"|"medium"|"large", '
+            '"reason": "..."}]}'
+        )
+
+        response = await self._call_haiku(prompt, json.dumps(findings, indent=2))
+        return self._validate_candidates(response)
+
+    async def _run_heartbeat_tick(self) -> None:
+        """Execute one heartbeat cycle: Tier 1 -> Tier 2 -> submit."""
+        self._state = "scanning"
+
+        # Tier 1: discover untagged issues
+        candidates = await self._run_tier1()
+        if candidates:
+            self._last_scan_tier = 1
+        else:
+            # Tier 2: self-improvement scan
+            candidates = await self._run_tier2()
+            if candidates:
+                self._last_scan_tier = 2
+
+        self._last_scan_at = datetime.now(timezone.utc).isoformat()
+        self._candidates = candidates
+
+        if not candidates or not self.can_submit():
+            self._state = "idle"
+            self.save_state()
+            return
+
+        # Submit top candidate
+        top = candidates[0]
+        subject = f"[HEARTBEAT] {top.get('subject', top.get('id', 'improvement'))}"
+        body = top.get("body", top.get("reason", ""))
+        prompt = (
+            f"{body}\n\n"
+            f"Source: heartbeat tier {self._last_scan_tier}\n"
+            f"Confidence: {top.get('confidence', 0)}\n"
+            f"Complexity: {top.get('complexity', 'unknown')}\n"
+            f"Reason: {top.get('reason', '')}"
+        )
+
+        try:
+            result = self._flow.submit_task(prompt=prompt, subject=subject)
+            task_id = result["task_id"]
+            self._inflight_task_ids.append(task_id)
+            self.record_dedup(top["id"], "submitted", task_id=task_id)
+            self._state = "submitted"
+            logger.info(
+                "Heartbeat submitted task #%d: %s (tier=%d, confidence=%.2f)",
+                task_id,
+                subject,
+                self._last_scan_tier,
+                top.get("confidence", 0),
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.exception("Heartbeat failed to submit task")
+            self._state = "idle"
+
+        self.save_state()
+
+    # -- Snapshot (dashboard) -------------------------------------------------
+
+    def snapshot(self) -> HeartbeatSnapshotDict:
+        """Return a dashboard-safe snapshot of heartbeat state."""
+        return {
+            "enabled": self._config.heartbeat_enabled,
+            "state": self._state,
+            "last_scan_at": self._last_scan_at,
+            "last_scan_tier": self._last_scan_tier,
+            "daily_spend_usd": round(self._daily_spend_usd, 4),
+            "daily_budget_usd": self._config.heartbeat_daily_budget_usd,
+            "inflight_task_ids": list(self._inflight_task_ids),
+            "candidate_count": len(self._candidates),
+            "dedup_entry_count": len(self._dedup_memory),
+        }

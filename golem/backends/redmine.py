@@ -118,6 +118,17 @@ class RedmineTaskSource:
             logger.warning("Failed to create child issue under #%d: %s", parent_id, exc)
             return None
 
+    def poll_untagged_tasks(
+        self,
+        projects: list[str],
+        exclude_tag: str,
+        limit: int = 20,
+        timeout: int = 30,
+    ) -> list[dict[str, Any]]:
+        """Redmine backend does not support untagged issue discovery."""
+        del projects, exclude_tag, limit, timeout
+        return []
+
     def get_task_comments(
         self, task_id: int | str, *, since: str = ""
     ) -> list[dict[str, Any]]:

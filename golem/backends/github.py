@@ -153,6 +153,55 @@ class GitHubTaskSource:
             logger.warning("Failed to fetch comments for #%s: %s", task_id, exc)
             return []
 
+    def poll_untagged_tasks(
+        self,
+        projects: list[str],
+        exclude_tag: str,
+        limit: int = 20,
+        timeout: int = 30,
+    ) -> list[dict[str, Any]]:
+        """Return open issues that do NOT have the exclude_tag label."""
+        del timeout
+        all_tasks: list[dict[str, Any]] = []
+        for repo in projects:
+            try:
+                result = _gh(
+                    "issue",
+                    "list",
+                    "--json",
+                    "number,title,body,labels",
+                    "--state",
+                    "open",
+                    "--limit",
+                    str(limit),
+                    "--repo",
+                    repo,
+                )
+                if result.returncode != 0:
+                    logger.warning(
+                        "gh issue list failed for %s: %s", repo, result.stderr
+                    )
+                    continue
+                issues = json.loads(result.stdout) if result.stdout.strip() else []
+                for issue in issues:
+                    label_names = [
+                        lbl.get("name", "") for lbl in issue.get("labels", [])
+                    ]
+                    if exclude_tag in label_names:
+                        continue
+                    all_tasks.append(
+                        {
+                            "id": issue["number"],
+                            "subject": issue["title"],
+                            "body": issue.get("body", ""),
+                        }
+                    )
+            except (json.JSONDecodeError, KeyError, OSError) as exc:
+                logger.warning(
+                    "Failed to poll untagged GitHub issues for %s: %s", repo, exc
+                )
+        return all_tasks[:limit]
+
 
 # ---------------------------------------------------------------------------
 # GitHubStateBackend

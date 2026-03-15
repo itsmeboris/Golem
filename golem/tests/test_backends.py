@@ -461,3 +461,13 @@ class TestLocalFileTaskSourceExtended:
         assert child_id is not None
         files = list(tasks_dir.glob("*.json"))
         assert len(files) == 2
+
+
+def test_local_poll_untagged_tasks_returns_empty():
+    from pathlib import Path
+
+    from golem.backends.local import LocalFileTaskSource
+
+    source = LocalFileTaskSource(Path("/tmp/test-tasks"))
+    result = source.poll_untagged_tasks(["proj"], "golem")
+    assert result == []

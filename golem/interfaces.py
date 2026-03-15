@@ -87,6 +87,23 @@ class TaskSource(Protocol):
         """
         return []  # default: no comments
 
+    def poll_untagged_tasks(
+        self,
+        projects: list[str],
+        exclude_tag: str,
+        limit: int = 20,
+        timeout: int = 30,
+    ) -> list[dict[str, Any]]:
+        """Return open issues that do NOT have *exclude_tag* as a label.
+
+        The detection_tag is a label — ``poll_tasks()`` uses ``--label`` to
+        filter, and this method is its inverse.
+
+        Returns list of ``{"id": ..., "subject": ..., "body": ...}`` dicts.
+        Backends that don't support this return an empty list.
+        """
+        return []  # default: not supported
+
 
 # ---------------------------------------------------------------------------
 # StateBackend — task state persistence in an external tracker
