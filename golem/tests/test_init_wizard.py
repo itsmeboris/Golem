@@ -310,6 +310,29 @@ class TestRunWizard:
         out = capsys.readouterr().out
         assert "1 and 65535" in out
 
+    def test_defaults_include_heartbeat(self, tmp_path):
+        """Default config includes heartbeat section disabled."""
+        output = tmp_path / "config.yaml"
+        run_wizard(output, use_defaults=True)
+        data = yaml.safe_load(output.read_text())
+        golem_cfg = data["flows"]["golem"]
+        assert golem_cfg["heartbeat_enabled"] is False
+        assert golem_cfg["heartbeat_interval_seconds"] == 300
+        assert golem_cfg["heartbeat_idle_threshold_seconds"] == 900
+        assert golem_cfg["heartbeat_daily_budget_usd"] == 1.0
+        assert golem_cfg["heartbeat_max_inflight"] == 1
+        assert golem_cfg["heartbeat_candidate_limit"] == 5
+        assert golem_cfg["heartbeat_dedup_ttl_days"] == 30
+
+    def test_heartbeat_round_trip_config(self, tmp_path):
+        """Heartbeat fields survive load_config round-trip."""
+        output = tmp_path / "config.yaml"
+        run_wizard(output, use_defaults=True)
+        cfg = load_config(output)
+        assert cfg.golem.heartbeat_enabled is False
+        assert cfg.golem.heartbeat_interval_seconds == 300
+        assert cfg.golem.heartbeat_daily_budget_usd == 1.0
+
 
 class TestCmdInit:
     def test_init_subcommand(self):

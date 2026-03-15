@@ -142,6 +142,14 @@ def _build_config(inputs: dict[str, str]) -> dict[str, Any]:
         "budget_per_task_usd": float(inputs["budget"]),
         "default_work_dir": inputs["work_dir"],
         "work_dirs": work_dirs,
+        # Heartbeat — self-directed work when idle (opt-in)
+        "heartbeat_enabled": False,
+        "heartbeat_interval_seconds": 300,
+        "heartbeat_idle_threshold_seconds": 900,
+        "heartbeat_daily_budget_usd": 1.0,
+        "heartbeat_max_inflight": 1,
+        "heartbeat_candidate_limit": 5,
+        "heartbeat_dedup_ttl_days": 30,
     }
     if inputs.get("detection_tag"):
         flow_config["detection_tag"] = inputs["detection_tag"]
