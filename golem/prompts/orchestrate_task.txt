@@ -283,10 +283,9 @@ Produce the report as your final message in a ```json code fence.
   relevant docs (README, ``config.yaml.example``) to reflect the change. Include
   tests for any wizard changes.
 - If the task description references a TODO item, update TODO.md to mark it done.
-- If the task description references a GitHub issue (e.g. a URL like
-  ``https://github.com/<owner>/<repo>/issues/<number>``), close it when the
-  task is complete using: ``gh issue close <number> --repo <owner>/<repo> --comment "Resolved by Golem agent"``
-  If the task is BLOCKED, do NOT close the issue — leave it open for human follow-up.
+- Do NOT close GitHub issues from within the agent session. The supervisor
+  closes issues automatically after the merge succeeds. Premature closing
+  hides merge failures.
 - Write ``## Phase: NAME`` headers for ALL 5 phases, even if skipping one.
   When skipping, include a one-line reason (e.g. "Skipped: trivial task").
 - Between dispatches, write a brief note explaining your decision (what you are

@@ -224,7 +224,10 @@ function renderDetailHeader(session, trace, running) {
 
 // ── Task Actions ────────────────────────────────
 function _getTaskId(session) {
-  return session ? (session.parent_issue_id || session.id || '') : '';
+  const raw = session ? (session.parent_issue_id || session.id || '') : '';
+  // Coerce to numeric — FastAPI endpoints expect int task IDs
+  const num = typeof raw === 'number' ? raw : parseInt(String(raw).replace(/^golem-(\d+).*/, '$1'), 10);
+  return isNaN(num) ? '' : num;
 }
 
 async function handleCancel(session) {
@@ -274,7 +277,7 @@ async function handleEditAndRerun(session) {
     const subjInput = document.getElementById('resubmit-subject');
     const promptInput = document.getElementById('resubmit-prompt');
     if (!modal || !promptInput) return;
-    subjInput.value = subject || '';
+    if (subjInput) subjInput.value = subject || '';
     promptInput.value = prompt || '';
     modal.style.display = 'flex';
   } catch (e) {

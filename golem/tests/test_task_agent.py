@@ -36,7 +36,7 @@ from golem.orchestrator import (
     save_sessions,
 )
 from golem.poller import get_issue_subject, is_agent_task
-from golem.prompts import format_prompt, load_prompt
+from golem.prompts import compute_prompt_hash, format_prompt, load_prompt
 
 # -- Config parsing ---------------------------------------------------------
 
@@ -804,6 +804,34 @@ class TestPrompts:
         )
         assert "Add feature X" in result
         assert "task_description" not in result  # placeholder should not remain
+
+    def test_compute_prompt_hash_returns_12_chars(self):
+        h = compute_prompt_hash("hello world")
+        assert len(h) == 12
+
+    def test_compute_prompt_hash_is_hex(self):
+        h = compute_prompt_hash("hello world")
+        assert all(c in "0123456789abcdef" for c in h)
+
+    def test_compute_prompt_hash_deterministic(self):
+        assert compute_prompt_hash("same text") == compute_prompt_hash("same text")
+
+    def test_compute_prompt_hash_differs_for_different_text(self):
+        assert compute_prompt_hash("text A") != compute_prompt_hash("text B")
+
+    def test_compute_prompt_hash_empty_string(self):
+        h = compute_prompt_hash("")
+        assert len(h) == 12
+
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            ("hello world", "b94d27b9934d"),
+            ("", "e3b0c44298fc"),
+        ],
+    )
+    def test_compute_prompt_hash_known_values(self, text, expected):
+        assert compute_prompt_hash(text) == expected
 
 
 # -- Flow -------------------------------------------------------------------

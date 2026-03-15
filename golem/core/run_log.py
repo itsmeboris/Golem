@@ -41,6 +41,7 @@ class RunRecord:
     verdict: str = ""
     trace_file: str = ""
     queue_wait_ms: int = 0
+    prompt_hash: str = ""
 
 
 def record_run(record: RunRecord, log_file: Path | None = None) -> None:

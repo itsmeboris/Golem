@@ -613,6 +613,13 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
         runs = await asyncio.to_thread(read_runs, limit=1000)
         return JSONResponse(content=compute_analytics(runs))
 
+    @app.get("/api/analytics/by-prompt")
+    async def api_analytics_by_prompt() -> JSONResponse:
+        from ..analytics import compute_prompt_analytics
+
+        runs = await asyncio.to_thread(read_runs, limit=10_000)
+        return JSONResponse(content=compute_prompt_analytics(runs))
+
     @app.get("/api/cost-analytics")
     async def api_cost_analytics() -> JSONResponse:
         from ..cost_analytics import compute_cost_analytics

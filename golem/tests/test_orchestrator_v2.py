@@ -1192,6 +1192,7 @@ class TestRecordRun:
         tc = MagicMock()
         tc.task_model = "sonnet"
         orch = _make_orch(session, task_config=tc)
+        orch.session.prompt_hash = "abc123def456"
 
         with patch("golem.orchestrator.record_run") as m_record:
             orch._record_run()
@@ -1201,6 +1202,7 @@ class TestRecordRun:
         assert rec.flow == "golem"
         assert rec.success is True
         assert rec.cost_usd == 1.0
+        assert rec.prompt_hash == "abc123def456"
 
     def test_records_failed_run_with_error(self):
         session = TaskSession(

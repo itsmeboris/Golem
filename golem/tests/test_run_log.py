@@ -4,12 +4,43 @@
 import json
 from datetime import datetime, timezone
 
+import pytest
+
 from golem.core.run_log import (
     RunRecord,
     purge_flow,
     read_runs,
     record_run,
 )
+
+
+class TestRunRecordPromptHash:
+    def test_prompt_hash_default_is_empty(self):
+        record = RunRecord(event_id="x", flow="golem", task_id="1")
+        assert record.prompt_hash == ""
+
+    def test_prompt_hash_serialized(self, tmp_path):
+        log_file = tmp_path / "runs.jsonl"
+        record = RunRecord(
+            event_id="ph1",
+            flow="golem",
+            task_id="1",
+            prompt_hash="abc123def456",
+        )
+        record_run(record, log_file)
+        data = json.loads(log_file.read_text().strip())
+        assert data["prompt_hash"] == "abc123def456"
+
+    @pytest.mark.parametrize(
+        "ph",
+        ["", "000000000000", "abcdef012345"],
+    )
+    def test_prompt_hash_roundtrip(self, tmp_path, ph):
+        log_file = tmp_path / "runs.jsonl"
+        record = RunRecord(event_id="rnd", flow="golem", task_id="1", prompt_hash=ph)
+        record_run(record, log_file)
+        data = json.loads(log_file.read_text().strip())
+        assert data["prompt_hash"] == ph
 
 
 class TestRecordRun:

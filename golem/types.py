@@ -116,6 +116,7 @@ class RunRecordDict(TypedDict):
     verdict: str
     trace_file: str
     queue_wait_ms: int
+    prompt_hash: str
 
 
 class AlertDict(TypedDict):

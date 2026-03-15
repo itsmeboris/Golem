@@ -65,6 +65,40 @@ def compute_analytics(runs: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def compute_prompt_analytics(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Compute per-prompt-hash analytics from run records.
+
+    Groups runs by prompt_hash and returns success rate, avg cost,
+    and avg duration per hash. Runs with empty/missing prompt_hash
+    are excluded.
+    """
+    by_hash: dict[str, list[dict[str, Any]]] = {}
+    for r in runs:
+        ph = r.get("prompt_hash", "")
+        if not ph:
+            continue
+        by_hash.setdefault(ph, []).append(r)
+
+    results = []
+    for ph, group in by_hash.items():
+        count = len(group)
+        successes = sum(1 for r in group if r.get("success"))
+        total_cost = sum(r.get("cost_usd") or 0 for r in group)
+        total_dur = sum(r.get("duration_s") or 0 for r in group)
+        results.append(
+            {
+                "prompt_hash": ph,
+                "run_count": count,
+                "success_rate": successes / count,
+                "avg_cost_usd": total_cost / count,
+                "avg_duration_s": total_dur / count,
+            }
+        )
+
+    results.sort(key=lambda x: x["run_count"], reverse=True)
+    return results
+
+
 def _was_retried(run: dict) -> bool:
     """Check if a run record indicates retries were attempted."""
     for action in run.get("actions_taken", []):

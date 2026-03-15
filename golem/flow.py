@@ -505,8 +505,19 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         elif not result.success:
             session.merge_ready = False
             session.merge_deferred = False
+            session.state = TaskSessionState.FAILED
             session.errors.append(f"merge failed: {result.error}")
             self._cleanup_session_worktree(session, keep_branch=True)
+            # Reopen the issue so the failure is visible on the tracker
+            try:
+                self._profile.state_backend.update_status(
+                    session.parent_issue_id, "in_progress"
+                )
+            except Exception:  # pylint: disable=broad-except
+                logger.debug(
+                    "Session %d: could not reopen issue after merge failure",
+                    result.session_id,
+                )
             logger.warning(
                 "Session %d: merge failed: %s", result.session_id, result.error
             )

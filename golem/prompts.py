@@ -9,10 +9,17 @@ Key exports:
 - ``format_prompt`` — loads a template and substitutes keyword arguments.
 """
 
+import hashlib
 import logging
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def compute_prompt_hash(text: str) -> str:
+    """Return a 12-char hex SHA-256 digest of *text*."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 

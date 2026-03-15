@@ -37,6 +37,7 @@ from .core.config import DATA_DIR, PROJECT_ROOT, GolemFlowConfig
 from .core.defaults import _now_iso  # re-exported for backward compat (flow.py)
 from .core.report import ReportWriter
 from .core.run_log import RunRecord, record_run
+from .prompts import compute_prompt_hash, load_prompt
 from .utils import format_duration
 from .core.flow_base import _StreamingTraceWriter, _write_prompt, _write_trace
 
@@ -141,6 +142,7 @@ class TaskSession:
     # Dashboard enrichment
     started_at: str = ""
     files_changed: list[str] = field(default_factory=list)
+    prompt_hash: str = ""
     merge_queued_at: str = ""
     # Human feedback re-attempt
     human_feedback: str = ""
@@ -424,6 +426,7 @@ class TaskOrchestrator:
                 issue_id=issue_id,
                 task_description=description,
             )
+            self.session.prompt_hash = compute_prompt_hash(load_prompt("run_task.txt"))
             result, trace_writer, mcp_servers = await self._invoke_agent(
                 issue_id,
                 prompt,
@@ -1032,6 +1035,7 @@ class TaskOrchestrator:
                 ],
                 verdict=self.session.validation_verdict,
                 trace_file=self.session.trace_file,
+                prompt_hash=self.session.prompt_hash,
             )
             record_run(record)
         except Exception as exc:  # pylint: disable=broad-exception-caught

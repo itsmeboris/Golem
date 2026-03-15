@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from golem.analytics import compute_analytics
+from golem.analytics import compute_analytics, compute_prompt_analytics
 
 
 class TestComputeAnalytics:
@@ -175,3 +175,142 @@ class TestAnalyticsEndpoint:
         body = json.loads(resp.body)
         assert body["total_tasks"] == 1
         assert body["pass_rate"] == 1.0
+
+    @pytest.mark.asyncio
+    async def test_api_analytics_by_prompt_endpoint_exists(self, handlers):
+        assert "/api/analytics/by-prompt" in handlers
+
+    @pytest.mark.asyncio
+    async def test_api_analytics_by_prompt_returns_json(self, handlers):
+        with patch(
+            "golem.core.dashboard.read_runs",
+            return_value=[
+                {
+                    "prompt_hash": "abc123def456",
+                    "success": True,
+                    "cost_usd": 4.0,
+                    "duration_s": 60,
+                },
+                {
+                    "prompt_hash": "abc123def456",
+                    "success": False,
+                    "cost_usd": 6.0,
+                    "duration_s": 90,
+                },
+            ],
+        ):
+            resp = await handlers["/api/analytics/by-prompt"]()
+        body = json.loads(resp.body)
+        assert len(body) == 1
+        assert body[0]["prompt_hash"] == "abc123def456"
+        assert body[0]["run_count"] == 2
+        assert body[0]["success_rate"] == 0.5
+
+
+class TestComputePromptAnalytics:
+    def test_empty_runs_returns_empty_list(self):
+        assert compute_prompt_analytics([]) == []
+
+    def test_runs_without_prompt_hash_excluded(self):
+        runs = [
+            {"success": True, "cost_usd": 1.0, "duration_s": 10},
+            {"prompt_hash": "", "success": True, "cost_usd": 1.0, "duration_s": 10},
+        ]
+        assert compute_prompt_analytics(runs) == []
+
+    def test_groups_by_prompt_hash(self):
+        runs = [
+            {
+                "prompt_hash": "aaa",
+                "success": True,
+                "cost_usd": 2.0,
+                "duration_s": 20,
+            },
+            {
+                "prompt_hash": "bbb",
+                "success": False,
+                "cost_usd": 4.0,
+                "duration_s": 40,
+            },
+        ]
+        result = compute_prompt_analytics(runs)
+        hashes = {r["prompt_hash"] for r in result}
+        assert hashes == {"aaa", "bbb"}
+
+    def test_correct_stats_per_group(self):
+        runs = [
+            {
+                "prompt_hash": "abc",
+                "success": True,
+                "cost_usd": 2.0,
+                "duration_s": 20,
+            },
+            {
+                "prompt_hash": "abc",
+                "success": False,
+                "cost_usd": 4.0,
+                "duration_s": 40,
+            },
+        ]
+        result = compute_prompt_analytics(runs)
+        assert len(result) == 1
+        entry = result[0]
+        assert entry["run_count"] == 2
+        assert entry["success_rate"] == 0.5
+        assert entry["avg_cost_usd"] == 3.0
+        assert entry["avg_duration_s"] == 30.0
+
+    def test_sorted_by_run_count_descending(self):
+        runs = [
+            {"prompt_hash": "one", "success": True, "cost_usd": 1.0, "duration_s": 10},
+            {
+                "prompt_hash": "three",
+                "success": True,
+                "cost_usd": 1.0,
+                "duration_s": 10,
+            },
+            {
+                "prompt_hash": "three",
+                "success": True,
+                "cost_usd": 1.0,
+                "duration_s": 10,
+            },
+            {
+                "prompt_hash": "three",
+                "success": True,
+                "cost_usd": 1.0,
+                "duration_s": 10,
+            },
+            {"prompt_hash": "two", "success": True, "cost_usd": 1.0, "duration_s": 10},
+            {"prompt_hash": "two", "success": True, "cost_usd": 1.0, "duration_s": 10},
+        ]
+        result = compute_prompt_analytics(runs)
+        assert result[0]["prompt_hash"] == "three"
+        assert result[1]["prompt_hash"] == "two"
+        assert result[2]["prompt_hash"] == "one"
+
+    def test_single_hash_all_success(self):
+        runs = [
+            {"prompt_hash": "xyz", "success": True, "cost_usd": 5.0, "duration_s": 50},
+        ]
+        result = compute_prompt_analytics(runs)
+        assert len(result) == 1
+        assert result[0]["success_rate"] == 1.0
+        assert result[0]["avg_cost_usd"] == 5.0
+        assert result[0]["avg_duration_s"] == 50.0
+
+    def test_missing_fields_default_to_zero(self):
+        runs = [{"prompt_hash": "xyz"}]
+        result = compute_prompt_analytics(runs)
+        assert result[0]["run_count"] == 1
+        assert result[0]["success_rate"] == 0.0
+        assert result[0]["avg_cost_usd"] == 0.0
+        assert result[0]["avg_duration_s"] == 0.0
+
+    def test_none_values_treated_as_zero(self):
+        runs = [
+            {"prompt_hash": "xyz", "cost_usd": None, "duration_s": None},
+        ]
+        result = compute_prompt_analytics(runs)
+        assert result[0]["avg_cost_usd"] == 0.0
+        assert result[0]["avg_duration_s"] == 0.0

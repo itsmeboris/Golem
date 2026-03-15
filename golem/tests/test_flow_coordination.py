@@ -404,6 +404,40 @@ class TestApplyMergeResult:
         )
         assert "merge failed: conflict" in session.errors
         assert session.merge_ready is False
+        assert session.state == TaskSessionState.FAILED
+
+    def test_failure_reopens_issue(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow._profile.state_backend = MagicMock()
+        session = TaskSession(parent_issue_id=402, parent_subject="m")
+        session.merge_ready = True
+        flow._sessions[402] = session
+
+        from golem.merge_queue import MergeResult
+
+        flow._apply_merge_result(
+            MergeResult(session_id=402, success=False, error="timeout")
+        )
+        flow._profile.state_backend.update_status.assert_called_once_with(
+            402, "in_progress"
+        )
+
+    def test_failure_reopen_exception_suppressed(self, monkeypatch, tmp_path):
+        """If reopening the issue fails, merge failure is still recorded."""
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow._profile.state_backend = MagicMock()
+        flow._profile.state_backend.update_status.side_effect = OSError("net err")
+        session = TaskSession(parent_issue_id=403, parent_subject="m")
+        session.merge_ready = True
+        flow._sessions[403] = session
+
+        from golem.merge_queue import MergeResult
+
+        flow._apply_merge_result(
+            MergeResult(session_id=403, success=False, error="conflict")
+        )
+        assert session.state == TaskSessionState.FAILED
+        assert "merge failed: conflict" in session.errors
 
     def test_unknown_session(self, monkeypatch, tmp_path):
         flow = _make_flow(monkeypatch, tmp_path)
