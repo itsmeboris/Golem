@@ -350,9 +350,12 @@ async def _handle_reload(
     if flow:
         flow.stop_tick_loop()
 
-        # Wait for active sessions to finish.
+        # Wait for active (non-terminal) sessions to finish.
+        from .orchestrator import TaskSessionState
+
+        _terminal = {TaskSessionState.COMPLETED, TaskSessionState.FAILED}
         deadline = asyncio.get_running_loop().time() + drain_timeout
-        while len(flow._sessions) > 0:
+        while any(s.state not in _terminal for s in flow._sessions.values()):
             remaining = deadline - asyncio.get_running_loop().time()
             if remaining <= 0:
                 logger.warning(
