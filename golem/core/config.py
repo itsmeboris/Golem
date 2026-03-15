@@ -241,8 +241,15 @@ def _parse_flow_common(
     }
 
 
+_PROFILE_DEFAULT_TAGS: dict[str, str] = {
+    "github": "golem",
+}
+
+
 def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
     common = _parse_flow_common(data, {"poll_interval": 120})
+    profile = data.get("profile", "redmine")
+    default_tag = _PROFILE_DEFAULT_TAGS.get(profile, "[AGENT]")
     return GolemFlowConfig(
         **common,
         projects=data.get("projects", []),
@@ -250,7 +257,7 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
         grace_period_seconds=data.get("grace_period_seconds", 120),
         budget_per_task_usd=data.get("budget_per_task_usd", 10.0),
         max_active_sessions=data.get("max_active_sessions", 3),
-        detection_tag=data.get("detection_tag", "[AGENT]"),
+        detection_tag=data.get("detection_tag", default_tag),
         default_work_dir=data.get("default_work_dir", ""),
         work_dirs=data.get("work_dirs", {}),
         task_model=data.get("task_model", "sonnet"),

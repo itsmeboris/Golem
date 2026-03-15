@@ -160,7 +160,7 @@ Or set it manually in `config.yaml`:
 profile: github
 projects:
   - owner/repo
-detection_tag: agent                   # label on issues Golem should pick up
+detection_tag: golem                   # label on issues Golem should pick up
 ```
 
 Golem assigns issues to itself on pickup, closes them on completion, and creates a PR for each committed task.

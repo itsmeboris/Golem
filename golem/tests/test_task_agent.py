@@ -85,6 +85,18 @@ class TestParseGolemConfig:
         assert config.task_timeout_seconds == 3600
         assert config.progress_interval_seconds == 60
 
+    def test_github_profile_defaults_to_golem_tag(self):
+        config = _parse_golem_config({"profile": "github"})
+        assert config.detection_tag == "golem"
+
+    def test_github_profile_explicit_tag_preserved(self):
+        config = _parse_golem_config({"profile": "github", "detection_tag": "custom"})
+        assert config.detection_tag == "custom"
+
+    def test_redmine_profile_defaults_to_agent_tag(self):
+        config = _parse_golem_config({"profile": "redmine"})
+        assert config.detection_tag == "[AGENT]"
+
     def test_full_data(self):
         data = {
             "enabled": False,

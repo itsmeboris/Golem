@@ -387,7 +387,7 @@ class TestGitHubProfile:
             "10.0",  # budget
             "/tmp",  # work dir
             "owner/repo",  # GitHub repos
-            "agent",  # detection label
+            "golem",  # detection label
             "n",  # slack
             "n",  # teams
             "8081",  # port
@@ -398,7 +398,7 @@ class TestGitHubProfile:
         data = yaml.safe_load(output.read_text())
         assert data["flows"]["golem"]["profile"] == "github"
         assert data["flows"]["golem"]["projects"] == ["owner/repo"]
-        assert data["flows"]["golem"]["detection_tag"] == "agent"
+        assert data["flows"]["golem"]["detection_tag"] == "golem"
 
     def test_github_detection_tag_default(self, tmp_path):
         output = tmp_path / "config.yaml"
@@ -417,7 +417,7 @@ class TestGitHubProfile:
             result = run_wizard(output, use_defaults=False)
         assert result == 0
         data = yaml.safe_load(output.read_text())
-        assert data["flows"]["golem"]["detection_tag"] == "agent"
+        assert data["flows"]["golem"]["detection_tag"] == "golem"
 
     def test_github_shows_gh_hint(self, tmp_path, capsys):
         output = tmp_path / "config.yaml"
@@ -427,7 +427,7 @@ class TestGitHubProfile:
             "10.0",  # budget
             "/tmp",  # work dir
             "owner/repo",  # repos
-            "agent",  # label
+            "golem",  # label
             "n",  # slack
             "n",  # teams
             "8081",  # port

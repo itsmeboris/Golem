@@ -84,7 +84,7 @@ def _collect_inputs(use_defaults: bool) -> dict[str, str]:
             "GitHub repos to poll (owner/repo, comma-separated):", default=""
         )
         result["detection_tag"] = ask(
-            "Issue label for agent-eligible tasks?", default="agent"
+            "Issue label for agent-eligible tasks?", default="golem"
         )
     else:
         result["projects"] = ask(
