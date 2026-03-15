@@ -370,10 +370,13 @@ async def _handle_reload(
         await self_update_manager.apply_update()
 
     logger.info("Restarting daemon via os.execv")
+    # Remove PID file so the re-exec'd process doesn't see itself as "already running".
+    remove_pid(DEFAULT_PID_FILE)
     try:
         os.execv(sys.executable, [sys.executable] + sys.argv)
     except OSError:
         logger.exception("os.execv failed — resuming with current code")
+        write_pid(DEFAULT_PID_FILE)
         if flow:
             flow.start_tick_loop()
 
