@@ -458,67 +458,68 @@ class TestValidateCandidates:
 class TestCallHaiku:
     @pytest.mark.asyncio
     async def test_call_haiku_tracks_spend(self, tmp_path):
+        from golem.core.cli_wrapper import CLIResult
+
         mgr = _make_manager(tmp_path)
-        mock_response = MagicMock()
-        mock_response.content = [MagicMock(text='{"candidates": []}')]
-        mock_response.usage = MagicMock(input_tokens=100, output_tokens=50)
+        mock_result = CLIResult(
+            output={"result": '{"candidates": []}'},
+            cost_usd=0.001,
+        )
+        with patch("golem.heartbeat.invoke_cli", return_value=mock_result):
+            result = await mgr._call_haiku("prompt", "data")
 
-        mock_client = MagicMock()
-        mock_client.messages.create.return_value = mock_response
-        mgr._haiku_client = mock_client
-        result = await mgr._call_haiku("prompt", "data")
-
-        assert mgr._daily_spend_usd > 0
+        assert mgr._daily_spend_usd == pytest.approx(0.001)
         assert result == {"candidates": []}
 
     @pytest.mark.asyncio
     async def test_call_haiku_handles_non_json(self, tmp_path):
-        mgr = _make_manager(tmp_path)
-        mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="not json")]
-        mock_response.usage = MagicMock(input_tokens=10, output_tokens=5)
+        from golem.core.cli_wrapper import CLIResult
 
-        mock_client = MagicMock()
-        mock_client.messages.create.return_value = mock_response
-        mgr._haiku_client = mock_client
-        result = await mgr._call_haiku("prompt", "data")
+        mgr = _make_manager(tmp_path)
+        mock_result = CLIResult(
+            output={"result": "not json"},
+            cost_usd=0.0005,
+        )
+        with patch("golem.heartbeat.invoke_cli", return_value=mock_result):
+            result = await mgr._call_haiku("prompt", "data")
 
         assert result == "not json"
 
     @pytest.mark.asyncio
-    async def test_call_haiku_handles_empty_content(self, tmp_path):
-        mgr = _make_manager(tmp_path)
-        mock_response = MagicMock()
-        mock_response.content = []
-        mock_response.usage = MagicMock(input_tokens=10, output_tokens=0)
+    async def test_call_haiku_handles_empty_result(self, tmp_path):
+        from golem.core.cli_wrapper import CLIResult
 
-        mock_client = MagicMock()
-        mock_client.messages.create.return_value = mock_response
-        mgr._haiku_client = mock_client
-        result = await mgr._call_haiku("prompt", "data")
+        mgr = _make_manager(tmp_path)
+        mock_result = CLIResult(output={"result": ""}, cost_usd=0.0)
+        with patch("golem.heartbeat.invoke_cli", return_value=mock_result):
+            result = await mgr._call_haiku("prompt", "data")
 
         assert result == ""
 
     @pytest.mark.asyncio
-    async def test_call_haiku_no_usage_attr(self, tmp_path):
-        """Should handle responses without usage field."""
+    async def test_call_haiku_zero_cost(self, tmp_path):
+        """Spend is recorded even when cost is zero."""
+        from golem.core.cli_wrapper import CLIResult
+
         mgr = _make_manager(tmp_path)
-        mock_response = MagicMock(spec=[])  # no attributes at all
-        mock_response.content = [MagicMock(text="{}")]
+        mock_result = CLIResult(output={"result": "{}"}, cost_usd=0.0)
+        with patch("golem.heartbeat.invoke_cli", return_value=mock_result):
+            result = await mgr._call_haiku("prompt", "data")
 
-        mock_client = MagicMock()
-        mock_client.messages.create.return_value = mock_response
-        mgr._haiku_client = mock_client
-        result = await mgr._call_haiku("prompt", "data")
-
-        assert mgr._daily_spend_usd == 0.0  # no spend recorded
+        assert mgr._daily_spend_usd == 0.0
 
     @pytest.mark.asyncio
-    async def test_call_haiku_none_client(self, tmp_path):
-        """Returns empty string when Anthropic SDK is not installed."""
+    async def test_call_haiku_cli_error(self, tmp_path):
+        """Returns empty string when CLI call fails."""
+        from golem.core.cli_wrapper import CLIError
+
         mgr = _make_manager(tmp_path)
-        mgr._haiku_client = None
-        result = await mgr._call_haiku("prompt", "data")
+        with patch(
+            "golem.heartbeat.invoke_cli",
+            side_effect=CLIError("CLI not found"),
+        ):
+            result = await mgr._call_haiku("prompt", "data")
+
         assert result == ""
         assert mgr._daily_spend_usd == 0.0
 

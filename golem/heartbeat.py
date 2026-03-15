@@ -17,11 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-try:
-    from anthropic import Anthropic
-except ImportError:  # pragma: no cover
-    Anthropic = None  # type: ignore[assignment,misc]
-
+from .core.cli_wrapper import CLIConfig, CLIError, CLIType, invoke_cli
 from .core.config import DATA_DIR, GolemFlowConfig
 from .types import HeartbeatCandidateDict, HeartbeatSnapshotDict
 
@@ -72,9 +68,6 @@ class HeartbeatManager:
         )
         self._loop_task: Any = None  # asyncio.Task, set in start()
         self._flow: Any = None  # set in start()
-
-        # Reusable Haiku client — created once, avoids per-call overhead
-        self._haiku_client: Any = Anthropic() if Anthropic is not None else None
 
     # -- Budget ---------------------------------------------------------------
 
@@ -258,47 +251,31 @@ class HeartbeatManager:
 
     # -- Haiku integration ----------------------------------------------------
 
-    # Haiku pricing per token (USD).  Update when Anthropic changes rates.
-    # Source: https://docs.anthropic.com/en/docs/about-claude/models
     HAIKU_MODEL = "claude-haiku-4-5-20251001"
-    HAIKU_INPUT_COST_PER_TOKEN = 0.80 / 1_000_000
-    HAIKU_OUTPUT_COST_PER_TOKEN = 4.00 / 1_000_000
 
     async def _call_haiku(self, prompt: str, issues_json: str) -> Any:
-        """Call Haiku for triage. Returns parsed JSON or raw string on failure.
-
-        Cost is tracked from the API response usage field.
-        """
+        """Call Haiku for triage via CLI wrapper. Returns parsed JSON or raw string."""
         import asyncio
 
-        client = self._haiku_client
-        if client is None:
-            logger.error("Anthropic SDK not installed — cannot call Haiku")
-            return ""
+        full_prompt = f"{prompt}\n\nIssues:\n{issues_json}"
+        config = CLIConfig(
+            cli_type=CLIType.CLAUDE,
+            model=self.HAIKU_MODEL,
+            timeout_seconds=120,
+        )
 
         def _sync_call():
-            return client.messages.create(
-                model=self.HAIKU_MODEL,
-                max_tokens=2048,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": f"{prompt}\n\nIssues:\n{issues_json}",
-                    }
-                ],
-            )
+            return invoke_cli(full_prompt, config)
 
-        response = await asyncio.get_running_loop().run_in_executor(None, _sync_call)
+        try:
+            result = await asyncio.get_running_loop().run_in_executor(None, _sync_call)
+        except CLIError as exc:
+            logger.error("Haiku CLI call failed: %s", exc)
+            return ""
 
-        # Track cost from usage
-        if hasattr(response, "usage"):
-            input_cost = response.usage.input_tokens * self.HAIKU_INPUT_COST_PER_TOKEN
-            output_cost = (
-                response.usage.output_tokens * self.HAIKU_OUTPUT_COST_PER_TOKEN
-            )
-            self.record_spend(input_cost + output_cost)
+        self.record_spend(result.cost_usd)
 
-        text = response.content[0].text if response.content else ""
+        text = result.output.get("result", "")
         try:
             return json.loads(text)
         except json.JSONDecodeError:
