@@ -319,6 +319,11 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
         heartbeat_max_inflight=data.get("heartbeat_max_inflight", 1),
         heartbeat_candidate_limit=data.get("heartbeat_candidate_limit", 5),
         heartbeat_dedup_ttl_days=data.get("heartbeat_dedup_ttl_days", 30),
+        # Self-update
+        self_update_enabled=data.get("self_update_enabled", False),
+        self_update_branch=data.get("self_update_branch", "master"),
+        self_update_interval_seconds=data.get("self_update_interval_seconds", 600),
+        self_update_strategy=data.get("self_update_strategy", "merged_only"),
     )
 
 

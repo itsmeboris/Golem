@@ -377,3 +377,22 @@ class TestSelfUpdateConfigFields:
         config.golem.self_update_interval_seconds = 0
         errors = validate_config(config)
         assert any("self_update_interval" in e for e in errors)
+
+    def test_self_update_fields_parsed_from_yaml(self, tmp_path):
+        """self_update_* fields are read from YAML, not just defaults."""
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(
+            "flows:\n"
+            "  golem:\n"
+            "    profile: local\n"
+            "    projects: [p]\n"
+            "    self_update_enabled: true\n"
+            "    self_update_branch: develop\n"
+            "    self_update_interval_seconds: 120\n"
+            "    self_update_strategy: any_commit\n"
+        )
+        config = load_config(str(cfg_file))
+        assert config.golem.self_update_enabled is True
+        assert config.golem.self_update_branch == "develop"
+        assert config.golem.self_update_interval_seconds == 120
+        assert config.golem.self_update_strategy == "any_commit"
