@@ -167,8 +167,8 @@ def _get_changed_files(work_dir: str) -> list[str]:
         )
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip().splitlines()
-    except (subprocess.SubprocessError, OSError):
-        pass
+    except (subprocess.SubprocessError, OSError) as exc:
+        logger.debug("Failed to get changed files: %s", exc)
     return []
 
 
