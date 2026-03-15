@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from golem.heartbeat import HeartbeatManager, _strip_markdown_json
+from golem.heartbeat import HeartbeatManager, _coerce_task_id, _strip_markdown_json
 from golem.core.config import GolemFlowConfig
 
 
@@ -1378,3 +1378,253 @@ class TestRedminePollUntagged:
         src = RedmineTaskSource.__new__(RedmineTaskSource)
         result = src.poll_untagged_tasks(["proj"], "tag")
         assert result == []
+
+
+class TestCoerceTaskId:
+    """Unit tests for the _coerce_task_id module-level helper."""
+
+    @pytest.mark.parametrize(
+        "value,expected",
+        [
+            (42, 42),
+            (0, 0),
+            (-1, -1),
+        ],
+    )
+    def test_int_values_returned_as_is(self, value, expected):
+        assert _coerce_task_id(value) == expected
+
+    def test_int_value_no_warning(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="golem.heartbeat"):
+            _coerce_task_id(42)
+        assert caplog.records == []
+
+    @pytest.mark.parametrize(
+        "value,expected_int",
+        [
+            ("123", 123),
+            ("0", 0),
+            ("-5", -5),
+        ],
+    )
+    def test_string_ints_coerced(self, value, expected_int):
+        assert _coerce_task_id(value) == expected_int
+
+    def test_string_coercion_logs_warning(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="golem.heartbeat"):
+            _coerce_task_id("123")
+        assert len(caplog.records) == 1
+        assert "123" in caplog.records[0].message
+        assert "str" in caplog.records[0].message
+
+    @pytest.mark.parametrize(
+        "value",
+        ["abc", "12.5", "", "None", "[]"],
+    )
+    def test_unconvertible_strings_return_none(self, value):
+        assert _coerce_task_id(value) is None
+
+    def test_unconvertible_string_logs_warning(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="golem.heartbeat"):
+            _coerce_task_id("abc")
+        assert len(caplog.records) == 1
+        assert "abc" in caplog.records[0].message
+        assert "str" in caplog.records[0].message
+
+    @pytest.mark.parametrize(
+        "value",
+        [3.14, 1.0, None, [], {}, True, False],
+    )
+    def test_non_int_non_str_returns_none(self, value):
+        assert _coerce_task_id(value) is None
+
+    def test_bool_true_returns_none_with_warning(self, caplog):
+        """bool is a subclass of int but must NOT be treated as int."""
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="golem.heartbeat"):
+            result = _coerce_task_id(True)
+        assert result is None
+        assert len(caplog.records) == 1
+
+    def test_bool_false_returns_none_with_warning(self, caplog):
+        """False must also be rejected."""
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="golem.heartbeat"):
+            result = _coerce_task_id(False)
+        assert result is None
+        assert len(caplog.records) == 1
+
+    def test_warning_includes_type_name(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="golem.heartbeat"):
+            _coerce_task_id(3.14)
+        assert "float" in caplog.records[0].message
+
+
+class TestLoadStateTaskIdCoercion:
+    """Integration tests for _coerce_task_id in load_state()."""
+
+    def test_load_state_coerces_string_ids(self, tmp_path, caplog):
+        import logging
+
+        state_file = tmp_path / "heartbeat_state.json"
+        state_file.write_text('{"inflight_task_ids": ["123", "456"]}', encoding="utf-8")
+        mgr = _make_manager(tmp_path)
+        with caplog.at_level(logging.WARNING, logger="golem.heartbeat"):
+            mgr.load_state()
+        assert mgr._inflight_task_ids == [123, 456]
+        # Two string values — two warnings
+        assert len(caplog.records) == 2
+
+    def test_load_state_drops_invalid_ids(self, tmp_path, caplog):
+        import logging
+
+        state_file = tmp_path / "heartbeat_state.json"
+        state_file.write_text(
+            '{"inflight_task_ids": [123, "abc", "999"]}', encoding="utf-8"
+        )
+        mgr = _make_manager(tmp_path)
+        with caplog.at_level(logging.WARNING, logger="golem.heartbeat"):
+            mgr.load_state()
+        assert mgr._inflight_task_ids == [123, 999]
+        # One string coerced (999), one dropped (abc) — two warnings total
+        assert len(caplog.records) == 2
+
+    def test_load_state_all_int_no_warnings(self, tmp_path, caplog):
+        import logging
+
+        state_file = tmp_path / "heartbeat_state.json"
+        state_file.write_text('{"inflight_task_ids": [1, 2, 3]}', encoding="utf-8")
+        mgr = _make_manager(tmp_path)
+        with caplog.at_level(logging.WARNING, logger="golem.heartbeat"):
+            mgr.load_state()
+        assert mgr._inflight_task_ids == [1, 2, 3]
+        assert caplog.records == []
+
+    def test_load_state_mixed_drops_none_type(self, tmp_path, caplog):
+        import logging
+
+        state_file = tmp_path / "heartbeat_state.json"
+        state_file.write_text(
+            '{"inflight_task_ids": [42, null, "55"]}', encoding="utf-8"
+        )
+        mgr = _make_manager(tmp_path)
+        with caplog.at_level(logging.WARNING, logger="golem.heartbeat"):
+            mgr.load_state()
+        # null → None → dropped, "55" → 55 (with warning)
+        assert mgr._inflight_task_ids == [42, 55]
+        # One warning for null (non-int/non-str), one for string coercion
+        assert len(caplog.records) == 2
+
+
+class TestOnTaskCompletedCoercion:
+    """Integration tests for _coerce_task_id in on_task_completed()."""
+
+    def test_on_task_completed_string_id_matches_inflight(self, tmp_path, caplog):
+        """String task_id that corresponds to an inflight int is handled."""
+        import logging
+
+        mgr = _make_manager(tmp_path)
+        mgr._inflight_task_ids = [123]
+        with caplog.at_level(logging.WARNING, logger="golem.heartbeat"):
+            mgr.on_task_completed("123", success=True)
+        assert 123 not in mgr._inflight_task_ids
+        # Should log a coercion warning for the string input
+        assert any("123" in r.message for r in caplog.records)
+
+    def test_on_task_completed_unconvertible_returns_early(self, tmp_path, caplog):
+        """Unconvertible task_id returns without modifying state."""
+        import logging
+
+        mgr = _make_manager(tmp_path)
+        mgr._inflight_task_ids = [123]
+        with caplog.at_level(logging.WARNING, logger="golem.heartbeat"):
+            mgr.on_task_completed("abc", success=True)
+        # State unchanged
+        assert mgr._inflight_task_ids == [123]
+        assert len(caplog.records) == 1
+
+    def test_on_task_completed_int_no_warning(self, tmp_path, caplog):
+        """Plain int task_id passes through with no coercion warning."""
+        import logging
+
+        mgr = _make_manager(tmp_path)
+        mgr._inflight_task_ids = [123]
+        with caplog.at_level(logging.WARNING, logger="golem.heartbeat"):
+            mgr.on_task_completed(123, success=True)
+        assert caplog.records == []
+        assert 123 not in mgr._inflight_task_ids
+
+
+class TestHeartbeatTickTaskIdCoercion:
+    """Integration tests for _coerce_task_id in _run_heartbeat_tick()."""
+
+    @pytest.mark.asyncio
+    async def test_tick_coerces_string_task_id(self, tmp_path, caplog):
+        """submit_task returning a string task_id is coerced to int."""
+        import logging
+
+        mgr = _make_manager(tmp_path)
+        mock_flow = MagicMock()
+        mock_flow.submit_task.return_value = {"task_id": "999", "status": "submitted"}
+        mgr._flow = mock_flow
+
+        candidates = [
+            {
+                "id": "github:42",
+                "subject": "Fix bug",
+                "body": "desc",
+                "automatable": True,
+                "confidence": 0.9,
+                "complexity": "small",
+                "reason": "Fix",
+                "tier": 1,
+            },
+        ]
+
+        with caplog.at_level(logging.WARNING, logger="golem.heartbeat"):
+            with patch.object(mgr, "_run_tier1", return_value=candidates):
+                await mgr._run_heartbeat_tick()
+
+        assert 999 in mgr._inflight_task_ids
+        assert any("999" in r.message for r in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_tick_drops_non_integer_task_id(self, tmp_path):
+        """submit_task returning an unconvertible task_id logs error and goes idle."""
+        mgr = _make_manager(tmp_path)
+        mock_flow = MagicMock()
+        mock_flow.submit_task.return_value = {
+            "task_id": "not-an-int",
+            "status": "submitted",
+        }
+        mgr._flow = mock_flow
+
+        candidates = [
+            {
+                "id": "github:42",
+                "subject": "Fix bug",
+                "body": "desc",
+                "automatable": True,
+                "confidence": 0.9,
+                "complexity": "small",
+                "reason": "Fix",
+                "tier": 1,
+            },
+        ]
+
+        with patch.object(mgr, "_run_tier1", return_value=candidates):
+            await mgr._run_heartbeat_tick()
+
+        # Should go idle and not add to inflight
+        assert mgr._inflight_task_ids == []
+        assert mgr._state == "idle"
