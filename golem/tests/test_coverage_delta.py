@@ -138,16 +138,26 @@ class TestGetChangedFiles:
         result = _get_changed_files("/some/dir")
         assert result == []
 
+    @patch("golem.verifier.logger")
     @patch("golem.verifier.subprocess.run")
-    def test_returns_empty_list_on_subprocess_error(self, mock_run):
-        """Returns empty list when subprocess raises an error."""
-        mock_run.side_effect = subprocess.SubprocessError("git not found")
+    def test_returns_empty_list_on_subprocess_error(self, mock_run, mock_logger):
+        """Returns empty list when subprocess raises an error, and logs it."""
+        exc = subprocess.SubprocessError("git not found")
+        mock_run.side_effect = exc
         result = _get_changed_files("/some/dir")
         assert result == []
+        mock_logger.debug.assert_called_once_with(
+            "Failed to get changed files: %s", exc
+        )
 
+    @patch("golem.verifier.logger")
     @patch("golem.verifier.subprocess.run")
-    def test_returns_empty_list_on_oserror(self, mock_run):
-        """Returns empty list when OSError is raised."""
-        mock_run.side_effect = OSError("No such file or directory")
+    def test_returns_empty_list_on_oserror(self, mock_run, mock_logger):
+        """Returns empty list when OSError is raised, and logs it."""
+        exc = OSError("No such file or directory")
+        mock_run.side_effect = exc
         result = _get_changed_files("/some/dir")
         assert result == []
+        mock_logger.debug.assert_called_once_with(
+            "Failed to get changed files: %s", exc
+        )
