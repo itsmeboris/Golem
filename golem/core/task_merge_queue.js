@@ -92,7 +92,7 @@ async function renderMergeQueue() {
     const label = h.success ? 'merged' : (h.deferred ? 'deferred' : 'failed');
     const sha = h.merge_sha ? h.merge_sha.slice(0, 7) : '';
     const timeAgo = h.timestamp ? _mqTimeAgo(h.timestamp) : '';
-    html += `<div class="mq-entry">
+    html += `<div class="mq-entry mq-entry--history">
       <span class="mq-entry-dot ${status}"></span>
       <span class="mq-entry-id">#${h.session_id}</span>
       <span class="mq-entry-detail">${esc(h.error || '')}</span>
@@ -110,7 +110,7 @@ async function renderMergeQueue() {
   contentEl.innerHTML = html;
 
   // Wire up expand/collapse and retry
-  contentEl.querySelectorAll('.mq-entry').forEach(row => {
+  contentEl.querySelectorAll('.mq-entry:not(.mq-entry--history)').forEach(row => {
     row.addEventListener('click', () => {
       const detail = row.nextElementSibling;
       if (detail && detail.classList.contains('mq-entry-expand')) {

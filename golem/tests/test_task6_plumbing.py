@@ -118,6 +118,7 @@ class TestMergeQueueOnStateChange:
 
 
 class TestStartDashboardServerMergeQueueParam:
+    @pytest.mark.asyncio
     async def test_passes_merge_queue_to_mount_dashboard(self, tmp_path):
         """_start_dashboard_server passes merge_queue to mount_dashboard."""
         from golem.cli import _start_dashboard_server
@@ -152,6 +153,7 @@ class TestStartDashboardServerMergeQueueParam:
 
         assert captured["merge_queue"] is mq
 
+    @pytest.mark.asyncio
     async def test_default_none_merge_queue(self, tmp_path):
         """_start_dashboard_server defaults merge_queue to None."""
         from golem.cli import _start_dashboard_server
