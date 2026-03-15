@@ -492,6 +492,13 @@ async def _sse_event_stream():
         except OSError:
             sessions_mtime = None
 
+    merge_queue_mtime: float | None = None
+    if _MERGE_QUEUE_SENTINEL.exists():
+        try:
+            merge_queue_mtime = _MERGE_QUEUE_SENTINEL.stat().st_mtime
+        except OSError:
+            merge_queue_mtime = None
+
     trace_mtimes: dict[str, float] = {}
     if TRACES_DIR.exists():
         for p in TRACES_DIR.rglob("*.jsonl"):
@@ -517,6 +524,19 @@ async def _sse_event_stream():
             if new_sessions_mtime is not None and new_sessions_mtime != sessions_mtime:
                 sessions_mtime = new_sessions_mtime
                 yield 'event: session_update\ndata: {"type": "session_update"}\n\n'
+                sent_event = True
+                heartbeat_counter = 0
+
+            # --- merge queue sentinel ---
+            new_mq_mtime: float | None = None
+            if _MERGE_QUEUE_SENTINEL.exists():
+                try:
+                    new_mq_mtime = _MERGE_QUEUE_SENTINEL.stat().st_mtime
+                except OSError:
+                    new_mq_mtime = None
+            if new_mq_mtime is not None and new_mq_mtime != merge_queue_mtime:
+                merge_queue_mtime = new_mq_mtime
+                yield 'event: merge_queue_update\ndata: {"type": "merge_queue_update"}\n\n'
                 sent_event = True
                 heartbeat_counter = 0
 
@@ -794,6 +814,31 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
                 f"/dashboard/{ext}?v={cache.version}",
             )
         return HTMLResponse(content=html, headers=_NO_CACHE_HEADERS)
+
+    @app.get("/api/merge-queue")
+    async def api_merge_queue():
+        if merge_queue is None:
+            return {
+                "pending": [],
+                "active": None,
+                "deferred": [],
+                "conflicts": [],
+                "history": [],
+            }
+        return merge_queue.snapshot()
+
+    @app.post("/api/merge-queue/retry/{session_id}")
+    async def api_merge_queue_retry(session_id: int):
+        if merge_queue is None:
+            return JSONResponse(
+                status_code=503,
+                content={"error": "Merge queue not available in standalone mode"},
+            )
+        try:
+            await merge_queue.retry(session_id)
+            return {"ok": True, "session_id": session_id}
+        except ValueError as exc:
+            return JSONResponse(status_code=404, content={"error": str(exc)})
 
     @app.get("/dashboard/admin")
     async def admin_page() -> HTMLResponse:
