@@ -13,12 +13,12 @@ from golem.worktree_manager import MergeOutcome, MissingAddition
 
 
 @pytest.fixture()
-def base_entry():
+def base_entry(tmp_path):
     return MergeEntry(
         session_id=1,
         branch_name="golem/session-1",
-        worktree_path="/tmp/wt-1",
-        base_dir="/repo",
+        worktree_path=str(tmp_path / "wt-1"),
+        base_dir=str(tmp_path / "repo"),
         changed_files=["a.py", "b.py"],
     )
 
@@ -29,12 +29,12 @@ def queue():
 
 
 class TestMergeEntryDefaults:
-    def test_defaults(self):
+    def test_defaults(self, tmp_path):
         e = MergeEntry(
             session_id=1,
             branch_name="b",
-            worktree_path="/wt",
-            base_dir="/repo",
+            worktree_path=str(tmp_path / "wt"),
+            base_dir=str(tmp_path / "repo"),
         )
         assert not e.changed_files
         assert e.priority == 5
@@ -63,15 +63,15 @@ class TestPending:
 
 class TestEnqueue:
     @patch("golem.merge_queue.get_changed_files", return_value=["x.py"])
-    async def test_populates_changed_files_when_empty(self, mock_gcf, queue):
+    async def test_populates_changed_files_when_empty(self, mock_gcf, queue, tmp_path):
         entry = MergeEntry(
             session_id=2,
             branch_name="golem/session-2",
-            worktree_path="/tmp/wt-2",
-            base_dir="/repo",
+            worktree_path=str(tmp_path / "wt-2"),
+            base_dir=str(tmp_path / "repo"),
         )
         await queue.enqueue(entry)
-        mock_gcf.assert_called_once_with("/repo", "golem/session-2")
+        mock_gcf.assert_called_once_with(str(tmp_path / "repo"), "golem/session-2")
         assert entry.changed_files == ["x.py"]
         assert queue.pending == 1
 
@@ -84,19 +84,19 @@ class TestEnqueue:
 
 class TestDetectOverlaps:
     @patch("golem.merge_queue.get_changed_files", return_value=[])
-    async def test_no_overlaps(self, _m, queue):
+    async def test_no_overlaps(self, _m, queue, tmp_path):
         e1 = MergeEntry(
             session_id=1,
             branch_name="b1",
-            worktree_path="/wt1",
-            base_dir="/repo",
+            worktree_path=str(tmp_path / "wt1"),
+            base_dir=str(tmp_path / "repo"),
             changed_files=["a.py"],
         )
         e2 = MergeEntry(
             session_id=2,
             branch_name="b2",
-            worktree_path="/wt2",
-            base_dir="/repo",
+            worktree_path=str(tmp_path / "wt2"),
+            base_dir=str(tmp_path / "repo"),
             changed_files=["b.py"],
         )
         await queue.enqueue(e1)
@@ -104,19 +104,19 @@ class TestDetectOverlaps:
         assert queue.detect_overlaps() == {}
 
     @patch("golem.merge_queue.get_changed_files", return_value=[])
-    async def test_with_overlaps(self, _m, queue):
+    async def test_with_overlaps(self, _m, queue, tmp_path):
         e1 = MergeEntry(
             session_id=1,
             branch_name="b1",
-            worktree_path="/wt1",
-            base_dir="/repo",
+            worktree_path=str(tmp_path / "wt1"),
+            base_dir=str(tmp_path / "repo"),
             changed_files=["shared.py", "a.py"],
         )
         e2 = MergeEntry(
             session_id=2,
             branch_name="b2",
-            worktree_path="/wt2",
-            base_dir="/repo",
+            worktree_path=str(tmp_path / "wt2"),
+            base_dir=str(tmp_path / "repo"),
             changed_files=["shared.py", "b.py"],
         )
         await queue.enqueue(e1)
@@ -144,20 +144,20 @@ class TestProcessAll:
         return_value=MergeOutcome(sha="sha1", merge_branch="merge-ready/1"),
     )
     @patch("golem.merge_queue.get_changed_files", return_value=[])
-    async def test_priority_sorting(self, _gcf, mock_miw, _ff, _rg, queue):
+    async def test_priority_sorting(self, _gcf, mock_miw, _ff, _rg, queue, tmp_path):
         low = MergeEntry(
             session_id=10,
             branch_name="b10",
-            worktree_path="/wt10",
-            base_dir="/repo",
+            worktree_path=str(tmp_path / "wt10"),
+            base_dir=str(tmp_path / "repo"),
             changed_files=["f.py"],
             priority=9,
         )
         high = MergeEntry(
             session_id=20,
             branch_name="b20",
-            worktree_path="/wt20",
-            base_dir="/repo",
+            worktree_path=str(tmp_path / "wt20"),
+            base_dir=str(tmp_path / "repo"),
             changed_files=["g.py"],
             priority=1,
         )
@@ -199,7 +199,7 @@ class TestMergeOneSuccess:
         assert results[0].success is True
         assert results[0].merge_sha == "deadbeef"
         assert results[0].error == ""
-        mock_miw.assert_called_once_with("/repo", 1)
+        mock_miw.assert_called_once_with(base_entry.base_dir, 1)
 
 
 class TestMergeOneFailureNoHandler:
@@ -247,7 +247,7 @@ class TestMergeAgentResolvesConflict:
         assert results[0].success is True
         assert results[0].merge_sha == "resolved_sha"
         handler.assert_called_once_with(
-            "/repo",
+            base_entry.base_dir,
             1,
             "",
             ["a.py", "b.py"],
@@ -512,14 +512,14 @@ class TestMergeFailureResultShape:
         ),
     )
     @patch("golem.merge_queue.get_changed_files", return_value=[])
-    async def test_failure_result_has_success_false(self, _gcf, _miw):
+    async def test_failure_result_has_success_false(self, _gcf, _miw, tmp_path):
         """A merge that yields an empty SHA must produce success=False."""
         q = MergeQueue()
         entry = MergeEntry(
             session_id=42,
             branch_name="agent/42",
-            worktree_path="/wt",
-            base_dir="/repo",
+            worktree_path=str(tmp_path / "wt"),
+            base_dir=str(tmp_path / "repo"),
             changed_files=["x.py"],
         )
         await q.enqueue(entry)

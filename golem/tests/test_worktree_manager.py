@@ -158,7 +158,7 @@ class TestGetChangedFiles:
         assert "new_file.py" in files
         cleanup_worktree(str(git_repo), wt_path)
 
-    def test_returns_empty_on_failure(self, monkeypatch):
+    def test_returns_empty_on_failure(self, monkeypatch, tmp_path):
         from golem.worktree_manager import get_changed_files
 
         def mock_run_git(args, cwd, timeout=30):
@@ -172,7 +172,7 @@ class TestGetChangedFiles:
             return result
 
         monkeypatch.setattr("golem.worktree_manager._run_git", mock_run_git)
-        assert get_changed_files("/repo", "branch") == []
+        assert get_changed_files(str(tmp_path / "repo"), "branch") == []
 
     def test_explicit_target_branch(self, git_repo, tmp_path):
         from golem.worktree_manager import get_changed_files
@@ -290,7 +290,7 @@ class TestGetAgentDiff:
         assert "agent code" in diff
         cleanup_worktree(str(git_repo), wt_path)
 
-    def test_returns_empty_on_failure(self, monkeypatch):
+    def test_returns_empty_on_failure(self, monkeypatch, tmp_path):
         def mock_run_git(args, cwd, timeout=30):
             result = MagicMock()
             if args[0] == "diff":
@@ -303,7 +303,7 @@ class TestGetAgentDiff:
             return result
 
         monkeypatch.setattr("golem.worktree_manager._run_git", mock_run_git)
-        assert get_agent_diff("/repo", "branch") == ""
+        assert get_agent_diff(str(tmp_path / "repo"), "branch") == ""
 
     def test_no_changes(self, git_repo, tmp_path):
         wt_root = str(tmp_path / "worktrees")
@@ -669,7 +669,7 @@ class TestFastForwardIfSafe:
         assert ok is False
         assert "diverged" in reason or "ff-only failed" in reason
 
-    def test_generic_ff_failure(self, monkeypatch):
+    def test_generic_ff_failure(self, monkeypatch, tmp_path):
         """Generic ff-only failure with unexpected error message."""
         from golem.worktree_manager import fast_forward_if_safe
 
@@ -681,6 +681,6 @@ class TestFastForwardIfSafe:
             return result
 
         monkeypatch.setattr("golem.worktree_manager._run_git", mock_run_git)
-        ok, reason = fast_forward_if_safe("/repo", "branch")
+        ok, reason = fast_forward_if_safe(str(tmp_path / "repo"), "branch")
         assert ok is False
         assert "ff-only failed" in reason
