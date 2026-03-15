@@ -368,8 +368,9 @@ Launch with `golem dashboard --port 8081`. The dashboard is served alongside the
 
 | View | What it shows |
 |------|--------------|
-| **Overview** | Task list with status, cost, and elapsed time on the left; a preview panel on the right |
+| **Overview** | Task list with status, cost, and elapsed time on the left; a preview panel on the right. Includes a status color legend for merge queue states |
 | **Task Detail** | Header with task metadata, a metrics strip, a phase-aware timeline with sidebar navigation for each phase (UNDERSTAND / PLAN / BUILD / REVIEW / VERIFY), and a live strip showing current phase and elapsed time while the task is running |
+| **Merge Queue** | Real-time view of the merge pipeline — metrics bar (pending / merging / deferred / conflicts / merged today / failed today), collapsible sections for Active, Pending, Deferred, Conflicts, and Recent merges, expandable entry details, and one-click retry for failed or deferred entries |
 
 Additional features:
 
@@ -518,6 +519,8 @@ The daemon exposes a REST API (served on the dashboard port, default `8081`).
 | `/api/sessions/{task_id}` | GET | None | Session details for a specific task |
 | `/api/batch/{group_id}` | GET | None | Status of a submitted batch by group ID |
 | `/api/batches` | GET | None | List all known batches |
+| `/api/merge-queue` | GET | None | Merge queue snapshot — pending, active, deferred, conflicts, and recent history |
+| `/api/merge-queue/retry/{session_id}` | POST | None | Re-enqueue a failed or deferred merge entry |
 | `/api/config` | GET | None | Current config snapshot |
 | `/api/logs` | GET | None | Tail of the daemon log file |
 | `/api/trace-parsed/{event_id}` | GET | None | Structured trace with phase detection, subagent grouping, and tool timelines; accepts `?since_event=N` to skip re-parsing when unchanged |
