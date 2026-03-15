@@ -30,7 +30,7 @@ set -euo pipefail
 # --- Configuration ---
 MIN_TURNS="${CL_MIN_TURNS:-8}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 AGENTS_MD="$PROJECT_ROOT/AGENTS.md"
 STATE_DIR="$PROJECT_ROOT/.claude/state"
 INDEX_FILE="$STATE_DIR/continual-learning-index.json"
