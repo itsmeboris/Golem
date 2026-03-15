@@ -12,6 +12,7 @@ Runtime dependencies are injected once via :func:`wire_control_api`.
 
 from __future__ import annotations
 
+import asyncio
 import hmac
 import json
 import logging
@@ -45,6 +46,9 @@ _admin_token: str = ""
 _api_key: str = ""
 _golem_flow: "Any | None" = None
 _start_time: float = time.time()
+_config_path: str = "config.yaml"
+_reload_event: "asyncio.Event | None" = None
+_self_update_manager: "Any | None" = None
 
 
 def wire_control_api(
@@ -53,15 +57,22 @@ def wire_control_api(
     admin_token: str = "",
     api_key: str = "",
     golem_flow: "Any | None" = None,
+    config_path: str = "config.yaml",
+    reload_event: "asyncio.Event | None" = None,
+    self_update_manager: "Any | None" = None,
 ) -> None:
     """Inject runtime dependencies.  Called once at daemon startup."""
     global _polling_trigger, _dispatcher, _admin_token, _api_key, _golem_flow, _start_time
+    global _config_path, _reload_event, _self_update_manager
     _polling_trigger = polling_trigger
     _dispatcher = dispatcher
     _admin_token = admin_token
     _api_key = api_key
     _golem_flow = golem_flow
     _start_time = time.time()
+    _config_path = config_path
+    _reload_event = reload_event
+    _self_update_manager = self_update_manager
 
 
 def _maybe_start_tick(flow_name: str) -> None:
@@ -123,6 +134,13 @@ def _require_api_key(request: "Request"):
         token = request.query_params.get("token", "")
     if not token or not hmac.compare_digest(token, _api_key):
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+
+def _require_admin_or_open(request: "Request"):
+    """Like _require_admin but allows open access when no token is configured."""
+    if not _admin_token:
+        return  # open access
+    _require_admin(request)
 
 
 if FASTAPI_AVAILABLE:
@@ -385,6 +403,63 @@ if FASTAPI_AVAILABLE:
                 detail="Daemon not ready — GolemFlow not wired",
             )
         return {"ok": True, "batches": _golem_flow.list_batches()}
+
+    @health_router.get("/self-update")
+    async def self_update_status():
+        """Return self-update manager status snapshot (no auth required)."""
+        if _self_update_manager is None:
+            return {"enabled": False}
+        return _self_update_manager.snapshot()
+
+    @health_router.get("/config")
+    async def get_config(request: Request):
+        """Return current config values grouped by category."""
+        _require_admin_or_open(request)
+        from golem.config_editor import get_config_by_category  # noqa: PLC0415
+        from golem.core.config import load_config  # noqa: PLC0415
+
+        config = load_config(_config_path)
+        categories = get_config_by_category(config)
+        result = {}
+        for cat, fields in categories.items():
+            result[cat] = []
+            for fi in fields:
+                value = "***" if fi.meta.sensitive else fi.value
+                result[cat].append(
+                    {
+                        "key": fi.key,
+                        "value": value,
+                        "meta": {
+                            "category": fi.meta.category,
+                            "field_type": fi.meta.field_type,
+                            "description": fi.meta.description,
+                            "choices": fi.meta.choices,
+                            "min_val": fi.meta.min_val,
+                            "max_val": fi.meta.max_val,
+                            "sensitive": fi.meta.sensitive,
+                        },
+                    }
+                )
+        return result
+
+    @health_router.post("/config/update")
+    async def update_config_endpoint(request: Request):
+        """Validate and apply config updates, optionally triggering a reload."""
+        _require_admin_or_open(request)
+        from golem.config_editor import update_config  # noqa: PLC0415
+
+        body = await request.json()
+        errors = update_config(Path(_config_path), body)
+        if errors:
+            return {"success": False, "errors": errors}
+        if _reload_event is not None:
+
+            async def _deferred_reload():
+                await asyncio.sleep(0.5)
+                _reload_event.set()
+
+            asyncio.create_task(_deferred_reload())
+        return {"success": True, "errors": []}
 
 else:  # pragma: no cover
     # Provide a no-op router when FastAPI is not installed.
