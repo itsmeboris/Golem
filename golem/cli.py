@@ -372,8 +372,12 @@ async def _handle_reload(
     logger.info("Restarting daemon via os.execv")
     # Remove PID file so the re-exec'd process doesn't see itself as "already running".
     remove_pid(DEFAULT_PID_FILE)
+    # Use --foreground so the re-exec'd process doesn't fork again.
+    argv = list(sys.argv)
+    if "--foreground" not in argv:
+        argv.append("--foreground")
     try:
-        os.execv(sys.executable, [sys.executable] + sys.argv)
+        os.execv(sys.executable, [sys.executable] + argv)
     except OSError:
         logger.exception("os.execv failed — resuming with current code")
         write_pid(DEFAULT_PID_FILE)

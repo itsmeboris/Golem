@@ -42,9 +42,12 @@ class TestHandleReload:
                 flow=flow,
                 drain_timeout=1,
             )
+        expected_argv = list(sys.argv)
+        if "--foreground" not in expected_argv:
+            expected_argv.append("--foreground")
         mock_execv.assert_called_once_with(
             sys.executable,
-            [sys.executable] + sys.argv,
+            [sys.executable] + expected_argv,
         )
 
     @pytest.mark.asyncio
