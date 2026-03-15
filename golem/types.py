@@ -203,3 +203,51 @@ class VerificationResultDict(TypedDict):
     coverage_pct: float
     duration_s: float
     coverage_delta: NotRequired[dict[str, Any]]
+
+
+class MergeEntryDict(TypedDict):
+    """Serialized merge queue entry for dashboard API.
+
+    Producers: merge_queue.py snapshot()
+    Consumers: dashboard.py GET /api/merge-queue
+    """
+
+    session_id: int
+    branch_name: str
+    worktree_path: str
+    priority: int
+    group_id: str
+    queued_at: str
+    changed_files: list[str]
+
+
+class MergeHistoryEntryDict(TypedDict):
+    """Serialized merge result for dashboard API.
+
+    Producers: merge_queue.py snapshot()
+    Consumers: dashboard.py GET /api/merge-queue
+    """
+
+    session_id: int
+    success: bool
+    merge_sha: str
+    conflict_files: list[str]
+    error: str
+    changed_files: list[str]
+    deferred: bool
+    merge_branch: str
+    timestamp: str
+
+
+class MergeQueueSnapshotDict(TypedDict):
+    """Full merge queue state for dashboard API.
+
+    Producers: merge_queue.py snapshot()
+    Consumers: dashboard.py GET /api/merge-queue
+    """
+
+    pending: list[MergeEntryDict]
+    active: MergeEntryDict | None
+    deferred: list[MergeEntryDict]
+    conflicts: list[MergeEntryDict]
+    history: list[MergeHistoryEntryDict]

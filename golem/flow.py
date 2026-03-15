@@ -20,6 +20,7 @@ import shutil
 import threading
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 from .core.config import Config, DATA_DIR, GolemFlowConfig
@@ -91,6 +92,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
 
         self._merge_queue = MergeQueue(
             on_merge_agent=self._handle_merge_agent,
+            on_state_change=self._touch_merge_sentinel,
         )
         self._max_infra_retries = getattr(self._task_config, "max_infra_retries", 2)
         self._batch_monitor = BatchMonitor()
@@ -594,6 +596,12 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                     cwd=session.base_work_dir,
                 )
                 self._save_state()
+
+    def _touch_merge_sentinel(self) -> None:
+        """Touch the merge-queue sentinel file to trigger SSE update."""
+        sentinel = Path(DATA_DIR) / "state" / ".merge_queue_updated"
+        sentinel.parent.mkdir(parents=True, exist_ok=True)
+        sentinel.touch()
 
     def _on_agent_progress(self, session: TaskSession, milestone: Milestone) -> None:
         """Central progress handler — updates LiveState and session from milestones."""

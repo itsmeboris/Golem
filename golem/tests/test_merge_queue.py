@@ -200,7 +200,7 @@ class TestProcessAll:
     async def test_results_accumulated(self, _gcf, _miw, _ff, _rg, queue, base_entry):
         await queue.enqueue(base_entry)
         await queue.process_all()
-        assert len(queue._results) == 1
+        assert len([r for _, r in queue._history]) == 1
 
 
 class TestMergeOneSuccess:
@@ -912,3 +912,446 @@ class TestPostMergeVerification:
         ]
         # Should have at least 2 remove calls: one for stale cleanup, one for final cleanup
         assert len(remove_calls) >= 2
+
+
+# ---------------------------------------------------------------------------
+# Task 1: TypedDict tests
+# ---------------------------------------------------------------------------
+
+
+def test_merge_entry_dict_fields():
+    """MergeEntryDict has the expected keys."""
+    from golem.types import MergeEntryDict
+
+    d: MergeEntryDict = {
+        "session_id": 1,
+        "branch_name": "agent/1",
+        "worktree_path": "/tmp/wt",
+        "priority": 5,
+        "group_id": "",
+        "queued_at": "2026-03-15T10:00:00Z",
+        "changed_files": ["golem/flow.py"],
+    }
+    assert d["session_id"] == 1
+    assert d["changed_files"] == ["golem/flow.py"]
+
+
+def test_merge_history_entry_dict_fields():
+    """MergeHistoryEntryDict has the expected keys."""
+    from golem.types import MergeHistoryEntryDict
+
+    d: MergeHistoryEntryDict = {
+        "session_id": 1,
+        "success": True,
+        "merge_sha": "abc123",
+        "conflict_files": [],
+        "error": "",
+        "changed_files": ["golem/flow.py"],
+        "deferred": False,
+        "merge_branch": "",
+        "timestamp": "2026-03-15T10:00:12Z",
+    }
+    assert d["success"] is True
+    assert d["timestamp"] == "2026-03-15T10:00:12Z"
+
+
+def test_merge_queue_snapshot_dict_fields():
+    """MergeQueueSnapshotDict has the expected keys."""
+    from golem.types import MergeQueueSnapshotDict
+
+    d: MergeQueueSnapshotDict = {
+        "pending": [],
+        "active": None,
+        "deferred": [],
+        "conflicts": [],
+        "history": [],
+    }
+    assert d["active"] is None
+    assert d["pending"] == []
+
+
+# ---------------------------------------------------------------------------
+# Task 2: Dataclass field tests
+# ---------------------------------------------------------------------------
+
+
+def test_merge_entry_has_queued_at():
+    """MergeEntry has a queued_at field defaulting to empty string."""
+    entry = MergeEntry(
+        session_id=1, branch_name="agent/1", worktree_path="/tmp", base_dir="/proj"
+    )
+    assert entry.queued_at == ""
+
+
+def test_merge_result_has_timestamp():
+    """MergeResult has a timestamp field defaulting to empty string."""
+    result = MergeResult(session_id=1, success=True)
+    assert result.timestamp == ""
+
+
+# ---------------------------------------------------------------------------
+# Task 3: on_state_change callback, _history deque, _active tracking
+# ---------------------------------------------------------------------------
+
+
+import time
+from collections import deque
+
+
+@pytest.mark.asyncio
+async def test_on_state_change_called_on_enqueue():
+    """on_state_change callback fires when an entry is enqueued."""
+    cb = MagicMock()
+    mq = MergeQueue(on_state_change=cb)
+    entry = MergeEntry(
+        session_id=99,
+        branch_name="agent/99",
+        worktree_path="/tmp/wt",
+        base_dir="/tmp/base",
+    )
+    with patch("golem.merge_queue.get_changed_files", return_value=["f.py"]):
+        await mq.enqueue(entry)
+    cb.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_history_is_deque_with_maxlen():
+    """_history is a deque with maxlen=50."""
+    mq = MergeQueue()
+    assert isinstance(mq._history, deque)
+    assert mq._history.maxlen == 50
+
+
+@pytest.mark.asyncio
+async def test_enqueue_sets_queued_at():
+    """enqueue() populates queued_at with an ISO timestamp."""
+    mq = MergeQueue()
+    entry = MergeEntry(
+        session_id=99,
+        branch_name="agent/99",
+        worktree_path="/tmp/wt",
+        base_dir="/tmp/base",
+    )
+    with patch("golem.merge_queue.get_changed_files", return_value=["f.py"]):
+        await mq.enqueue(entry)
+    assert entry.queued_at != ""
+    # Should be a valid ISO-ish timestamp
+    assert "T" in entry.queued_at
+
+
+@pytest.mark.asyncio
+async def test_on_state_change_called_during_process_all():
+    """on_state_change is called for each merge processed in process_all."""
+    cb = MagicMock()
+    mq = MergeQueue(on_state_change=cb)
+    entry = MergeEntry(
+        session_id=77,
+        branch_name="agent/77",
+        worktree_path="/tmp/wt",
+        base_dir="/tmp/base",
+        changed_files=["x.py"],
+    )
+    with (
+        patch(
+            "golem.merge_queue.merge_in_worktree",
+            return_value=MergeOutcome(sha="abc", merge_branch="merge-ready/77"),
+        ),
+        patch("golem.merge_queue.fast_forward_if_safe", return_value=(True, "")),
+        patch("golem.merge_queue._run_git"),
+        patch("golem.merge_queue.get_changed_files", return_value=["x.py"]),
+    ):
+        await mq.enqueue(entry)
+        cb.reset_mock()
+        await mq.process_all()
+    # At minimum, called once per merge (active set) and once (active cleared)
+    assert cb.call_count >= 1
+
+
+@pytest.mark.asyncio
+async def test_active_is_none_when_idle():
+    """_active is None before and after processing."""
+    mq = MergeQueue()
+    assert mq._active is None
+
+    entry = MergeEntry(
+        session_id=55,
+        branch_name="agent/55",
+        worktree_path="/tmp/wt",
+        base_dir="/tmp/base",
+        changed_files=["a.py"],
+    )
+    with (
+        patch(
+            "golem.merge_queue.merge_in_worktree",
+            return_value=MergeOutcome(sha="def", merge_branch="merge-ready/55"),
+        ),
+        patch("golem.merge_queue.fast_forward_if_safe", return_value=(True, "")),
+        patch("golem.merge_queue._run_git"),
+        patch("golem.merge_queue.get_changed_files", return_value=["a.py"]),
+    ):
+        await mq.enqueue(entry)
+        await mq.process_all()
+
+    assert mq._active is None
+
+
+@pytest.mark.asyncio
+async def test_history_populated_after_process_all():
+    """_history contains (entry, result) tuples after processing."""
+    mq = MergeQueue()
+    entry = MergeEntry(
+        session_id=33,
+        branch_name="agent/33",
+        worktree_path="/tmp/wt",
+        base_dir="/tmp/base",
+        changed_files=["z.py"],
+    )
+    with (
+        patch(
+            "golem.merge_queue.merge_in_worktree",
+            return_value=MergeOutcome(sha="ghi", merge_branch="merge-ready/33"),
+        ),
+        patch("golem.merge_queue.fast_forward_if_safe", return_value=(True, "")),
+        patch("golem.merge_queue._run_git"),
+        patch("golem.merge_queue.get_changed_files", return_value=["z.py"]),
+    ):
+        await mq.enqueue(entry)
+        await mq.process_all()
+
+    assert len(mq._history) == 1
+    hist_entry, hist_result = mq._history[0]
+    assert hist_entry.session_id == 33
+    assert hist_result.success is True
+
+
+@pytest.mark.asyncio
+async def test_history_result_timestamp_set():
+    """MergeResult.timestamp is populated with an ISO timestamp after process_all."""
+    mq = MergeQueue()
+    entry = MergeEntry(
+        session_id=44,
+        branch_name="agent/44",
+        worktree_path="/tmp/wt",
+        base_dir="/tmp/base",
+        changed_files=["t.py"],
+    )
+    with (
+        patch(
+            "golem.merge_queue.merge_in_worktree",
+            return_value=MergeOutcome(sha="jkl", merge_branch="merge-ready/44"),
+        ),
+        patch("golem.merge_queue.fast_forward_if_safe", return_value=(True, "")),
+        patch("golem.merge_queue._run_git"),
+        patch("golem.merge_queue.get_changed_files", return_value=["t.py"]),
+    ):
+        await mq.enqueue(entry)
+        results = await mq.process_all()
+
+    assert results[0].timestamp != ""
+    assert "T" in results[0].timestamp
+
+
+@pytest.mark.asyncio
+async def test_notify_not_called_when_no_callback():
+    """_notify does nothing when on_state_change is None."""
+    mq = MergeQueue()  # no callback
+    # Should not raise
+    mq._notify()
+
+
+@pytest.mark.asyncio
+async def test_history_maxlen_evicts_oldest():
+    """_history deque evicts oldest entries when maxlen=50 is exceeded."""
+    mq = MergeQueue()
+    # Manually fill history beyond maxlen
+    for i in range(55):
+        e = MergeEntry(
+            session_id=i,
+            branch_name=f"agent/{i}",
+            worktree_path="/tmp/wt",
+            base_dir="/tmp/base",
+        )
+        r = MergeResult(session_id=i, success=True)
+        mq._history.append((e, r))
+    assert len(mq._history) == 50
+    # Oldest (session_id=0..4) should be evicted; newest (session_id=5..54) remain
+    first_entry, _ = mq._history[0]
+    assert first_entry.session_id == 5
+
+
+# ---------------------------------------------------------------------------
+# Task 4: snapshot() method
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_snapshot_empty_queue():
+    """snapshot() returns empty structure when queue is idle."""
+    mq = MergeQueue()
+    snap = mq.snapshot()
+    assert snap["pending"] == []
+    assert snap["active"] is None
+    assert snap["deferred"] == []
+    assert snap["conflicts"] == []
+    assert snap["history"] == []
+
+
+@pytest.mark.asyncio
+async def test_snapshot_shows_pending():
+    """snapshot() includes pending entries."""
+    mq = MergeQueue()
+    entry = MergeEntry(
+        session_id=1,
+        branch_name="agent/1",
+        worktree_path="/tmp/wt",
+        base_dir="/proj",
+        queued_at="2026-03-15T10:00:00Z",
+    )
+    with patch("golem.merge_queue.get_changed_files", return_value=["f.py"]):
+        await mq.enqueue(entry)
+    snap = mq.snapshot()
+    assert len(snap["pending"]) == 1
+    assert snap["pending"][0]["session_id"] == 1
+
+
+@pytest.mark.asyncio
+async def test_snapshot_derives_deferred():
+    """snapshot() filters deferred entries from _history."""
+    mq = MergeQueue()
+    entry = MergeEntry(
+        session_id=5, branch_name="agent/5", worktree_path="/tmp", base_dir="/proj"
+    )
+    result = MergeResult(
+        session_id=5,
+        success=False,
+        deferred=True,
+        error="dirty tree",
+        timestamp="2026-03-15T10:00:00Z",
+    )
+    mq._history.append((entry, result))
+    snap = mq.snapshot()
+    assert len(snap["deferred"]) == 1
+    assert snap["deferred"][0]["session_id"] == 5
+
+
+@pytest.mark.asyncio
+async def test_snapshot_derives_conflicts():
+    """snapshot() filters conflict entries from _history."""
+    mq = MergeQueue()
+    entry = MergeEntry(
+        session_id=7, branch_name="agent/7", worktree_path="/tmp", base_dir="/proj"
+    )
+    result = MergeResult(
+        session_id=7,
+        success=False,
+        conflict_files=["a.py"],
+        timestamp="2026-03-15T10:00:00Z",
+    )
+    mq._history.append((entry, result))
+    snap = mq.snapshot()
+    assert len(snap["conflicts"]) == 1
+    assert snap["conflicts"][0]["session_id"] == 7
+
+
+@pytest.mark.asyncio
+async def test_snapshot_dedup_after_retry():
+    """After retry succeeds, old deferred entry excluded from snapshot."""
+    mq = MergeQueue()
+    entry = MergeEntry(
+        session_id=42, branch_name="agent/42", worktree_path="/tmp", base_dir="/proj"
+    )
+    r1 = MergeResult(
+        session_id=42,
+        success=False,
+        deferred=True,
+        error="dirty",
+        timestamp="2026-03-15T10:00:00Z",
+    )
+    mq._history.append((entry, r1))
+    r2 = MergeResult(
+        session_id=42,
+        success=True,
+        merge_sha="abc123",
+        timestamp="2026-03-15T10:01:00Z",
+    )
+    mq._history.append((entry, r2))
+    snap = mq.snapshot()
+    assert len(snap["deferred"]) == 0  # old deferred entry excluded
+    assert len(snap["history"]) == 2  # both entries in history
+
+
+# ---------------------------------------------------------------------------
+# Task 5: retry() method
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_retry_re_enqueues_from_history():
+    """retry() finds a failed entry in _history and re-enqueues it."""
+    mq = MergeQueue()
+    entry = MergeEntry(
+        session_id=42,
+        branch_name="agent/42",
+        worktree_path="/tmp/wt",
+        base_dir="/proj",
+        changed_files=["f.py"],
+    )
+    result = MergeResult(
+        session_id=42, success=False, deferred=True, error="dirty tree"
+    )
+    mq._history.append((entry, result))
+
+    with patch("golem.merge_queue.get_changed_files", return_value=["f.py"]):
+        re_entry = await mq.retry(42)
+
+    assert re_entry.session_id == 42
+    assert re_entry.branch_name == "agent/42"
+    assert mq.pending == 1
+
+
+@pytest.mark.asyncio
+async def test_retry_unknown_session_raises():
+    """retry() raises ValueError for unknown session_id."""
+    mq = MergeQueue()
+    with pytest.raises(ValueError, match="No retryable entry"):
+        await mq.retry(999)
+
+
+@pytest.mark.asyncio
+async def test_retry_skips_successful_entries():
+    """retry() does not retry entries that already succeeded."""
+    mq = MergeQueue()
+    entry = MergeEntry(
+        session_id=42, branch_name="agent/42", worktree_path="/tmp", base_dir="/proj"
+    )
+    result = MergeResult(session_id=42, success=True, merge_sha="abc")
+    mq._history.append((entry, result))
+    with pytest.raises(ValueError, match="No retryable entry"):
+        await mq.retry(42)
+
+
+@pytest.mark.asyncio
+async def test_retry_calls_on_state_change():
+    """retry() invokes the on_state_change callback."""
+    cb = MagicMock()
+    mq = MergeQueue(on_state_change=cb)
+    entry = MergeEntry(
+        session_id=42,
+        branch_name="agent/42",
+        worktree_path="/tmp/wt",
+        base_dir="/proj",
+        changed_files=["f.py"],
+    )
+    result = MergeResult(
+        session_id=42,
+        success=False,
+        error="conflict",
+        conflict_files=["f.py"],
+    )
+    mq._history.append((entry, result))
+    cb.reset_mock()
+
+    with patch("golem.merge_queue.get_changed_files", return_value=["f.py"]):
+        await mq.retry(42)
+
+    assert cb.call_count >= 1

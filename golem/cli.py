@@ -349,6 +349,7 @@ async def _start_dashboard_server(
     port: int,
     config_snapshot: dict | None = None,
     live_state_file: "Path | None" = None,
+    merge_queue: "Any | None" = None,
 ) -> asyncio.Task:
     import socket
 
@@ -360,7 +361,10 @@ async def _start_dashboard_server(
 
     app = FastAPI(title="Golem Dashboard")
     mount_dashboard(
-        app, config_snapshot=config_snapshot, live_state_file=live_state_file
+        app,
+        config_snapshot=config_snapshot,
+        live_state_file=live_state_file,
+        merge_queue=merge_queue,
     )
     if control_router is not None:
         app.include_router(control_router)
@@ -401,7 +405,11 @@ async def run_daemon(args, config) -> int:
 
     snap = config_to_snapshot(config)
     port = getattr(args, "port", None) or config.dashboard.port
-    dash_task = await _start_dashboard_server(port, config_snapshot=snap)
+    dash_task = await _start_dashboard_server(
+        port,
+        config_snapshot=snap,
+        merge_queue=flow._merge_queue if flow else None,
+    )
     tasks.append(dash_task)
 
     print("Agent daemon running. Press Ctrl+C to stop.")

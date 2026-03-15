@@ -9,8 +9,9 @@ additions, an optional merge-agent callback can attempt resolution.
 import asyncio
 import logging
 import subprocess
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
@@ -36,6 +37,7 @@ class MergeEntry:
     changed_files: list[str] = field(default_factory=list)
     priority: int = 5
     group_id: str = ""
+    queued_at: str = ""
 
 
 @dataclass
@@ -48,6 +50,7 @@ class MergeResult:
     changed_files: list[str] = field(default_factory=list)
     deferred: bool = False
     merge_branch: str = ""
+    timestamp: str = ""
 
 
 OnMergeAgent = Callable[[str, int, str, list[str], list], ReconciliationResult] | None
@@ -63,11 +66,17 @@ class MergeQueue:
     INFRA_RETRIES = 2
     INFRA_RETRY_DELAY = 5  # seconds
 
-    def __init__(self, on_merge_agent: OnMergeAgent = None):
+    def __init__(
+        self,
+        on_merge_agent: OnMergeAgent = None,
+        on_state_change: "Callable[[], None] | None" = None,
+    ):
         self._queue: list[MergeEntry] = []
         self._lock = asyncio.Lock()
         self._on_merge_agent = on_merge_agent
-        self._results: list[MergeResult] = []
+        self._on_state_change = on_state_change
+        self._history: deque[tuple[MergeEntry, MergeResult]] = deque(maxlen=50)
+        self._active: MergeEntry | None = None
 
     @property
     def pending(self) -> int:
@@ -84,6 +93,8 @@ class MergeQueue:
                 entry.changed_files = get_changed_files(
                     entry.base_dir, entry.branch_name
                 )
+            if not entry.queued_at:
+                entry.queued_at = datetime.now(timezone.utc).isoformat()
             self._queue.append(entry)
             logger.info(
                 "Enqueued session %d for merge (%d files changed, priority=%d)",
@@ -91,6 +102,7 @@ class MergeQueue:
                 len(entry.changed_files),
                 entry.priority,
             )
+        self._notify()
 
     def detect_overlaps(self) -> dict[str, list[int]]:
         """Return ``{filepath: [session_ids]}`` for files touched by 2+ sessions."""
@@ -113,11 +125,104 @@ class MergeQueue:
 
         results: list[MergeResult] = []
         for entry in entries:
+            self._active = entry
             result = await self._merge_one(entry)
+            self._active = None
+            result.timestamp = datetime.now(timezone.utc).isoformat()
+            self._history.append((entry, result))
+            self._notify()
             results.append(result)
-            self._results.append(result)
 
         return results
+
+    def _notify(self) -> None:
+        """Invoke the state-change callback if set."""
+        if self._on_state_change:
+            self._on_state_change()
+
+    def snapshot(self) -> "MergeQueueSnapshotDict":
+        """Serialize current queue state for the dashboard API."""
+        from .types import (
+            MergeEntryDict,
+            MergeHistoryEntryDict,
+            MergeQueueSnapshotDict,
+        )
+
+        def _entry_dict(e: MergeEntry) -> MergeEntryDict:
+            return {
+                "session_id": e.session_id,
+                "branch_name": e.branch_name,
+                "worktree_path": e.worktree_path,
+                "priority": e.priority,
+                "group_id": e.group_id,
+                "queued_at": e.queued_at,
+                "changed_files": list(e.changed_files),
+            }
+
+        def _history_dict(e: MergeEntry, r: MergeResult) -> MergeHistoryEntryDict:
+            return {
+                "session_id": r.session_id,
+                "success": r.success,
+                "merge_sha": r.merge_sha,
+                "conflict_files": list(r.conflict_files),
+                "error": r.error,
+                "changed_files": list(r.changed_files),
+                "deferred": r.deferred,
+                "merge_branch": r.merge_branch,
+                "timestamp": r.timestamp,
+            }
+
+        # Build latest-index map for dedup
+        latest_idx: dict[int, int] = {}
+        for i, (e, _r) in enumerate(self._history):
+            latest_idx[e.session_id] = i
+
+        # Derive deferred/conflicts from history, only latest entry per session
+        deferred = [
+            _entry_dict(e)
+            for i, (e, r) in enumerate(self._history)
+            if r.deferred and not r.success and latest_idx[e.session_id] == i
+        ]
+        conflicts = [
+            _entry_dict(e)
+            for i, (e, r) in enumerate(self._history)
+            if r.conflict_files
+            and not r.success
+            and not r.deferred
+            and latest_idx[e.session_id] == i
+        ]
+
+        active = _entry_dict(self._active) if self._active else None
+        pending = [_entry_dict(e) for e in self._queue]
+        history = [_history_dict(e, r) for e, r in self._history]
+
+        return MergeQueueSnapshotDict(
+            pending=pending,
+            active=active,
+            deferred=deferred,
+            conflicts=conflicts,
+            history=history,
+        )
+
+    async def retry(self, session_id: int) -> MergeEntry:
+        """Re-enqueue a failed/deferred/conflicted entry from history.
+
+        Raises ``ValueError`` if no retryable entry is found.
+        """
+        for entry, result in reversed(self._history):
+            if entry.session_id == session_id and not result.success:
+                new_entry = MergeEntry(
+                    session_id=entry.session_id,
+                    branch_name=entry.branch_name,
+                    worktree_path=entry.worktree_path,
+                    base_dir=entry.base_dir,
+                    changed_files=list(entry.changed_files),
+                    priority=entry.priority,
+                    group_id=entry.group_id,
+                )
+                await self.enqueue(new_entry)
+                return new_entry
+        raise ValueError("No retryable entry found for session_id %d" % session_id)
 
     @staticmethod
     def _is_transient(exc: Exception) -> bool:

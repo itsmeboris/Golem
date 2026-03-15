@@ -445,6 +445,7 @@ def config_to_snapshot(config: Any) -> ConfigSnapshotDict | dict:
 
 
 _SESSIONS_FILE = DATA_DIR / "state" / "golem_sessions.json"
+_MERGE_QUEUE_SENTINEL = DATA_DIR / "state" / ".merge_queue_updated"
 
 
 _LOG_DIR = DATA_DIR / "logs"
@@ -549,6 +550,7 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
     app: Any,
     config_snapshot: dict | None = None,
     live_state_file: Path | None = None,
+    merge_queue: Any = None,
 ) -> None:
     """Register /dashboard and API routes on *app*.
 
@@ -753,6 +755,22 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
             headers=_NO_CACHE_HEADERS,
         )
 
+    @app.get("/dashboard/merge_queue.js")
+    async def merge_queue_js() -> Response:
+        return Response(
+            content=_merge_queue_js_cache.read(),
+            media_type="application/javascript",
+            headers=_NO_CACHE_HEADERS,
+        )
+
+    @app.get("/dashboard/merge_queue.css")
+    async def merge_queue_css() -> Response:
+        return Response(
+            content=_merge_queue_css_cache.read(),
+            media_type="text/css",
+            headers=_NO_CACHE_HEADERS,
+        )
+
     @app.get("/dashboard")
     async def dashboard() -> HTMLResponse:
         html = _task_dashboard_cache.read()
@@ -766,6 +784,8 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
             (_task_timeline_js_cache, "task_timeline.js"),
             (_task_overview_js_cache, "task_overview.js"),
             (_task_live_js_cache, "task_live.js"),
+            (_merge_queue_js_cache, "merge_queue.js"),
+            (_merge_queue_css_cache, "merge_queue.css"),
         ]:
             # Trigger a read so .version reflects current mtime
             cache.read()
@@ -818,6 +838,8 @@ _task_timeline_js_cache = _FileCache(Path(__file__).parent / "task_timeline.js")
 _task_overview_js_cache = _FileCache(Path(__file__).parent / "task_overview.js")
 _task_live_js_cache = _FileCache(Path(__file__).parent / "task_live.js")
 _elk_js_cache = _FileCache(Path(__file__).parent / "elk.min.js")
+_merge_queue_js_cache = _FileCache(Path(__file__).parent / "task_merge_queue.js")
+_merge_queue_css_cache = _FileCache(Path(__file__).parent / "task_merge_queue.css")
 
 
 _PID_FILE = DATA_DIR / "daemon.pid"

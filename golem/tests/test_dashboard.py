@@ -1460,6 +1460,20 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             resp = await handlers["/dashboard/elk.js"]()
         assert resp.media_type == "application/javascript"
 
+    @pytest.mark.asyncio
+    async def test_merge_queue_js(self, handlers):
+        with patch.object(
+            _FileCache, "read", return_value="function renderMergeQueue(){}"
+        ):
+            resp = await handlers["/dashboard/merge_queue.js"]()
+        assert resp.media_type == "application/javascript"
+
+    @pytest.mark.asyncio
+    async def test_merge_queue_css(self, handlers):
+        with patch.object(_FileCache, "read", return_value=".mq-view{}"):
+            resp = await handlers["/dashboard/merge_queue.css"]()
+        assert resp.media_type == "text/css"
+
     def test_dashboard_html_has_new_layout(self):
         """Verify the HTML file has the Trace Viewer layout structure."""
         html = Path(__file__).resolve().parent.parent / "core" / "task_dashboard.html"
