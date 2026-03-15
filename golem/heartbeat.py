@@ -272,6 +272,9 @@ class HeartbeatManager:
         import asyncio
 
         client = self._haiku_client
+        if client is None:
+            logger.error("Anthropic SDK not installed — cannot call Haiku")
+            return ""
 
         def _sync_call():
             return client.messages.create(

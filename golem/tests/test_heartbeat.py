@@ -513,6 +513,15 @@ class TestCallHaiku:
 
         assert mgr._daily_spend_usd == 0.0  # no spend recorded
 
+    @pytest.mark.asyncio
+    async def test_call_haiku_none_client(self, tmp_path):
+        """Returns empty string when Anthropic SDK is not installed."""
+        mgr = _make_manager(tmp_path)
+        mgr._haiku_client = None
+        result = await mgr._call_haiku("prompt", "data")
+        assert result == ""
+        assert mgr._daily_spend_usd == 0.0
+
 
 class TestTier1:
     @pytest.mark.asyncio
