@@ -199,6 +199,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   const backLink = document.getElementById('td-back-link');
   if (backLink) backLink.addEventListener('click', () => showView('overview'));
 
+  // Modal listeners
+  const modalClose = document.getElementById('resubmit-modal-close');
+  const modalCancel = document.getElementById('resubmit-cancel-btn');
+  const modalSubmit = document.getElementById('resubmit-submit-btn');
+  const modalOverlay = document.getElementById('resubmit-modal');
+  if (modalClose) modalClose.addEventListener('click', _closeResubmitModal);
+  if (modalCancel) modalCancel.addEventListener('click', _closeResubmitModal);
+  if (modalSubmit) modalSubmit.addEventListener('click', _submitResubmitModal);
+  if (modalOverlay) modalOverlay.addEventListener('click', (e) => {
+    if (e.target === modalOverlay) _closeResubmitModal();
+  });
+
   // Deep link: #detail/golem-123-20260310 — must load sessions first
   const hash = location.hash.slice(1);
   if (hash.startsWith('detail/')) {

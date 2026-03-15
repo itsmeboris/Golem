@@ -129,6 +129,17 @@ function renderDetailHeader(session, trace, running) {
     ? `<div class="tl-live-badge"><span class="live-dot"></span>Live</div>`
     : '';
 
+  const isTerminal = ['completed', 'failed', 'human_review'].includes((state || '').toLowerCase());
+  let actionsHtml = '';
+  if (running) {
+    actionsHtml = `<div class="td-actions"><button class="td-action-btn danger" data-action="cancel">Cancel</button></div>`;
+  } else if (isTerminal) {
+    actionsHtml = `<div class="td-actions">
+        <button class="td-action-btn" data-action="rerun">Re-run</button>
+        <button class="td-action-btn primary" data-action="edit-rerun">Edit &amp; Re-run</button>
+      </div>`;
+  }
+
   // Dependencies and dependents
   const eventId = S.selectedTaskId || '';
   const deps = (session && session.depends_on) || [];
@@ -190,6 +201,7 @@ function renderDetailHeader(session, trace, running) {
       <span class="td-mode">${mode}</span>
       <span class="td-badge ${chipClass}">${esc(state.toLowerCase())}</span>
       ${liveHtml}
+      ${actionsHtml}
     </div>
     <div class="td-subject">${subject}</div>
     ${statsHtml}
@@ -200,6 +212,104 @@ function renderDetailHeader(session, trace, running) {
   el.querySelectorAll('.td-dep-card[data-dep-id]').forEach(card => {
     card.addEventListener('click', () => selectTask(card.dataset.depId));
   });
+
+  // Wire action button handlers
+  const cancelBtn = el.querySelector('[data-action="cancel"]');
+  if (cancelBtn) cancelBtn.addEventListener('click', () => handleCancel(session));
+  const rerunBtn = el.querySelector('[data-action="rerun"]');
+  if (rerunBtn) rerunBtn.addEventListener('click', () => handleRerun(session));
+  const editRerunBtn = el.querySelector('[data-action="edit-rerun"]');
+  if (editRerunBtn) editRerunBtn.addEventListener('click', () => handleEditAndRerun(session));
+}
+
+// ── Task Actions ────────────────────────────────
+function _getTaskId(session) {
+  return session ? (session.parent_issue_id || session.id || '') : '';
+}
+
+async function handleCancel(session) {
+  const taskId = _getTaskId(session);
+  if (!taskId) return;
+  const btn = document.querySelector('[data-action="cancel"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Cancelling\u2026'; }
+  try {
+    const result = await cancelTask(taskId);
+    if (result.ok) {
+      S.sessions = await fetchSessions();
+      await renderDetail(S.selectedTaskId);
+      return; // btn is now detached — skip finally re-enable
+    }
+    alert('Cancel failed: ' + (result.detail || 'Unknown error'));
+  } catch (e) {
+    alert('Cancel failed: ' + e.message);
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Cancel'; }
+}
+
+async function handleRerun(session) {
+  const btn = document.querySelector('[data-action="rerun"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Submitting\u2026'; }
+  try {
+    const prompt = await fetchPrompt(S.selectedTaskId);
+    if (!prompt) { alert('Could not fetch task prompt.'); if (btn) { btn.disabled = false; btn.textContent = 'Re-run'; } return; }
+    const result = await resubmitTask(prompt, subjectTitle(session));
+    if (result.ok) {
+      S.sessions = await fetchSessions();
+      if (S.view === 'overview') renderOverview();
+      else await renderDetail(S.selectedTaskId);
+      return; // btn is now detached — skip re-enable
+    }
+    alert('Re-run failed: ' + (result.detail || 'Unknown error'));
+  } catch (e) {
+    alert('Re-run failed: ' + e.message);
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Re-run'; }
+}
+
+async function handleEditAndRerun(session) {
+  try {
+    const prompt = await fetchPrompt(S.selectedTaskId);
+    const subject = subjectTitle(session);
+    const modal = document.getElementById('resubmit-modal');
+    const subjInput = document.getElementById('resubmit-subject');
+    const promptInput = document.getElementById('resubmit-prompt');
+    if (!modal || !promptInput) return;
+    subjInput.value = subject || '';
+    promptInput.value = prompt || '';
+    modal.style.display = 'flex';
+  } catch (e) {
+    alert('Could not load task prompt: ' + e.message);
+  }
+}
+
+function _closeResubmitModal() {
+  const modal = document.getElementById('resubmit-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function _submitResubmitModal() {
+  const subjInput = document.getElementById('resubmit-subject');
+  const promptInput = document.getElementById('resubmit-prompt');
+  const submitBtn = document.getElementById('resubmit-submit-btn');
+  if (!promptInput) return;
+  const prompt = promptInput.value.trim();
+  if (!prompt) { alert('Prompt cannot be empty.'); return; }
+  const subject = subjInput ? subjInput.value.trim() : '';
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Submitting\u2026'; }
+  try {
+    const result = await resubmitTask(prompt, subject);
+    if (result.ok) {
+      _closeResubmitModal();
+      S.sessions = await fetchSessions();
+      if (S.view === 'overview') renderOverview();
+      else await renderDetail(S.selectedTaskId);
+      return;
+    }
+    alert('Submit failed: ' + (result.detail || 'Unknown error'));
+  } catch (e) {
+    alert('Submit failed: ' + e.message);
+  }
+  if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Submit'; }
 }
 
 // ── Metrics ────────────────────────────────────
@@ -650,8 +760,9 @@ function renderTimeline(trace, running, session) {
       if (Object.keys(testsObj).length > 0) {
         testsHtml = '<div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.3rem">' +
           Object.entries(testsObj).map(([name, val]) => {
-            const pass = val === 'pass' || val === true;
-            const skip = val === 'not_applicable' || val === 'skipped' || val === 'not_run';
+            const lower = String(val).toLowerCase();
+            const pass = val === true || (/\bpass/i.test(lower) && !/\bfail/i.test(lower));
+            const skip = lower === 'not_applicable' || lower === 'skipped' || lower === 'not_run';
             const color = skip ? 'var(--text-muted)' : (pass ? 'var(--green)' : 'var(--danger, #e55)');
             const icon = skip ? '—' : (pass ? '✓' : '✗');
             return `<span style="color:${color};font-size:0.7rem">${icon} ${esc(name)}</span>`;
@@ -902,8 +1013,9 @@ function renderResultBlock(result, trace) {
   const testsArr = result.tests || [];
   if (Object.keys(testsObj).length > 0) {
     testsHtml = Object.entries(testsObj).map(([name, val]) => {
-      const pass = val === 'pass' || val === true;
-      const skip = val === 'not_applicable' || val === 'skipped' || val === 'not_run';
+      const lower = String(val).toLowerCase();
+      const pass = val === true || (/\bpass/i.test(lower) && !/\bfail/i.test(lower));
+      const skip = lower === 'not_applicable' || lower === 'skipped' || lower === 'not_run';
       const cls = skip ? 'skip' : (pass ? 'pass' : 'fail');
       const icon = skip ? '—' : (pass ? '✓' : '✗');
       return `<span class="tl-test ${cls}">${icon} ${esc(name)}</span>`;

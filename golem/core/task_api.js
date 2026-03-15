@@ -51,6 +51,26 @@ async function fetchPrompt(eventId) {
   return data.prompt || '';
 }
 
+async function cancelTask(taskId) {
+  const res = await fetch(`/api/cancel/${taskId}`, { method: 'POST' });
+  if (!res.ok) {
+    try { return await res.json(); } catch (_) { return { ok: false, detail: res.statusText }; }
+  }
+  return res.json();
+}
+
+async function resubmitTask(prompt, subject) {
+  const res = await fetch('/api/submit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt, subject }),
+  });
+  if (!res.ok) {
+    try { return await res.json(); } catch (_) { return { ok: false, detail: res.statusText }; }
+  }
+  return res.json();
+}
+
 // ── Navigation ─────────────────────────────────
 async function showView(view) {
   S.view = view;
