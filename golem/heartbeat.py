@@ -41,6 +41,51 @@ def _strip_markdown_json(text: str) -> str:
     return text.strip()
 
 
+def _coerce_task_id(value: Any) -> int | None:
+    """Coerce *value* to ``int``, returning ``None`` if not possible.
+
+    - Returns *value* unchanged when it is already an ``int`` (but not a
+      ``bool`` — ``bool`` is a subclass of ``int`` and must be rejected).
+    - Attempts ``int(value)`` for ``str`` inputs and logs a warning on
+      success.
+    - Logs a warning and returns ``None`` for any value that cannot be
+      converted (including ``bool``, ``float``, ``None``, …).
+
+    All warnings include the original value and its type for diagnostics.
+    """
+    if isinstance(value, bool):
+        logger.warning(
+            "Cannot coerce task ID %r (type %s) to int — skipping",
+            value,
+            type(value).__name__,
+        )
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            coerced = int(value)
+            logger.warning(
+                "Coerced string task ID %r (type %s) to int",
+                value,
+                type(value).__name__,
+            )
+            return coerced
+        except (ValueError, TypeError):
+            logger.warning(
+                "Cannot coerce task ID %r (type %s) to int — skipping",
+                value,
+                type(value).__name__,
+            )
+            return None
+    logger.warning(
+        "Cannot coerce task ID %r (type %s) to int — skipping",
+        value,
+        type(value).__name__,
+    )
+    return None
+
+
 class HeartbeatManager:
     """Discovers work when Golem is idle via a two-tier scanning system.
 
@@ -139,6 +184,10 @@ class HeartbeatManager:
 
     def on_task_completed(self, task_id: int, success: bool) -> None:
         """Callback from GolemFlow when a session reaches terminal state."""
+        coerced = _coerce_task_id(task_id)
+        if coerced is None:
+            return
+        task_id = coerced
         if task_id not in self._inflight_task_ids:
             return
         self._inflight_task_ids.remove(task_id)
@@ -192,7 +241,13 @@ class HeartbeatManager:
         self._last_scan_tier = data.get("last_scan_tier", 0)
         self._daily_spend_usd = data.get("daily_spend_usd", 0.0)
         self._daily_spend_reset_at = data.get("daily_spend_reset_at", time.time())
-        self._inflight_task_ids = data.get("inflight_task_ids", [])
+        raw_ids = data.get("inflight_task_ids", [])
+        coerced: list[int] = []
+        for raw in raw_ids:
+            tid = _coerce_task_id(raw)
+            if tid is not None:
+                coerced.append(tid)
+        self._inflight_task_ids = coerced
         self._dedup_memory = data.get("dedup_memory", {})
         self._coverage_cache = data.get("coverage_cache", {})
         self._candidates = data.get("candidates", [])
@@ -597,6 +652,13 @@ class HeartbeatManager:
         try:
             result = self._flow.submit_task(prompt=prompt, subject=subject)
             task_id = result["task_id"]
+            coerced = _coerce_task_id(task_id)
+            if coerced is None:
+                logger.error("submit_task returned non-integer task_id: %r", task_id)
+                self._state = "idle"
+                self.save_state()
+                return
+            task_id = coerced
             self._inflight_task_ids.append(task_id)
             self.record_dedup(top["id"], "submitted", task_id=task_id)
             self._state = "submitted"
