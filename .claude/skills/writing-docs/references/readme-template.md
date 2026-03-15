@@ -1,6 +1,7 @@
 # README Template
 
 Reference template for project READMEs. Adapt sections to fit the project.
+Target 150-250 lines. If you exceed ~300 lines, see `splitting-guide.md`.
 
 ## Header Block
 
@@ -22,7 +23,7 @@ Reference template for project READMEs. Adapt sections to fit the project.
 <p align="center">
   <a href="#quick-start">Quick Start</a>&nbsp;&nbsp;·&nbsp;&nbsp;
   <a href="#how-it-works">How It Works</a>&nbsp;&nbsp;·&nbsp;&nbsp;
-  <a href="#configuration">Configuration</a>
+  <a href="#links">Docs</a>
 </p>
 ```
 
@@ -33,11 +34,10 @@ Reference template for project READMEs. Adapt sections to fit the project.
 <summary><strong>Table of Contents</strong></summary>
 
 - [Why Project](#why-project)
+- [Who Is This For](#who-is-this-for)
 - [Quick Start](#quick-start)
 - [How It Works](#how-it-works)
-- [Configuration](#configuration)
-- [API Reference](#api-reference)
-- [Development](#development)
+- [Links](#links)
 - [License](#license)
 
 </details>
@@ -53,6 +53,16 @@ One sentence framing the problem.
 **Feature 1** — 2-3 sentence description of what it does and why it matters.
 
 **Feature 2** — Same pattern. Bold lead-in, dash, description.
+```
+
+5 bullets max. Each bullet earns its place by naming a concrete benefit.
+
+## Who Is This For
+
+```markdown
+## Who Is This For
+
+Built for [target user] who [situation]. If you [alternative], use [alternative tool] instead.
 ```
 
 ## Quick Start Pattern
@@ -94,6 +104,8 @@ project-name status          # then monitoring
 | `setting_name` | `value` | What it controls |
 ```
 
+Verify every default against the code before publishing.
+
 ## API Table Pattern
 
 ```markdown
@@ -101,16 +113,6 @@ project-name status          # then monitoring
 |----------|--------|-------------|
 | `/api/health` | GET | Readiness probe |
 | `/api/resource` | POST | Create a resource — accepts `{"field": "..."}` |
-```
-
-## Architecture Diagram Pattern
-
-```
-\`\`\`mermaid
-flowchart TB
-    input["Input Source"] --> engine["Processing Engine"]
-    engine --> output["Output"]
-\`\`\`
 ```
 
 ## Collapsible Detail Pattern
@@ -123,3 +125,18 @@ Content that most readers don't need but some want access to.
 
 </details>
 ```
+
+Use for: advanced config, full project layout, troubleshooting lists.
+
+## Links Section Pattern
+
+```markdown
+## Links
+
+- [Architecture](docs/architecture.md) — technical deep dive
+- [Operations Guide](docs/operations.md) — configuration and monitoring
+- [Contributing](CONTRIBUTING.md) — development setup and workflow
+```
+
+Every README that has split-out docs should end with a Links section. Each
+linked doc should reference back to the README in its own header or footer.

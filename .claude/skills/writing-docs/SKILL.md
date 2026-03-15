@@ -1,121 +1,152 @@
 ---
 name: writing-docs
-description: Write and improve project documentation — READMEs, guides, and technical docs. Use when asked to write a README, update documentation, improve docs, create a getting-started guide, or document a feature. Produces structured, scannable documentation following GitHub best practices.
+description: >-
+  Write and improve project documentation — READMEs, contributor guides,
+  architecture docs, and ops references. Use when asked to write a README,
+  update documentation, improve docs, create a getting-started guide,
+  document a feature, or review existing docs for accuracy and completeness.
 ---
 
 # Writing Documentation
 
-Write clear, scannable, accurate project documentation. Covers READMEs, feature
-docs, guides, and technical references.
+## Iron Law
+
+Every factual claim must be verified against the code. Never document what you
+assume — grep for it.
 
 ## Before Writing
 
-1. **Read the existing docs** — understand current structure, tone, and coverage.
-2. **Read the code** — documentation must match what the code actually does,
-   not what it was supposed to do. Grep for key interfaces, defaults, and CLI
-   flags. If the README says the default is X, verify it in the code.
-3. **Identify the audience** — developers using the tool? Contributors? Both?
-   This determines depth and assumed knowledge.
+### 1. Read existing docs
 
-## README Structure
+Read every doc in the repo before writing. Understand current structure, tone,
+coverage, and what's stale. When updating, make surgical edits — preserve
+existing structure unless there is a clear reason to restructure.
 
-Follow this order. Skip sections that don't apply, but keep the order stable:
+### 2. Read the code
 
-```
-1. Header (logo, title, tagline, badges, nav links)
-2. One-liner description — what this project does in one sentence
-3. Table of Contents (collapsible, for long READMEs)
-4. Why / Motivation — what problem it solves, why it exists
-5. Quick Start (prerequisites, install, first run)
-6. How It Works — architecture, key concepts, diagrams
-7. Configuration — settings, env vars, examples
-8. API Reference — endpoints, CLI commands, interfaces
-9. Development — setup, testing, contributing
-10. Built With — key technologies
-11. License
-```
+Documentation must match what the code actually does, not what it was supposed
+to do.
+
+Before stating any fact:
+- Grep for default values: `grep -r "default_timeout" golem/`
+- Grep for class and component names before mentioning them
+- Check CLI flags against the actual argument parser
+- Verify config keys against the actual config schema
+
+If the README says the default is X, verify X in the code.
+
+### 3. Identify and rank audiences
+
+Identify every audience this doc serves. Then rank them. Write for the primary
+audience — secondary audiences belong in separate docs (see Document Sizing).
+
+Default recommendation for pre-launch projects:
+
+1. **Users first** — README. Converts visitors to users.
+2. **Contributors second** — CONTRIBUTING.md. Onboards developers.
+3. **Ops/admins third** — docs/. Config reference, monitoring, deployment.
+
+Challenge each section: would this audience care? If they would not, either
+cut it or link to a doc that targets the audience that would.
+
+## Document Sizing
+
+README is a landing page, not an encyclopedia. Target 150-250 lines.
+
+**If a README exceeds ~300 lines, content needs splitting.**
+
+Signals that a doc needs splitting:
+- Multiple distinct audiences (visitors AND active operators)
+- Reference material mixed with marketing copy
+- Sections that only apply to contributors buried after user content
+- Configuration tables with 10+ rows
+
+### Standard split pattern
+
+| Document | Primary audience | Job |
+|----------|-----------------|-----|
+| `README.md` | First-time visitors | Hook them, show quick start, link out |
+| `docs/architecture.md` | Curious users, contributors | Technical deep dive |
+| `docs/operations.md` | Active operators | Config, env vars, monitoring |
+| `CONTRIBUTING.md` | Contributors | Dev setup, testing, workflow |
+
+Each doc has one primary audience and one job. Overlap is a sign that content
+belongs somewhere else.
+
+When splitting, add a Links section to the README pointing to the other docs.
+Each split doc should reference back to README and cross-link siblings where
+relevant. See `references/splitting-guide.md` for detailed guidance.
+
+## README Pattern
+
+A slim README converts visitors to users. Structure:
+
+1. **Hero** — logo, title, tagline, badges
+2. **Pitch** — 2-3 sentences: what it does, for whom, and the key benefit
+3. **Why** — 5 bullets max, bold lead-ins (`**Feature** — description`)
+4. **Who Is This For** — one short paragraph naming the target user
+5. **Quick Start** — prerequisites, install, configure, run
+6. **How It Works** — one diagram, brief prose (3-5 sentences)
+7. **Links** — pointers to architecture, ops, contributing docs
+8. **License**
+
+Skip sections that don't apply. Keep the order stable when sections are
+present. See `references/readme-template.md` for the full template.
 
 ## Writing Rules
 
-**Accuracy over everything.** Every claim must be verifiable in the code. If a
-diagram shows component names, they must match the actual class/file names. If
-a table lists defaults, they must match the actual defaults in config.
+**Accuracy.** Every claim is verifiable in the code. If a diagram shows
+component names, they must match the actual class or file names. If a table
+lists defaults, they must match the actual defaults in config.
 
-**Scannable.** Readers skim. Use:
-- Short paragraphs (2-3 sentences max)
-- Bold lead-ins for key concepts: **Daemon-centric** — description...
-- Tables for structured data (config, API endpoints, comparisons)
-- Code blocks for anything the user types or sees
-- Mermaid diagrams for architecture and flows
+**Scannable.** Readers skim. Use short paragraphs (2-3 sentences max), bold
+lead-ins for key concepts, tables for structured data, and code blocks for
+anything the user types or reads.
 
-**Show, don't tell.** Prefer a code example over a paragraph of explanation:
+**Show, don't tell.** A code example beats a paragraph of explanation.
 
 ```
-# Bad
+# Weak
 The submit endpoint accepts a JSON payload with a prompt field.
 
-# Good
+# Strong
 curl -X POST http://localhost:8081/api/submit \
   -H "Content-Type: application/json" \
   -d '{"prompt": "Add retry logic"}'
 ```
 
-**DRY.** Don't repeat information across sections. Reference other sections
-instead: "See [Configuration](#configuration) for all options."
+**DRY.** Don't repeat information across sections or docs. Reference instead:
+"See [Operations Guide](docs/operations.md) for all config options."
 
-**No filler.** Cut phrases like "It should be noted that", "In order to",
-"As mentioned above". Say the thing directly.
+**No filler.** Cut "It should be noted that", "In order to", "As mentioned
+above". Say the thing directly.
 
-## Diagrams
+**Challenge each section.** Would the primary audience for this doc care about
+this section? If not, link to the doc that targets the audience who would, or
+cut it.
 
-Use Mermaid for architecture and flow diagrams. Keep them simple — 5-10 nodes
-max. If a diagram needs more, split it.
+**Consistent terminology.** Pick one term for each concept and use it
+everywhere. If the code calls it a "worktree", the docs call it a "worktree" —
+not "workspace", "checkout", or "branch directory".
 
-```mermaid
-flowchart LR
-    A["Input"] --> B["Process"]
-    B --> C["Output"]
-```
+**Avoid time-sensitive information.** Don't write "as of version 2.1" or "we
+recently added". Write as if the doc will be read two years from now.
 
-Good diagram practices:
-- Label nodes with actual component names from the code
-- Show data flow direction with arrows
-- Use subgraphs to group related components
-- Add brief annotations on edges for non-obvious transitions
+## Verification Loop
 
-## Tables
+After writing, before finishing:
 
-Use tables for:
-- Configuration options (Setting | Default | Description)
-- API endpoints (Endpoint | Method | Description)
-- Comparisons (Feature | Option A | Option B)
-- Component summaries (Name | Purpose | Key detail)
+1. Grep for every default value claimed — confirm it matches code
+2. Grep for every component, class, or module name referenced — confirm it exists
+3. Check all code examples: correct flags, correct paths, correct syntax
+4. Verify all internal links resolve to real anchors or files
+5. Confirm that each doc section addresses the stated primary audience
+6. Run through the checklist below
 
-Always include a header row. Align columns for readability in source.
+## Checklist
 
-## GitHub-Specific Best Practices
-
-- **Badges** — Python version, license, build status. Place after title.
-- **Collapsible sections** — Use `<details>` for long content (project layout, advanced config).
-- **Relative links** — Link to files in the repo: `[config example](config.yaml.example)`.
-- **Anchors** — Use `[section](#section-name)` for internal navigation.
-- **Code fence languages** — Always specify: ` ```bash `, ` ```python `, ` ```yaml `.
-
-## Updating Existing Docs
-
-When updating (not creating from scratch):
-1. Read the full existing document first
-2. Identify what's stale, missing, or inaccurate
-3. Make surgical edits — preserve existing structure and tone
-4. Verify every factual claim against the code
-5. Check that diagrams, tables, and examples still match reality
-
-## Checklist Before Finishing
-
-- [ ] Every default value verified against code
-- [ ] Every component/class name matches actual code
-- [ ] All code examples are runnable (correct flags, paths, syntax)
-- [ ] Diagrams use actual component names, not placeholder names
-- [ ] No orphan sections (everything linked from TOC or nav)
-- [ ] Prerequisites listed (language version, CLI tools, etc.)
-- [ ] Consistent formatting (heading levels, bold patterns, list styles)
+- [ ] Every default verified against code
+- [ ] Every component name matches actual code
+- [ ] Code examples are runnable
+- [ ] No orphan sections (all sections linked from TOC or nav if doc has one)
+- [ ] Consistent formatting throughout (heading levels, bold patterns, list styles)

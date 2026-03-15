@@ -1,10 +1,12 @@
 # Operations Guide
 
+This is the operational reference for running Golem in production. It covers
+configuration, runtime management, and operational features in depth. For a
+project overview and quick start, see the [README](../README.md). For
+architecture and agent internals, see [architecture.md](architecture.md).
+
 Detailed reference for Golem's autonomous operational features: heartbeat,
 self-update, health monitoring, config management, and SIGHUP reload.
-
-For architecture and agent internals, see [architecture.md](architecture.md).
-For quick start and overview, see the [README](../README.md).
 
 ---
 
@@ -227,3 +229,97 @@ Flow:
 5. **Fail + no verified ref** → abort task (same as before)
 
 This prevents cascading failures when the base branch is temporarily broken.
+
+---
+
+## Configuration Reference
+
+### Settings
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `profile` | `local` | Backend profile (`local`, `redmine`, `github`, or custom) |
+| `task_model` | `sonnet` | Claude model for task execution and Builder subagents |
+| `orchestrate_model` | `opus` | Model for orchestration and review |
+| `supervisor_mode` | `true` | Enable subagent orchestration (Agent tool delegation) |
+| `budget_per_task_usd` | `10.0` | Max spend per task (0 = unlimited) |
+| `task_timeout_seconds` | `3600` | Timeout per task (0 = unlimited) |
+| `max_retries` | `1` | Retries on PARTIAL validation verdict |
+| `max_active_sessions` | `3` | Concurrent tasks running in parallel |
+| `use_worktrees` | `true` | Isolate tasks in separate git worktrees |
+| `auto_commit` | `true` | Git commit on PASS |
+| `validation_model` | `opus` | Model for the validation agent |
+| `preflight_verify` | `true` | Run verifier on base branch before agent starts — catches broken codebases early; falls back to last verified commit if HEAD is broken |
+| `ast_analysis` | `true` | Run ast-grep structural rules during validation (requires `sg` binary) |
+| `clarity_check` | `false` | Opt-in: score task clarity with haiku before execution |
+| `clarity_threshold` | `3` | Minimum clarity score (1–5) to proceed without human clarification |
+| `context_injection` | `true` | Auto-inject AGENTS.md + CLAUDE.md from workspace into agent sessions as system prompt context |
+| `ensemble_on_second_retry` | `false` | Spawn parallel candidates with different strategies on second retry |
+| `ensemble_candidates` | `2` | Number of parallel candidates for ensemble retry |
+| `flaky_tests_file` | `""` | Path to known-flaky tests JSON registry; empty = disabled |
+| `heartbeat_enabled` | `false` | Enable self-directed work when idle (see [Heartbeat](#heartbeat--self-directed-work)) |
+| `heartbeat_daily_budget_usd` | `1.0` | Daily spend cap for heartbeat-spawned tasks |
+| `self_update_enabled` | `false` | Monitor own repo for upstream changes (see [Self-Update](#self-update--zero-downtime-upgrades)) |
+| `self_update_branch` | `master` | Remote branch to watch for updates |
+| `health.enabled` | `true` | Enable health monitoring with threshold-based alerts |
+| `daemon.drain_timeout_seconds` | `300` | Grace period for active sessions during SIGHUP reload |
+
+See [`config.yaml.example`](../config.yaml.example) for the full list including budget limits, timeouts, checkpoint intervals, and merge settings.
+
+### Config Management CLI
+
+```bash
+golem config                        # interactive TUI editor
+golem config get <field>            # read a single value
+golem config set <field> <value>    # update a value + trigger daemon reload
+golem config list                   # list all fields (sensitive values masked)
+```
+
+Changes made via `golem config set` are written atomically and the daemon is sent `SIGHUP` to pick them up without restart.
+
+### Environment Variables
+
+```bash
+REDMINE_URL=https://redmine.example.com
+REDMINE_API_KEY=your-api-key
+TEAMS_GOLEM_WEBHOOK_URL=https://...   # optional, or use Slack:
+SLACK_GOLEM_WEBHOOK_URL=https://hooks.slack.com/services/T/B/X  # optional
+```
+
+### Custom Profiles
+
+<details>
+<summary><strong>Writing a custom profile (Jira example)</strong></summary>
+
+Three profiles ship built-in: `local`, `redmine`, and `github`. To create your
+own, implement the five protocols from `interfaces.py` and register:
+
+```python
+from golem.profile import register_profile, GolemProfile
+from golem.backends.local import LogNotifier, NullToolProvider
+from golem.prompts import FilePromptProvider
+
+class JiraTaskSource:
+    def poll_tasks(self, projects, detection_tag, timeout=30): ...
+    def get_task_description(self, task_id): ...
+
+class JiraStateBackend:
+    def update_status(self, task_id, status): ...
+    def post_comment(self, task_id, text): ...
+
+def _build_jira_profile(config):
+    return GolemProfile(
+        name="jira",
+        task_source=JiraTaskSource(),
+        state_backend=JiraStateBackend(),
+        notifier=LogNotifier(),
+        tool_provider=NullToolProvider(),
+        prompt_provider=FilePromptProvider(),
+    )
+
+register_profile("jira", _build_jira_profile)
+```
+
+Then set `profile: jira` in `config.yaml`.
+
+</details>
