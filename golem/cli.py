@@ -867,6 +867,71 @@ def cmd_batch(args: argparse.Namespace) -> int:
     return _cmd_batch(args)
 
 
+def cmd_config(args) -> int:
+    """Handler for the 'config' subcommand."""
+    from .config_editor import (  # pylint: disable=import-outside-toplevel
+        get_config_by_category,
+        signal_daemon_reload,
+        update_config,
+    )
+
+    config_path = Path(args.config)
+    action = getattr(args, "config_action", None)
+
+    if action == "get":
+        config = load_config(str(config_path))
+        categories = get_config_by_category(config)
+        for fields in categories.values():
+            for fi in fields:
+                if fi.key == args.field:
+                    print(fi.value)
+                    return 0
+        print("Unknown field: %s" % args.field, file=sys.stderr)
+        return 1
+
+    if action == "set":
+        errors = update_config(config_path, {args.field: args.value})
+        if errors:
+            for e in errors:
+                print(e, file=sys.stderr)
+            return 1
+        pid_file = Path(os.environ.get("GOLEM_DATA_DIR", "data")) / "daemon.pid"
+        reloaded = signal_daemon_reload(pid_file)
+        if reloaded:
+            print("Config saved. Daemon reload triggered.")
+        else:
+            print("Config saved. No running daemon — changes apply on next start.")
+        return 0
+
+    if action == "list":
+        config = load_config(str(config_path))
+        categories = get_config_by_category(config)
+        for cat_name, fields in sorted(categories.items()):
+            for fi in fields:
+                display = "***" if fi.meta.sensitive else fi.value
+                print("%s=%s" % (fi.key, display))
+        return 0
+
+    # Default: interactive mode
+    return _config_interactive(config_path)
+
+
+def _config_interactive(config_path: Path) -> int:
+    """Launch the prompt_toolkit TUI config editor."""
+    try:
+        from .config_tui import (
+            run_config_tui,
+        )  # pylint: disable=import-outside-toplevel
+    except ImportError:
+        print(
+            "Interactive config requires prompt_toolkit. "
+            "Install with: pip install prompt_toolkit",
+            file=sys.stderr,
+        )
+        return 1
+    return run_config_tui(config_path)
+
+
 def cmd_init(args) -> int:
     """Handler for the 'init' subcommand — generate starter config."""
     from .init_wizard import run_wizard  # pylint: disable=import-outside-toplevel
@@ -1023,6 +1088,17 @@ def _build_parser() -> argparse.ArgumentParser:
         "--defaults", action="store_true", help="Use defaults without prompting"
     )
     init_p.set_defaults(func=cmd_init)
+
+    # config
+    config_p = sub.add_parser("config", help="View and edit configuration")
+    config_sub = config_p.add_subparsers(dest="config_action")
+    get_p = config_sub.add_parser("get", help="Get a config value")
+    get_p.add_argument("field", help="Dotted field path (e.g. golem.task_model)")
+    set_p = config_sub.add_parser("set", help="Set a config value")
+    set_p.add_argument("field", help="Dotted field path")
+    set_p.add_argument("value", help="New value")
+    config_sub.add_parser("list", help="List all config values")
+    config_p.set_defaults(func=cmd_config)
 
     return parser
 
