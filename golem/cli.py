@@ -329,6 +329,52 @@ def print_results(results: list[tuple[int, bool]]) -> None:
 # ---------------------------------------------------------------------------
 
 
+async def _handle_reload(
+    reload_event: asyncio.Event,
+    *,
+    flow: Any = None,
+    self_update_manager: Any = None,
+    drain_timeout: int = 300,
+) -> None:
+    """Wait for reload_event, drain tasks, apply pending update, os.execv.
+
+    The self_update_manager (if set) is called after drain to run
+    ``git merge --ff-only`` or ``git reset --hard`` before restarting.
+    This ensures the new code is on disk when os.execv re-imports modules.
+    """
+    await reload_event.wait()
+    reload_event.clear()
+
+    logger.info("Reload requested — draining active tasks (timeout=%ds)", drain_timeout)
+
+    if flow:
+        flow.stop_tick_loop()
+
+        # Wait for active sessions to finish.
+        deadline = asyncio.get_running_loop().time() + drain_timeout
+        while len(flow._sessions) > 0:
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                logger.warning(
+                    "Drain timeout reached with %d active sessions — proceeding",
+                    len(flow._sessions),
+                )
+                break
+            await asyncio.sleep(min(1.0, remaining))
+
+    # Apply pending git update (if any) AFTER drain, BEFORE os.execv.
+    if self_update_manager:
+        await self_update_manager.apply_update()
+
+    logger.info("Restarting daemon via os.execv")
+    try:
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    except OSError:
+        logger.exception("os.execv failed — resuming with current code")
+        if flow:
+            flow.start_tick_loop()
+
+
 def _manage_golem_tick(
     config: Config, tasks: list[asyncio.Task[Any]]
 ) -> GolemFlow | None:
