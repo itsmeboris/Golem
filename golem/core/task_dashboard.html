@@ -21,6 +21,7 @@
   <nav class="top-nav">
     <button class="nav-tab active" data-view="overview">Overview</button>
     <button class="nav-tab" data-view="detail">Task Detail</button>
+    <button class="nav-tab" data-view="merge-queue">Merge Queue</button>
   </nav>
   <div class="top-stats" id="top-stats"></div>
   <button class="theme-btn" title="Theme" id="theme-toggle" onclick="toggleTheme()">&#9789;</button>
@@ -32,6 +33,13 @@
     <div class="ov-left">
       <div class="ov-header">Tasks <span class="count" id="ov-task-count"></span></div>
       <div class="ov-list" id="ov-task-list"></div>
+      <div class="ov-legend-bar">
+        <span class="ov-legend-label">Status</span>
+        <span class="legend-item"><span class="legend-dot" style="background:var(--blue)"></span> Running / Verifying</span>
+        <span class="legend-item"><span class="legend-dot" style="background:var(--green)"></span> Completed</span>
+        <span class="legend-item"><span class="legend-dot" style="background:var(--red)"></span> Failed / Review</span>
+        <span class="legend-item"><span class="legend-dot" style="background:var(--yellow)"></span> Detected</span>
+      </div>
     </div>
     <div class="ov-right">
       <div class="ov-preview" id="ov-preview"></div>
@@ -52,6 +60,12 @@
       </div>
     </div>
     <div class="info-tabs" id="info-tabs" style="display:none"></div>
+  </div>
+
+  <!-- Merge Queue View -->
+  <div class="mq-view" id="view-merge-queue" style="display:none">
+    <div class="mq-metrics" id="mq-metrics"></div>
+    <div class="mq-content" id="mq-content"></div>
   </div>
 </div>
 
@@ -80,5 +94,7 @@
 <script src="/dashboard/task_timeline.js"></script>
 <script src="/dashboard/task_overview.js"></script>
 <script src="/dashboard/task_live.js"></script>
+<link rel="stylesheet" href="/dashboard/merge_queue.css">
+<script src="/dashboard/merge_queue.js"></script>
 </body>
 </html>

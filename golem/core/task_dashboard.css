@@ -426,3 +426,9 @@ html,body{height:100%;font-family:var(--font-sans);background:var(--bg-base);col
 .modal-btn-cancel:hover{background:var(--bg-hover);color:var(--text-primary)}
 .modal-btn-submit{background:var(--accent);color:var(--bg-base);border-color:var(--accent)}
 .modal-btn-submit:hover{filter:brightness(1.1)}
+
+/* ── Overview Legend Bar ───────────────────── */
+.ov-legend-bar{display:flex;align-items:center;gap:0.6rem;padding:0.4rem 1rem;border-top:1px solid var(--border-subtle);background:var(--bg-surface);flex-shrink:0}
+.ov-legend-label{font-size:0.6rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-right:0.25rem}
+.legend-item{display:flex;align-items:center;gap:0.3rem;font-size:0.68rem;color:var(--text-muted)}
+.legend-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}

@@ -24,6 +24,16 @@ async function fetchSessions() {
   return data.sessions || {};
 }
 
+async function fetchMergeQueue() {
+  try {
+    const resp = await fetch('/api/merge-queue');
+    if (!resp.ok) return null;
+    return await resp.json();
+  } catch (_e) {
+    return null;
+  }
+}
+
 async function fetchParsedTrace(eventId, incremental = false) {
   // Return cached if available and not requesting incremental update
   if (!incremental && S.parsedTraces[eventId]) return S.parsedTraces[eventId];
@@ -74,27 +84,36 @@ async function resubmitTask(prompt, subject) {
 // ── Navigation ─────────────────────────────────
 async function showView(view) {
   S.view = view;
-  document.getElementById('view-overview').style.display = view === 'overview' ? 'flex' : 'none';
-  document.getElementById('view-detail').style.display = view === 'detail' ? 'flex' : 'none';
+  const views = ['overview', 'detail', 'merge-queue'];
+  views.forEach(v => {
+    const el = document.getElementById(`view-${v}`);
+    if (el) el.style.display = (v === view) ? 'flex' : 'none';
+  });
   document.querySelectorAll('.nav-tab').forEach(t =>
     t.classList.toggle('active', t.dataset.view === view)
   );
 
-  // Update URL hash so the view persists across refresh / back-forward
-  const newHash = view === 'detail' && S.selectedTaskId
-    ? `#detail/${S.selectedTaskId}`
-    : '#overview';
-  if (location.hash !== newHash) history.pushState(null, '', newHash);
+  // Update URL hash — use pushState to avoid triggering hashchange
+  if (view === 'detail' && S.selectedTaskId) {
+    const newHash = `#detail/${S.selectedTaskId}`;
+    if (location.hash !== newHash) history.pushState(null, '', newHash);
+  } else if (view === 'merge-queue') {
+    if (location.hash !== '#merge-queue') history.pushState(null, '', '#merge-queue');
+  } else {
+    if (location.hash !== '#overview') history.pushState(null, '', '#overview');
+  }
 
   if (view === 'overview') renderOverview();
   if (view === 'detail' && S.selectedTaskId) {
     if (typeof resetAutoScroll === 'function') resetAutoScroll();
     await renderDetail(S.selectedTaskId);
-    // Auto-scroll to bottom on initial navigation to a running task
     const session = S.sessions[S.selectedTaskId];
     if (isTaskRunning(session) && typeof autoScrollIfAtBottom === 'function') {
       autoScrollIfAtBottom();
     }
+  }
+  if (view === 'merge-queue' && typeof renderMergeQueue === 'function') {
+    renderMergeQueue();
   }
 }
 

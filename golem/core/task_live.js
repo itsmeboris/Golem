@@ -13,6 +13,7 @@ let _eventSource = null;
 let _renderTimeout = null;
 let _needsSessionUpdate = false;
 let _needsTraceUpdate = false;
+let _needsMergeQueueUpdate = false;
 let _reconnectTimeout = null;
 
 // ── Batched SSE flush ──────────────────────────
@@ -21,14 +22,13 @@ async function _flushSSEUpdates() {
   if (_pollInFlight) return;
   _pollInFlight = true;
   try {
-    if (_needsSessionUpdate || _needsTraceUpdate) {
+    if (_needsSessionUpdate || _needsTraceUpdate || _needsMergeQueueUpdate) {
       if (S.view === 'overview') {
         await renderOverview();
       } else if (S.view === 'detail' && S.selectedTaskId) {
         S.sessions = await fetchSessions();
         const session = S.sessions[S.selectedTaskId];
         if (isTaskRunning(session)) {
-          // Running task — always re-render for live cost/duration/phase updates
           const trace = _needsTraceUpdate
             ? await fetchParsedTrace(S.selectedTaskId, true)
             : undefined;
@@ -36,15 +36,17 @@ async function _flushSSEUpdates() {
           updateLiveCursor();
           autoScrollIfAtBottom();
         } else {
-          // Task just completed or session updated — full render
           await renderDetail(S.selectedTaskId);
         }
+      } else if (S.view === 'merge-queue' && _needsMergeQueueUpdate) {
+        if (typeof renderMergeQueue === 'function') await renderMergeQueue();
       }
     }
   } finally {
     _pollInFlight = false;
     _needsSessionUpdate = false;
     _needsTraceUpdate = false;
+    _needsMergeQueueUpdate = false;
   }
 }
 
@@ -97,6 +99,13 @@ function connectSSE() {
       }
     } catch (_e) {
       // Malformed data — ignore
+    }
+  });
+
+  es.addEventListener('merge_queue_update', () => {
+    if (S.view === 'merge-queue') {
+      _needsMergeQueueUpdate = true;
+      _scheduleRender();
     }
   });
 
@@ -217,6 +226,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     S.selectedTaskId = hash.slice(7);
     S.sessions = await fetchSessions();
     showView('detail');
+  } else if (hash === 'merge-queue') {
+    showView('merge-queue');
   } else {
     showView('overview');
   }
@@ -227,6 +238,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (h.startsWith('detail/')) {
       S.selectedTaskId = h.slice(7);
       showView('detail');
+    } else if (h === 'merge-queue') {
+      showView('merge-queue');
     } else {
       showView('overview');
     }
