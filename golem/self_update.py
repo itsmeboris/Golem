@@ -407,9 +407,11 @@ class SelfUpdateManager:
     async def apply_update(self) -> None:
         """Called after drain completes to merge the verified SHA."""
         if not self._verified_sha:
+            logger.info("apply_update called but no verified SHA — skipping")
             return
         strategy = self._config.self_update_strategy
         sha = self._verified_sha
+        logger.info("Applying update %s (strategy=%s)", sha[:8], strategy)
         try:
             if strategy == "merged_only":
                 subprocess.run(
