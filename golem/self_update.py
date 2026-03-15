@@ -363,7 +363,7 @@ class SelfUpdateManager:
     def _run_review_agent(self, prompt: str) -> str:
         """Invoke Claude CLI for review. Blocking — called via asyncio.to_thread."""
         result = subprocess.run(
-            ["claude", "--model", "sonnet", "--print", "--no-input", "-p", prompt],
+            ["claude", "--model", "sonnet", "-p", prompt],
             capture_output=True,
             text=True,
             timeout=300,
