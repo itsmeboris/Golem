@@ -1410,9 +1410,10 @@ class TestCmdDashboard:
             patch("golem.cli.load_config", return_value=cfg),
             patch("uvicorn.run", mock_uvi),
             patch("fastapi.FastAPI", return_value=mock_app),
-            patch("golem.core.dashboard.config_to_snapshot", return_value={}),
             patch("golem.core.dashboard.mount_dashboard"),
             patch("golem.core.control_api.control_router", None),
+            patch("golem.core.control_api.health_router", None),
+            patch("golem.core.control_api.wire_control_api"),
             patch("socket.getfqdn", return_value="testhost"),
         ):
             result = cmd_dashboard(args=SimpleNamespace(config=None, port=None))

@@ -857,24 +857,30 @@ def cmd_dashboard(args) -> int:
     import uvicorn
     from fastapi import FastAPI
 
-    from .core.control_api import control_router
-    from .core.dashboard import config_to_snapshot, mount_dashboard
+    from .core.control_api import control_router, health_router, wire_control_api
+    from .core.dashboard import mount_dashboard
     from .core.live_state import DEFAULT_LIVE_STATE_FILE
 
     config_path = getattr(args, "config", None)
     try:
         cfg = load_config(config_path)
-        snap = config_to_snapshot(cfg)
         default_port = cfg.dashboard.port
+        admin_token = cfg.dashboard.admin_token
     except Exception:  # pylint: disable=broad-except
-        snap = None
         default_port = DashboardConfig.port
+        admin_token = ""
 
     port = getattr(args, "port", None) or default_port
     app = FastAPI(title="Golem Dashboard")
-    mount_dashboard(app, config_snapshot=snap, live_state_file=DEFAULT_LIVE_STATE_FILE)
+    mount_dashboard(app, live_state_file=DEFAULT_LIVE_STATE_FILE)
     if control_router is not None:
         app.include_router(control_router)
+    if health_router is not None:
+        app.include_router(health_router)
+    wire_control_api(
+        admin_token=admin_token,
+        config_path=config_path or "config.yaml",
+    )
     hostname = socket.getfqdn()
     print(f"Dashboard running at http://{hostname}:{port}/dashboard")
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")

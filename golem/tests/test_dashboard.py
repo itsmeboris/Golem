@@ -1227,11 +1227,6 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         return routes
 
     @pytest.mark.asyncio
-    async def test_api_config(self, handlers):
-        resp = await handlers["/api/config"]()
-        assert resp.body is not None
-
-    @pytest.mark.asyncio
     async def test_api_ping(self, handlers):
         resp = await handlers["/api/ping"]()
         data = json.loads(resp.body)

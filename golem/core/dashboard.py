@@ -575,8 +575,8 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
 ) -> None:
     """Register /dashboard and API routes on *app*.
 
-    *config_snapshot* is an optional dict with system configuration info
-    to display in the dashboard header (model, flows, etc.).
+    *config_snapshot* is accepted for backwards compatibility but no longer
+    used.  Config data is served by the control API router instead.
 
     *live_state_file*, when set, makes ``/api/live`` read from a JSON file
     on disk instead of the in-memory :class:`LiveState` singleton.  Use this
@@ -585,8 +585,6 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
     if not FASTAPI_AVAILABLE:
         logger.warning("FastAPI not available — dashboard routes not mounted")
         return
-
-    config_snapshot = config_snapshot or {}  # noqa: PLW0127
 
     @app.get("/api/live")
     async def api_live() -> JSONResponse:
@@ -612,10 +610,6 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
         """Return the tail of the daemon log file."""
         data = await asyncio.to_thread(_read_log_tail, lines)
         return JSONResponse(content=data)
-
-    @app.get("/api/config")
-    async def api_config() -> JSONResponse:
-        return JSONResponse(content=config_snapshot)
 
     @app.get("/api/ping")
     async def api_ping() -> JSONResponse:

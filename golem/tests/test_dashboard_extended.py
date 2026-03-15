@@ -215,11 +215,6 @@ def client(tmp_path):
 class TestClientHTTP:
     """Integration tests using Starlette's TestClient."""
 
-    def test_api_config(self, client):
-        resp = client.get("/api/config")
-        assert resp.status_code == 200
-        assert resp.json()["model"] == "test"
-
     def test_api_sessions(self, client):
         resp = client.get("/api/sessions")
         assert resp.status_code == 200
