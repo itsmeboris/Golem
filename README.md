@@ -25,8 +25,9 @@
   <a href="#why-golem">Why Golem</a>&nbsp;&nbsp;·&nbsp;&nbsp;
   <a href="#how-it-works">How It Works</a>&nbsp;&nbsp;·&nbsp;&nbsp;
   <a href="#agent-intelligence">Agent Intelligence</a>&nbsp;&nbsp;·&nbsp;&nbsp;
+  <a href="#heartbeat--self-directed-work">Heartbeat</a>&nbsp;&nbsp;·&nbsp;&nbsp;
   <a href="#configuration">Configuration</a>&nbsp;&nbsp;·&nbsp;&nbsp;
-  <a href="#http-api">HTTP API</a>
+  <a href="docs/operations.md">Operations Guide</a>
 </p>
 
 ---
@@ -50,6 +51,9 @@ Submit a prompt. Walk away. It's done.
   - [Task Lifecycle](#task-lifecycle)
   - [Parallel Tasks & Git Worktrees](#parallel-tasks--git-worktrees)
 - [Agent Intelligence](#agent-intelligence)
+- [Heartbeat — Self-Directed Work](#heartbeat--self-directed-work)
+- [Self-Update — Zero-Downtime Upgrades](#self-update--zero-downtime-upgrades)
+- [Health Monitoring](#health-monitoring)
 - [Web Dashboard](#web-dashboard)
 - [Architecture](#architecture)
 - [Configuration](#configuration)
@@ -75,6 +79,10 @@ Most AI coding tools wait for you to invoke them. Golem runs the other way aroun
 **Pluggable everything** — The profile system decouples Golem from any specific tracker, notifier, or tool provider. Swap Redmine for GitHub Issues, Teams for Slack, or write your own backend — without touching core logic.
 
 **Batch orchestration** — Submit multiple tasks as a batch with explicit dependency ordering. Task B can declare it depends on Task A — Golem schedules them accordingly and runs post-merge integration validation on the whole group.
+
+**Heartbeat — self-directed work** — When idle, Golem scans for improvements on its own. It triages untagged issues, finds TODOs in git history, detects low-coverage modules, and submits tasks autonomously — all within a configurable daily budget.
+
+**Self-updating** — The daemon monitors its own repository for upstream changes, reviews diffs with Claude, verifies in a worktree, and hot-reloads via `SIGHUP` — with automatic rollback on crash-loop detection.
 
 **Human feedback loop** — When a task fails and a human posts review comments on the tracker, Golem detects the feedback and re-attempts with the human's guidance as structured input — closing the loop on escalated tasks.
 
@@ -187,6 +195,16 @@ golem status
 
 # Launch the web dashboard
 golem dashboard --port 8081
+
+# Edit config interactively (TUI)
+golem config
+
+# Get/set individual config values
+golem config get heartbeat_enabled
+golem config set heartbeat_enabled true    # sends SIGHUP to reload
+
+# Hot-reload the daemon without restart
+kill -HUP $(cat data/golem.pid)
 ```
 
 **`golem status` output:**
@@ -222,7 +240,7 @@ The daemon is the single execution engine. All task execution flows through it, 
 ```mermaid
 flowchart TB
     cli["golem run -p / -f"] -- submit --> daemon
-    api["HTTP API"] -- submit --> daemon
+    api["HTTP API / Config"] -- submit --> daemon
     tracker["Issue Tracker<br/>(plugin)"] -. poll .-> daemon
 
     subgraph daemon ["Golem Daemon"]
@@ -232,9 +250,13 @@ flowchart TB
         vfy -- pass --> val["Validation Agent"]
         val -- PASS --> mq["Merge Queue"]
         val -- PARTIAL --> retry
+        hb["Heartbeat<br/>(idle → self-directed)"] -. submit .-> flow
+        su["Self-Update<br/>(poll → review → reload)"] -. SIGHUP .-> flow
+        hm["Health Monitor"] -. alerts .-> notify
     end
 
-    mq -- "rebase + merge" --> commit["Commit + Notify"]
+    mq -- "rebase + merge" --> commit["Commit"]
+    commit --> notify["Notify"]
     val -- FAIL --> report["Report Failure"]
 ```
 
@@ -358,6 +380,56 @@ Skills are discovered dynamically via the Skill tool. When new skills are added 
 
 ---
 
+## Heartbeat — Self-Directed Work
+
+When idle for 15 minutes (configurable), Golem discovers work on its own via a two-tier system:
+
+- **Tier 1 — Issue triage:** scans untagged issues, triages with Haiku for automatability and complexity
+- **Tier 2 — Self-improvement:** finds TODOs in git history, low-coverage modules, and recurring antipatterns
+
+Candidates are deduplicated and submitted through the normal agent pipeline — same validation, budget controls, and merge queue. Daily spend is capped (`heartbeat_daily_budget_usd`, default $1).
+
+```yaml
+heartbeat_enabled: true
+heartbeat_idle_threshold_seconds: 900   # 15 min idle before activation
+heartbeat_daily_budget_usd: 1.0         # daily spend cap
+```
+
+See [docs/operations.md](docs/operations.md#heartbeat--self-directed-work) for the full config reference.
+
+---
+
+## Self-Update — Zero-Downtime Upgrades
+
+The daemon monitors its own Git repository for upstream changes: polls the remote, reviews diffs with Claude (ACCEPT/REJECT), verifies in a worktree, and applies on `SIGHUP` — with automatic rollback if the daemon crash-loops after an update.
+
+```yaml
+self_update_enabled: true
+self_update_branch: master
+self_update_strategy: merged_only       # or "any_commit"
+```
+
+**SIGHUP reload:** `golem config set` sends `SIGHUP` automatically. The daemon drains active sessions, applies any staged update, and restarts via `os.execv`. Manual: `kill -HUP $(cat data/golem.pid)`.
+
+See [docs/operations.md](docs/operations.md#self-update--zero-downtime-upgrades) for the full pipeline and config.
+
+---
+
+## Health Monitoring
+
+Real-time health tracking with threshold-based alerts for consecutive failures, error rate, queue depth, daemon inactivity, and disk usage. Status tiers: **healthy** → **degraded** → **unhealthy**. Alerts fire through the configured notifier (Slack, Teams, or stdout) with a 15-minute cooldown.
+
+```yaml
+health:
+  enabled: true
+  consecutive_failure_threshold: 3
+  error_rate_threshold: 0.5
+```
+
+See [docs/operations.md](docs/operations.md#health-monitoring) for all thresholds and metrics.
+
+---
+
 ## Web Dashboard
 
 Launch with `golem dashboard --port 8081`. The dashboard is served alongside the REST API on the same port.
@@ -371,6 +443,7 @@ Launch with `golem dashboard --port 8081`. The dashboard is served alongside the
 | **Overview** | Task list with status, cost, and elapsed time on the left; a preview panel on the right. Includes a status color legend for merge queue states |
 | **Task Detail** | Header with task metadata, a metrics strip, a phase-aware timeline with sidebar navigation for each phase (UNDERSTAND / PLAN / BUILD / REVIEW / VERIFY), and a live strip showing current phase and elapsed time while the task is running |
 | **Merge Queue** | Real-time view of the merge pipeline — metrics bar (pending / merging / deferred / conflicts / merged today / failed today), collapsible sections for Active, Pending, Deferred, Conflicts, and Recent merges, expandable entry details, and one-click retry for failed or deferred entries |
+| **Config** | Live config editor organized by category (profile, budget, models, heartbeat, self-update, health, etc.) with field metadata, validation, and optional daemon reload on save |
 
 Additional features:
 
@@ -440,7 +513,7 @@ The `local` profile is the recommended starting point. Prompts submitted via CLI
 | `use_worktrees` | `true` | Isolate tasks in separate git worktrees |
 | `auto_commit` | `true` | Git commit on PASS |
 | `validation_model` | `opus` | Model for the validation agent |
-| `preflight_verify` | `true` | Run verifier on base branch before agent starts — catches broken codebases early |
+| `preflight_verify` | `true` | Run verifier on base branch before agent starts — catches broken codebases early; falls back to last verified commit if HEAD is broken |
 | `ast_analysis` | `true` | Run ast-grep structural rules during validation (requires `sg` binary) |
 | `clarity_check` | `false` | Opt-in: score task clarity with haiku before execution |
 | `clarity_threshold` | `3` | Minimum clarity score (1–5) to proceed without human clarification |
@@ -448,8 +521,25 @@ The `local` profile is the recommended starting point. Prompts submitted via CLI
 | `ensemble_on_second_retry` | `false` | Spawn parallel candidates with different strategies on second retry |
 | `ensemble_candidates` | `2` | Number of parallel candidates for ensemble retry |
 | `flaky_tests_file` | `""` | Path to known-flaky tests JSON registry; empty = disabled |
+| `heartbeat_enabled` | `false` | Enable self-directed work when idle (see [Heartbeat](#heartbeat--self-directed-work)) |
+| `heartbeat_daily_budget_usd` | `1.0` | Daily spend cap for heartbeat-spawned tasks |
+| `self_update_enabled` | `false` | Monitor own repo for upstream changes (see [Self-Update](#self-update--zero-downtime-upgrades)) |
+| `self_update_branch` | `master` | Remote branch to watch for updates |
+| `health.enabled` | `true` | Enable health monitoring with threshold-based alerts |
+| `daemon.drain_timeout_seconds` | `300` | Grace period for active sessions during SIGHUP reload |
 
 See [`config.yaml.example`](config.yaml.example) for the full list including budget limits, timeouts, checkpoint intervals, and merge settings.
+
+### Config Management
+
+```bash
+golem config                        # interactive TUI editor
+golem config get <field>            # read a single value
+golem config set <field> <value>    # update a value + trigger daemon reload
+golem config list                   # list all fields (sensitive values masked)
+```
+
+Changes made via `golem config set` are written atomically and the daemon is sent `SIGHUP` to pick them up without restart.
 
 ### Environment Variables
 
@@ -521,13 +611,17 @@ The daemon exposes a REST API (served on the dashboard port, default `8081`).
 | `/api/batches` | GET | None | List all known batches |
 | `/api/merge-queue` | GET | None | Merge queue snapshot — pending, active, deferred, conflicts, and recent history |
 | `/api/merge-queue/retry/{session_id}` | POST | None | Re-enqueue a failed or deferred merge entry |
-| `/api/config` | GET | None | Current config snapshot |
+| `/api/config` | GET | Admin* | Current config grouped by category with field metadata |
+| `/api/config/update` | POST | Admin* | Validate and apply config updates; triggers daemon reload |
+| `/api/self-update` | GET | None | Self-update status — branch, last check, verdict, history |
 | `/api/logs` | GET | None | Tail of the daemon log file |
 | `/api/trace-parsed/{event_id}` | GET | None | Structured trace with phase detection, subagent grouping, and tool timelines; accepts `?since_event=N` to skip re-parsing when unchanged |
 | `/api/trace/{event_id}` | GET | None | Raw JSONL trace parsed into sections |
 | `/api/trace-terminal/{event_id}` | GET | None | Terminal-renderable event list |
 | `/api/prompt/{event_id}` | GET | None | Prompt text for a task |
 | `/api/report/{event_id}` | GET | None | Report markdown for a completed task |
+
+*Admin\* = requires `admin_token` header if configured; open access otherwise.*
 
 ```bash
 curl -X POST http://localhost:8081/api/submit \
