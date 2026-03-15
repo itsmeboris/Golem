@@ -233,6 +233,8 @@ class TaskOrchestrator:
         profile: GolemProfile | None = None,
         event_callback: Any | None = None,
         work_dir_override: str | None = None,
+        verified_ref: str | None = None,
+        on_verified_ref: Any | None = None,
     ):
         self.session = session
         self.config = config
@@ -243,6 +245,8 @@ class TaskOrchestrator:
         self.profile: GolemProfile = profile  # type: ignore[assignment]
         self._event_callback = event_callback
         self._work_dir_override = work_dir_override
+        self._verified_ref = verified_ref
+        self._on_verified_ref = on_verified_ref
         self._last_checkpoint_time: float = 0.0
         self._checkpoint_interval: float = 10.0  # seconds between disk writes
         self._slog = SessionLogAdapter(
@@ -358,6 +362,8 @@ class TaskOrchestrator:
                 profile=self.profile,
                 event_callback=self._event_callback,
                 work_dir_override=self._work_dir_override,
+                verified_ref=self._verified_ref,
+                on_verified_ref=self._on_verified_ref,
             )
             await sup.run()
         else:

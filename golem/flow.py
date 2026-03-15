@@ -126,6 +126,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         else:
             self._self_update = None
 
+        self._verified_ref: str | None = None
         self._notified_batches: set[str] = set()
 
         self._submissions_dir = SUBMISSIONS_DIR
@@ -151,6 +152,11 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
     def live(self) -> LiveState:
         """Expose LiveState for heartbeat access."""
         return LiveState.get()
+
+    def _set_verified_ref(self, sha: str) -> None:
+        """Record the last commit SHA that passed pre-flight verification."""
+        self._verified_ref = sha
+        logger.info("Updated verified ref to %s", sha)
 
     # -- BaseFlow interface ---------------------------------------------------
 
@@ -430,6 +436,8 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                         work_dir_lock=lock,
                         save_callback=self._save_state,
                         profile=profile,
+                        verified_ref=self._verified_ref,
+                        on_verified_ref=self._set_verified_ref,
                     )
                     try:
                         await orchestrator.tick()

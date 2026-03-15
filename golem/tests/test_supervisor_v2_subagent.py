@@ -1088,6 +1088,138 @@ class TestPreflightSupervisor:
             await sup._setup_work_dir(42, "desc")
 
 
+class TestVerifiedRef:
+    """Cover verified_ref fallback and on_verified_ref callback."""
+
+    @pytest.mark.asyncio
+    async def test_initial_worktree_always_uses_head(self):
+        """Initial worktree creation always uses HEAD (no start_point)."""
+        cfg = _make_config(
+            use_worktrees=True, preflight_verify=False, default_work_dir="/tmp/test"
+        )
+        sup = _make_supervisor(
+            config=cfg,
+            verified_ref="abc123",
+            work_dir_override="/repo",
+        )
+
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.create_worktree",
+                return_value="/wt/42",
+            ) as mock_wt,
+            patch("golem.supervisor_v2_subagent.run_verification"),
+            patch("pathlib.Path.is_dir", return_value=True),
+        ):
+            await sup._setup_work_dir(42, "desc")
+            mock_wt.assert_called_once_with("/repo", 42)
+
+    @pytest.mark.asyncio
+    async def test_on_verified_ref_called_on_preflight_pass(self):
+        """on_verified_ref callback fires with HEAD SHA after pre-flight passes."""
+        cfg = _make_config(
+            preflight_verify=True, use_worktrees=False, default_work_dir="/tmp/test"
+        )
+        callback = MagicMock()
+        sup = _make_supervisor(
+            config=cfg, on_verified_ref=callback, work_dir_override="/repo"
+        )
+
+        mock_vr = MagicMock(
+            passed=True,
+            duration_s=10.0,
+        )
+        head_result = MagicMock(returncode=0, stdout="deadbeef\n")
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.run_verification", return_value=mock_vr
+            ),
+            patch("pathlib.Path.is_dir", return_value=True),
+            patch(
+                "golem.supervisor_v2_subagent.subprocess.run",
+                return_value=head_result,
+            ),
+        ):
+            await sup._setup_work_dir(42, "desc")
+            callback.assert_called_once_with("deadbeef")
+
+    @pytest.mark.asyncio
+    async def test_preflight_fail_falls_back_to_verified_ref(self):
+        """Pre-flight failure with verified_ref recreates worktree from verified_ref."""
+        cfg = _make_config(
+            preflight_verify=True, use_worktrees=True, default_work_dir="/tmp/test"
+        )
+        sup = _make_supervisor(
+            config=cfg, verified_ref="goodsha", work_dir_override="/repo"
+        )
+
+        mock_vr_fail = MagicMock(
+            passed=False,
+            black_ok=True,
+            black_output="",
+            pylint_ok=False,
+            pylint_output="E1123: bad arg",
+            pytest_ok=False,
+            pytest_output="FAILED",
+        )
+        create_calls = []
+
+        def fake_create(base, iid, start_point=None):
+            create_calls.append(start_point)
+            return f"/wt/{iid}"
+
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.create_worktree",
+                side_effect=fake_create,
+            ),
+            patch(
+                "golem.supervisor_v2_subagent.cleanup_worktree",
+            ) as mock_cleanup,
+            patch(
+                "golem.supervisor_v2_subagent.run_verification",
+                return_value=mock_vr_fail,
+            ),
+            patch("pathlib.Path.is_dir", return_value=True),
+        ):
+            work_dir = await sup._setup_work_dir(42, "desc")
+            # First call uses HEAD (no start_point kwarg), second with verified_ref
+            assert len(create_calls) == 2
+            assert create_calls[0] is None  # HEAD
+            assert create_calls[1] == "goodsha"  # fallback
+            # First worktree should be cleaned up
+            mock_cleanup.assert_called_once()
+            assert work_dir == "/wt/42"
+
+    @pytest.mark.asyncio
+    async def test_preflight_fail_no_verified_ref_raises(self):
+        """Pre-flight failure without verified_ref still raises InfrastructureError."""
+        from golem.errors import InfrastructureError
+
+        cfg = _make_config(
+            preflight_verify=True, use_worktrees=False, default_work_dir="/tmp/test"
+        )
+        sup = _make_supervisor(config=cfg, work_dir_override="/repo")
+
+        mock_vr = MagicMock(
+            passed=False,
+            black_ok=True,
+            black_output="",
+            pylint_ok=False,
+            pylint_output="error",
+            pytest_ok=True,
+            pytest_output="",
+        )
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.run_verification", return_value=mock_vr
+            ),
+            patch("pathlib.Path.is_dir", return_value=True),
+            pytest.raises(InfrastructureError, match="Base branch verification failed"),
+        ):
+            await sup._setup_work_dir(42, "desc")
+
+
 class TestClarityGate:
     """Cover the clarity check failure path in _execute_phases."""
 

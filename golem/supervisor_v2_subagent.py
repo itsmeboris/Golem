@@ -61,6 +61,8 @@ class SubagentSupervisor:
         profile: GolemProfile | None = None,
         event_callback: Any | None = None,
         work_dir_override: str | None = None,
+        verified_ref: str | None = None,
+        on_verified_ref: Any | None = None,
     ):
         self.session = session
         self.config = config
@@ -71,6 +73,8 @@ class SubagentSupervisor:
         self.profile: GolemProfile = profile  # type: ignore[assignment]
         self._event_callback = event_callback
         self._work_dir_override = work_dir_override
+        self._verified_ref = verified_ref
+        self._on_verified_ref = on_verified_ref
         self._base_work_dir: str = ""
         self._worktree_path: str = ""
         self._trace_writer: _StreamingTraceWriter | None = None
@@ -273,11 +277,41 @@ class SubagentSupervisor:
                 if not vr.pytest_ok:
                     failures.append(f"pytest: {vr.pytest_output[:200]}")
                 detail = "; ".join(failures)
-                raise InfrastructureError(
-                    f"Base branch verification failed — aborting to save budget. {detail}"
-                )
-            self._emit_event(f"Pre-flight passed ({vr.duration_s:.0f}s)")
-            self._slog.info("Pre-flight verification passed (%.1fs)", vr.duration_s)
+
+                # Fallback: recreate worktree from last-known-good ref
+                if self._verified_ref and self.task_config.use_worktrees:
+                    self._slog.warning(
+                        "HEAD failed pre-flight, falling back to verified ref %s",
+                        self._verified_ref,
+                    )
+                    self._emit_event(
+                        "HEAD broken — falling back to last verified commit"
+                    )
+                    cleanup_worktree(self._base_work_dir, self._worktree_path)
+                    self._worktree_path = create_worktree(
+                        self._base_work_dir,
+                        issue_id,
+                        start_point=self._verified_ref,
+                    )
+                    work_dir = self._worktree_path
+                else:
+                    raise InfrastructureError(
+                        f"Base branch verification failed — aborting to save budget. {detail}"
+                    )
+            else:
+                self._emit_event(f"Pre-flight passed ({vr.duration_s:.0f}s)")
+                self._slog.info("Pre-flight verification passed (%.1fs)", vr.duration_s)
+                # Record HEAD SHA as verified for future tasks
+                if self._on_verified_ref:
+                    result = subprocess.run(
+                        ["git", "rev-parse", "HEAD"],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        cwd=work_dir,
+                    )
+                    if result.returncode == 0:
+                        self._on_verified_ref(result.stdout.strip())
 
         return work_dir
 

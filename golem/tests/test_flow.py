@@ -1530,3 +1530,22 @@ class TestSelfUpdateWiring:
         assert flow._self_update is None
         # Should not raise
         flow.stop_tick_loop()
+
+
+class TestVerifiedRef:
+    """GolemFlow tracks last-known-good commit for worktree creation."""
+
+    def test_verified_ref_starts_none(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path)
+        assert flow._verified_ref is None
+
+    def test_set_verified_ref_updates_state(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow._set_verified_ref("abc123")
+        assert flow._verified_ref == "abc123"
+
+    def test_set_verified_ref_overwrites(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow._set_verified_ref("first")
+        flow._set_verified_ref("second")
+        assert flow._verified_ref == "second"

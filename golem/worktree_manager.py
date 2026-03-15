@@ -71,6 +71,7 @@ def create_worktree(
     base_dir: str,
     issue_id: int,
     worktree_root: str | None = None,
+    start_point: str | None = None,
 ) -> str:
     """Create a git worktree for an agent session.
 
@@ -115,10 +116,13 @@ def create_worktree(
     # Prune stale worktree references that may block branch creation
     _run_git(["worktree", "prune"], cwd=base_dir)
 
-    # Create the worktree with a new branch based on HEAD
+    # Create the worktree with a new branch based on start_point (or HEAD)
     Path(worktree_root).mkdir(parents=True, exist_ok=True)
+    cmd = ["worktree", "add", "-b", branch_name, worktree_path]
+    if start_point is not None:
+        cmd.append(start_point)
     result = _run_git(
-        ["worktree", "add", "-b", branch_name, worktree_path],
+        cmd,
         cwd=base_dir,
     )
 

@@ -96,6 +96,50 @@ class TestCreateWorktree:
             create_worktree(str(tmp_path / "repo"), 999, worktree_root=wt_root)
 
 
+class TestCreateWorktreeStartPoint:
+    def test_start_point_branches_from_specific_commit(self, git_repo, tmp_path):
+        """When start_point is given, worktree branches from that commit."""
+        # Make a second commit
+        (git_repo / "second.txt").write_text("second")
+        _run_git(["add", "."], cwd=str(git_repo))
+        _run_git(["commit", "-m", "Second commit"], cwd=str(git_repo))
+
+        # Record HEAD and then make a third commit
+        result = _run_git(["rev-parse", "HEAD"], cwd=str(git_repo))
+        second_sha = result.stdout.strip()
+
+        (git_repo / "third.txt").write_text("third")
+        _run_git(["add", "."], cwd=str(git_repo))
+        _run_git(["commit", "-m", "Third commit"], cwd=str(git_repo))
+
+        # Create worktree from the second commit (not HEAD)
+        wt_root = str(tmp_path / "worktrees")
+        path = create_worktree(
+            str(git_repo), 2000, worktree_root=wt_root, start_point=second_sha
+        )
+
+        # Worktree should have second.txt but NOT third.txt
+        assert (Path(path) / "second.txt").exists()
+        assert not (Path(path) / "third.txt").exists()
+
+        # Branch should be at the second commit
+        wt_head = _run_git(["rev-parse", "HEAD"], cwd=path)
+        assert wt_head.stdout.strip() == second_sha
+
+    def test_none_start_point_uses_head(self, git_repo, tmp_path):
+        """When start_point is None (default), worktree branches from HEAD."""
+        result = _run_git(["rev-parse", "HEAD"], cwd=str(git_repo))
+        head_sha = result.stdout.strip()
+
+        wt_root = str(tmp_path / "worktrees")
+        path = create_worktree(
+            str(git_repo), 2001, worktree_root=wt_root, start_point=None
+        )
+
+        wt_head = _run_git(["rev-parse", "HEAD"], cwd=path)
+        assert wt_head.stdout.strip() == head_sha
+
+
 class TestCleanupWorktree:
     def test_cleanup_removes_worktree(self, git_repo, tmp_path):
         wt_root = str(tmp_path / "worktrees")
