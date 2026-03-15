@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: Code review agent. Reviews for bugs, logic errors, spec compliance, and convention violations. Read-only — cannot modify files.
-model: sonnet
+model: opus
 tools: Read, Grep, Glob, Bash
 maxTurns: 20
 color: "yellow"

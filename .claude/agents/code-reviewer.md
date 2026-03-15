@@ -1,7 +1,7 @@
 ---
 name: code-reviewer
 description: Standalone code review agent for PRs and diffs. Uses confidence-based filtering (>=80). Read-only.
-model: sonnet
+model: opus
 disallowedTools: [Edit, Write, NotebookEdit]
 color: "magenta"
 ---

@@ -1,7 +1,7 @@
 ---
 name: verifier
 description: Verification agent. Runs black, pylint, and pytest. Returns structured pass/fail. Fast and minimal — only runs commands, no file reading.
-model: haiku
+model: sonnet
 tools: Bash
 skills: [verification-before-completion]
 maxTurns: 5

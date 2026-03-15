@@ -1,7 +1,7 @@
 ---
 name: scout
 description: Focused codebase research agent. Answers specific questions about code structure with file:line references. Read-only.
-model: haiku
+model: sonnet
 tools: Read, Grep, Glob
 skills: [ast-grep]
 maxTurns: 15
