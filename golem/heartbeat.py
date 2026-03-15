@@ -282,7 +282,7 @@ class HeartbeatManager:
                 ],
             )
 
-        response = await asyncio.get_event_loop().run_in_executor(None, _sync_call)
+        response = await asyncio.get_running_loop().run_in_executor(None, _sync_call)
 
         # Track cost from usage
         if hasattr(response, "usage"):
