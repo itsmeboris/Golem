@@ -9,7 +9,7 @@ from golem.core.config import Config, GolemFlowConfig
 from golem.orchestrator import TaskSession, TaskSessionState
 
 
-def _make_test_profile():
+def _make_test_profile(tmp_path):
     from golem.backends.local import (
         LocalFileTaskSource,
         LogNotifier,
@@ -21,7 +21,7 @@ def _make_test_profile():
 
     return GolemProfile(
         name="test",
-        task_source=LocalFileTaskSource("/tmp/test-tasks"),
+        task_source=LocalFileTaskSource(str(tmp_path / "test-tasks")),
         state_backend=NullStateBackend(),
         notifier=LogNotifier(),
         tool_provider=NullToolProvider(),
@@ -35,7 +35,7 @@ def _make_flow(monkeypatch, tmp_path, profile=None, **flow_kwargs):
     sessions_path = tmp_path / "sessions.json"
     monkeypatch.setattr("golem.orchestrator.SESSIONS_FILE", sessions_path)
 
-    profile = profile or _make_test_profile()
+    profile = profile or _make_test_profile(tmp_path)
     fc_kwargs = {"enabled": True, "projects": ["test-project"], "profile": "test"}
     fc_kwargs.update(flow_kwargs)
     config = Config(golem=GolemFlowConfig(**fc_kwargs))
@@ -294,8 +294,8 @@ class TestEnqueueForMerge:
             parent_subject="merge me",
             state=TaskSessionState.COMPLETED,
             merge_ready=True,
-            worktree_path="/wt/300",
-            base_work_dir="/repo",
+            worktree_path=str(tmp_path / "wt" / "300"),
+            base_work_dir=str(tmp_path / "repo"),
         )
         flow._sessions[300] = session
 
@@ -324,8 +324,8 @@ class TestSaveStateAfterMerge:
             parent_subject="merge save",
             state=TaskSessionState.COMPLETED,
             merge_ready=True,
-            worktree_path="/wt/350",
-            base_work_dir="/repo",
+            worktree_path=str(tmp_path / "wt" / "350"),
+            base_work_dir=str(tmp_path / "repo"),
         )
         flow._sessions[350] = session
 
@@ -354,8 +354,8 @@ class TestSaveStateAfterMerge:
             parent_subject="merge fail save",
             state=TaskSessionState.COMPLETED,
             merge_ready=True,
-            worktree_path="/wt/351",
-            base_work_dir="/repo",
+            worktree_path=str(tmp_path / "wt" / "351"),
+            base_work_dir=str(tmp_path / "repo"),
         )
         flow._sessions[351] = session
 
@@ -454,8 +454,8 @@ class TestApplyMergeResult:
         session = TaskSession(
             parent_issue_id=410,
             parent_subject="cleanup test",
-            worktree_path="/wt/410",
-            base_work_dir="/repo",
+            worktree_path=str(tmp_path / "wt" / "410"),
+            base_work_dir=str(tmp_path / "repo"),
         )
         flow._sessions[410] = session
 
@@ -473,8 +473,8 @@ class TestApplyMergeResult:
             MergeResult(session_id=410, success=True, merge_sha="abc")
         )
         assert len(cleanup_calls) == 1
-        assert cleanup_calls[0][0] == "/repo"
-        assert cleanup_calls[0][1] == "/wt/410"
+        assert cleanup_calls[0][0] == str(tmp_path / "repo")
+        assert cleanup_calls[0][1] == str(tmp_path / "wt" / "410")
         assert session.worktree_path == ""
 
     def test_failure_cleans_up_worktree_keeps_branch(self, monkeypatch, tmp_path):
@@ -483,8 +483,8 @@ class TestApplyMergeResult:
         session = TaskSession(
             parent_issue_id=411,
             parent_subject="fail cleanup",
-            worktree_path="/wt/411",
-            base_work_dir="/repo",
+            worktree_path=str(tmp_path / "wt" / "411"),
+            base_work_dir=str(tmp_path / "repo"),
         )
         flow._sessions[411] = session
 
@@ -502,8 +502,8 @@ class TestApplyMergeResult:
             MergeResult(session_id=411, success=False, error="conflict")
         )
         assert len(cleanup_calls) == 1
-        assert cleanup_calls[0][0] == "/repo"
-        assert cleanup_calls[0][1] == "/wt/411"
+        assert cleanup_calls[0][0] == str(tmp_path / "repo")
+        assert cleanup_calls[0][1] == str(tmp_path / "wt" / "411")
         assert cleanup_calls[0][2].get("keep_branch") is True
         assert session.worktree_path == ""
 
@@ -513,8 +513,8 @@ class TestApplyMergeResult:
         session = TaskSession(
             parent_issue_id=412,
             parent_subject="deferred keep",
-            worktree_path="/wt/412",
-            base_work_dir="/repo",
+            worktree_path=str(tmp_path / "wt" / "412"),
+            base_work_dir=str(tmp_path / "repo"),
         )
         flow._sessions[412] = session
 
@@ -536,7 +536,7 @@ class TestApplyMergeResult:
             )
         )
         assert not cleanup_calls
-        assert session.worktree_path == "/wt/412"
+        assert session.worktree_path == str(tmp_path / "wt" / "412")
 
     def test_no_worktree_skips_cleanup(self, monkeypatch, tmp_path):
         """Sessions without a worktree_path should not trigger cleanup."""
@@ -545,7 +545,7 @@ class TestApplyMergeResult:
             parent_issue_id=413,
             parent_subject="no wt",
             worktree_path="",
-            base_work_dir="/repo",
+            base_work_dir=str(tmp_path / "repo"),
         )
         flow._sessions[413] = session
 
@@ -568,8 +568,8 @@ class TestApplyMergeResult:
         session = TaskSession(
             parent_issue_id=414,
             parent_subject="cleanup crash",
-            worktree_path="/wt/414",
-            base_work_dir="/repo",
+            worktree_path=str(tmp_path / "wt" / "414"),
+            base_work_dir=str(tmp_path / "repo"),
         )
         flow._sessions[414] = session
 

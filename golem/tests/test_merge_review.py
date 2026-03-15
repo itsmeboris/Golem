@@ -90,19 +90,23 @@ class TestFormatCurrentFiles:
 
 
 class TestGetShortSha:
-    def test_returns_sha(self, monkeypatch):
+    def test_returns_sha(self, monkeypatch, tmp_path):
         mock_result = MagicMock()
         mock_result.stdout = "abc1234\n"
         monkeypatch.setattr(
             "golem.merge_review.subprocess.run", lambda *a, **kw: mock_result
         )
-        assert _get_short_sha("/repo") == "abc1234"
+        assert _get_short_sha(str(tmp_path / "repo")) == "abc1234"
 
 
 class TestRunMergeAgent:
-    def test_no_conflicts_or_missing_returns_resolved(self):
+    def test_no_conflicts_or_missing_returns_resolved(self, tmp_path):
         result = run_merge_agent(
-            "/repo", 123, agent_diff="diff", conflict_files=[], missing=[]
+            str(tmp_path / "repo"),
+            123,
+            agent_diff="diff",
+            conflict_files=[],
+            missing=[],
         )
         assert result.resolved is True
         assert result.explanation == "nothing to resolve"

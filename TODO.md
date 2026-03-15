@@ -6,7 +6,6 @@ Items use GitHub issue numbers as IDs. See https://github.com/itsmeboris/Golem/i
 
 | GH  | Status | Task                                                                                                                                                        | Impact | Priority       |
 | --- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | -------------- |
-| #21 | [ ]    | **Worktree and data isolation** — gitignore `data/`, ensure all tests use `tmp_path` instead of real repo for worktree/merge ops                            | High   | P0 (immediate) |
 | #20 | [ ]    | **Post-merge re-verification** — run black/pylint/pytest after merge conflict resolution; fail merge if checks don't pass                                   | High   | P1             |
 | #2  | [ ]    | **Dashboard prompt comparison UI** — table/chart for `/api/analytics/by-prompt` data (API exists, frontend missing)                                         | Low    | P3             |
 | #22 | [ ]    | **State management audit rule** — detect innerHTML without state preservation, polling without concurrency guards, shared mutable state in async code        | Medium | P2             |
@@ -29,3 +28,4 @@ Items use GitHub issue numbers as IDs. See https://github.com/itsmeboris/Golem/i
 | #5  | **Post-task learning loop** — extract pitfalls into AGENTS.md after each task                                                                               | Medium | P2       |
 | #6  | **Integration smoke tests** — FastAPI TestClient integration tests for key endpoints; `@pytest.mark.integration` marker                                     | High   | P1       |
 | #12 | **GitHub Issues self-serve** — let Golem pick up and close its own issues                                                                                   | High   | P2       |
+| #21 | **Worktree and data isolation** — gitignore `data/`, ensure all tests use `tmp_path` instead of real repo for worktree/merge ops                            | High   | P0       |

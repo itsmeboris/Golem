@@ -9,7 +9,7 @@ from golem.merge_review import ReconciliationResult
 from golem.orchestrator import TaskSession, TaskSessionState
 
 
-def _make_test_profile():
+def _make_test_profile(tmp_path):
     from golem.backends.local import (
         LocalFileTaskSource,
         LogNotifier,
@@ -21,7 +21,7 @@ def _make_test_profile():
 
     return GolemProfile(
         name="test",
-        task_source=LocalFileTaskSource("/tmp/test-tasks"),
+        task_source=LocalFileTaskSource(str(tmp_path / "test-tasks")),
         state_backend=NullStateBackend(),
         notifier=LogNotifier(),
         tool_provider=NullToolProvider(),
@@ -35,7 +35,7 @@ def _make_flow(monkeypatch, tmp_path):
     sessions_path = tmp_path / "sessions.json"
     monkeypatch.setattr("golem.orchestrator.SESSIONS_FILE", sessions_path)
 
-    profile = _make_test_profile()
+    profile = _make_test_profile(tmp_path)
     config = Config(
         golem=GolemFlowConfig(enabled=True, projects=["test-project"], profile="test")
     )
@@ -61,7 +61,7 @@ class TestHandleMergeAgent:
         monkeypatch.setattr("golem.flow.run_merge_agent", fake_run_merge_agent)
 
         result = flow._handle_merge_agent(
-            base_dir="/repo",
+            base_dir=str(tmp_path / "repo"),
             issue_id=42,
             agent_diff="diff content",
             conflict_files=["a.py", "b.py"],
@@ -70,7 +70,7 @@ class TestHandleMergeAgent:
 
         assert result.resolved is True
         assert result.commit_sha == "abc123"
-        assert captured["base_dir"] == "/repo"
+        assert captured["base_dir"] == str(tmp_path / "repo")
         assert captured["issue_id"] == 42
         assert captured["agent_diff"] == "diff content"
         assert captured["kwargs"]["conflict_files"] == ["a.py", "b.py"]
@@ -87,7 +87,7 @@ class TestHandleMergeAgent:
         monkeypatch.setattr("golem.flow.run_merge_agent", fake_run_merge_agent)
 
         flow._handle_merge_agent(
-            base_dir="/repo",
+            base_dir=str(tmp_path / "repo"),
             issue_id=99,
             agent_diff="diff",
             conflict_files=[],
@@ -107,7 +107,7 @@ class TestHandleMergeAgent:
         )
 
         result = flow._handle_merge_agent(
-            base_dir="/repo",
+            base_dir=str(tmp_path / "repo"),
             issue_id=55,
             agent_diff="diff",
             conflict_files=["x.py"],
@@ -245,7 +245,7 @@ class TestRetryDeferredMerges:
         )
         session.merge_deferred = True
         session.merge_branch = "merge-ready/42"
-        session.base_work_dir = "/repo"
+        session.base_work_dir = str(tmp_path / "repo")
         flow._sessions[42] = session
 
         with (
@@ -295,7 +295,7 @@ class TestRetryDeferredMerges:
         )
         session.merge_deferred = True
         session.merge_branch = "merge-ready/42"
-        session.base_work_dir = "/repo"
+        session.base_work_dir = str(tmp_path / "repo")
         flow._sessions[42] = session
 
         with patch("golem.flow.fast_forward_if_safe", return_value=(False, "dirty")):
