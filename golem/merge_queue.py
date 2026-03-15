@@ -9,7 +9,6 @@ additions, an optional merge-agent callback can attempt resolution.
 import asyncio
 import logging
 import subprocess
-import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Callable
@@ -147,7 +146,8 @@ class MergeQueue:
             # --- Merge failed (empty sha + error) ---
             if not outcome.sha and outcome.error:
                 if self._on_merge_agent and outcome.merge_branch:
-                    recon = self._on_merge_agent(
+                    recon = await asyncio.to_thread(
+                        self._on_merge_agent,
                         entry.base_dir,
                         entry.session_id,
                         outcome.agent_diff,
@@ -195,7 +195,8 @@ class MergeQueue:
                         entry.session_id,
                         len(outcome.missing_additions),
                     )
-                    recon = self._on_merge_agent(
+                    recon = await asyncio.to_thread(
+                        self._on_merge_agent,
                         entry.base_dir,
                         entry.session_id,
                         outcome.agent_diff,
@@ -265,7 +266,7 @@ class MergeQueue:
                     1 + self.INFRA_RETRIES,
                     exc,
                 )
-                time.sleep(self.INFRA_RETRY_DELAY)
+                await asyncio.sleep(self.INFRA_RETRY_DELAY)
                 return None  # signal retry
             logger.error("Session %d: merge error: %s", entry.session_id, exc)
             return MergeResult(
