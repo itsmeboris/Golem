@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,6 +25,20 @@ from .types import HeartbeatCandidateDict, HeartbeatSnapshotDict
 logger = logging.getLogger("golem.heartbeat")
 
 _24H = 86400  # seconds
+
+_MD_JSON_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?\s*```", re.DOTALL)
+
+
+def _strip_markdown_json(text: str) -> str:
+    """Strip markdown code fences from a JSON response.
+
+    Models often wrap JSON in ```json ... ``` blocks.  This extracts
+    the inner content so ``json.loads`` can parse it.
+    """
+    match = _MD_JSON_RE.search(text)
+    if match:
+        return match.group(1).strip()
+    return text.strip()
 
 
 class HeartbeatManager:
@@ -262,6 +277,7 @@ class HeartbeatManager:
             cli_type=CLIType.CLAUDE,
             model=self.HAIKU_MODEL,
             timeout_seconds=120,
+            system_prompt="Respond with raw JSON only. No markdown, no explanation.",
         )
 
         def _sync_call():
@@ -276,9 +292,11 @@ class HeartbeatManager:
         self.record_spend(result.cost_usd)
 
         text = result.output.get("result", "")
+        text = _strip_markdown_json(text)
         try:
             return json.loads(text)
         except json.JSONDecodeError:
+            logger.debug("Haiku response not valid JSON: %.200s", text)
             return text
 
     def _validate_candidates(

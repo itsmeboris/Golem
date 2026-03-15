@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from golem.heartbeat import HeartbeatManager
+from golem.heartbeat import HeartbeatManager, _strip_markdown_json
 from golem.core.config import GolemFlowConfig
 
 
@@ -455,6 +455,26 @@ class TestValidateCandidates:
         assert [c["id"] for c in result] == ["github:2", "github:3", "github:1"]
 
 
+class TestStripMarkdownJson:
+    def test_plain_json_unchanged(self):
+        assert _strip_markdown_json('{"a": 1}') == '{"a": 1}'
+
+    def test_strips_json_code_fence(self):
+        text = '```json\n{"candidates": []}\n```'
+        assert _strip_markdown_json(text) == '{"candidates": []}'
+
+    def test_strips_plain_code_fence(self):
+        text = '```\n{"candidates": []}\n```'
+        assert _strip_markdown_json(text) == '{"candidates": []}'
+
+    def test_strips_surrounding_whitespace(self):
+        assert _strip_markdown_json("  \n{}\n  ") == "{}"
+
+    def test_extracts_from_mixed_text(self):
+        text = 'Here is the result:\n```json\n{"ok": true}\n```\nDone.'
+        assert _strip_markdown_json(text) == '{"ok": true}'
+
+
 class TestCallHaiku:
     @pytest.mark.asyncio
     async def test_call_haiku_tracks_spend(self, tmp_path):
@@ -522,6 +542,19 @@ class TestCallHaiku:
 
         assert result == ""
         assert mgr._daily_spend_usd == 0.0
+
+    @pytest.mark.asyncio
+    async def test_call_haiku_strips_markdown_fence(self, tmp_path):
+        """Haiku responses wrapped in ```json fences are parsed correctly."""
+        from golem.core.cli_wrapper import CLIResult
+
+        mgr = _make_manager(tmp_path)
+        wrapped = '```json\n{"candidates": [{"id": "test:1"}]}\n```'
+        mock_result = CLIResult(output={"result": wrapped}, cost_usd=0.001)
+        with patch("golem.heartbeat.invoke_cli", return_value=mock_result):
+            result = await mgr._call_haiku("prompt", "data")
+
+        assert result == {"candidates": [{"id": "test:1"}]}
 
 
 class TestTier1:
