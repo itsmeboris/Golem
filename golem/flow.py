@@ -53,6 +53,7 @@ from .orchestrator import (
 from .checkpoint import is_checkpoint_fresh, load_checkpoint
 from .heartbeat import HeartbeatManager
 from .priority_gate import PriorityGate
+from .self_update import SelfUpdateManager
 from .profile import GolemProfile, build_profile
 from .prompts import FilePromptProvider
 from .validation import ValidationVerdict
@@ -73,9 +74,15 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
 
     SESSIONS_DIR = DATA_DIR / "state"
 
-    def __init__(self, config: Config, flow_config: GolemFlowConfig | None = None):
+    def __init__(
+        self,
+        config: Config,
+        flow_config: GolemFlowConfig | None = None,
+        reload_event: asyncio.Event | None = None,
+    ):
         super().__init__(config, flow_config)
         self._task_config = self.typed_config(GolemFlowConfig)
+        self._reload_event = reload_event
         self._sessions: dict[int, TaskSession] = {}
         self._trackers: dict[int, TaskEventTracker] = {}
         self._processed_ids: set[int] = set()
@@ -109,6 +116,15 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             )
         else:
             self._heartbeat = None
+
+        # Self-update — monitors Golem's own repo for changes
+        if self._task_config.self_update_enabled:
+            self._self_update: SelfUpdateManager | None = SelfUpdateManager(
+                self._task_config,
+                reload_event=self._reload_event,
+            )
+        else:
+            self._self_update = None
 
         self._notified_batches: set[str] = set()
 
@@ -248,6 +264,8 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         if self._heartbeat is not None:
             self._heartbeat.reconcile_inflight(set(self._sessions.keys()))
             self._heartbeat.start(self)
+        if self._self_update is not None:
+            self._self_update.start()
         logger.info(
             "Golem started (detection_interval=%ds, max_concurrent=%d)",
             self._task_config.tick_interval,
@@ -268,6 +286,9 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
 
         if self._heartbeat is not None:
             self._heartbeat.stop()
+
+        if self._self_update is not None:
+            self._self_update.stop()
 
         from .core.cli_wrapper import kill_all_active
 

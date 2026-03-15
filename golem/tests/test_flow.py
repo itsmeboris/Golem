@@ -6,6 +6,8 @@ import json
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
+import pytest
+
 from golem.core.config import Config, GolemFlowConfig
 from golem.core.triggers.base import TriggerEvent
 from golem.event_tracker import Milestone
@@ -1421,3 +1423,110 @@ class TestHeartbeatIntegration:
         mock_live = MagicMock()
         monkeypatch.setattr("golem.flow.LiveState.get", lambda: mock_live)
         assert flow.live is mock_live
+
+
+class TestSelfUpdateWiring:
+    def test_self_update_created_when_enabled(self, monkeypatch, tmp_path):
+        """GolemFlow creates SelfUpdateManager when self_update_enabled=True."""
+        flow = _make_flow(monkeypatch, tmp_path, self_update_enabled=True)
+        assert flow._self_update is not None
+
+    def test_self_update_none_when_disabled(self, monkeypatch, tmp_path):
+        """GolemFlow does not create SelfUpdateManager when self_update_enabled=False."""
+        flow = _make_flow(monkeypatch, tmp_path, self_update_enabled=False)
+        assert flow._self_update is None
+
+    def test_self_update_receives_reload_event(self, monkeypatch, tmp_path):
+        """SelfUpdateManager is created with the reload_event passed to GolemFlow."""
+        import asyncio
+
+        from golem.flow import GolemFlow
+        from golem.core.config import Config, GolemFlowConfig
+        from golem.backends.local import (
+            LocalFileTaskSource,
+            LogNotifier,
+            NullStateBackend,
+            NullToolProvider,
+        )
+        from golem.profile import GolemProfile
+        from golem.prompts import FilePromptProvider
+
+        sessions_path = tmp_path / "sessions.json"
+        monkeypatch.setattr("golem.orchestrator.SESSIONS_FILE", sessions_path)
+
+        profile = GolemProfile(
+            name="test",
+            task_source=LocalFileTaskSource("/tmp/test-tasks"),
+            state_backend=NullStateBackend(),
+            notifier=LogNotifier(),
+            tool_provider=NullToolProvider(),
+            prompt_provider=FilePromptProvider(None),
+        )
+        monkeypatch.setattr("golem.flow.build_profile", lambda _name, _cfg: profile)
+
+        event = asyncio.Event()
+        config = Config(
+            golem=GolemFlowConfig(
+                enabled=True,
+                projects=["test-project"],
+                profile="test",
+                self_update_enabled=True,
+            )
+        )
+        flow = GolemFlow(config, reload_event=event)
+        assert flow._self_update is not None
+        assert flow._self_update._reload_event is event
+
+    @pytest.mark.asyncio
+    async def test_start_tick_loop_starts_self_update(self, monkeypatch, tmp_path):
+        """start_tick_loop calls self_update.start() when self_update is present."""
+        flow = _make_flow(monkeypatch, tmp_path, self_update_enabled=True)
+        mock_self_update = MagicMock()
+        flow._self_update = mock_self_update
+
+        async def fake_detection_loop():
+            pass
+
+        monkeypatch.setattr(flow, "_detection_loop", fake_detection_loop)
+
+        task = flow.start_tick_loop()
+        mock_self_update.start.assert_called_once()
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    def test_stop_tick_loop_stops_self_update(self, monkeypatch, tmp_path):
+        """stop_tick_loop calls self_update.stop() when self_update is present."""
+        flow = _make_flow(monkeypatch, tmp_path, self_update_enabled=True)
+        mock_self_update = MagicMock()
+        flow._self_update = mock_self_update
+
+        flow.stop_tick_loop()
+        mock_self_update.stop.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_no_self_update_start_when_none(self, monkeypatch, tmp_path):
+        """start_tick_loop does not fail when self_update is None."""
+        flow = _make_flow(monkeypatch, tmp_path, self_update_enabled=False)
+        assert flow._self_update is None
+
+        async def fake_detection_loop():
+            pass
+
+        monkeypatch.setattr(flow, "_detection_loop", fake_detection_loop)
+
+        task = flow.start_tick_loop()
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    def test_no_self_update_stop_when_none(self, monkeypatch, tmp_path):
+        """stop_tick_loop does not fail when self_update is None."""
+        flow = _make_flow(monkeypatch, tmp_path, self_update_enabled=False)
+        assert flow._self_update is None
+        # Should not raise
+        flow.stop_tick_loop()
