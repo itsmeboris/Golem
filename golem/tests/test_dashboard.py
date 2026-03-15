@@ -1474,6 +1474,52 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             resp = await handlers["/dashboard/merge_queue.css"]()
         assert resp.media_type == "text/css"
 
+    @pytest.mark.asyncio
+    async def test_api_heartbeat_disabled(self, handlers):
+        """When heartbeat is None, returns disabled stub."""
+        resp = await handlers["/api/heartbeat"]()
+        assert resp["enabled"] is False
+        assert resp["state"] == "disabled"
+        assert resp["daily_spend_usd"] == 0.0
+
+    @pytest.mark.asyncio
+    async def test_api_heartbeat_enabled(self):
+        """When heartbeat is provided, returns its snapshot."""
+        app = MagicMock()
+        routes: dict = {}
+
+        def capture_route(path, **kwargs):
+            def decorator(fn):
+                routes[path] = fn
+                return fn
+
+            return decorator
+
+        app.get = capture_route
+
+        mock_hb = MagicMock()
+        mock_hb.snapshot.return_value = {
+            "enabled": True,
+            "state": "idle",
+            "last_scan_at": "2026-03-15T10:00:00Z",
+            "last_scan_tier": 1,
+            "daily_spend_usd": 0.03,
+            "daily_budget_usd": 1.0,
+            "inflight_task_ids": [],
+            "candidate_count": 2,
+            "dedup_entry_count": 5,
+        }
+        with patch("golem.core.dashboard.FASTAPI_AVAILABLE", True):
+            with patch(
+                "golem.core.dashboard.Query", lambda default=None, **kw: default
+            ):
+                mount_dashboard(app, heartbeat=mock_hb)
+
+        resp = await routes["/api/heartbeat"]()
+        assert resp["enabled"] is True
+        assert resp["state"] == "idle"
+        mock_hb.snapshot.assert_called_once()
+
     def test_dashboard_html_has_new_layout(self):
         """Verify the HTML file has the Trace Viewer layout structure."""
         html = Path(__file__).resolve().parent.parent / "core" / "task_dashboard.html"

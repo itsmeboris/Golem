@@ -571,6 +571,7 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
     config_snapshot: dict | None = None,
     live_state_file: Path | None = None,
     merge_queue: Any = None,
+    heartbeat: Any = None,
 ) -> None:
     """Register /dashboard and API routes on *app*.
 
@@ -839,6 +840,22 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
             return {"ok": True, "session_id": session_id}
         except ValueError as exc:
             return JSONResponse(status_code=404, content={"error": str(exc)})
+
+    @app.get("/api/heartbeat")
+    async def api_heartbeat():
+        if heartbeat is None:
+            return {
+                "enabled": False,
+                "state": "disabled",
+                "last_scan_at": "",
+                "last_scan_tier": 0,
+                "daily_spend_usd": 0.0,
+                "daily_budget_usd": 0.0,
+                "inflight_task_ids": [],
+                "candidate_count": 0,
+                "dedup_entry_count": 0,
+            }
+        return heartbeat.snapshot()
 
     @app.get("/dashboard/admin")
     async def admin_page() -> HTMLResponse:

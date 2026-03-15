@@ -350,6 +350,7 @@ async def _start_dashboard_server(
     config_snapshot: dict | None = None,
     live_state_file: "Path | None" = None,
     merge_queue: "Any | None" = None,
+    heartbeat: "Any | None" = None,
 ) -> asyncio.Task:
     import socket
 
@@ -365,6 +366,7 @@ async def _start_dashboard_server(
         config_snapshot=config_snapshot,
         live_state_file=live_state_file,
         merge_queue=merge_queue,
+        heartbeat=heartbeat,
     )
     if control_router is not None:
         app.include_router(control_router)
@@ -409,6 +411,7 @@ async def run_daemon(args, config) -> int:
         port,
         config_snapshot=snap,
         merge_queue=flow._merge_queue if flow else None,
+        heartbeat=flow._heartbeat if flow else None,
     )
     tasks.append(dash_task)
 
