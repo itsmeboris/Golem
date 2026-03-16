@@ -8,11 +8,11 @@ let _hbData = null;
 let _hbPopoverOpen = false;
 
 const _HB_STATES = {
-  idle:             { color: 'purple', label: 'idle' },
+  idle:             { color: 'purple', label: 'waiting' },
   scanning:         { color: 'blue',   label: 'scanning', pulse: true },
-  submitted:        { color: 'green',  label: 'submitted' },
+  submitted:        { color: 'green',  label: 'working' },
   paused:           { color: 'yellow', label: 'paused' },
-  budget_exhausted: { color: 'red',    label: 'budget' },
+  budget_exhausted: { color: 'red',    label: 'no budget' },
 };
 
 async function fetchHeartbeat() {
@@ -49,11 +49,17 @@ function _hbChipHTML(data) {
   const info = _HB_STATES[data.state] || _HB_STATES.idle;
   const pct = _hbBudgetPct(data);
   const pulseClass = info.pulse ? ' hb-pulse' : '';
+  const nextTick = _hbNextTick(data);
+  const budgetStr = data.daily_budget_usd
+    ? fmtCost(data.daily_spend_usd, 2) + '/' + fmtCost(data.daily_budget_usd, 2)
+    : pct + '%';
 
   return '<span class="hb-chip hb-' + info.color + '" id="hb-chip">'
     + '<span class="hb-dot hb-dot-' + info.color + pulseClass + '"></span>'
     + '<span class="hb-label">' + esc(info.label) + '</span>'
-    + '<span class="hb-pct">' + pct + '%</span>'
+    + (nextTick ? '<span class="hb-tick">' + nextTick + '</span>' : '')
+    + '<span class="hb-sep">·</span>'
+    + '<span class="hb-pct">' + budgetStr + '</span>'
     + '<span class="hb-caret">&#9660;</span>'
     + '</span>';
 }

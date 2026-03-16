@@ -463,6 +463,6 @@ function updateTopStats(sessions) {
   const done = entries.filter(s => (s.state || '').toLowerCase() === 'completed').length;
   const failed = entries.filter(s => (s.state || '').toLowerCase() === 'failed').length;
   inner.innerHTML = `${running > 0 ? `<span><span class="dot"></span>${running} running</span>` : ''}
-    <span>${fmtCost(totalCost)} spent</span><span>${done}&#10003; ${failed}&#10007;</span>`;
+    <span>${fmtCost(totalCost)} spent</span><span class="stat-sep"></span><span class="stat-pass">${done}&#10003;</span><span class="stat-fail${failed > 0 ? ' has-fails' : ''}">${failed}&#10007;</span>`;
   if (typeof updateHeartbeat === 'function') updateHeartbeat();
 }

@@ -28,6 +28,11 @@ html,body{height:100%;font-family:var(--font-sans);background:var(--bg-base);col
 .nav-tab:hover{color:var(--text-primary);background:var(--bg-hover)}
 .nav-tab.active{color:var(--accent);background:var(--accent-bg)}
 .top-stats{margin-left:auto;display:flex;align-items:center;gap:0.75rem;font-size:0.78rem;color:var(--text-secondary)}
+#top-stats-inner{display:flex;align-items:center;gap:0.6rem}
+.stat-sep{width:1px;height:12px;background:var(--border);flex-shrink:0}
+.stat-pass{color:var(--green);font-weight:600}
+.stat-fail{color:var(--text-muted);font-weight:600}
+.stat-fail.has-fails{color:var(--red)}
 .top-stats .dot{width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block;margin-right:0.25rem;animation:pulse 2s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}
 .theme-btn{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1.1rem;padding:0.25rem}
@@ -52,6 +57,8 @@ html,body{height:100%;font-family:var(--font-sans);background:var(--bg-base);col
 .hb-green .hb-label{color:var(--green)}
 .hb-yellow .hb-label{color:var(--yellow)}
 .hb-red .hb-label{color:var(--red)}
+.hb-tick{color:var(--text-muted);font-size:0.65rem;font-variant-numeric:tabular-nums}
+.hb-sep{color:var(--text-dim);font-size:0.55rem;user-select:none}
 .hb-pct{color:var(--text-muted);font-size:0.65rem}
 .hb-caret{color:var(--text-dim);font-size:0.5rem}
 
