@@ -45,7 +45,7 @@ Most AI coding tools wait for you to invoke them. Golem runs the other way aroun
 
 **Parallel execution** — Multiple Claude instances run simultaneously, each in its own git worktree. Validated work merges cleanly through a sequential merge queue.
 
-**Deep quality pipeline** — Every task passes through deterministic verification (`black`, `pylint`, `pytest`), AST-based structural analysis, coverage delta on changed files, and a separate validation agent review. Only fully validated work gets committed.
+**Deep quality pipeline** — Every task passes through deterministic verification (`black`, `pylint`, `pytest`), AST-based structural analysis, coverage delta on changed files, documentation relevance checks, and a separate validation agent review. Only fully validated work gets committed.
 
 **Budget guardrails** — Per-task dollar limits and timeouts. A one-liner fix won't accidentally burn $50 in API calls.
 

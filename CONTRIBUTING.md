@@ -129,7 +129,7 @@ Golem's profile system decouples it from any specific tracker or notifier. To ad
 | `ToolProvider` | Select MCP servers per task |
 | `PromptProvider` | Load prompt templates |
 
-Start with `backends/local.py` as a minimal reference (file-based, no external services). See `backends/github.py` for a full CLI-based implementation with auth, polling, and PR creation.
+Start with `backends/local.py` as a minimal reference (file-based, no external services). See `backends/github.py` for a full CLI-based implementation with auth, polling, PR creation, and post-close state verification (verifies `gh issue view --json state` after closing).
 
 **Example — adding a Jira backend:**
 

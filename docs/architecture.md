@@ -85,7 +85,7 @@ flowchart LR
 | **DETECTED** | Task received; waits for dependency resolution and grace deadline |
 | **RUNNING** | Claude instances execute in isolated worktrees (infra failures auto-retry) |
 | **VERIFYING** | Deterministic checks — `black`, `pylint`, `pytest` with 100% coverage, plus AST analysis and coverage delta on changed files. Failure skips the reviewer and retries immediately with structured feedback |
-| **VALIDATING** | A separate validation agent reviews the work with verification evidence, spec fidelity checks, and reproduction test detection for bug fixes |
+| **VALIDATING** | A separate validation agent reviews the work with verification evidence, spec fidelity checks, reproduction test detection for bug fixes, and documentation relevance checks for user-facing changes |
 | **RETRYING** | Partial result — agent retries with validation feedback |
 | **COMPLETED** | Validated, merged via merge queue, and team notified |
 | **FAILED** | Budget exceeded, timeout hit, or validation failed after retries |
@@ -297,7 +297,7 @@ The development workflow follows the same scout → builder → reviewer → ver
 
 After each task, `pitfall_extractor.py` extracts pitfalls (validation concerns, test failures, errors, retry summaries) from recent sessions, filters out positive outcomes and noise, and classifies each into a category. `pitfall_writer.py` deduplicates and atomically writes them to the repo-root `AGENTS.md` under categorized sections: "Recurring Antipatterns", "Coverage & Verification Gaps", and "Architecture Notes".
 
-This runs as an awaited step before the "Task completed" event, with dashboard visibility. Failures are emitted but never block the pipeline.
+This runs via `run_in_executor` from `_commit_and_complete` after the session is marked completed. Failures are logged but never block the pipeline.
 
 ---
 
