@@ -55,8 +55,9 @@ from .observation_hooks import (
     mine_validation_signals,
     mine_verification_signals,
 )
-from .pitfall_extractor import extract_pitfalls
-from .pitfall_writer import update_agents_md
+from .instinct_store import InstinctStore
+from .pitfall_extractor import classify_pitfall, extract_pitfalls
+from .pitfall_writer import update_agents_md_from_instincts
 from .validation import ValidationVerdict, run_validation
 from .verifier import VerificationResult, run_verification
 from .workdir import resolve_work_dir
@@ -264,6 +265,7 @@ class TaskOrchestrator:
         self._signal_accumulator = SignalAccumulator(
             DATA_DIR / "observation_signals.json"
         )
+        self._instinct_store = InstinctStore(DATA_DIR / "instinct_store.json")
         self._last_verification: VerificationResult | None = None
         self._slog = SessionLogAdapter(
             logger,
@@ -911,7 +913,7 @@ class TaskOrchestrator:
         self.session.total_cost_usd += verdict.cost_usd
 
     def _extract_and_write_pitfalls(self) -> None:
-        """Extract pitfalls from session and write to AGENTS.md (sync, for executor)."""
+        """Extract pitfalls from session and write to AGENTS.md via instinct store."""
         session_dict = asdict(self.session)
         pitfalls = extract_pitfalls([session_dict])
 
@@ -924,9 +926,15 @@ class TaskOrchestrator:
                 "Promoted %d observation signal(s) to pitfalls", len(promoted)
             )
 
+        for pitfall in pitfalls:
+            category = classify_pitfall(pitfall)
+            self._instinct_store.add(pitfall, category)
+
+        self._instinct_store.prune()
+        update_agents_md_from_instincts(self._instinct_store)
+
         if pitfalls:
-            update_agents_md(pitfalls)
-            self._slog.info("Extracted %d pitfall(s) to AGENTS.md", len(pitfalls))
+            self._slog.info("Added %d pitfall(s) to instinct store", len(pitfalls))
 
     async def _retry_agent(  # pylint: disable=too-many-locals
         self,
