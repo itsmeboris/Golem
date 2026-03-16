@@ -1654,7 +1654,6 @@ class TestTrigger:
         assert mgr._trigger_event.is_set()
         mgr.stop()
 
-    @pytest.mark.asyncio
     async def test_force_trigger_calls_tick(self, tmp_path):
         """Force-trigger bypasses idle threshold and calls tick."""
         mgr = _make_manager(
@@ -1665,16 +1664,22 @@ class TestTrigger:
         mock_flow = MagicMock()
         mock_flow.live = MagicMock()
         mock_flow.live.snapshot.return_value = {"active_count": 5}  # not idle
-        mgr.start(mock_flow)
-        mgr.trigger()
-        with patch.object(
-            mgr, "_run_heartbeat_tick", new_callable=AsyncMock
-        ) as mock_tick:
-            await asyncio.sleep(0.05)
-        mgr.stop()
-        mock_tick.assert_called()
 
-    @pytest.mark.asyncio
+        tick_called = asyncio.Event()
+
+        async def _tick_signal():
+            tick_called.set()
+
+        with patch.object(mgr, "_run_heartbeat_tick", new=_tick_signal):
+            mgr.start(mock_flow)
+            mgr.trigger()
+            try:
+                await asyncio.wait_for(tick_called.wait(), timeout=2.0)
+            finally:
+                mgr.stop()
+
+        assert tick_called.is_set(), "force-trigger did not call tick"
+
     async def test_loop_without_trigger_event_uses_sleep(self, tmp_path):
         """When _trigger_event is None, loop falls back to asyncio.sleep."""
         mgr = _make_manager(tmp_path, heartbeat_interval_seconds=0)
@@ -1683,15 +1688,28 @@ class TestTrigger:
         mock_flow.live.snapshot.return_value = {"active_count": 0}
         mgr._flow = mock_flow
         mgr._trigger_event = None
-        # Run one iteration manually
+
+        loop_iterated = asyncio.Event()
+        original_snapshot = mock_flow.live.snapshot
+
+        def _snapshot_and_signal():
+            loop_iterated.set()
+            return original_snapshot()
+
+        mock_flow.live.snapshot = _snapshot_and_signal
+
         loop_coro = mgr._heartbeat_loop()
         task = asyncio.create_task(loop_coro)
-        await asyncio.sleep(0.05)
-        task.cancel()
         try:
-            await task
-        except asyncio.CancelledError:
-            pass
+            await asyncio.wait_for(loop_iterated.wait(), timeout=2.0)
+        finally:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        assert loop_iterated.is_set(), "loop never iterated without trigger event"
 
 
 class TestSnapshotNextTick:
