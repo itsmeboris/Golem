@@ -108,6 +108,18 @@ class TestRunIssue:
         assert mock_orch_cls.called
         assert mock_save.called
 
+        # Verify orchestrator received the session, config, and profile
+        orch_kwargs = mock_orch_cls.call_args.kwargs
+        assert orch_kwargs["config"] is config
+        assert orch_kwargs["profile"] is profile
+        assert orch_kwargs["task_config"] is tc
+        session_arg = orch_kwargs["session"]
+        assert session_arg.parent_issue_id == 1
+
+        # Verify _save_cli_session was called with the same session object
+        first_save_call = mock_save.call_args_list[0]
+        assert first_save_call.args[0] is session_arg
+
     @patch("golem.cli._print_run_header")
     @patch("golem.cli._get_profile")
     def test_dry_run(self, mock_profile, mock_header, capsys):
@@ -153,6 +165,18 @@ class TestRunIssue:
             with patch("golem.cli._get_profile", return_value=profile):
                 run_issue(1, config, mcp_override=True)
 
+        # Verify orchestrator was called with config and the profile
+        assert mock_orch_cls.called
+        orch_kwargs = mock_orch_cls.call_args.kwargs
+        assert orch_kwargs["config"] is config
+        session_arg = orch_kwargs["session"]
+        assert session_arg.parent_issue_id == 1
+
+        # Verify save was called with the session object
+        assert mock_save.called
+        first_save_call = mock_save.call_args_list[0]
+        assert first_save_call.args[0] is session_arg
+
     @patch("golem.cli.asyncio")
     @patch("golem.cli.TaskOrchestrator")
     @patch("golem.cli._StreamPrinter")
@@ -183,6 +207,18 @@ class TestRunIssue:
         from golem.backends.local import NullToolProvider
 
         assert isinstance(profile.tool_provider, NullToolProvider)
+
+        # Verify orchestrator was called with config and the session
+        assert mock_orch_cls.called
+        orch_kwargs = mock_orch_cls.call_args.kwargs
+        assert orch_kwargs["config"] is config
+        session_arg = orch_kwargs["session"]
+        assert session_arg.parent_issue_id == 1
+
+        # Verify save was called with the session object
+        assert mock_save.called
+        first_save_call = mock_save.call_args_list[0]
+        assert first_save_call.args[0] is session_arg
 
     @patch("golem.cli.asyncio")
     @patch("golem.cli.TaskOrchestrator")
@@ -225,6 +261,20 @@ class TestRunIssue:
 
         ok = run_issue(1, config)
         assert ok is False
+
+        # Verify orchestrator was called with the expected arguments
+        assert mock_orch_cls.called
+        orch_kwargs = mock_orch_cls.call_args.kwargs
+        assert orch_kwargs["config"] is config
+        assert orch_kwargs["profile"] is profile
+        assert orch_kwargs["task_config"] is None
+        session_arg = orch_kwargs["session"]
+        assert session_arg.parent_issue_id == 1
+
+        # Verify _save_cli_session was called with the session object
+        assert mock_save.called
+        first_save_call = mock_save.call_args_list[0]
+        assert first_save_call.args[0] is session_arg
 
 
 class TestRunIssueOnProgress:
