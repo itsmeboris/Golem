@@ -130,7 +130,9 @@ class TestRunVerification:
         assert result.black_ok is True
         assert result.pylint_ok is True
         assert result.pytest_ok is True
-        assert mock_run.call_count == 3  # black, pylint, pytest
+        # Verify all three tools were invoked (order-independent)
+        called_tools = {call.args[0][0] for call in mock_run.call_args_list}
+        assert called_tools >= {"black", "pylint", "pytest"}
 
     @patch("golem.verifier.subprocess.run")
     def test_black_fails(self, mock_run):
