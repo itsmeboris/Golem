@@ -18,8 +18,10 @@ from golem.core.control_api import (
 )
 from golem.errors import TaskNotCancelableError, TaskNotFoundError
 
-if control_api.FASTAPI_AVAILABLE:
+try:
     from fastapi import HTTPException
+except ImportError:
+    HTTPException = None  # type: ignore[assignment,misc]
 
 # ---------------------------------------------------------------------------
 # wire_control_api
