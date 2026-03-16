@@ -1690,13 +1690,12 @@ class TestTrigger:
         mgr._trigger_event = None
 
         loop_iterated = asyncio.Event()
-        original_snapshot = mock_flow.live.snapshot
 
-        def _snapshot_and_signal():
+        def _signal_side_effect(*_a, **_kw):
             loop_iterated.set()
-            return original_snapshot()
+            return {"active_count": 0}
 
-        mock_flow.live.snapshot = _snapshot_and_signal
+        mock_flow.live.snapshot.side_effect = _signal_side_effect
 
         loop_coro = mgr._heartbeat_loop()
         task = asyncio.create_task(loop_coro)
