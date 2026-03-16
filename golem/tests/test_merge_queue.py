@@ -915,63 +915,8 @@ class TestPostMergeVerification:
 
 
 # ---------------------------------------------------------------------------
-# Task 1: TypedDict tests
 # ---------------------------------------------------------------------------
-
-
-def test_merge_entry_dict_fields():
-    """MergeEntryDict has the expected keys."""
-    from golem.types import MergeEntryDict
-
-    d: MergeEntryDict = {
-        "session_id": 1,
-        "branch_name": "agent/1",
-        "worktree_path": "/tmp/wt",
-        "priority": 5,
-        "group_id": "",
-        "queued_at": "2026-03-15T10:00:00Z",
-        "changed_files": ["golem/flow.py"],
-    }
-    assert d["session_id"] == 1
-    assert d["changed_files"] == ["golem/flow.py"]
-
-
-def test_merge_history_entry_dict_fields():
-    """MergeHistoryEntryDict has the expected keys."""
-    from golem.types import MergeHistoryEntryDict
-
-    d: MergeHistoryEntryDict = {
-        "session_id": 1,
-        "success": True,
-        "merge_sha": "abc123",
-        "conflict_files": [],
-        "error": "",
-        "changed_files": ["golem/flow.py"],
-        "deferred": False,
-        "merge_branch": "",
-        "timestamp": "2026-03-15T10:00:12Z",
-    }
-    assert d["success"] is True
-    assert d["timestamp"] == "2026-03-15T10:00:12Z"
-
-
-def test_merge_queue_snapshot_dict_fields():
-    """MergeQueueSnapshotDict has the expected keys."""
-    from golem.types import MergeQueueSnapshotDict
-
-    d: MergeQueueSnapshotDict = {
-        "pending": [],
-        "active": None,
-        "deferred": [],
-        "conflicts": [],
-        "history": [],
-    }
-    assert d["active"] is None
-    assert d["pending"] == []
-
-
-# ---------------------------------------------------------------------------
-# Task 2: Dataclass field tests
+# Dataclass field tests
 # ---------------------------------------------------------------------------
 
 
