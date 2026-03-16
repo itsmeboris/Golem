@@ -37,6 +37,14 @@ Prohibited actions:
 If you discover a pre-existing bug unrelated to your task, note it in your
 report but do NOT fix it.
 
+## Edge case checklist
+Verify your implementation handles these categories where applicable:
+- Null/None inputs and empty collections
+- Boundary values (0, -1, max int, empty string)
+- Special characters in string inputs
+- Concurrent access / race conditions (if async or multi-threaded)
+- Large inputs (performance-sensitive paths)
+
 ## Self-verification
 Before reporting back, run ONLY these - nothing more:
 1. pytest path/to/your/test_file.py -x  (targeted, NOT full suite)
