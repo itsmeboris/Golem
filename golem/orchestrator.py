@@ -30,7 +30,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from .types import MilestoneDict
+from .types import MilestoneDict, PhaseHandoffDict
+from .handoff import create_handoff, validate_handoff
 
 from .core.cli_wrapper import CLIConfig, CLIResult, CLIType, invoke_cli_monitored
 from .core.config import DATA_DIR, PROJECT_ROOT, GolemFlowConfig
@@ -155,6 +156,8 @@ class TaskSession:
     # Human feedback re-attempt
     human_feedback: str = ""
     human_feedback_at: str = ""
+    # Phase-to-phase structured context
+    phase_handoffs: list[PhaseHandoffDict] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-safe dictionary."""
@@ -214,6 +217,7 @@ class TaskSession:
             merge_queued_at=data.get("merge_queued_at", ""),
             human_feedback=data.get("human_feedback", ""),
             human_feedback_at=data.get("human_feedback_at", ""),
+            phase_handoffs=data.get("phase_handoffs", []),
         )
 
 
@@ -308,6 +312,32 @@ class TaskOrchestrator:
             tracker_callback(event)
 
         return chained
+
+    def _record_handoff(
+        self,
+        from_phase: str,
+        to_phase: str,
+        context: list[str],
+        files: list[dict],
+    ) -> None:
+        """Create, validate, and store a phase handoff document."""
+        handoff = create_handoff(
+            from_phase=from_phase,
+            to_phase=to_phase,
+            context=context,
+            files=files,
+            open_questions=[],
+            warnings=[],
+        )
+        valid, reasons = validate_handoff(handoff)
+        if not valid:
+            self._slog.warning(
+                "Handoff %s\u2192%s validation failed: %s",
+                from_phase,
+                to_phase,
+                reasons,
+            )
+        self.session.phase_handoffs.append(handoff)
 
     async def tick(self) -> TaskSession:
         """Advance the session state machine by one tick."""
@@ -453,9 +483,44 @@ class TaskOrchestrator:
             )
             self._populate_session_from_tracker(tracker, result, time.time() - start)
             self._update_task(issue_id, status=TaskStatus.FIXED, progress=80)
+            self._record_handoff(
+                from_phase="executing",
+                to_phase="verifying",
+                context=[
+                    "Agent execution completed",
+                    "Tools called: %s" % ", ".join(self.session.tools_called[:10]),
+                    "Errors: %d" % len(self.session.errors),
+                    "Result: %s"
+                    % (
+                        self.session.result_summary[:200]
+                        if self.session.result_summary
+                        else "N/A"
+                    ),
+                ],
+                files=[],
+            )
 
             # Phase 3: Deterministic verification (hard gate before reviewer)
             verification = await self._run_verification(work_dir)
+            self._record_handoff(
+                from_phase="verifying",
+                to_phase="validating",
+                context=[
+                    "Verification %s" % ("passed" if verification.passed else "failed"),
+                    "black=%s pylint=%s pytest=%s"
+                    % (
+                        verification.black_ok,
+                        verification.pylint_ok,
+                        verification.pytest_ok,
+                    ),
+                    "Tests: %d, Coverage: %.1f%%"
+                    % (
+                        verification.test_count,
+                        verification.coverage_pct,
+                    ),
+                ],
+                files=[],
+            )
             if not verification.passed:
                 feedback = self._format_verification_feedback(verification)
                 if self.session.retry_count < self.task_config.max_retries:
@@ -485,6 +550,16 @@ class TaskOrchestrator:
                 return
 
             verdict = await self._run_validation(issue_id, work_dir)
+            self._record_handoff(
+                from_phase="validating",
+                to_phase="committing",
+                context=[
+                    "Validation verdict: %s" % verdict.verdict,
+                    "Confidence: %.0f%%" % (verdict.confidence * 100),
+                    "Summary: %s" % verdict.summary[:200],
+                ],
+                files=[],
+            )
 
             if (
                 verdict.verdict == "PARTIAL"
