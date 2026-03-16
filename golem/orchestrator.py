@@ -761,14 +761,6 @@ class TaskOrchestrator:
             self.session.duration_seconds,
             self.session.validation_verdict,
         )
-        # Post-completion: extract pitfalls for AGENTS.md learning loop.
-        # Uses run_in_executor to avoid blocking the event loop — both
-        # extract_pitfalls (CPU-bound) and update_agents_md (file I/O)
-        # are synchronous.
-        # NOTE: update_agents_md writes to the main repo AGENTS.md, not the
-        # worktree. Concurrent completions race (last writer wins via
-        # os.replace). Accepted as best-effort — pitfalls are supplementary
-        # and re-extracted on subsequent tasks.
         try:
             loop = asyncio.get_running_loop()
             await loop.run_in_executor(None, self._extract_and_write_pitfalls)

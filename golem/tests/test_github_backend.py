@@ -798,7 +798,7 @@ class TestUpdateStatusClosedVerification:
         assert view_call in mock_run.call_args_list
 
     @patch("golem.backends.github.subprocess.run")
-    def test_update_status_closed_verify_still_open_warns(self, mock_run):
+    def test_update_status_closed_verify_still_open_warns(self, mock_run, caplog):
         """If issue is still OPEN after close, log warning but continue."""
         mock_run.side_effect = [
             # close call
@@ -811,8 +811,11 @@ class TestUpdateStatusClosedVerification:
             MagicMock(returncode=0, stdout="", stderr=""),
         ]
         backend = GitHubStateBackend()
-        # Still returns True (label update succeeded) but logs warning
-        assert backend.update_status(42, "closed") is True
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="golem.backends.github"):
+            assert backend.update_status(42, "closed") is True
+        assert "expected CLOSED but got OPEN" in caplog.text
 
     @patch("golem.backends.github.subprocess.run")
     def test_update_status_closed_verify_fails_gracefully(self, mock_run):
