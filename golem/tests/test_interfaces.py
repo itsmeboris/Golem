@@ -103,3 +103,41 @@ class TestProtocolConformance:
 
     def test_prompt_provider(self):
         assert isinstance(DummyPromptProvider(), PromptProvider)
+
+
+class TestRealImplementationConformance:
+    """Verify actual backend implementations satisfy protocol contracts.
+
+    These complement the Dummy* tests above — Dummy tests verify the protocol
+    definition is stable, these verify real implementations conform to it.
+    """
+
+    def test_local_task_source_satisfies_protocol(self, tmp_path):
+        from golem.backends.local import LocalFileTaskSource
+
+        source = LocalFileTaskSource(str(tmp_path))
+        assert isinstance(source, TaskSource)
+
+    def test_null_state_backend_satisfies_protocol(self):
+        from golem.backends.local import NullStateBackend
+
+        backend = NullStateBackend()
+        assert isinstance(backend, StateBackend)
+
+    def test_log_notifier_satisfies_protocol(self):
+        from golem.backends.local import LogNotifier
+
+        notifier = LogNotifier()
+        assert isinstance(notifier, Notifier)
+
+    def test_null_tool_provider_satisfies_protocol(self):
+        from golem.backends.local import NullToolProvider
+
+        provider = NullToolProvider()
+        assert isinstance(provider, ToolProvider)
+
+    def test_file_prompt_provider_satisfies_protocol(self):
+        from golem.prompts import FilePromptProvider
+
+        provider = FilePromptProvider()
+        assert isinstance(provider, PromptProvider)
