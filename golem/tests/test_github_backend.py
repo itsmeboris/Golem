@@ -39,6 +39,39 @@ class TestGhHelper:
             check=True,
         )
 
+    @patch("golem.backends.github.subprocess.run")
+    def test_nonzero_returncode_logs_debug(self, mock_run, caplog):
+        import logging
+
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="auth error")
+        with caplog.at_level(logging.DEBUG, logger="golem.backends.github"):
+            result = _gh("issue", "list")
+        assert result.returncode == 1
+        assert "gh issue list failed (rc=1): auth error" in caplog.text
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_zero_returncode_no_debug_log(self, mock_run, caplog):
+        import logging
+
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        with caplog.at_level(logging.DEBUG, logger="golem.backends.github"):
+            _gh("issue", "list")
+        assert "failed (rc=" not in caplog.text
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_nonzero_returncode_check_true_no_debug_log(self, mock_run, caplog):
+        """When check=True, _gh() does NOT emit the debug log (caller gets exception)."""
+        import logging
+
+        # Simulate the subprocess raising on non-zero since check=True
+        mock_run.side_effect = Exception("non-zero returncode")
+        with caplog.at_level(logging.DEBUG, logger="golem.backends.github"):
+            try:
+                _gh("issue", "list", check=True)
+            except Exception:
+                pass
+        assert "failed (rc=" not in caplog.text
+
 
 class TestGitHubTaskSource:
     """Tests for GitHubTaskSource."""
@@ -236,11 +269,16 @@ class TestGitHubTaskSource:
         assert comments[0]["author"] == "bob"
 
     @patch("golem.backends.github.subprocess.run")
-    def test_get_task_comments_failure(self, mock_run):
+    def test_get_task_comments_failure(self, mock_run, caplog):
+        import logging
+
         mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="err")
         source = GitHubTaskSource()
-        comments = source.get_task_comments(42)
+        with caplog.at_level(logging.WARNING, logger="golem.backends.github"):
+            comments = source.get_task_comments(42)
         assert comments == []
+        assert "gh issue view comments failed for #42" in caplog.text
+        assert "err" in caplog.text
 
     @patch("golem.backends.github.subprocess.run")
     def test_get_task_comments_os_error(self, mock_run):

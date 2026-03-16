@@ -22,12 +22,20 @@ def _gh(
 ) -> subprocess.CompletedProcess[str]:
     """Run a ``gh`` CLI command and return the result."""
     cmd = ["gh", *args]
-    return subprocess.run(
+    result = subprocess.run(
         cmd,
         capture_output=True,
         text=True,
         check=check,
     )
+    if result.returncode != 0 and not check:
+        logger.debug(
+            "gh %s failed (rc=%d): %s",
+            " ".join(args),
+            result.returncode,
+            result.stderr.strip(),
+        )
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +142,9 @@ class GitHubTaskSource:
                 "issue", "view", str(task_id), "--json", "comments", *self._repo_args
             )
             if raw.returncode != 0:
+                logger.warning(
+                    "gh issue view comments failed for #%s: %s", task_id, raw.stderr
+                )
                 return []
             data = json.loads(raw.stdout)
             comments: list[dict[str, Any]] = []
