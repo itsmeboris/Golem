@@ -11,38 +11,41 @@ from golem.verifier import run_verification, VerificationResult
 
 
 class TestVerificationResult:
-    def test_all_pass(self):
-        r = VerificationResult(
-            passed=True,
-            black_ok=True,
-            black_output="",
-            pylint_ok=True,
-            pylint_output="",
-            pytest_ok=True,
-            pytest_output="64 passed in 1.01s",
-            test_count=64,
-            failures=[],
-            coverage_pct=100.0,
-            duration_s=1.5,
+    @patch("golem.verifier.subprocess.run")
+    def test_all_pass_computed(self, mock_run):
+        """run_verification computes passed=True when all tools succeed."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="64 passed in 1.01s\nTOTAL    1000    0   100%\n",
+            stderr="",
         )
-        assert r.passed is True
+        result = run_verification("/tmp/test")
+        assert result.passed is True
+        assert result.black_ok is True
+        assert result.pylint_ok is True
+        assert result.pytest_ok is True
+        assert result.test_count == 64
+        assert result.coverage_pct == 100.0
 
-    def test_partial_failure(self):
-        r = VerificationResult(
-            passed=False,
-            black_ok=True,
-            black_output="",
-            pylint_ok=False,
-            pylint_output="E0001: syntax error",
-            pytest_ok=True,
-            pytest_output="64 passed",
-            test_count=64,
-            failures=[],
-            coverage_pct=100.0,
-            duration_s=2.0,
-        )
-        assert r.passed is False
-        assert r.pylint_ok is False
+    @patch("golem.verifier.subprocess.run")
+    def test_partial_failure_computed(self, mock_run):
+        """run_verification computes passed=False when pylint fails."""
+
+        def side_effect(cmd, **kw):
+            if "pylint" in cmd:
+                return MagicMock(returncode=1, stdout="E0001: syntax error", stderr="")
+            return MagicMock(
+                returncode=0,
+                stdout="10 passed in 0.5s\nTOTAL    100    0   100%\n",
+                stderr="",
+            )
+
+        mock_run.side_effect = side_effect
+        result = run_verification("/tmp/test")
+        assert result.passed is False
+        assert result.black_ok is True
+        assert result.pylint_ok is False
+        assert result.pytest_ok is True
 
     def test_to_dict(self):
         r = VerificationResult(
