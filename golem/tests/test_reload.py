@@ -102,6 +102,33 @@ class TestHandleReload:
         mock_execv.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_drain_timeout_logs_active_count(self, caplog):
+        """Drain timeout warning must report only non-terminal session count."""
+        import logging
+
+        from golem.orchestrator import TaskSession, TaskSessionState
+
+        flow = MagicMock()
+        flow.stop_tick_loop = MagicMock()
+        flow._sessions = {
+            1: TaskSession(parent_issue_id=1, state=TaskSessionState.RUNNING),
+            2: TaskSession(parent_issue_id=2, state=TaskSessionState.COMPLETED),
+            3: TaskSession(parent_issue_id=3, state=TaskSessionState.FAILED),
+        }
+        reload_event = asyncio.Event()
+        reload_event.set()
+        with caplog.at_level(logging.WARNING):
+            with patch("golem.cli.os.execv"):
+                await _handle_reload(
+                    reload_event,
+                    flow=flow,
+                    drain_timeout=1,
+                )
+        drain_warnings = [r for r in caplog.records if "Drain timeout" in r.message]
+        assert len(drain_warnings) == 1
+        assert "1 active sessions" in drain_warnings[0].message
+
+    @pytest.mark.asyncio
     async def test_human_review_treated_as_terminal(self):
         """HUMAN_REVIEW sessions should not block the drain loop."""
         from golem.orchestrator import TaskSession, TaskSessionState

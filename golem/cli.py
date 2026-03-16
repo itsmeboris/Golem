@@ -362,9 +362,12 @@ async def _handle_reload(
         while any(s.state not in _terminal for s in flow._sessions.values()):
             remaining = deadline - asyncio.get_running_loop().time()
             if remaining <= 0:
+                active = sum(
+                    1 for s in flow._sessions.values() if s.state not in _terminal
+                )
                 logger.warning(
                     "Drain timeout reached with %d active sessions — proceeding",
-                    len(flow._sessions),
+                    active,
                 )
                 break
             await asyncio.sleep(min(1.0, remaining))
