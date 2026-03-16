@@ -15,6 +15,7 @@ from golem.validation import (
     _format_verification_evidence,
     _parse_validation_output,
     _read_types_py,
+    check_doc_relevance,
     get_git_diff,
     has_uncommitted_changes,
     run_validation,
@@ -1313,3 +1314,128 @@ class TestDataContractMismatchAntipattern:
         diff = '+++ b/golem/handler.py\n+    x = response.json()["items"]\n'
         concerns = scan_diff_antipatterns(diff)
         assert any("data contract" in c.lower() for c in concerns)
+
+
+class TestCheckDocRelevance:
+    """Tests for check_doc_relevance()."""
+
+    def test_no_diff_returns_empty(self):
+        assert check_doc_relevance("") == []
+
+    def test_pure_test_change_returns_empty(self):
+        diff = "+++ b/golem/tests/test_foo.py\n+def test_bar():\n+    pass"
+        assert check_doc_relevance(diff) == []
+
+    def test_internal_change_returns_empty(self):
+        diff = "+++ b/golem/orchestrator.py\n+    logger.info('internal fix')"
+        assert check_doc_relevance(diff) == []
+
+    def test_api_endpoint_without_docs_flags(self):
+        diff = (
+            "+++ b/golem/core/dashboard.py\n"
+            "+@app.route('/api/new_endpoint')\n"
+            "+def new_endpoint():\n"
+            "+    return jsonify({})"
+        )
+        result = check_doc_relevance(diff)
+        assert len(result) == 1
+        assert "documentation" in result[0].lower()
+
+    def test_api_endpoint_with_docs_returns_empty(self):
+        diff = (
+            "+++ b/golem/core/dashboard.py\n"
+            "+@app.route('/api/new_endpoint')\n"
+            "+++ b/docs/operations.md\n"
+            "+## New endpoint\n"
+        )
+        assert check_doc_relevance(diff) == []
+
+    def test_config_change_without_docs_flags(self):
+        diff = "+++ b/golem/core/config.py\n" "+    new_setting: bool = False\n"
+        result = check_doc_relevance(diff)
+        assert len(result) == 1
+
+    def test_config_change_with_readme_returns_empty(self):
+        diff = (
+            "+++ b/golem/core/config.py\n"
+            "+    new_setting: bool = False\n"
+            "+++ b/README.md\n"
+            "+- `new_setting`: ...\n"
+        )
+        assert check_doc_relevance(diff) == []
+
+    def test_control_api_route_without_docs_flags(self):
+        diff = (
+            "+++ b/golem/core/control_api.py\n"
+            "+@health_router.post('/api/trigger')\n"
+            "+def trigger():\n"
+            "+    return jsonify({})"
+        )
+        result = check_doc_relevance(diff)
+        assert len(result) == 1
+        assert "documentation" in result[0].lower()
+
+
+class TestRunValidationWithDocConcern:
+    """Integration test: run_validation propagates doc-relevance concerns."""
+
+    @patch("golem.validation.invoke_cli")
+    @patch("golem.validation.get_git_diff")
+    def test_doc_concern_added_for_code_change(self, mock_diff, mock_invoke):
+        mock_diff.return_value = (
+            "+++ b/golem/core/dashboard.py\n"
+            "+@app.route('/api/new_endpoint')\n"
+            "+def new_endpoint():\n"
+            "+    return jsonify({})\n"
+        )
+        mock_invoke.return_value = SimpleNamespace(
+            output={
+                "result": {
+                    "verdict": "PASS",
+                    "confidence": 0.90,
+                    "task_type": "code_change",
+                }
+            },
+            cost_usd=0.10,
+        )
+        v = run_validation(
+            issue_id=1,
+            subject="add new dashboard endpoint",
+            description="desc",
+            session_data={},
+            work_dir="/work",
+        )
+        assert any("documentation" in c.lower() for c in v.concerns)
+        assert v.confidence == pytest.approx(0.80)
+
+    @patch("golem.validation.invoke_cli")
+    @patch("golem.validation.get_git_diff")
+    def test_doc_concern_skipped_when_docs_present(self, mock_diff, mock_invoke):
+        mock_diff.return_value = (
+            "+++ b/golem/core/dashboard.py\n"
+            "+@app.route('/api/new_endpoint')\n"
+            "+def new_endpoint():\n"
+            "+    return jsonify({})\n"
+            "+++ b/README.md\n"
+            "+## New endpoint\n"
+        )
+        mock_invoke.return_value = SimpleNamespace(
+            output={
+                "result": {
+                    "verdict": "PASS",
+                    "confidence": 0.90,
+                    "task_type": "code_change",
+                    "concerns": [],
+                }
+            },
+            cost_usd=0.10,
+        )
+        v = run_validation(
+            issue_id=1,
+            subject="add new dashboard endpoint",
+            description="desc",
+            session_data={},
+            work_dir="/work",
+        )
+        assert not any("documentation" in c.lower() for c in v.concerns)
+        assert v.confidence == pytest.approx(0.90)

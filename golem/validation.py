@@ -462,6 +462,71 @@ def scan_diff_antipatterns(diff_text: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Doc-relevance check
+# ---------------------------------------------------------------------------
+
+# Patterns indicating user-facing changes that warrant doc updates
+_USER_FACING_FILE_RE = re.compile(
+    r"^\+\+\+ b/golem/core/(?:config|dashboard|control_api)\.py"
+    r"|^\+\+\+ b/golem/(?:init_wizard|__main__)\.py",
+    re.MULTILINE,
+)
+
+_USER_FACING_CONTENT_RE = re.compile(
+    r"@app\.route\(|\.add_url_rule\("
+    r"|@\w+\.(?:get|post|put|delete|patch)\("  # FastAPI/Blueprint router decorators
+    r"|: (?:bool|int|float|str) = "  # dataclass config field
+    r"|argparse|add_argument",
+)
+
+_DOC_FILE_RE = re.compile(
+    r"^\+\+\+ b/(?:README\.md|CONTRIBUTING\.md|docs/\w+\.md|config\.yaml\.example)",
+    re.MULTILINE,
+)
+
+
+def check_doc_relevance(diff_text: str) -> list[str]:
+    """Flag user-facing changes that lack corresponding doc updates.
+
+    Returns a list of concern strings (empty if no issue detected).
+    """
+    if not diff_text:
+        return []
+
+    changed_files = _extract_changed_files(diff_text)
+
+    # Skip if only test files changed
+    if changed_files and all(
+        "/test_" in f or f.startswith("test_") for f in changed_files
+    ):
+        return []
+
+    # Check for user-facing file changes
+    has_user_facing_file = bool(_USER_FACING_FILE_RE.search(diff_text))
+
+    # Check added lines for user-facing content patterns
+    has_user_facing_content = False
+    for line in diff_text.splitlines():
+        if line.startswith("+") and not line.startswith("+++"):
+            if _USER_FACING_CONTENT_RE.search(line):
+                has_user_facing_content = True
+                break
+
+    if not (has_user_facing_file and has_user_facing_content):
+        return []
+
+    # Check if any doc file is in the diff
+    if _DOC_FILE_RE.search(diff_text):
+        return []
+
+    return [
+        "Missing documentation update: diff modifies user-facing files "
+        "(config/dashboard/CLI) but no documentation file "
+        "(README.md, docs/*.md) was updated"
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Diff file extraction
 # ---------------------------------------------------------------------------
 
@@ -679,6 +744,18 @@ def run_validation(  # pylint: disable=too-many-locals
         ast_concerns = run_ast_analysis(work_dir, changed)
         if ast_concerns:
             verdict.concerns.extend(ast_concerns)
+
+    # Doc-relevance check
+    if verdict.task_type == "code_change" or diff_text.startswith("###"):
+        doc_concerns = check_doc_relevance(diff_text)
+        if doc_concerns:
+            verdict.concerns.extend(doc_concerns)
+            verdict.confidence = max(0.0, verdict.confidence - 0.10)
+            logger.info(
+                "Doc-relevance check flagged %d concern(s), "
+                "confidence adjusted by -0.10",
+                len(doc_concerns),
+            )
 
     return verdict
 

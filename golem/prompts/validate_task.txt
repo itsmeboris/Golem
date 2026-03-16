@@ -45,6 +45,14 @@ successfully completed task #{issue_id}.
 
 5. **Quality**: Are the changes correct and reasonable for the task?
 6. **Documentation**: Did the agent document its work appropriately?
+   For code_change tasks: if the diff adds or modifies user-facing behavior — new
+   API endpoints, config keys, CLI flags, dashboard features, or changed defaults —
+   check whether the diff also touches documentation files (README.md, docs/*.md,
+   config.yaml.example, CONTRIBUTING.md). If user-facing changes are present but NO
+   documentation file appears in the diff, flag in concerns ("Missing documentation
+   update for user-facing change: <specifics>") and lower confidence by 0.10. Skip
+   this check for pure refactors, test-only changes, and internal implementation
+   details.
 7. **Antipattern Detection**: Scan the git diff and event log for these
    antipatterns (ignore test code and debug-level logging):
    - *Traceback leaks*: Raw tracebacks or stack traces exposed in user-facing
