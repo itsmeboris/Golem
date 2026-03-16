@@ -10,6 +10,7 @@ import pytest
 
 from golem.heartbeat import HeartbeatManager, _coerce_task_id, _strip_markdown_json
 from golem.core.config import GolemFlowConfig
+from golem.orchestrator import TaskSessionState
 
 
 def _make_config(**overrides) -> GolemFlowConfig:
@@ -193,6 +194,76 @@ class TestInflightTracking:
         active_session_ids = {200}  # only 200 still exists
         mgr.reconcile_inflight(active_session_ids)
         assert mgr._inflight_task_ids == [200]
+
+    def test_can_submit_filters_terminal_sessions(self, tmp_path):
+        """A RUNNING session counts; a COMPLETED session does not."""
+        mgr = _make_manager(tmp_path, heartbeat_max_inflight=2)
+        mgr._inflight_task_ids = [10, 20]
+        mock_flow = MagicMock()
+        running_session = MagicMock()
+        running_session.state = TaskSessionState.RUNNING
+        completed_session = MagicMock()
+        completed_session.state = TaskSessionState.COMPLETED
+        mock_flow.get_session.side_effect = lambda tid: (
+            running_session if tid == 10 else completed_session
+        )
+        mgr._flow = mock_flow
+        # 1 active, limit is 2 — should be able to submit
+        assert mgr.can_submit() is True
+
+    def test_can_submit_filters_missing_sessions(self, tmp_path):
+        """An ID whose session no longer exists must not count toward the limit."""
+        mgr = _make_manager(tmp_path, heartbeat_max_inflight=1)
+        mgr._inflight_task_ids = [55]
+        mock_flow = MagicMock()
+        mock_flow.get_session.return_value = None  # session is gone
+        mgr._flow = mock_flow
+        # 0 active, limit is 1 — should be able to submit
+        assert mgr.can_submit() is True
+
+    def test_can_submit_removes_stale_ids_as_side_effect(self, tmp_path):
+        """Calling can_submit() must clean up terminal/missing IDs from _inflight_task_ids."""
+        mgr = _make_manager(tmp_path, heartbeat_max_inflight=3)
+        mgr._inflight_task_ids = [1, 2, 3]
+        mock_flow = MagicMock()
+        running_session = MagicMock()
+        running_session.state = TaskSessionState.RUNNING
+        terminal_session = MagicMock()
+        terminal_session.state = TaskSessionState.COMPLETED
+        mock_flow.get_session.side_effect = lambda tid: (
+            running_session if tid == 1 else terminal_session if tid == 2 else None
+        )
+        mgr._flow = mock_flow
+        mgr.can_submit()
+        # Only the RUNNING session (id=1) should remain
+        assert mgr._inflight_task_ids == [1]
+
+    def test_can_submit_no_flow_fallback(self, tmp_path):
+        """Before start() is called (_flow is None), count all inflight IDs."""
+        mgr = _make_manager(tmp_path, heartbeat_max_inflight=1)
+        mgr._inflight_task_ids = [99]
+        assert mgr._flow is None
+        assert mgr.can_submit() is False
+
+    @pytest.mark.parametrize(
+        "terminal_state",
+        [
+            TaskSessionState.COMPLETED,
+            TaskSessionState.FAILED,
+            TaskSessionState.HUMAN_REVIEW,
+        ],
+    )
+    def test_can_submit_filters_all_terminal_states(self, tmp_path, terminal_state):
+        """COMPLETED, FAILED, and HUMAN_REVIEW sessions must not count toward the limit."""
+        mgr = _make_manager(tmp_path, heartbeat_max_inflight=1)
+        mgr._inflight_task_ids = [77]
+        mock_flow = MagicMock()
+        terminal_session = MagicMock()
+        terminal_session.state = terminal_state
+        mock_flow.get_session.return_value = terminal_session
+        mgr._flow = mock_flow
+        # 0 active (terminal doesn't count), limit is 1 — can submit
+        assert mgr.can_submit() is True
 
 
 class TestSnapshot:

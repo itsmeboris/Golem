@@ -20,11 +20,20 @@ from typing import Any
 
 from .core.cli_wrapper import CLIConfig, CLIError, CLIType, invoke_cli
 from .core.config import DATA_DIR, GolemFlowConfig
+from .orchestrator import TaskSessionState
 from .types import HeartbeatCandidateDict, HeartbeatSnapshotDict
 
 logger = logging.getLogger("golem.heartbeat")
 
 _24H = 86400  # seconds
+
+_TERMINAL_STATES = frozenset(
+    {
+        TaskSessionState.COMPLETED,
+        TaskSessionState.FAILED,
+        TaskSessionState.HUMAN_REVIEW,
+    }
+)
 
 _MD_JSON_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?\s*```", re.DOTALL)
 
@@ -181,8 +190,30 @@ class HeartbeatManager:
     # -- Inflight -------------------------------------------------------------
 
     def can_submit(self) -> bool:
-        """Return True if we're under the max inflight limit."""
-        return len(self._inflight_task_ids) < self._config.heartbeat_max_inflight
+        """Return True if we're under the max inflight limit.
+
+        When a flow is available, filters out sessions that are in a terminal
+        state (COMPLETED, FAILED, HUMAN_REVIEW) or no longer exist.  Stale IDs
+        are removed from ``_inflight_task_ids`` as a side effect so the list
+        stays tidy over time.
+        """
+        if self._flow is None:
+            return len(self._inflight_task_ids) < self._config.heartbeat_max_inflight
+
+        active_ids = []
+        stale_ids = []
+        for tid in self._inflight_task_ids:
+            session = self._flow.get_session(tid)
+            if session is None or session.state in _TERMINAL_STATES:
+                stale_ids.append(tid)
+            else:
+                active_ids.append(tid)
+
+        if stale_ids:
+            logger.info("Removing %s stale inflight IDs: %s", len(stale_ids), stale_ids)
+            self._inflight_task_ids = active_ids
+
+        return len(active_ids) < self._config.heartbeat_max_inflight
 
     def on_task_completed(self, task_id: int, success: bool) -> None:
         """Callback from GolemFlow when a session reaches terminal state."""
