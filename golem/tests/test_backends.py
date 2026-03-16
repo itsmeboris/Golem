@@ -322,12 +322,30 @@ class TestBuildRedmineProfile:
         assert isinstance(profile.notifier, TeamsNotifier)
 
 
+def _get_card_body(client):
+    """Extract card body from the send_to_channel call."""
+    card = client.send_to_channel.call_args[0][1]
+    return card.get("body", [])
+
+
+def _get_card_facts(client):
+    """Extract {title: value} dict from the first FactSet in the card."""
+    body = _get_card_body(client)
+    for item in body:
+        if item.get("type") == "FactSet":
+            return {f["title"]: f["value"] for f in item["facts"]}
+    return {}
+
+
 class TestTeamsNotifier:
     def test_notify_started(self):
         client = MagicMock()
         notifier = TeamsNotifier(client, "chan")
         notifier.notify_started(42, "Test task")
         client.send_to_channel.assert_called_once()
+        body = _get_card_body(client)
+        assert "42" in body[0]["text"]
+        assert body[1]["text"] == "Test task"
 
     def test_notify_completed(self):
         client = MagicMock()
@@ -340,12 +358,21 @@ class TestTeamsNotifier:
             confidence=0.9,
         )
         client.send_to_channel.assert_called_once()
+        body = _get_card_body(client)
+        assert "42" in body[0]["text"]
+        facts = _get_card_facts(client)
+        assert facts["Cost"] == "$1.00"
+        assert "PASS" in facts["Verdict"]
 
     def test_notify_failed(self):
         client = MagicMock()
         notifier = TeamsNotifier(client, "chan")
         notifier.notify_failed(42, "Test", "error")
         client.send_to_channel.assert_called_once()
+        body = _get_card_body(client)
+        assert "Failed" in body[0]["text"]
+        facts = _get_card_facts(client)
+        assert facts["Error"] == "error"
 
     def test_notify_escalated(self):
         client = MagicMock()
@@ -359,6 +386,10 @@ class TestTeamsNotifier:
             cost_usd=0.5,
         )
         client.send_to_channel.assert_called_once()
+        body = _get_card_body(client)
+        assert "Needs Review" in body[0]["text"]
+        facts = _get_card_facts(client)
+        assert facts["Verdict"] == "PARTIAL"
 
     def test_notify_health_alert_basic(self):
         client = MagicMock()
@@ -367,8 +398,8 @@ class TestTeamsNotifier:
         client.send_to_channel.assert_called_once()
         card = client.send_to_channel.call_args[0][1]
         assert card["type"] == "AdaptiveCard"
-        body_str = str(card)
-        assert "Health Alert" in body_str
+        body = _get_card_body(client)
+        assert "Health Alert" in body[0]["text"]
 
     def test_notify_health_alert_with_details(self):
         client = MagicMock()
@@ -379,9 +410,9 @@ class TestTeamsNotifier:
             details={"value": 0.5, "threshold": 0.1},
         )
         client.send_to_channel.assert_called_once()
-        body_str = str(client.send_to_channel.call_args[0][1])
-        assert "0.5" in body_str
-        assert "0.1" in body_str
+        facts = _get_card_facts(client)
+        assert facts["Current"] == "0.5"
+        assert facts["Threshold"] == "0.1"
 
     def test_send_error_logged(self):
         client = MagicMock()
