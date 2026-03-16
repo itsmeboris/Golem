@@ -41,8 +41,8 @@ def update_latest_symlink(
         if latest.is_symlink() or latest.exists():
             latest.unlink()
         latest.symlink_to(log_path.name)
-    except OSError:
-        pass
+    except OSError as exc:
+        logger.debug("Failed to update latest symlink: %s", exc)
 
 
 def setup_daemon_tee(log_dir: Path) -> tuple:
@@ -95,8 +95,8 @@ def remove_pid(pid_file: Path) -> None:
     """Remove PID file, ignoring errors."""
     try:
         pid_file.unlink(missing_ok=True)
-    except OSError:
-        pass
+    except OSError as exc:
+        logger.debug("Failed to remove PID file: %s", exc)
 
 
 def daemonize(log_path: Path) -> None:

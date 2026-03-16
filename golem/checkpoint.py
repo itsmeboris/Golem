@@ -56,8 +56,8 @@ def save_checkpoint(issue_id: int, session: TaskSession, phase: str) -> Path:
             os.close(fd)
         try:
             os.unlink(tmp_path)
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug("Failed to unlink checkpoint temp file: %s", exc)
         raise
 
     logger.info("Checkpoint saved for #%s (phase=%s)", issue_id, phase)

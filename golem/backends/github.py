@@ -284,8 +284,8 @@ class GitHubStateBackend:
                         other_label,
                         *repo_args,
                     )
-                except OSError:
-                    pass
+                except OSError as exc:
+                    logger.debug("Failed to remove label %s: %s", other_label, exc)
         # Add the new status label
         try:
             result = _gh(

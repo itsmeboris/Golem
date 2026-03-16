@@ -504,8 +504,8 @@ async def _sse_event_stream():
         for p in TRACES_DIR.rglob("*.jsonl"):
             try:
                 trace_mtimes[str(p)] = p.stat().st_mtime
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.debug("Failed to stat trace file: %s", exc)
 
     heartbeat_counter = 0
     try:

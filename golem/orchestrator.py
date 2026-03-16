@@ -1196,8 +1196,8 @@ def save_sessions(sessions: dict[int, TaskSession], path: Path | None = None) ->
             os.close(fd)
         try:
             os.unlink(tmp_path)
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug("Failed to unlink orchestrator temp file: %s", exc)
         raise
 
 

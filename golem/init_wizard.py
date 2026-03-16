@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 from pathlib import Path
@@ -11,6 +12,8 @@ import yaml
 
 from .core.config import KNOWN_MODELS
 from .profile import _ensure_builtins_registered, available_profiles
+
+logger = logging.getLogger("golem.init_wizard")
 
 
 def ask(prompt: str, default: str = "", choices: list[str] | None = None) -> str:
@@ -73,8 +76,8 @@ def _collect_inputs(use_defaults: bool) -> dict[str, str]:
         try:
             if float(result["budget"]) > 0:
                 break
-        except ValueError:
-            pass
+        except ValueError as exc:
+            logger.debug("Budget input validation error: %s", exc)
         print("Budget must be a positive number.")
 
     result["work_dir"] = ask("Default working directory?", default=default_work_dir)
@@ -110,8 +113,8 @@ def _collect_inputs(use_defaults: bool) -> dict[str, str]:
         try:
             if 1 <= int(result["dashboard_port"]) <= 65535:
                 break
-        except ValueError:
-            pass
+        except ValueError as exc:
+            logger.debug("Dashboard port validation error: %s", exc)
         print("Port must be an integer between 1 and 65535.")
 
     return result

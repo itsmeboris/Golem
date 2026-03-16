@@ -1,5 +1,6 @@
 """Write extracted pitfalls to AGENTS.md with categorization and atomic writes."""
 
+import logging
 import os
 import re
 import tempfile
@@ -14,6 +15,8 @@ from .pitfall_extractor import (
     _is_duplicate,
     classify_pitfall,
 )
+
+logger = logging.getLogger("golem.pitfall_writer")
 
 _HEADER = "# AGENTS.md — Golem Learning\n"
 _AUTO_COMMENT = (
@@ -239,6 +242,6 @@ def update_agents_md(
     except Exception:
         try:
             os.unlink(tmp_path)
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug("Failed to unlink pitfall_writer temp file: %s", exc)
         raise

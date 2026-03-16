@@ -211,8 +211,8 @@ class LiveState:
         if self._persist_path and self._persist_path.exists():
             try:
                 self._persist_path.unlink()
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.debug("Failed to unlink persistence file: %s", exc)
 
     def snapshot(self) -> LiveSnapshotDict:  # pylint: disable=too-many-locals
         """Return a JSON-serialisable dict of the current live state."""

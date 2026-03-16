@@ -401,8 +401,8 @@ class SelfUpdateManager:
                     capture_output=True,
                     text=True,
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Failed to remove verify worktree: %s", exc)
 
     async def apply_update(self) -> None:
         """Called after drain completes to merge the verified SHA."""

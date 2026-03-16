@@ -57,8 +57,8 @@ def kill_all_active(timeout: float = 5.0) -> int:
     for proc in procs:
         try:
             proc.send_signal(signal.SIGTERM)
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug("Failed to send SIGTERM to process: %s", exc)
 
     deadline = time.monotonic() + timeout
     alive = list(procs)
@@ -69,8 +69,8 @@ def kill_all_active(timeout: float = 5.0) -> int:
     for proc in alive:
         try:
             proc.kill()
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug("Failed to kill process: %s", exc)
 
     logger.info("Killed %d active CLI process(es)", len(procs))
     return len(procs)
@@ -260,10 +260,10 @@ def _prepare_work_dir(cwd: str, mcp_servers: list[str]) -> Callable[[], None]:
                 elif path.is_dir():
                     try:
                         path.rmdir()  # only succeeds if empty
-                    except OSError:
-                        pass
-            except OSError:
-                pass
+                    except OSError as exc:
+                        logger.debug("Failed to rmdir cleanup path: %s", exc)
+            except OSError as exc:
+                logger.debug("Failed to clean up path: %s", exc)
 
     return _cleanup
 
