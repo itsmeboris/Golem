@@ -119,6 +119,7 @@ def _read_jsonl_events(path: Path) -> list[dict[str, Any]] | None:
                 try:
                     events.append(json.loads(line))
                 except json.JSONDecodeError:
+                    logger.debug("Skipping malformed JSON line: %s", line)
                     continue
     except FileNotFoundError:
         return None
@@ -210,6 +211,7 @@ def _parse_trace(trace_path: Path) -> list[dict[str, Any]]:
             try:
                 ev = json.loads(line)
             except json.JSONDecodeError:
+                logger.debug("Skipping malformed JSON line: %s", line)
                 continue
 
             ev_type = ev.get("type", "")
@@ -328,6 +330,7 @@ def _parse_trace_terminal(trace_path: Path) -> tuple[list[dict], dict]:
             try:
                 ev = json.loads(line)
             except json.JSONDecodeError:
+                logger.debug("Skipping malformed JSON line: %s", line)
                 continue
 
             ev_type = ev.get("type", "")
@@ -547,6 +550,7 @@ async def _sse_event_stream():
                     try:
                         mtime = p.stat().st_mtime
                     except OSError:
+                        logger.debug("Cannot stat file %s, skipping", path_str)
                         continue
                     if path_str not in trace_mtimes or trace_mtimes[path_str] != mtime:
                         trace_mtimes[path_str] = mtime

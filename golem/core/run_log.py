@@ -78,6 +78,7 @@ def read_runs(
             try:
                 entry = json.loads(line)
             except json.JSONDecodeError:
+                logger.debug("Skipping malformed JSON line in run log: %s", line)
                 continue
 
             if flow and entry.get("flow") != flow:

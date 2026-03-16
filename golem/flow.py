@@ -369,6 +369,9 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                     sid, since=session.updated_at
                 )
             except Exception:  # pylint: disable=broad-exception-caught
+                logger.debug(
+                    "Failed to fetch comments for session %s", sid, exc_info=True
+                )
                 continue
 
             human_comments = [
