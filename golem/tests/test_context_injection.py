@@ -8,8 +8,13 @@ import pytest
 
 from golem.context_injection import (
     _MAX_CONTEXT_BYTES,
+    _ROLE_CONTEXT_DIR,
+    _VALID_ROLES,
     _find_and_read,
+    build_role_context_section,
     build_system_prompt,
+    load_all_role_contexts,
+    load_role_context,
     load_workspace_context,
     write_back_discoveries,
 )
@@ -432,3 +437,143 @@ class TestMonolithicOrchestratorContextInjection:
 
         cli_config: CLIConfig = mock_cli.call_args[0][1]
         assert cli_config.system_prompt == ""
+
+
+# ---------------------------------------------------------------------------
+# load_role_context
+# ---------------------------------------------------------------------------
+
+
+class TestLoadRoleContext:
+    def test_valid_role_returns_content(self):
+        content = load_role_context("builder")
+        assert "Builder Mode Context" in content
+        assert "TDD" in content
+
+    def test_unknown_role_returns_empty(self):
+        result = load_role_context("unknown_role")
+        assert result == ""
+
+    def test_missing_file_returns_empty(self, tmp_path):
+        with patch("golem.context_injection._ROLE_CONTEXT_DIR", tmp_path):
+            result = load_role_context("builder")
+        assert result == ""
+
+    def test_unreadable_file_returns_empty(self, tmp_path):
+        fake_dir = tmp_path
+        (fake_dir / "builder.md").write_text("some content")
+        with patch("golem.context_injection._ROLE_CONTEXT_DIR", fake_dir):
+            with patch.object(
+                Path, "read_text", side_effect=OSError("permission denied")
+            ):
+                result = load_role_context("builder")
+        assert result == ""
+
+    @pytest.mark.parametrize(
+        "role", sorted(["builder", "reviewer", "verifier", "explorer"])
+    )
+    def test_all_valid_roles_have_files(self, role):
+        content = load_role_context(role)
+        assert len(content) > 0, f"Role {role!r} returned empty content"
+
+    def test_content_is_stripped(self, tmp_path):
+        (tmp_path / "builder.md").write_text("  content with spaces  \n\n")
+        with patch("golem.context_injection._ROLE_CONTEXT_DIR", tmp_path):
+            result = load_role_context("builder")
+        assert result == "content with spaces"
+
+
+# ---------------------------------------------------------------------------
+# load_all_role_contexts
+# ---------------------------------------------------------------------------
+
+
+class TestLoadAllRoleContexts:
+    def test_returns_all_roles_with_files(self):
+        result = load_all_role_contexts()
+        assert set(result.keys()) == {"builder", "reviewer", "verifier", "explorer"}
+
+    def test_missing_role_omitted(self):
+        def fake_load(role):
+            if role == "builder":
+                return ""
+            return f"content for {role}"
+
+        with patch("golem.context_injection.load_role_context", side_effect=fake_load):
+            result = load_all_role_contexts()
+        assert "builder" not in result
+        assert len(result) == 3
+        assert result["reviewer"] == "content for reviewer"
+
+    def test_empty_when_no_files(self):
+        with patch("golem.context_injection.load_role_context", return_value=""):
+            result = load_all_role_contexts()
+        assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# build_role_context_section
+# ---------------------------------------------------------------------------
+
+
+class TestBuildRoleContextSection:
+    def test_returns_formatted_section(self):
+        section = build_role_context_section()
+        assert "## Role-Specific Contexts" in section
+        assert "prepend the matching context block" in section
+        assert "Builder Mode Context" in section
+
+    def test_returns_empty_when_no_contexts(self):
+        with patch("golem.context_injection.load_all_role_contexts", return_value={}):
+            result = build_role_context_section()
+        assert result == ""
+
+    def test_contains_all_role_headings(self):
+        section = build_role_context_section()
+        assert "### Builder Context" in section
+        assert "### Reviewer Context" in section
+        assert "### Verifier Context" in section
+        assert "### Explorer Context" in section
+
+
+# ---------------------------------------------------------------------------
+# Integration: supervisor role context injection via _build_prompt
+# ---------------------------------------------------------------------------
+
+
+class TestSupervisorRoleContextInjection:
+    """Verify _build_prompt includes role_contexts when context_injection=True."""
+
+    def _make_supervisor_with_template(self, context_injection: bool):
+        """Return a supervisor whose prompt_provider echoes template variables."""
+        profile = MagicMock()
+        profile.task_source.get_task_description.return_value = "description"
+
+        # Capture kwargs so tests can inspect what was passed to format()
+        captured = {}
+
+        def fake_format(name, **kwargs):
+            captured.update(kwargs)
+            # Return a simple string that includes the role_contexts value
+            return kwargs.get("role_contexts", "")
+
+        profile.prompt_provider.format.side_effect = fake_format
+        profile.tool_provider.servers_for_subject.return_value = []
+        profile.state_backend = MagicMock()
+        profile.notifier = MagicMock()
+
+        config = _make_config(context_injection=context_injection)
+        sup = _make_supervisor(config=config, profile=profile)
+        return sup, captured
+
+    def test_build_prompt_includes_role_contexts_when_enabled(self, tmp_path):
+        sup, captured = self._make_supervisor_with_template(context_injection=True)
+        sup._build_prompt(issue_id=1, description="test task", work_dir=str(tmp_path))
+        role_contexts = captured.get("role_contexts", "MISSING")
+        assert "Role-Specific Contexts" in role_contexts
+
+    def test_build_prompt_no_role_contexts_when_disabled(self, tmp_path):
+        sup, captured = self._make_supervisor_with_template(context_injection=False)
+        sup._build_prompt(issue_id=1, description="test task", work_dir=str(tmp_path))
+        role_contexts = captured.get("role_contexts", "MISSING")
+        assert role_contexts == ""

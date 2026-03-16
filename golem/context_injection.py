@@ -80,6 +80,67 @@ def build_system_prompt(work_dir: str) -> str:
     )
 
 
+# Role-specific context for subagent dispatch
+_ROLE_CONTEXT_DIR = Path(__file__).parent / "prompts" / "contexts"
+_VALID_ROLES = frozenset({"builder", "reviewer", "verifier", "explorer"})
+
+
+def load_role_context(role: str) -> str:
+    """Load the context file for a sub-agent *role*.
+
+    Returns the file content or empty string if the role is unknown
+    or the file does not exist.
+    """
+    if role not in _VALID_ROLES:
+        logger.warning("Unknown role %r, skipping context load", role)
+        return ""
+    context_file = _ROLE_CONTEXT_DIR / f"{role}.md"
+    if not context_file.is_file():
+        logger.warning("Role context file not found: %s", context_file)
+        return ""
+    try:
+        content = context_file.read_text(encoding="utf-8")
+        logger.debug("Loaded role context for %s (%d chars)", role, len(content))
+        return content.strip()
+    except OSError as exc:
+        logger.warning("Could not read role context %s: %s", context_file, exc)
+        return ""
+
+
+def load_all_role_contexts() -> dict[str, str]:
+    """Load context for all known roles, returning a dict of role → content.
+
+    Roles whose context file is missing are omitted from the result.
+    """
+    contexts = {}
+    for role in sorted(_VALID_ROLES):
+        content = load_role_context(role)
+        if content:
+            contexts[role] = content
+    return contexts
+
+
+def build_role_context_section() -> str:
+    """Format all role contexts into a section for the orchestration prompt.
+
+    Returns a formatted string block that can be embedded in the orchestration
+    template, or empty string if no context files are found.
+    """
+    contexts = load_all_role_contexts()
+    if not contexts:
+        return ""
+    parts = []
+    parts.append("## Role-Specific Contexts\n")
+    parts.append(
+        "When dispatching a subagent, prepend the matching context block below "
+        "to the subagent's prompt. This sets behavioral priorities for each role.\n"
+    )
+    for role, content in contexts.items():
+        parts.append(f"### {role.title()} Context\n")
+        parts.append(f"```\n{content}\n```\n")
+    return "\n".join(parts)
+
+
 def write_back_discoveries(work_dir: str, discoveries: list[str]) -> bool:
     """Append *discoveries* to AGENTS.md in *work_dir*.
 

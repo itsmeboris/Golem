@@ -465,6 +465,13 @@ class SubagentSupervisor:
                 "**Scoping rule:** Only include files that Builders reported as changed.\n"
                 "If no files were changed, skip this phase with a one-line note.\n"
             )
+        role_contexts = ""
+        if self.task_config.context_injection:
+            from .context_injection import (
+                build_role_context_section,
+            )  # pylint: disable=import-outside-toplevel
+
+            role_contexts = build_role_context_section()
         return self._format_prompt(
             "orchestrate_task.txt",
             issue_id=issue_id,
@@ -474,6 +481,7 @@ class SubagentSupervisor:
             inner_retry_max=self.task_config.inner_retry_max,
             validator_fix_depth=self.task_config.validator_fix_depth,
             simplify_section=simplify_section,
+            role_contexts=role_contexts,
         )
 
     # -- CLI invocation --------------------------------------------------------
