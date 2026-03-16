@@ -128,6 +128,8 @@ class HeartbeatManager:
         )
         self._loop_task: Any = None  # asyncio.Task, set in start()
         self._flow: Any = None  # set in start()
+        self._next_tick_at: float = 0.0  # epoch when next tick fires
+        self._trigger_event: Any = None  # asyncio.Event for force-trigger
 
     # -- Budget ---------------------------------------------------------------
 
@@ -274,6 +276,7 @@ class HeartbeatManager:
 
         self._flow = flow
         self.load_state()
+        self._trigger_event = asyncio.Event()
         self._loop_task = asyncio.create_task(self._heartbeat_loop())
         logger.info(
             "Heartbeat started (interval=%ds, idle_threshold=%ds, budget=$%.2f/day)",
@@ -291,6 +294,13 @@ class HeartbeatManager:
         self.save_state()
         logger.info("Heartbeat stopped")
 
+    def trigger(self) -> bool:
+        """Force an immediate heartbeat tick.  Returns True if triggered."""
+        if self._trigger_event is None:
+            return False
+        self._trigger_event.set()
+        return True
+
     async def _heartbeat_loop(self) -> None:
         """Main async loop — runs on its own interval."""
         import asyncio
@@ -298,10 +308,19 @@ class HeartbeatManager:
         idle_since: float | None = None
         while True:
             try:
+                forced = (
+                    self._trigger_event is not None and self._trigger_event.is_set()
+                )
+                if self._trigger_event is not None:
+                    self._trigger_event.clear()
+
                 snapshot = self._flow.live.snapshot()
 
                 if not self.budget_allows():
                     self._state = "budget_exhausted"
+                elif forced:
+                    logger.info("Heartbeat force-triggered")
+                    await self._run_heartbeat_tick()
                 elif self.has_external_tasks(snapshot):
                     self._state = "paused"
                     idle_since = None
@@ -317,7 +336,18 @@ class HeartbeatManager:
                 break
             except Exception:  # pylint: disable=broad-exception-caught
                 logger.exception("Error in heartbeat loop")
-            await asyncio.sleep(self._config.heartbeat_interval_seconds)
+
+            interval = self._config.heartbeat_interval_seconds
+            self._next_tick_at = time.time() + interval
+
+            # Sleep but wake early on force-trigger
+            if self._trigger_event is not None:
+                try:
+                    await asyncio.wait_for(self._trigger_event.wait(), timeout=interval)
+                except asyncio.TimeoutError:
+                    pass
+            else:
+                await asyncio.sleep(interval)
 
     # -- Haiku integration ----------------------------------------------------
 
@@ -683,6 +713,7 @@ class HeartbeatManager:
 
     def snapshot(self) -> HeartbeatSnapshotDict:
         """Return a dashboard-safe snapshot of heartbeat state."""
+        remaining = max(0.0, self._next_tick_at - time.time())
         return {
             "enabled": self._config.heartbeat_enabled,
             "state": self._state,
@@ -693,4 +724,5 @@ class HeartbeatManager:
             "inflight_task_ids": list(self._inflight_task_ids),
             "candidate_count": len(self._candidates),
             "dedup_entry_count": len(self._dedup_memory),
+            "next_tick_seconds": round(remaining),
         }

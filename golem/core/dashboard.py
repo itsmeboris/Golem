@@ -875,8 +875,16 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
                 "inflight_task_ids": [],
                 "candidate_count": 0,
                 "dedup_entry_count": 0,
+                "next_tick_seconds": 0,
             }
         return heartbeat.snapshot()
+
+    @app.post("/api/heartbeat/trigger")
+    async def api_heartbeat_trigger():
+        if heartbeat is None:
+            return {"ok": False, "detail": "heartbeat disabled"}
+        triggered = heartbeat.trigger()
+        return {"ok": triggered}
 
     @app.get("/dashboard/admin")
     async def admin_page() -> HTMLResponse:

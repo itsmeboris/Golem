@@ -13,7 +13,7 @@
   --phase-retry:#fb923c;--phase-retry-bg:rgba(251,146,60,0.1);
 }
 
-html,body{height:100%;font-family:var(--font-sans);background:var(--bg-base);color:var(--text-primary);font-size:14px;line-height:1.5;overflow:hidden}
+html,body{height:100%;font-family:var(--font-sans);background:var(--bg-base);color:var(--text-primary);font-size:15px;line-height:1.5;overflow:hidden}
 
 /* ── Top Bar ────────────────────────────── */
 .top-bar {
@@ -78,6 +78,9 @@ html,body{height:100%;font-family:var(--font-sans);background:var(--bg-base);col
 .hb-pop-bar-yellow{background:var(--yellow)}
 .hb-pop-bar-red{background:var(--red)}
 .hb-pop-footer{display:flex;justify-content:space-between;color:var(--text-muted);font-size:0.7rem}
+.hb-pop-next{color:var(--text-muted);font-size:0.7rem;margin-top:6px;text-align:center}
+.hb-pop-trigger{width:100%;margin-top:8px;padding:5px;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-secondary);font-size:0.72rem;font-family:inherit;cursor:pointer;transition:all 0.15s}
+.hb-pop-trigger:hover{background:var(--bg-hover);color:var(--text-primary);border-color:var(--border-active)}
 
 /* ── Layout ─────────────────────────────── */
 .layout{display:flex;height:calc(100vh - 48px)}

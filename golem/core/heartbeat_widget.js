@@ -30,6 +30,14 @@ function _hbBudgetPct(data) {
   return Math.min(100, Math.round((data.daily_spend_usd / data.daily_budget_usd) * 100));
 }
 
+function _hbNextTick(data) {
+  if (!data || !data.next_tick_seconds) return '';
+  const s = data.next_tick_seconds;
+  if (s <= 0) return 'now';
+  if (s < 60) return s + 's';
+  return Math.round(s / 60) + 'm';
+}
+
 function _hbChipHTML(data) {
   if (!data || !data.enabled) {
     return '<span class="hb-chip hb-disabled" id="hb-chip">'
@@ -58,6 +66,7 @@ function _hbPopoverHTML(data) {
   const inflight = data.inflight_task_ids ? data.inflight_task_ids.length : 0;
   const tierLabel = data.last_scan_tier ? 'Tier ' + data.last_scan_tier : '';
   const scanAgo = data.last_scan_at ? fmtAgo(data.last_scan_at) : 'never';
+  const nextTick = _hbNextTick(data);
 
   return '<div class="hb-popover" id="hb-popover">'
     + '<div class="hb-pop-header">'
@@ -81,7 +90,19 @@ function _hbPopoverHTML(data) {
     +   '<span>Last scan: ' + esc(scanAgo) + (tierLabel ? ' (' + tierLabel + ')' : '') + '</span>'
     +   '<span>' + (data.candidate_count || 0) + ' candidates</span>'
     + '</div>'
+    + (nextTick
+      ? '<div class="hb-pop-next">Next tick in ' + nextTick + '</div>'
+      : '')
+    + '<button class="hb-pop-trigger" id="hb-trigger-btn">Trigger Now</button>'
     + '</div>';
+}
+
+async function _hbTrigger() {
+  try {
+    await fetch('/api/heartbeat/trigger', { method: 'POST' });
+    // Refresh immediately after trigger
+    await updateHeartbeat();
+  } catch (_e) { /* ignore */ }
 }
 
 function renderHeartbeatChip(data) {
@@ -99,6 +120,14 @@ function renderHeartbeatChip(data) {
       e.stopPropagation();
       _hbPopoverOpen = !_hbPopoverOpen;
       renderHeartbeatChip(_hbData);
+    });
+  }
+
+  const triggerBtn = document.getElementById('hb-trigger-btn');
+  if (triggerBtn) {
+    triggerBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      _hbTrigger();
     });
   }
 }

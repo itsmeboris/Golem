@@ -286,6 +286,7 @@ class HeartbeatSnapshotDict(TypedDict):
     inflight_task_ids: list[int]
     candidate_count: int
     dedup_entry_count: int
+    next_tick_seconds: int
 
 
 class FieldMetaDict(TypedDict):

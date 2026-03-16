@@ -1628,3 +1628,78 @@ class TestHeartbeatTickTaskIdCoercion:
         # Should go idle and not add to inflight
         assert mgr._inflight_task_ids == []
         assert mgr._state == "idle"
+
+
+class TestTrigger:
+    """Tests for the force-trigger mechanism."""
+
+    def test_trigger_before_start_returns_false(self, tmp_path):
+        """trigger() returns False when loop not started (no event)."""
+        mgr = _make_manager(tmp_path)
+        assert mgr.trigger() is False
+
+    @pytest.mark.asyncio
+    async def test_trigger_after_start_returns_true(self, tmp_path):
+        """trigger() returns True and sets event after start."""
+        mgr = _make_manager(tmp_path, heartbeat_interval_seconds=999)
+        mock_flow = MagicMock()
+        mock_flow.live = MagicMock()
+        mock_flow.live.snapshot.return_value = {"active_count": 0}
+        mgr.start(mock_flow)
+        assert mgr.trigger() is True
+        assert mgr._trigger_event.is_set()
+        mgr.stop()
+
+    @pytest.mark.asyncio
+    async def test_force_trigger_calls_tick(self, tmp_path):
+        """Force-trigger bypasses idle threshold and calls tick."""
+        mgr = _make_manager(
+            tmp_path,
+            heartbeat_interval_seconds=0,
+            heartbeat_idle_threshold_seconds=9999,  # would never fire normally
+        )
+        mock_flow = MagicMock()
+        mock_flow.live = MagicMock()
+        mock_flow.live.snapshot.return_value = {"active_count": 5}  # not idle
+        mgr.start(mock_flow)
+        mgr.trigger()
+        with patch.object(
+            mgr, "_run_heartbeat_tick", new_callable=AsyncMock
+        ) as mock_tick:
+            await asyncio.sleep(0.05)
+        mgr.stop()
+        mock_tick.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_loop_without_trigger_event_uses_sleep(self, tmp_path):
+        """When _trigger_event is None, loop falls back to asyncio.sleep."""
+        mgr = _make_manager(tmp_path, heartbeat_interval_seconds=0)
+        mock_flow = MagicMock()
+        mock_flow.live = MagicMock()
+        mock_flow.live.snapshot.return_value = {"active_count": 0}
+        mgr._flow = mock_flow
+        mgr._trigger_event = None
+        # Run one iteration manually
+        loop_coro = mgr._heartbeat_loop()
+        task = asyncio.create_task(loop_coro)
+        await asyncio.sleep(0.05)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
+class TestSnapshotNextTick:
+    """Tests for next_tick_seconds in snapshot."""
+
+    def test_next_tick_seconds_zero_before_start(self, tmp_path):
+        mgr = _make_manager(tmp_path)
+        snap = mgr.snapshot()
+        assert snap["next_tick_seconds"] == 0
+
+    def test_next_tick_seconds_reflects_timer(self, tmp_path):
+        mgr = _make_manager(tmp_path)
+        mgr._next_tick_at = time.time() + 120
+        snap = mgr.snapshot()
+        assert 118 <= snap["next_tick_seconds"] <= 120

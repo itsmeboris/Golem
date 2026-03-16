@@ -1507,6 +1507,7 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         assert resp["enabled"] is False
         assert resp["state"] == "disabled"
         assert resp["daily_spend_usd"] == 0.0
+        assert resp["next_tick_seconds"] == 0
 
     @pytest.mark.asyncio
     async def test_api_heartbeat_enabled(self):
@@ -1545,6 +1546,58 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         assert resp["enabled"] is True
         assert resp["state"] == "idle"
         mock_hb.snapshot.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_api_heartbeat_trigger_disabled(self):
+        """POST /api/heartbeat/trigger returns error when heartbeat is None."""
+        app = MagicMock()
+        routes: dict = {}
+
+        def capture_route(path, **kwargs):
+            def decorator(fn):
+                routes[path] = fn
+                return fn
+
+            return decorator
+
+        app.get = capture_route
+        app.post = capture_route
+        with patch("golem.core.dashboard.FASTAPI_AVAILABLE", True):
+            with patch(
+                "golem.core.dashboard.Query", lambda default=None, **kw: default
+            ):
+                mount_dashboard(app, heartbeat=None)
+
+        resp = await routes["/api/heartbeat/trigger"]()
+        assert resp["ok"] is False
+
+    @pytest.mark.asyncio
+    async def test_api_heartbeat_trigger_enabled(self):
+        """POST /api/heartbeat/trigger calls trigger() on heartbeat."""
+        app = MagicMock()
+        routes: dict = {}
+
+        def capture_route(path, **kwargs):
+            def decorator(fn):
+                routes[path] = fn
+                return fn
+
+            return decorator
+
+        app.get = capture_route
+        app.post = capture_route
+
+        mock_hb = MagicMock()
+        mock_hb.trigger.return_value = True
+        with patch("golem.core.dashboard.FASTAPI_AVAILABLE", True):
+            with patch(
+                "golem.core.dashboard.Query", lambda default=None, **kw: default
+            ):
+                mount_dashboard(app, heartbeat=mock_hb)
+
+        resp = await routes["/api/heartbeat/trigger"]()
+        assert resp["ok"] is True
+        mock_hb.trigger.assert_called_once()
 
     def test_dashboard_html_has_new_layout(self):
         """Verify the HTML file has the Trace Viewer layout structure."""
