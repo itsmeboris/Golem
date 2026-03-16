@@ -531,8 +531,8 @@ class HeartbeatManager:
                 ran_ts = datetime.fromisoformat(cached_at).timestamp()
                 if time.time() - ran_ts < 3600:
                     return self._coverage_cache.get("uncovered_modules", [])
-            except ValueError:
-                pass
+            except ValueError as exc:
+                logger.debug("Invalid cached timestamp, re-running coverage: %s", exc)
 
         # Run pytest --cov with timeout
         try:

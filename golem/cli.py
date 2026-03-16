@@ -795,8 +795,8 @@ def cmd_stop(args) -> int:
         print(f"{target} did not exit within {grace}s, sending SIGKILL...")
         try:
             os.kill(pid, signal.SIGKILL)
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug("SIGKILL failed for PID %d: %s", pid, exc)
         if _wait_for_exit(pid, 3):
             remove_pid(pid_file)
             print(f"{target} killed.")

@@ -1338,6 +1338,34 @@ class TestCmdStopSignalPaths:
         result = cmd_stop(args)
         assert result == 1
 
+    @patch("golem.cli._wait_for_exit", return_value=False)
+    @patch("golem.cli.remove_pid")
+    @patch("os.kill")
+    @patch("golem.cli.read_pid", return_value=5555)
+    def test_sigkill_fails_oserror_logs_debug(
+        self, mock_read, mock_kill, mock_remove, mock_wait, caplog
+    ):
+        """SIGKILL failure is logged at debug level."""
+        import logging
+
+        def side(pid, sig):
+            if sig == 0:
+                return
+            if sig == signal.SIGKILL:
+                raise OSError("no such process")
+
+        mock_kill.side_effect = side
+
+        args = SimpleNamespace(dashboard=False, pid_file=None, force=False)
+        with caplog.at_level(logging.DEBUG, logger="golem.cli"):
+            result = cmd_stop(args)
+
+        assert result == 1
+        assert any(
+            "SIGKILL failed" in r.message and r.levelno == logging.DEBUG
+            for r in caplog.records
+        )
+
     @patch("golem.cli._wait_for_exit", return_value=True)
     @patch("golem.cli.remove_pid")
     @patch("os.kill")

@@ -252,6 +252,30 @@ class TestUpdateConfig:
             with pytest.raises(OSError, match="disk full"):
                 update_config(p, {"golem.task_model": "opus"})
 
+    def test_exception_during_rename_and_unlink_logs_debug(self, tmp_path, caplog):
+        """When both os.rename and os.unlink fail, a debug message is logged for the unlink."""
+        import logging
+
+        cfg = {"flows": {"golem": {"projects": ["r"]}}}
+        p = self._write_config(tmp_path, cfg)
+        with caplog.at_level(logging.DEBUG, logger="golem.config_editor"):
+            with (
+                patch(
+                    "golem.config_editor.os.rename", side_effect=OSError("disk full")
+                ),
+                patch(
+                    "golem.config_editor.os.unlink",
+                    side_effect=OSError("unlink fail"),
+                ),
+            ):
+                with pytest.raises(OSError, match="disk full"):
+                    update_config(p, {"golem.task_model": "opus"})
+
+        assert any(
+            "Failed to clean up temp file" in r.message and r.levelno == logging.DEBUG
+            for r in caplog.records
+        )
+
     def test_non_golem_section_written_correctly(self, tmp_path):
         """update_config writes non-golem sections at root level."""
         cfg = {"flows": {"golem": {"projects": ["r"]}}}

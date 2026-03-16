@@ -436,8 +436,8 @@ def update_config(config_path: Path, updates: dict[str, Any]) -> list[str]:
     except Exception:
         try:
             os.unlink(tmp_path)
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug("Failed to clean up temp file: %s", exc)
         raise
 
     return []

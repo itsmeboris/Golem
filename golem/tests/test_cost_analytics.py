@@ -63,6 +63,20 @@ class TestExtractRetryCount:
         run = {"actions_taken": ["retries:notanumber"]}
         assert _extract_retry_count(run) == 0
 
+    def test_malformed_retries_value_logs_debug(self, caplog):
+        """A malformed 'retries:' entry triggers a debug log message."""
+        import logging
+
+        run = {"actions_taken": ["retries:notanumber"]}
+        with caplog.at_level(logging.DEBUG, logger="golem.cost_analytics"):
+            result = _extract_retry_count(run)
+
+        assert result == 0
+        assert any(
+            "Failed to parse retry count" in r.message and r.levelno == logging.DEBUG
+            for r in caplog.records
+        )
+
 
 class TestComputeCostAnalyticsEmpty:
     def test_empty_runs_returns_defaults(self):

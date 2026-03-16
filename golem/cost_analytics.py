@@ -4,7 +4,10 @@ Computes cost-specific aggregate statistics: cost over time, cost by verdict,
 cost per retry bucket, and budget utilization from task sessions.
 """
 
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def _extract_retry_count(run: dict) -> int:
@@ -16,8 +19,8 @@ def _extract_retry_count(run: dict) -> int:
         if isinstance(action, str) and action.startswith("retries:"):
             try:
                 return int(action.split(":", 1)[1])
-            except (ValueError, IndexError):
-                pass
+            except (ValueError, IndexError) as exc:
+                logger.debug("Failed to parse retry count from %r: %s", action, exc)
     return 0
 
 
