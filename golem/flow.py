@@ -272,10 +272,12 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                 sid
                 for sid, s in self._sessions.items()
                 if s.state
-                not in (
-                    TaskSessionState.COMPLETED,
-                    TaskSessionState.FAILED,
-                    TaskSessionState.HUMAN_REVIEW,
+                in (
+                    TaskSessionState.DETECTED,
+                    TaskSessionState.RUNNING,
+                    TaskSessionState.VERIFYING,
+                    TaskSessionState.VALIDATING,
+                    TaskSessionState.RETRYING,
                 )
             }
             self._heartbeat.start(self)
