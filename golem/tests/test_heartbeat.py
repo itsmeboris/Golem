@@ -1229,26 +1229,31 @@ class TestHeartbeatLoopBranches:
         assert mgr._state == "idle"
         mgr.stop()
 
-    @pytest.mark.asyncio
     async def test_loop_idle_triggers_tick(self, tmp_path):
         """When idle above threshold, loop triggers heartbeat tick."""
         mgr = _make_manager(
             tmp_path,
             heartbeat_interval_seconds=0,
-            heartbeat_idle_threshold_seconds=0,  # trigger immediately
+            heartbeat_idle_threshold_seconds=0,
         )
         mock_flow = MagicMock()
         mock_flow.live = MagicMock()
         mock_flow.live.snapshot.return_value = {"active_count": 0}
         mock_flow.submit_task = AsyncMock(return_value=None)
-        mgr.start(mock_flow)
-        with patch.object(
-            mgr, "_run_heartbeat_tick", new_callable=AsyncMock
-        ) as mock_tick:
-            await asyncio.sleep(0.05)
-        mgr.stop()
-        # The tick may or may not have been called depending on timing,
-        # but the idle_since tracking should have worked
+
+        tick_called = asyncio.Event()
+
+        async def _tick_signal():
+            tick_called.set()
+
+        with patch.object(mgr, "_run_heartbeat_tick", new=_tick_signal):
+            mgr.start(mock_flow)
+            try:
+                await asyncio.wait_for(tick_called.wait(), timeout=2.0)
+            finally:
+                mgr.stop()
+
+        assert tick_called.is_set(), "heartbeat tick was never called"
 
     @pytest.mark.asyncio
     async def test_loop_cancelled_error_breaks(self, tmp_path):
