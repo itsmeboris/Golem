@@ -7,6 +7,14 @@
 'use strict';
 
 let _pollInFlight = false;
+let _lastHbFetch = 0;
+
+function _maybeRefreshHeartbeat() {
+  var now = Date.now();
+  if (now - _lastHbFetch < 30000) return;
+  _lastHbFetch = now;
+  if (typeof updateHeartbeat === 'function') updateHeartbeat();
+}
 
 // ── SSE state ──────────────────────────────────
 let _eventSource = null;
@@ -22,6 +30,7 @@ async function _flushSSEUpdates() {
   if (_pollInFlight) return;
   _pollInFlight = true;
   try {
+    _maybeRefreshHeartbeat();
     if (_needsSessionUpdate || _needsTraceUpdate || _needsMergeQueueUpdate) {
       if (S.view === 'overview') {
         await renderOverview();
@@ -131,6 +140,7 @@ function _startFallbackPolling() {
     if (_pollInFlight) return; // prevent concurrent ticks
     _pollInFlight = true;
     try {
+      _maybeRefreshHeartbeat();
       if (S.view === 'overview') {
         await renderOverview();
       } else if (S.view === 'detail' && S.selectedTaskId) {
@@ -200,6 +210,9 @@ function resetAutoScroll() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+  // Populate heartbeat chip immediately on page load
+  if (typeof updateHeartbeat === 'function') updateHeartbeat();
+
   // Navigation tabs
   document.querySelectorAll('.nav-tab').forEach(tab =>
     tab.addEventListener('click', () => showView(tab.dataset.view))

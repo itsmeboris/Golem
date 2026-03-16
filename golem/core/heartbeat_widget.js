@@ -7,6 +7,12 @@
 let _hbData = null;
 let _hbPopoverOpen = false;
 
+// Client-side countdown state
+let _hbAnchorTime = 0;
+let _hbAnchorSeconds = 0;
+let _hbEnabled = false;
+let _hbTickTimer = null;
+
 const _HB_STATES = {
   idle:             { color: 'purple', label: 'waiting' },
   scanning:         { color: 'blue',   label: 'scanning', pulse: true },
@@ -57,7 +63,7 @@ function _hbChipHTML(data) {
   return '<span class="hb-chip hb-' + info.color + '" id="hb-chip">'
     + '<span class="hb-dot hb-dot-' + info.color + pulseClass + '"></span>'
     + '<span class="hb-label">' + esc(info.label) + '</span>'
-    + (nextTick ? '<span class="hb-tick">' + nextTick + '</span>' : '')
+    + '<span class="hb-tick">' + nextTick + '</span>'
     + '<span class="hb-sep">·</span>'
     + '<span class="hb-pct">' + budgetStr + '</span>'
     + '<span class="hb-caret">&#9660;</span>'
@@ -96,9 +102,7 @@ function _hbPopoverHTML(data) {
     +   '<span>Last scan: ' + esc(scanAgo) + (tierLabel ? ' (' + tierLabel + ')' : '') + '</span>'
     +   '<span>' + (data.candidate_count || 0) + ' candidates</span>'
     + '</div>'
-    + (nextTick
-      ? '<div class="hb-pop-next">Next tick in ' + nextTick + '</div>'
-      : '')
+    + '<div class="hb-pop-next">' + (nextTick ? 'Next tick in ' + nextTick : '') + '</div>'
     + '<button class="hb-pop-trigger" id="hb-trigger-btn">Trigger Now</button>'
     + '</div>';
 }
@@ -138,9 +142,41 @@ function renderHeartbeatChip(data) {
   }
 }
 
+function _fmtRemaining(seconds) {
+  var s = Math.round(seconds);
+  if (s <= 0) return 'now';
+  if (s < 60) return s + 's';
+  return Math.round(s / 60) + 'm';
+}
+
+function _hbCountdownTick() {
+  if (!_hbEnabled) return;
+  var remaining = Math.max(0, _hbAnchorSeconds - (Date.now() - _hbAnchorTime) / 1000);
+  var text = _fmtRemaining(remaining);
+
+  // Update chip tick text
+  var tickEl = document.querySelector('.hb-tick');
+  if (tickEl) tickEl.textContent = text;
+
+  // Update popover next-tick text
+  var popNext = document.querySelector('.hb-pop-next');
+  if (popNext) popNext.textContent = 'Next tick in ' + text;
+
+  // Re-anchor from server when countdown reaches zero
+  if (remaining <= 0) updateHeartbeat();
+}
+
 async function updateHeartbeat() {
-  const data = await fetchHeartbeat();
-  if (data) renderHeartbeatChip(data);
+  var data = await fetchHeartbeat();
+  if (data) {
+    _hbEnabled = !!data.enabled;
+    _hbAnchorSeconds = data.next_tick_seconds || 0;
+    _hbAnchorTime = Date.now();
+    renderHeartbeatChip(data);
+  }
+  if (!_hbTickTimer) {
+    _hbTickTimer = setInterval(_hbCountdownTick, 1000);
+  }
 }
 
 // Close popover on outside click
