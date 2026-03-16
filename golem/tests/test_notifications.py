@@ -14,6 +14,14 @@ from golem.notifications import (
 )
 
 
+def _get_facts(card):
+    """Extract {title: value} dict from the first FactSet in card body."""
+    for item in card["body"]:
+        if item.get("type") == "FactSet":
+            return {f["title"]: f["value"] for f in item["facts"]}
+    return {}
+
+
 class TestFmtDuration:
     def test_seconds_only(self):
         assert _fmt_duration(45) == "45s"
@@ -29,8 +37,8 @@ class TestBuildTaskStartedCard:
     def test_structure(self):
         card = build_task_started_card(123, "Fix the bug")
         assert card["type"] == "AdaptiveCard"
-        body_text = str(card["body"])
-        assert "123" in body_text
+        assert "123" in card["body"][0]["text"]  # header
+        assert card["body"][1]["text"] == "Fix the bug"  # subject
 
 
 class TestBuildTaskCompletedCard:
@@ -42,8 +50,11 @@ class TestBuildTaskCompletedCard:
             duration_s=120,
             steps=5,
         )
-        body_text = str(card["body"])
-        assert "123" in body_text
+        assert "123" in card["body"][0]["text"]
+        assert card["body"][1]["text"] == "Fix the bug"
+        facts = _get_facts(card)
+        assert facts["Cost"] == "$1.50"
+        assert facts["Steps"] == "5"
 
     def test_with_verdict_and_commit(self):
         card = build_task_completed_card(
@@ -58,11 +69,13 @@ class TestBuildTaskCompletedCard:
             retry_count=2,
             fix_iteration=3,
         )
-        body_str = str(card)
-        assert "PASS" in body_str
-        assert "abc123" in body_str
-        assert "Full retries" in body_str
-        assert "Fix iterations" in body_str
+        assert "42" in card["body"][0]["text"]
+        assert card["body"][1]["text"] == "Refactor"
+        facts = _get_facts(card)
+        assert facts["Verdict"] == "PASS (95%)"
+        assert facts["Commit"] == "abc123"
+        assert facts["Full retries"] == "2"
+        assert facts["Fix iterations"] == "3"
 
     def test_with_concerns(self):
         card = build_task_completed_card(
@@ -71,8 +84,13 @@ class TestBuildTaskCompletedCard:
             total_cost_usd=0.5,
             concerns=["issue 1", "issue 2"],
         )
-        body_str = str(card)
-        assert "issue 1" in body_str
+        concerns_block = next(
+            item
+            for item in card["body"]
+            if item.get("type") == "TextBlock" and "Concerns" in item.get("text", "")
+        )
+        assert "issue 1" in concerns_block["text"]
+        assert "issue 2" in concerns_block["text"]
 
 
 class TestBuildTaskActivityCard:
@@ -84,9 +102,12 @@ class TestBuildTaskActivityCard:
             60.0,
             3,
         )
-        body_str = str(card)
-        assert "In Progress" in body_str
-        assert "99" in body_str
+        assert card["type"] == "AdaptiveCard"
+        assert "In Progress" in card["body"][0]["text"]
+        assert "99" in card["body"][0]["text"]
+        facts = _get_facts(card)
+        assert facts["Elapsed"] == "1m 0s"
+        assert facts["Steps"] == "3"
 
 
 class TestBuildTaskFailureCard:
@@ -98,9 +119,12 @@ class TestBuildTaskFailureCard:
             cost_usd=0.75,
             duration_s=1800,
         )
-        body_str = str(card)
-        assert "Failed" in body_str
-        assert "TimeoutError" in body_str
+        assert "Failed" in card["body"][0]["text"]
+        assert "88" in card["body"][0]["text"]
+        facts = _get_facts(card)
+        assert facts["Error"] == "TimeoutError"
+        assert facts["Cost"] == "$0.75"
+        assert facts["Duration"] == "30m 0s"
 
     def test_with_verdict(self):
         card = build_task_failure_card(
@@ -111,8 +135,8 @@ class TestBuildTaskFailureCard:
             duration_s=1800,
             verdict="FAIL",
         )
-        body_str = str(card)
-        assert "FAIL" in body_str
+        facts = _get_facts(card)
+        assert facts["Verdict"] == "FAIL"
 
 
 class TestBuildTaskEscalationCard:
@@ -126,10 +150,16 @@ class TestBuildTaskEscalationCard:
             cost_usd=1.0,
             duration_s=600,
         )
-        body_str = str(card)
-        assert "Needs Review" in body_str
-        assert "PARTIAL" in body_str
-        assert "Missing test" in body_str
+        assert "Needs Review" in card["body"][0]["text"]
+        assert "77" in card["body"][0]["text"]
+        facts = _get_facts(card)
+        assert facts["Verdict"] == "PARTIAL"
+        concerns_block = next(
+            item
+            for item in card["body"]
+            if item.get("type") == "TextBlock" and "Concerns" in item.get("text", "")
+        )
+        assert "Missing test" in concerns_block["text"]
 
 
 class TestBuildHealthAlertCard:
@@ -145,15 +175,13 @@ class TestBuildHealthAlertCard:
     )
     def test_known_and_unknown_labels(self, alert_type, expected_label):
         card = build_health_alert_card(alert_type, "Something went wrong")
-        body_str = str(card)
-        assert expected_label in body_str
+        assert expected_label in card["body"][0]["text"]
 
     def test_structure_no_details(self):
         card = build_health_alert_card("queue_depth", "Queue is too deep")
         assert card["type"] == "AdaptiveCard"
-        body_str = str(card)
-        assert "Health Alert" in body_str
-        assert "Queue is too deep" in body_str
+        assert "Health Alert" in card["body"][0]["text"]
+        assert card["body"][1]["text"] == "Queue is too deep"
 
     def test_details_with_value_and_threshold(self):
         card = build_health_alert_card(
@@ -161,9 +189,9 @@ class TestBuildHealthAlertCard:
             "Error rate exceeded",
             details={"value": 0.42, "threshold": 0.10},
         )
-        body_str = str(card)
-        assert "0.42" in body_str
-        assert "0.1" in body_str
+        facts = _get_facts(card)
+        assert facts["Current"] == "0.42"
+        assert facts["Threshold"] == "0.1"
 
     def test_details_with_none_value_omitted(self):
         card = build_health_alert_card(
@@ -171,9 +199,9 @@ class TestBuildHealthAlertCard:
             "Too many failures",
             details={"value": None, "threshold": 5},
         )
-        body_str = str(card)
-        assert "Current" not in body_str
-        assert "5" in body_str
+        facts = _get_facts(card)
+        assert "Current" not in facts
+        assert facts["Threshold"] == "5"
 
     def test_details_with_none_threshold_omitted(self):
         card = build_health_alert_card(
@@ -181,9 +209,9 @@ class TestBuildHealthAlertCard:
             "Too many failures",
             details={"value": 10, "threshold": None},
         )
-        body_str = str(card)
-        assert "10" in body_str
-        assert "Threshold" not in body_str
+        facts = _get_facts(card)
+        assert facts["Current"] == "10"
+        assert "Threshold" not in facts
 
     def test_details_both_none_no_fact_set(self):
         card = build_health_alert_card(
@@ -191,9 +219,7 @@ class TestBuildHealthAlertCard:
             "Daemon is idle",
             details={"value": None, "threshold": None},
         )
-        body_str = str(card)
-        assert "Current" not in body_str
-        assert "Threshold" not in body_str
+        assert _get_facts(card) == {}
 
     def test_no_details_no_fact_set(self):
         card = build_health_alert_card("stale_daemon", "Daemon is idle", details=None)
