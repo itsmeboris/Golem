@@ -278,8 +278,8 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                     TaskSessionState.HUMAN_REVIEW,
                 )
             }
-            self._heartbeat.reconcile_inflight(active_ids)
             self._heartbeat.start(self)
+            self._heartbeat.reconcile_inflight(active_ids)
         if self._self_update is not None:
             self._self_update.start()
         logger.info(

@@ -1386,7 +1386,9 @@ class TestHeartbeatIntegration:
         flow._handle_state_transition(session, TaskSessionState.RUNNING)
 
     async def test_start_tick_loop_starts_heartbeat(self, monkeypatch, tmp_path):
-        """start_tick_loop reconciles and starts heartbeat when enabled."""
+        """start_tick_loop calls start() before reconcile_inflight() when enabled."""
+        from unittest.mock import call
+
         flow = _make_flow(monkeypatch, tmp_path, heartbeat_enabled=True)
         mock_heartbeat = MagicMock()
         flow._heartbeat = mock_heartbeat
@@ -1399,6 +1401,10 @@ class TestHeartbeatIntegration:
         task = flow.start_tick_loop()
         mock_heartbeat.reconcile_inflight.assert_called_once_with(set())
         mock_heartbeat.start.assert_called_once_with(flow)
+        # Verify start() is called BEFORE reconcile_inflight() (load-then-reconcile ordering)
+        mock_heartbeat.assert_has_calls(
+            [call.start(flow), call.reconcile_inflight(set())], any_order=False
+        )
 
         task.cancel()
         try:
@@ -1443,6 +1449,76 @@ class TestHeartbeatIntegration:
         assert called_with == {1, 2, 3, 4, 5}
         # HUMAN_REVIEW session (id=8) must NOT appear
         assert 8 not in called_with
+
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    async def test_repro_stale_inflight_ids_reconciled_after_load(
+        self, monkeypatch, tmp_path
+    ):
+        """Stale inflight IDs loaded from disk must be removed by reconciliation.
+
+        Regression test: before the fix, reconcile_inflight() ran before
+        start() called load_state(), so stale persisted IDs were never cleaned
+        up, permanently blocking can_submit().
+
+        This test uses a real HeartbeatManager (not a mock) to verify that the
+        actual load_state → reconcile_inflight ordering removes stale IDs.
+        """
+        import json as _json
+
+        from golem.heartbeat import HeartbeatManager
+
+        # Pre-populate persisted state with three stale inflight IDs.
+        state_dir = tmp_path / "hb_state"
+        state_dir.mkdir()
+        state_file = state_dir / "heartbeat_state.json"
+        state_file.write_text(
+            _json.dumps(
+                {
+                    "inflight_task_ids": [100, 200, 300],
+                    "last_scan_at": "",
+                    "last_scan_tier": 0,
+                    "daily_spend_usd": 0.0,
+                    "daily_spend_reset_at": 0.0,
+                    "dedup_memory": {},
+                    "coverage_cache": {},
+                    "candidates": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        # Create a real HeartbeatManager pointing at the pre-populated state dir.
+        flow = _make_flow(monkeypatch, tmp_path, heartbeat_enabled=True)
+        hb_config = flow._heartbeat._config
+        real_heartbeat = HeartbeatManager(hb_config, state_dir=state_dir)
+        flow._heartbeat = real_heartbeat
+
+        # Only session 200 is active; 100 and 300 are absent (stale/terminal).
+        flow._sessions = {
+            200: TaskSession(parent_issue_id=200, state=TaskSessionState.RUNNING),
+            300: TaskSession(parent_issue_id=300, state=TaskSessionState.COMPLETED),
+        }
+
+        # Prevent the real _heartbeat_loop from running.
+        async def fake_heartbeat_loop():
+            pass
+
+        monkeypatch.setattr(real_heartbeat, "_heartbeat_loop", fake_heartbeat_loop)
+
+        async def fake_detection_loop():
+            pass
+
+        monkeypatch.setattr(flow, "_detection_loop", fake_detection_loop)
+
+        task = flow.start_tick_loop()
+
+        # After startup: stale IDs 100 and 300 must be removed; only 200 remains.
+        assert real_heartbeat._inflight_task_ids == [200]
 
         task.cancel()
         try:
