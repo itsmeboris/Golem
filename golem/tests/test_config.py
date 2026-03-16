@@ -396,3 +396,33 @@ class TestSelfUpdateConfigFields:
         assert config.golem.self_update_branch == "develop"
         assert config.golem.self_update_interval_seconds == 120
         assert config.golem.self_update_strategy == "any_commit"
+
+
+class TestEnableSimplifyPassConfig:
+    """Tests for enable_simplify_pass field on GolemFlowConfig."""
+
+    def test_default_is_true(self):
+        cfg = GolemFlowConfig()
+        assert cfg.enable_simplify_pass is True
+
+    def test_parsed_from_yaml_false(self, tmp_path):
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(
+            "flows:\n"
+            "  golem:\n"
+            "    profile: local\n"
+            "    enable_simplify_pass: false\n"
+        )
+        config = load_config(cfg_file)
+        assert config.golem.enable_simplify_pass is False
+
+    def test_parsed_from_yaml_true(self, tmp_path):
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(
+            "flows:\n"
+            "  golem:\n"
+            "    profile: local\n"
+            "    enable_simplify_pass: true\n"
+        )
+        config = load_config(cfg_file)
+        assert config.golem.enable_simplify_pass is True

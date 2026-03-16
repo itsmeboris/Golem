@@ -407,6 +407,51 @@ class SubagentSupervisor:
     # -- Prompt building -------------------------------------------------------
 
     def _build_prompt(self, issue_id: int, description: str, work_dir: str) -> str:
+        simplify_section = ""
+        if self.task_config.enable_simplify_pass:
+            simplify_section = (
+                "### Phase 3.5: Simplify\n"
+                "\n"
+                "Write: ``## Phase: SIMPLIFY``\n"
+                "\n"
+                "After all Builders complete but before Review, dispatch a cleanup\n"
+                "Builder to simplify the code produced during BUILD.\n"
+                "\n"
+                'Dispatch one Builder (subagent_type: "builder") with this prompt:\n'
+                "\n"
+                "````\n"
+                f"Working directory: {work_dir}\n"
+                "\n"
+                "## Skills\n"
+                "Invoke the 'simplify' skill before making any changes.\n"
+                "\n"
+                "## Your task\n"
+                "Review and simplify ONLY the files changed by previous Builders.\n"
+                "Focus on:\n"
+                "- Removing over-defensive error handling (redundant try/except,\n"
+                "  unnecessary None checks on values that cannot be None)\n"
+                "- Removing redundant type checks and assertions\n"
+                "- Removing commented-out code and dead imports\n"
+                "- Simplifying verbose or over-engineered patterns\n"
+                "\n"
+                "Preserve ALL business logic, test coverage, and public interfaces.\n"
+                "Do NOT add new features, change architecture, or refactor beyond\n"
+                "what is needed to remove sloppiness.\n"
+                "\n"
+                "Files to review:\n"
+                "[List files changed by Builders here]\n"
+                "\n"
+                "## Self-verification\n"
+                "Before reporting back, run ONLY these - nothing more:\n"
+                "1. pytest path/to/your/test_file.py -x  (targeted, NOT full suite)\n"
+                "2. black --check path/to/changed/files\n"
+                "3. pylint --errors-only path/to/changed/files\n"
+                "Do NOT run pytest --cov, pytest without a path, or the full test suite.\n"
+                "````\n"
+                "\n"
+                "**Scoping rule:** Only include files that Builders reported as changed.\n"
+                "If no files were changed, skip this phase with a one-line note.\n"
+            )
         return self._format_prompt(
             "orchestrate_task.txt",
             issue_id=issue_id,
@@ -415,6 +460,7 @@ class SubagentSupervisor:
             work_dir=work_dir,
             inner_retry_max=self.task_config.inner_retry_max,
             validator_fix_depth=self.task_config.validator_fix_depth,
+            simplify_section=simplify_section,
         )
 
     # -- CLI invocation --------------------------------------------------------

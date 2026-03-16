@@ -68,18 +68,40 @@ def _make_supervisor(session=None, config=None, profile=None, **kwargs):
 class TestBuildPrompt:
     def test_delegates_to_profile(self):
         profile = _make_profile()
-        sup = _make_supervisor(profile=profile)
+        config = _make_config(enable_simplify_pass=True)
+        sup = _make_supervisor(profile=profile, config=config)
         result = sup._build_prompt(42, "desc", "/work")
-        profile.prompt_provider.format.assert_called_once_with(
-            "orchestrate_task.txt",
-            issue_id=42,
-            parent_subject="Test task",
-            task_description="desc",
-            work_dir="/work",
-            inner_retry_max=3,
-            validator_fix_depth=3,
-        )
+        call_kwargs = profile.prompt_provider.format.call_args[1]
+        assert profile.prompt_provider.format.call_args[0][0] == "orchestrate_task.txt"
+        assert call_kwargs["issue_id"] == 42
+        assert call_kwargs["parent_subject"] == "Test task"
+        assert call_kwargs["task_description"] == "desc"
+        assert call_kwargs["work_dir"] == "/work"
+        assert call_kwargs["inner_retry_max"] == 3
+        assert call_kwargs["validator_fix_depth"] == 3
+        assert isinstance(call_kwargs["simplify_section"], str)
+        assert call_kwargs["simplify_section"] != ""
         assert result == "prompt text"
+
+    def test_build_prompt_disables_simplify_when_config_false(self):
+        profile = _make_profile()
+        config = _make_config(enable_simplify_pass=False)
+        sup = _make_supervisor(profile=profile, config=config)
+        sup._build_prompt(42, "desc", "/work")
+        call_kwargs = profile.prompt_provider.format.call_args[1]
+        assert call_kwargs["simplify_section"] == ""
+
+    def test_build_prompt_simplify_section_contains_skill_reference(self):
+        profile = _make_profile()
+        config = _make_config(enable_simplify_pass=True)
+        sup = _make_supervisor(profile=profile, config=config)
+        sup._build_prompt(42, "desc", "/work")
+        call_kwargs = profile.prompt_provider.format.call_args[1]
+        simplify_section = call_kwargs["simplify_section"]
+        assert "simplify" in simplify_section
+        assert "Phase 3.5" in simplify_section
+        assert "SIMPLIFY" in simplify_section
+        assert "builder" in simplify_section
 
 
 class TestBuildRetryPrompt:

@@ -205,6 +205,7 @@ separately.
 If subtasks are truly independent (different modules, no shared files),
 run Builders in parallel.
 
+{simplify_section}
 ### Phase 4: Review (two-stage)
 
 Write: ``## Phase: REVIEW``

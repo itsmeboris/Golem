@@ -94,6 +94,8 @@ class GolemFlowConfig(FlowConfig):
     ensemble_candidates: int = 2  # number of parallel candidates
     # Workspace context injection
     context_injection: bool = True  # inject AGENTS.md + CLAUDE.md into agent sessions
+    # Code simplification pass between BUILD and REVIEW
+    enable_simplify_pass: bool = True
     # Heartbeat — self-directed work when idle
     heartbeat_enabled: bool = False
     heartbeat_interval_seconds: int = 300
@@ -311,6 +313,7 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
         ensemble_on_second_retry=data.get("ensemble_on_second_retry", False),
         ensemble_candidates=data.get("ensemble_candidates", 2),
         context_injection=data.get("context_injection", True),
+        enable_simplify_pass=data.get("enable_simplify_pass", True),
         # Heartbeat
         heartbeat_enabled=data.get("heartbeat_enabled", False),
         heartbeat_interval_seconds=data.get("heartbeat_interval_seconds", 300),

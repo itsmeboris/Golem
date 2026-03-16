@@ -76,6 +76,9 @@ flows:
     # Workspace context injection: load AGENTS.md + CLAUDE.md into agent sessions
     context_injection: true
 
+    # Code simplification pass: cleanup agent between BUILD and REVIEW
+    enable_simplify_pass: true
+
     # Ensemble retry: spawn parallel attempts on hard tasks
     ensemble_on_second_retry: false  # enable parallel candidate strategy
     ensemble_candidates: 2           # number of parallel attempts
