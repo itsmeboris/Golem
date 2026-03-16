@@ -17,7 +17,10 @@ Verify the implementation matches each SPEC statement. Do NOT trust the
 Builder reports - read the actual code. Compare implementation to specs
 line by line. Do NOT run tests - you are a code reader, not a test runner.
 
-Report: APPROVED or ISSUES: [list what is missing or wrong, with file:line]
+Only report spec violations with confidence >= 80. Minor ambiguities or
+style differences that don't contradict the spec should be skipped.
+
+Report: APPROVED or ISSUES: [confidence, file:line, what is missing or wrong]
 
 ---
 

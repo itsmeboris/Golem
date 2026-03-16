@@ -39,7 +39,7 @@ the orchestrator route the failure:
     "pylint": "pass or fail or not_run",
     "pytest": "fail"
   }},
-  "root_cause": "<one of: test_flake, missing_dependency, unclear_spec, environment_issue, circular_failure>",
+  "root_cause": "<one of: test_flake, missing_dependency, unclear_spec, environment_issue, circular_failure, stalled>",
   "escalation_hint": "One-sentence suggestion for the human",
   "concerns": ["Specific failure that could not be resolved"]
 }}

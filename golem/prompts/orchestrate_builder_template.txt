@@ -20,6 +20,23 @@ Invoke the 'test-driven-development' skill before writing any code.
 ## Your task
 [Specific instructions: what to implement, which files to modify]
 
+## Scope boundaries
+Allowed actions:
+- Implement exactly what the specification requires
+- Add/modify tests for the changed code
+- Add type annotations to new or changed code
+- Fix imports needed for your changes
+
+Prohibited actions:
+- Refactor code unrelated to the task
+- Change architecture or project structure
+- Add features beyond the specification
+- Modify CI/CD configuration or build scripts
+- "Improve" surrounding code that works correctly
+
+If you discover a pre-existing bug unrelated to your task, note it in your
+report but do NOT fix it.
+
 ## Self-verification
 Before reporting back, run ONLY these - nothing more:
 1. pytest path/to/your/test_file.py -x  (targeted, NOT full suite)
