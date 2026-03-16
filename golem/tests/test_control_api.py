@@ -18,6 +18,9 @@ from golem.core.control_api import (
 )
 from golem.errors import TaskNotCancelableError, TaskNotFoundError
 
+if control_api.FASTAPI_AVAILABLE:
+    from fastapi import HTTPException
+
 # ---------------------------------------------------------------------------
 # wire_control_api
 # ---------------------------------------------------------------------------
@@ -869,7 +872,7 @@ class TestCancelEndpoint:
 
         gf = control_api._golem_flow
         gf.cancel_session = MagicMock(side_effect=TaskNotFoundError("No task 99"))
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(HTTPException) as exc_info:
             await cancel_task(task_id=99)
         assert exc_info.value.status_code == 404
 
@@ -881,7 +884,7 @@ class TestCancelEndpoint:
         gf.cancel_session = MagicMock(
             side_effect=TaskNotCancelableError("Task already completed")
         )
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(HTTPException) as exc_info:
             await cancel_task(task_id=42)
         assert exc_info.value.status_code == 409
 
@@ -890,7 +893,7 @@ class TestCancelEndpoint:
         from golem.core.control_api import cancel_task
 
         wire_control_api()  # reset — no flow
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(HTTPException) as exc_info:
             await cancel_task(task_id=1)
         assert exc_info.value.status_code == 503
 
@@ -922,7 +925,7 @@ class TestBatchEndpoints:
 
         gf = control_api._golem_flow
         gf.get_batch = MagicMock(return_value=None)
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(HTTPException) as exc_info:
             await get_batch(group_id="nope")
         assert exc_info.value.status_code == 404
 
@@ -931,7 +934,7 @@ class TestBatchEndpoints:
         from golem.core.control_api import get_batch
 
         wire_control_api()  # reset — no flow
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(HTTPException) as exc_info:
             await get_batch(group_id="b1")
         assert exc_info.value.status_code == 503
 
@@ -950,7 +953,7 @@ class TestBatchEndpoints:
         from golem.core.control_api import list_batches
 
         wire_control_api()  # reset — no flow
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(HTTPException) as exc_info:
             await list_batches()
         assert exc_info.value.status_code == 503
 
