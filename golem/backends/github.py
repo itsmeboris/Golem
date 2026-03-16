@@ -240,6 +240,26 @@ class GitHubStateBackend:
                     )
             except OSError as exc:
                 logger.debug("gh issue close %s failed (non-fatal): %s", task_id, exc)
+
+            # Verify close actually took effect
+            try:
+                verify = _gh(
+                    "issue", "view", str(task_id), "--json", "state", *repo_args
+                )
+                if verify.returncode == 0:
+                    state = json.loads(verify.stdout).get("state", "")
+                    if state.upper() != "CLOSED":
+                        logger.warning(
+                            "gh issue close %s: expected CLOSED but got %s",
+                            task_id,
+                            state,
+                        )
+            except (OSError, ValueError) as exc:
+                logger.debug(
+                    "Could not verify issue %s state after close: %s",
+                    task_id,
+                    exc,
+                )
         elif status == "in_progress":
             try:
                 result = _gh("issue", "reopen", str(task_id), *repo_args)

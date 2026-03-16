@@ -767,3 +767,82 @@ class TestBuildGitHubProfile:
         source = GitHubTaskSource()
         result = source.poll_untagged_tasks(["owner/repo"], "golem", limit=5)
         assert len(result) == 5
+
+
+class TestUpdateStatusClosedVerification:
+    """Tests for post-close verification in GitHubStateBackend.update_status."""
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_update_status_closed_verifies_state(self, mock_run):
+        """After closing, gh issue view is called to verify state."""
+        mock_run.side_effect = [
+            # close call
+            MagicMock(returncode=0, stdout="", stderr=""),
+            # verify call (gh issue view)
+            MagicMock(returncode=0, stdout='{"state": "CLOSED"}', stderr=""),
+            # remove-label calls (2x for other statuses)
+            MagicMock(returncode=0, stdout="", stderr=""),
+            MagicMock(returncode=0, stdout="", stderr=""),
+            # add-label call
+            MagicMock(returncode=0, stdout="", stderr=""),
+        ]
+        backend = GitHubStateBackend()
+        assert backend.update_status(42, "closed") is True
+        # Verify the view call was made
+        view_call = call(
+            ["gh", "issue", "view", "42", "--json", "state"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert view_call in mock_run.call_args_list
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_update_status_closed_verify_still_open_warns(self, mock_run):
+        """If issue is still OPEN after close, log warning but continue."""
+        mock_run.side_effect = [
+            # close call
+            MagicMock(returncode=0, stdout="", stderr=""),
+            # verify call — still open
+            MagicMock(returncode=0, stdout='{"state": "OPEN"}', stderr=""),
+            # remove-label + add-label
+            MagicMock(returncode=0, stdout="", stderr=""),
+            MagicMock(returncode=0, stdout="", stderr=""),
+            MagicMock(returncode=0, stdout="", stderr=""),
+        ]
+        backend = GitHubStateBackend()
+        # Still returns True (label update succeeded) but logs warning
+        assert backend.update_status(42, "closed") is True
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_update_status_closed_verify_fails_gracefully(self, mock_run):
+        """If verification gh call fails, proceed without crashing."""
+        mock_run.side_effect = [
+            # close call
+            MagicMock(returncode=0, stdout="", stderr=""),
+            # verify call fails
+            MagicMock(returncode=1, stdout="", stderr="api error"),
+            # remove-label + add-label
+            MagicMock(returncode=0, stdout="", stderr=""),
+            MagicMock(returncode=0, stdout="", stderr=""),
+            MagicMock(returncode=0, stdout="", stderr=""),
+        ]
+        backend = GitHubStateBackend()
+        assert backend.update_status(42, "closed") is True
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_update_status_closed_verify_os_error(self, mock_run):
+        """OSError during verification is handled gracefully."""
+        call_count = [0]
+
+        def side_effect(cmd, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:  # close
+                return MagicMock(returncode=0, stdout="", stderr="")
+            if call_count[0] == 2:  # verify
+                raise OSError("network error")
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        mock_run.side_effect = side_effect
+        backend = GitHubStateBackend()
+        assert backend.update_status(42, "closed") is True
