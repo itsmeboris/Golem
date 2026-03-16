@@ -32,6 +32,53 @@ html,body{height:100%;font-family:var(--font-sans);background:var(--bg-base);col
 @keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}
 .theme-btn{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1.1rem;padding:0.25rem}
 
+/* ── Heartbeat Chip + Popover ──────────── */
+.hb-container{position:relative;display:inline-flex;border-left:1px solid var(--border-subtle);padding-left:0.75rem;margin-left:0.15rem}
+.hb-chip{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:var(--radius-sm);cursor:pointer;font-size:0.75rem;transition:all 0.15s;border:1px solid transparent}
+.hb-chip:hover{background:var(--bg-hover)}
+.hb-chip.hb-disabled{cursor:default;opacity:0.5}
+.hb-chip.hb-disabled:hover{background:none}
+.hb-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.hb-dot-gray{background:var(--text-dim)}
+.hb-dot-purple{background:var(--purple)}
+.hb-dot-blue{background:var(--blue)}
+.hb-dot-green{background:var(--green)}
+.hb-dot-yellow{background:var(--yellow)}
+.hb-dot-red{background:var(--red)}
+.hb-pulse{animation:pulse 1.5s ease-in-out infinite}
+.hb-label{font-weight:500}
+.hb-purple .hb-label{color:var(--purple)}
+.hb-blue .hb-label{color:var(--blue)}
+.hb-green .hb-label{color:var(--green)}
+.hb-yellow .hb-label{color:var(--yellow)}
+.hb-red .hb-label{color:var(--red)}
+.hb-pct{color:var(--text-muted);font-size:0.65rem}
+.hb-caret{color:var(--text-dim);font-size:0.5rem}
+
+/* Popover */
+.hb-popover{position:absolute;right:0;top:calc(100% + 8px);background:var(--bg-elevated);border:1px solid var(--border-active);border-radius:var(--radius);padding:14px;width:260px;box-shadow:0 8px 24px rgba(0,0,0,0.35);z-index:200;font-size:0.78rem}
+.hb-pop-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.hb-pop-title{font-weight:600;color:var(--text-primary);font-size:0.82rem}
+.hb-pop-badge{font-size:0.65rem;font-weight:600;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:0.03em}
+.hb-pop-badge-purple{background:var(--purple-bg);color:var(--purple)}
+.hb-pop-badge-blue{background:var(--blue-bg);color:var(--blue)}
+.hb-pop-badge-green{background:var(--green-bg);color:var(--green)}
+.hb-pop-badge-yellow{background:var(--yellow-bg);color:var(--yellow)}
+.hb-pop-badge-red{background:var(--red-bg);color:var(--red)}
+.hb-pop-metrics{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px}
+.hb-pop-metric{background:var(--bg-surface);padding:7px 9px;border-radius:var(--radius-sm);border:1px solid var(--border-subtle)}
+.hb-pop-metric-label{font-size:0.6rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:1px}
+.hb-pop-metric-value{font-size:0.95rem;font-weight:700;color:var(--text-primary)}
+.hb-pop-metric-dim{font-size:0.7rem;color:var(--text-muted);font-weight:400}
+.hb-pop-bar-track{background:var(--bg-surface);border-radius:3px;height:3px;overflow:hidden;margin-bottom:10px}
+.hb-pop-bar-fill{height:100%;border-radius:3px;transition:width 0.3s}
+.hb-pop-bar-purple{background:var(--purple)}
+.hb-pop-bar-blue{background:var(--blue)}
+.hb-pop-bar-green{background:var(--green)}
+.hb-pop-bar-yellow{background:var(--yellow)}
+.hb-pop-bar-red{background:var(--red)}
+.hb-pop-footer{display:flex;justify-content:space-between;color:var(--text-muted);font-size:0.7rem}
+
 /* ── Layout ─────────────────────────────── */
 .layout{display:flex;height:calc(100vh - 48px)}
 

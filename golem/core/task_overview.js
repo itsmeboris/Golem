@@ -455,13 +455,14 @@ function renderSummaryCard(trace, session) {
 }
 
 function updateTopStats(sessions) {
-  const stats = document.getElementById('top-stats');
-  if (!stats) return;
+  const inner = document.getElementById('top-stats-inner');
+  if (!inner) return;
   const entries = Object.values(sessions);
   const running = entries.filter(isTaskRunning).length;
   const totalCost = entries.reduce((sum, s) => sum + (s.total_cost_usd || 0), 0);
   const done = entries.filter(s => (s.state || '').toLowerCase() === 'completed').length;
   const failed = entries.filter(s => (s.state || '').toLowerCase() === 'failed').length;
-  stats.innerHTML = `${running > 0 ? `<span><span class="dot"></span>${running} running</span>` : ''}
+  inner.innerHTML = `${running > 0 ? `<span><span class="dot"></span>${running} running</span>` : ''}
     <span>${fmtCost(totalCost)} spent</span><span>${done}&#10003; ${failed}&#10007;</span>`;
+  if (typeof updateHeartbeat === 'function') updateHeartbeat();
 }

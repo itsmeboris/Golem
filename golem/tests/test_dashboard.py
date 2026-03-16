@@ -1450,6 +1450,14 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         assert resp.media_type == "application/javascript"
 
     @pytest.mark.asyncio
+    async def test_heartbeat_widget_js(self, handlers):
+        with patch.object(
+            _FileCache, "read", return_value="function renderHeartbeatChip(){}"
+        ):
+            resp = await handlers["/dashboard/heartbeat_widget.js"]()
+        assert resp.media_type == "application/javascript"
+
+    @pytest.mark.asyncio
     async def test_elk_js(self, handlers):
         with patch.object(_FileCache, "read", return_value="var ELK={}"):
             resp = await handlers["/dashboard/elk.js"]()
@@ -1552,6 +1560,7 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         assert "task_api.js" in body, "Missing task_api.js script tag"
         assert "task_timeline.js" in body, "Missing task_timeline.js script tag"
         assert "task_overview.js" in body, "Missing task_overview.js script tag"
+        assert "heartbeat_widget.js" in body, "Missing heartbeat_widget.js script tag"
         assert "task_live.js" in body, "Missing task_live.js script tag"
 
     def test_dashboard_html_has_theme_toggle(self):

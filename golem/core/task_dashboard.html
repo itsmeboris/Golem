@@ -24,7 +24,7 @@
     <button class="nav-tab" data-view="merge-queue">Merge Queue</button>
     <button class="nav-tab" data-view="config">Config</button>
   </nav>
-  <div class="top-stats" id="top-stats"></div>
+  <div class="top-stats" id="top-stats"><span id="top-stats-inner"></span><span class="hb-container" id="hb-container"></span></div>
   <button class="theme-btn" title="Theme" id="theme-toggle" onclick="toggleTheme()">&#9789;</button>
 </header>
 
@@ -102,6 +102,7 @@
 <script src="/dashboard/task_api.js"></script>
 <script src="/dashboard/task_timeline.js"></script>
 <script src="/dashboard/task_overview.js"></script>
+<script src="/dashboard/heartbeat_widget.js"></script>
 <script src="/dashboard/task_live.js"></script>
 <link rel="stylesheet" href="/dashboard/merge_queue.css">
 <script src="/dashboard/merge_queue.js"></script>
