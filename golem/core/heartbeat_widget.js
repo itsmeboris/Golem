@@ -1,25 +1,28 @@
-/* golem/core/heartbeat_widget.js — Heartbeat chip + popover in top bar.
+/* golem/core/heartbeat_widget.js — Heartbeat chip + popover.
+ * Circular countdown ring, condition indicators, heartbeat-rhythm animation.
  * Depends on: shared.js (fmtCost, fmtAgo, esc).
- * Fetches /api/heartbeat and renders a status chip; click to expand details.
  */
 'use strict';
 
 let _hbData = null;
 let _hbPopoverOpen = false;
 
-// Client-side countdown state
+// Client-side countdown
 let _hbAnchorTime = 0;
 let _hbAnchorSeconds = 0;
+let _hbTotalInterval = 300;
 let _hbEnabled = false;
 let _hbTickTimer = null;
 
 const _HB_STATES = {
-  idle:             { color: 'purple', label: 'waiting' },
-  scanning:         { color: 'blue',   label: 'scanning', pulse: true },
-  submitted:        { color: 'green',  label: 'working' },
-  paused:           { color: 'yellow', label: 'paused' },
-  budget_exhausted: { color: 'red',    label: 'no budget' },
+  idle:             { color: 'purple', label: 'waiting',   desc: 'Accumulating idle time' },
+  scanning:         { color: 'blue',   label: 'scanning',  desc: 'Scanning for work' },
+  submitted:        { color: 'green',  label: 'working',   desc: 'Task submitted' },
+  paused:           { color: 'yellow', label: 'paused',    desc: 'External tasks active' },
+  budget_exhausted: { color: 'red',    label: 'no budget',  desc: 'Daily budget reached' },
 };
+
+/* ── Data ───────────────────────────────────────────────── */
 
 async function fetchHeartbeat() {
   try {
@@ -36,13 +39,87 @@ function _hbBudgetPct(data) {
   return Math.min(100, Math.round((data.daily_spend_usd / data.daily_budget_usd) * 100));
 }
 
-function _hbNextTick(data) {
-  if (!data || !data.next_tick_seconds) return '';
-  const s = data.next_tick_seconds;
+function _hbRemaining() {
+  return Math.max(0, _hbAnchorSeconds - (Date.now() - _hbAnchorTime) / 1000);
+}
+
+function _fmtShort(seconds) {
+  var s = Math.round(seconds);
   if (s <= 0) return 'now';
   if (s < 60) return s + 's';
   return Math.round(s / 60) + 'm';
 }
+
+function _fmtClock(seconds) {
+  var s = Math.round(seconds);
+  if (s <= 0) return '0:00';
+  var m = Math.floor(s / 60);
+  var sec = s % 60;
+  return m + ':' + (sec < 10 ? '0' : '') + sec;
+}
+
+/* ── SVG Ring ───────────────────────────────────────────── */
+
+function _ringsvg(size, r, sw, remaining, total, color) {
+  var circ = 2 * Math.PI * r;
+  var pct = total > 0 ? remaining / total : 0;
+  var offset = circ * (1 - pct);
+  var h = size / 2;
+  return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">'
+    + '<circle cx="' + h + '" cy="' + h + '" r="' + r + '" fill="none" '
+    + 'stroke="var(--border)" stroke-width="' + sw + '" opacity="0.4"/>'
+    + '<circle class="hb-ring-arc" cx="' + h + '" cy="' + h + '" r="' + r + '" fill="none" '
+    + 'stroke="var(--' + color + ')" stroke-width="' + sw + '" '
+    + 'stroke-dasharray="' + circ.toFixed(2) + '" '
+    + 'stroke-dashoffset="' + offset.toFixed(2) + '" '
+    + 'stroke-linecap="round" '
+    + 'transform="rotate(-90 ' + h + ' ' + h + ')"/>'
+    + '</svg>';
+}
+
+/* ── Conditions ─────────────────────────────────────────── */
+
+function _hbConditions(data) {
+  var conds = [];
+  var st = data.state;
+
+  // Budget
+  var budgetOk = data.daily_spend_usd < data.daily_budget_usd;
+  conds.push({
+    s: budgetOk ? 'ok' : 'fail',
+    l: 'Budget',
+    v: fmtCost(data.daily_spend_usd, 2) + ' / ' + fmtCost(data.daily_budget_usd, 2)
+  });
+
+  // Idle status
+  if (st === 'paused') {
+    conds.push({ s: 'fail', l: 'Idle', v: 'External tasks running' });
+  } else if (st === 'idle') {
+    conds.push({ s: 'wait', l: 'Idle', v: 'Accumulating idle time' });
+  } else if (st === 'scanning' || st === 'submitted') {
+    conds.push({ s: 'ok', l: 'Idle', v: 'System idle' });
+  } else if (st === 'budget_exhausted') {
+    conds.push({ s: 'wait', l: 'Idle', v: '\u2014' });
+  }
+
+  // Inflight slots
+  var n = data.inflight_task_ids ? data.inflight_task_ids.length : 0;
+  conds.push({
+    s: n > 0 ? 'wait' : 'ok',
+    l: 'Slots',
+    v: n > 0 ? n + ' inflight' : 'Available'
+  });
+
+  return conds;
+}
+
+function _condIcon(status) {
+  if (status === 'ok')   return '<span class="hb-ci hb-ci-ok">\u2713</span>';
+  if (status === 'fail') return '<span class="hb-ci hb-ci-fail">\u2717</span>';
+  return '<span class="hb-ci hb-ci-wait">\u25CB</span>';
+}
+
+/* ── Chip HTML ──────────────────────────────────────────── */
 
 function _hbChipHTML(data) {
   if (!data || !data.enabled) {
@@ -52,79 +129,99 @@ function _hbChipHTML(data) {
       + '</span>';
   }
 
-  const info = _HB_STATES[data.state] || _HB_STATES.idle;
-  const pct = _hbBudgetPct(data);
-  const pulseClass = info.pulse ? ' hb-pulse' : '';
-  const nextTick = _hbNextTick(data);
-  const budgetStr = data.daily_budget_usd
-    ? fmtCost(data.daily_spend_usd, 2) + '/' + fmtCost(data.daily_budget_usd, 2)
-    : pct + '%';
+  var info = _HB_STATES[data.state] || _HB_STATES.idle;
+  var rem = _hbRemaining();
+  var dotAnim = data.state === 'scanning' ? ' hb-scan'
+    : (data.state !== 'paused' && data.state !== 'budget_exhausted') ? ' hb-beat' : '';
+  var budgetStr = data.daily_budget_usd
+    ? fmtCost(data.daily_spend_usd, 2) + '/' + fmtCost(data.daily_budget_usd, 2) : '';
 
   return '<span class="hb-chip hb-' + info.color + '" id="hb-chip">'
-    + '<span class="hb-dot hb-dot-' + info.color + pulseClass + '"></span>'
+    + '<span class="hb-dot hb-dot-' + info.color + dotAnim + '"></span>'
     + '<span class="hb-label">' + esc(info.label) + '</span>'
-    + '<span class="hb-tick">' + nextTick + '</span>'
-    + '<span class="hb-sep">·</span>'
-    + '<span class="hb-pct">' + budgetStr + '</span>'
-    + '<span class="hb-caret">&#9660;</span>'
+    + '<span class="hb-chip-ring">' + _ringsvg(18, 7, 2, rem, _hbTotalInterval, info.color) + '</span>'
+    + '<span class="hb-chip-time">' + _fmtShort(rem) + '</span>'
+    + (budgetStr ? '<span class="hb-sep">\u00b7</span><span class="hb-pct">' + budgetStr + '</span>' : '')
+    + '<span class="hb-caret">\u25be</span>'
     + '</span>';
 }
+
+/* ── Popover HTML ───────────────────────────────────────── */
 
 function _hbPopoverHTML(data) {
   if (!data || !data.enabled) return '';
 
-  const info = _HB_STATES[data.state] || _HB_STATES.idle;
-  const pct = _hbBudgetPct(data);
-  const inflight = data.inflight_task_ids ? data.inflight_task_ids.length : 0;
-  const tierLabel = data.last_scan_tier ? 'Tier ' + data.last_scan_tier : '';
-  const scanAgo = data.last_scan_at ? fmtAgo(data.last_scan_at) : 'never';
-  const nextTick = _hbNextTick(data);
+  var info = _HB_STATES[data.state] || _HB_STATES.idle;
+  var rem = _hbRemaining();
+  var pct = _hbBudgetPct(data);
+  var scanAgo = data.last_scan_at ? fmtAgo(data.last_scan_at) : 'never';
+  var tierLabel = data.last_scan_tier ? 'Tier ' + data.last_scan_tier : '';
+
+  // Conditions
+  var conds = _hbConditions(data);
+  var condHTML = '';
+  for (var i = 0; i < conds.length; i++) {
+    var c = conds[i];
+    condHTML += '<div class="hb-cond hb-cond-' + c.s + '">'
+      + _condIcon(c.s)
+      + '<span class="hb-cond-label">' + esc(c.l) + '</span>'
+      + '<span class="hb-cond-val">' + esc(c.v) + '</span>'
+      + '</div>';
+  }
 
   return '<div class="hb-popover" id="hb-popover">'
-    + '<div class="hb-pop-header">'
-    +   '<span class="hb-pop-title">Heartbeat</span>'
-    +   '<span class="hb-pop-badge hb-pop-badge-' + info.color + '">' + esc(info.label) + '</span>'
+    // Header
+    + '<div class="hb-pop-hd">'
+    + '<span class="hb-pop-title">Heartbeat</span>'
+    + '<span class="hb-pop-badge hb-pop-badge-' + info.color + '">' + esc(info.label) + '</span>'
     + '</div>'
-    + '<div class="hb-pop-metrics">'
-    +   '<div class="hb-pop-metric">'
-    +     '<div class="hb-pop-metric-label">Budget</div>'
-    +     '<div class="hb-pop-metric-value">' + fmtCost(data.daily_spend_usd, 2)
-    +       '<span class="hb-pop-metric-dim"> / ' + fmtCost(data.daily_budget_usd, 2) + '</span></div>'
-    +   '</div>'
-    +   '<div class="hb-pop-metric">'
-    +     '<div class="hb-pop-metric-label">Inflight</div>'
-    +     '<div class="hb-pop-metric-value">' + inflight + '<span class="hb-pop-metric-dim"> / 1</span></div>'
-    +   '</div>'
+    // Ring hero
+    + '<div class="hb-pop-hero">'
+    + '<div class="hb-pop-ring">'
+    + _ringsvg(80, 34, 3.5, rem, _hbTotalInterval, info.color)
+    + '<div class="hb-pop-ring-inner">'
+    + '<span class="hb-pop-ring-time" id="hb-ring-time">' + _fmtClock(rem) + '</span>'
+    + '<span class="hb-pop-ring-sub">next check</span>'
     + '</div>'
-    + '<div class="hb-pop-bar-track"><div class="hb-pop-bar-fill hb-pop-bar-' + info.color
-    +   '" style="width:' + pct + '%"></div></div>'
-    + '<div class="hb-pop-footer">'
-    +   '<span>Last scan: ' + esc(scanAgo) + (tierLabel ? ' (' + tierLabel + ')' : '') + '</span>'
-    +   '<span>' + (data.candidate_count || 0) + ' candidates</span>'
     + '</div>'
-    + '<div class="hb-pop-next">' + (nextTick ? 'Next tick in ' + nextTick : '') + '</div>'
+    + '<div class="hb-pop-desc hb-c-' + info.color + '">' + esc(info.desc) + '</div>'
+    + '</div>'
+    // Conditions
+    + '<div class="hb-pop-conds">' + condHTML + '</div>'
+    // Budget bar
+    + '<div class="hb-pop-bar"><div class="hb-pop-bar-fill hb-pop-bar-' + info.color
+    + '" style="width:' + pct + '%"></div></div>'
+    // Footer
+    + '<div class="hb-pop-ft">'
+    + '<span>Scan: ' + esc(scanAgo) + (tierLabel ? ' \u00b7 ' + tierLabel : '') + '</span>'
+    + '<span>' + (data.candidate_count || 0) + ' candidates \u00b7 '
+    + (data.dedup_entry_count || 0) + ' deduped</span>'
+    + '</div>'
+    // Trigger
     + '<button class="hb-pop-trigger" id="hb-trigger-btn">Trigger Now</button>'
     + '</div>';
 }
 
+/* ── Trigger ────────────────────────────────────────────── */
+
 async function _hbTrigger() {
   try {
     await fetch('/api/heartbeat/trigger', { method: 'POST' });
-    // Refresh immediately after trigger
     await updateHeartbeat();
   } catch (_e) { /* ignore */ }
 }
 
+/* ── Render ─────────────────────────────────────────────── */
+
 function renderHeartbeatChip(data) {
   _hbData = data;
-  const container = document.getElementById('hb-container');
+  var container = document.getElementById('hb-container');
   if (!container) return;
 
-  // Preserve popover state across re-renders
-  const wasOpen = _hbPopoverOpen;
+  var wasOpen = _hbPopoverOpen;
   container.innerHTML = _hbChipHTML(data) + (wasOpen ? _hbPopoverHTML(data) : '');
 
-  const chip = document.getElementById('hb-chip');
+  var chip = document.getElementById('hb-chip');
   if (chip) {
     chip.addEventListener('click', function (e) {
       e.stopPropagation();
@@ -133,7 +230,7 @@ function renderHeartbeatChip(data) {
     });
   }
 
-  const triggerBtn = document.getElementById('hb-trigger-btn');
+  var triggerBtn = document.getElementById('hb-trigger-btn');
   if (triggerBtn) {
     triggerBtn.addEventListener('click', function (e) {
       e.stopPropagation();
@@ -142,34 +239,40 @@ function renderHeartbeatChip(data) {
   }
 }
 
-function _fmtRemaining(seconds) {
-  var s = Math.round(seconds);
-  if (s <= 0) return 'now';
-  if (s < 60) return s + 's';
-  return Math.round(s / 60) + 'm';
+/* ── Countdown Tick ─────────────────────────────────────── */
+
+function _updateRingArc(selector, r, remaining, total) {
+  var arc = document.querySelector(selector);
+  if (!arc) return;
+  var circ = 2 * Math.PI * r;
+  var pct = total > 0 ? remaining / total : 0;
+  arc.setAttribute('stroke-dashoffset', (circ * (1 - pct)).toFixed(2));
 }
 
 function _hbCountdownTick() {
   if (!_hbEnabled) return;
-  var remaining = Math.max(0, _hbAnchorSeconds - (Date.now() - _hbAnchorTime) / 1000);
-  var text = _fmtRemaining(remaining);
+  var rem = _hbRemaining();
 
-  // Update chip tick text
-  var tickEl = document.querySelector('.hb-tick');
-  if (tickEl) tickEl.textContent = text;
+  // Chip
+  var tickEl = document.querySelector('.hb-chip-time');
+  if (tickEl) tickEl.textContent = _fmtShort(rem);
+  _updateRingArc('.hb-chip-ring .hb-ring-arc', 7, rem, _hbTotalInterval);
 
-  // Update popover next-tick text
-  var popNext = document.querySelector('.hb-pop-next');
-  if (popNext) popNext.textContent = 'Next tick in ' + text;
+  // Popover
+  var ringTime = document.getElementById('hb-ring-time');
+  if (ringTime) ringTime.textContent = _fmtClock(rem);
+  _updateRingArc('.hb-pop-ring .hb-ring-arc', 34, rem, _hbTotalInterval);
 
-  // Re-anchor from server when countdown reaches zero
-  if (remaining <= 0) updateHeartbeat();
+  if (rem <= 0) updateHeartbeat();
 }
+
+/* ── Public ─────────────────────────────────────────────── */
 
 async function updateHeartbeat() {
   var data = await fetchHeartbeat();
   if (data) {
     _hbEnabled = !!data.enabled;
+    _hbTotalInterval = Math.max(_hbTotalInterval, data.next_tick_seconds || 0);
     _hbAnchorSeconds = data.next_tick_seconds || 0;
     _hbAnchorTime = Date.now();
     renderHeartbeatChip(data);
