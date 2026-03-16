@@ -829,8 +829,13 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         subject: str = "",
         work_dir: str = "",
         mcp: bool | None = None,
+        issue_mode: bool = False,
     ) -> dict[str, Any]:
         """Write a submission file and immediately create + spawn a session.
+
+        When *issue_mode* is True the session uses the real profile
+        (with the actual state backend) so issue updates (close, comment)
+        reach the tracker.  Default is False (NullStateBackend).
 
         Returns ``{"task_id": <int>, "status": "submitted"}``.
         """
@@ -850,7 +855,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         task_file.write_text(json.dumps(task_data, indent=2), encoding="utf-8")
 
         session = self._create_session(task_id, subject)
-        session.execution_mode = "prompt"
+        session.execution_mode = "issue" if issue_mode else "prompt"
         session.grace_deadline = _now_iso()
         self._sessions[task_id] = session
         self._save_state()

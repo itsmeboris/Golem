@@ -893,7 +893,10 @@ class HeartbeatManager:
         )
 
         try:
-            result = self._flow.submit_task(prompt=prompt, subject=subject)
+            is_issue = not candidate.get("id", "").startswith("improvement:")
+            result = self._flow.submit_task(
+                prompt=prompt, subject=subject, issue_mode=is_issue
+            )
             task_id = result["task_id"]
             coerced = _coerce_task_id(task_id)
             if coerced is None:
@@ -976,7 +979,7 @@ class HeartbeatManager:
         )
 
         try:
-            self._flow.submit_task(prompt=prompt, subject=subject)
+            self._flow.submit_task(prompt=prompt, subject=subject, issue_mode=True)
             # NOT added to inflight — runs as normal Golem task
             self.record_dedup(candidate["id"], "promoted")
             self._tier1_owed = False
