@@ -677,8 +677,8 @@ def _extract_error_from_stream_output(stdout: str, stderr: str) -> str:
             event = json.loads(stripped)
             if event.get("type") == "system" and event.get("subtype") == "init":
                 continue
-        except (json.JSONDecodeError, TypeError):
-            pass
+        except (json.JSONDecodeError, TypeError) as exc:
+            logger.debug("Non-JSON line in stream output: %s", exc)
         parts.append(stripped)
 
     if stderr and stderr.strip():

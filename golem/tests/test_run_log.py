@@ -2,6 +2,7 @@
 """Tests for golem.core.run_log — run logging and duration formatting."""
 
 import json
+import logging
 from datetime import datetime, timezone
 
 import pytest
@@ -233,3 +234,46 @@ class TestDefaultLogFile:
         record_run(RunRecord(event_id="d1", flow="golem", task_id="1"), default)
         removed = purge_flow("golem")
         assert removed == 1
+
+
+class TestReadRunsLogsDebugOnUnparseableDate:
+    def test_logs_debug_on_invalid_started_at(self, tmp_path, caplog):
+        log_file = tmp_path / "runs.jsonl"
+        rec = RunRecord(
+            event_id="bad-date-log",
+            flow="golem",
+            task_id="1",
+            started_at="not-a-date",
+        )
+        record_run(rec, log_file)
+
+        cutoff = datetime(2025, 1, 1, tzinfo=timezone.utc)
+        with caplog.at_level(logging.DEBUG, logger="golem.core.run_log"):
+            runs = read_runs(log_file, since=cutoff)
+
+        # Entry is still included (same control flow as before)
+        assert len(runs) == 1
+        assert runs[0]["event_id"] == "bad-date-log"
+
+        # Now a debug message must be present
+        assert any(
+            "Unparseable started_at in run log entry" in r.message
+            for r in caplog.records
+        )
+
+    def test_debug_message_includes_exception(self, tmp_path, caplog):
+        log_file = tmp_path / "runs.jsonl"
+        rec = RunRecord(
+            event_id="exc-in-msg",
+            flow="golem",
+            task_id="1",
+            started_at="garbage-value",
+        )
+        record_run(rec, log_file)
+
+        cutoff = datetime(2025, 1, 1, tzinfo=timezone.utc)
+        with caplog.at_level(logging.DEBUG, logger="golem.core.run_log"):
+            read_runs(log_file, since=cutoff)
+
+        full_texts = [r.getMessage() for r in caplog.records]
+        assert any("Unparseable started_at in run log entry" in t for t in full_texts)

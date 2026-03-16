@@ -1,7 +1,13 @@
 # pylint: disable=too-few-public-methods,implicit-str-concat
 """Tests for golem.core.json_extract — pure JSON extraction logic."""
 
-from golem.core.json_extract import extract_json
+import logging
+
+from golem.core.json_extract import (
+    _safe_parse,
+    _try_full_parse,
+    extract_json,
+)
 
 
 class TestExtractJsonFullParse:
@@ -127,3 +133,34 @@ class TestExtractJsonPriority:
         text = 'stray {"brace": "match"} text\n' '```json\n{"fenced": true}\n```'
         result = extract_json(text, require_key="fenced")
         assert result == {"fenced": True}
+
+
+class TestTryFullParseLogsDebugOnFailure:
+    def test_logs_debug_on_json_decode_error(self, caplog):
+        with caplog.at_level(logging.DEBUG, logger="golem.core.json_extract"):
+            result = _try_full_parse("not valid json at all", None)
+        assert result is None
+        assert any("JSON full-parse failed" in r.message for r in caplog.records)
+
+    def test_debug_message_includes_exception(self, caplog):
+        with caplog.at_level(logging.DEBUG, logger="golem.core.json_extract"):
+            _try_full_parse("{bad json}", None)
+        messages = [r.message for r in caplog.records]
+        assert any("JSON full-parse failed" in m for m in messages)
+        # The exception value should appear in at least one record's formatted output
+        full_texts = [r.getMessage() for r in caplog.records]
+        assert any("JSON full-parse failed" in t for t in full_texts)
+
+
+class TestSafeParseLogsDebugOnFailure:
+    def test_logs_debug_on_json_decode_error(self, caplog):
+        with caplog.at_level(logging.DEBUG, logger="golem.core.json_extract"):
+            result = _safe_parse("not valid json", None)
+        assert result is None
+        assert any("JSON safe-parse failed" in r.message for r in caplog.records)
+
+    def test_debug_message_includes_exception(self, caplog):
+        with caplog.at_level(logging.DEBUG, logger="golem.core.json_extract"):
+            _safe_parse("{{broken", None)
+        full_texts = [r.getMessage() for r in caplog.records]
+        assert any("JSON safe-parse failed" in t for t in full_texts)

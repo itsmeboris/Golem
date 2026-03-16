@@ -42,8 +42,8 @@ def _try_full_parse(text: str, require_key: str | None) -> dict | None:
         data = json.loads(text.strip())
         if isinstance(data, dict) and _has_key(data, require_key):
             return data
-    except (json.JSONDecodeError, ValueError):
-        pass
+    except (json.JSONDecodeError, ValueError) as exc:
+        logger.debug("JSON full-parse failed: %s", exc)
     return None
 
 
@@ -78,8 +78,8 @@ def _safe_parse(text: str, require_key: str | None) -> dict | None:
         data = json.loads(text)
         if isinstance(data, dict) and _has_key(data, require_key):
             return data
-    except (json.JSONDecodeError, ValueError):
-        pass
+    except (json.JSONDecodeError, ValueError) as exc:
+        logger.debug("JSON safe-parse failed: %s", exc)
     return None
 
 

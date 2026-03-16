@@ -1,6 +1,8 @@
 # pylint: disable=too-few-public-methods,implicit-str-concat
 """Tests for pure functions in golem.core.cli_wrapper."""
 
+import logging
+
 from golem.core.cli_wrapper import (
     CLIConfig,
     CLIError,
@@ -238,3 +240,31 @@ class TestExtractErrorFromStreamOutput:
 class TestActiveProcessCount:
     def test_initial_zero(self):
         assert active_process_count() >= 0
+
+
+class TestExtractErrorLogsDebugOnNonJsonLine:
+    def test_logs_debug_on_non_json_line(self, caplog):
+        stdout = "this is not json\n" '{"type": "result", "cost_usd": 0.1}\n'
+        with caplog.at_level(logging.DEBUG, logger="golem.core.cli_wrapper"):
+            result = _extract_error_from_stream_output(stdout, "")
+        # Functional behavior: non-JSON lines still appear in output
+        assert "this is not json" in result
+        # Debug log must be present for the non-JSON line
+        assert any(
+            "Non-JSON line in stream output" in r.message for r in caplog.records
+        )
+
+    def test_debug_message_includes_exception(self, caplog):
+        stdout = "definitely-not-json\n"
+        with caplog.at_level(logging.DEBUG, logger="golem.core.cli_wrapper"):
+            _extract_error_from_stream_output(stdout, "")
+        full_texts = [r.getMessage() for r in caplog.records]
+        assert any("Non-JSON line in stream output" in t for t in full_texts)
+
+    def test_valid_json_line_does_not_log_debug(self, caplog):
+        stdout = '{"type": "result", "cost_usd": 0.1}\n'
+        with caplog.at_level(logging.DEBUG, logger="golem.core.cli_wrapper"):
+            _extract_error_from_stream_output(stdout, "")
+        assert not any(
+            "Non-JSON line in stream output" in r.message for r in caplog.records
+        )

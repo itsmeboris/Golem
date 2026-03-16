@@ -88,8 +88,11 @@ def read_runs(
                     started = datetime.fromisoformat(entry["started_at"])
                     if started < since:
                         continue
-                except (ValueError, TypeError):
-                    pass
+                except (ValueError, TypeError) as exc:
+                    logger.debug(
+                        "Unparseable started_at in run log entry, including anyway: %s",
+                        exc,
+                    )
 
             records.append(entry)
 
