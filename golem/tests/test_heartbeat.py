@@ -1255,7 +1255,6 @@ class TestHeartbeatLoopBranches:
 
         assert tick_called.is_set(), "heartbeat tick was never called"
 
-    @pytest.mark.asyncio
     async def test_loop_cancelled_error_breaks(self, tmp_path):
         """CancelledError in loop breaks cleanly."""
         mgr = _make_manager(tmp_path, heartbeat_interval_seconds=0)

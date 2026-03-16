@@ -47,30 +47,27 @@ class TestVerificationResult:
         assert result.pylint_ok is False
         assert result.pytest_ok is True
 
-    def test_to_dict(self):
-        r = VerificationResult(
-            passed=True,
-            black_ok=True,
-            black_output="",
-            pylint_ok=True,
-            pylint_output="",
-            pytest_ok=True,
-            pytest_output="",
-            test_count=64,
-            failures=[],
-            coverage_pct=100.0,
-            duration_s=1.0,
+    @patch("golem.verifier.subprocess.run")
+    def test_to_dict_matches_contract(self, mock_run):
+        """to_dict() output from run_verification matches VerificationResultDict."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="64 passed in 1.01s\nTOTAL    1000    0   100%\n",
+            stderr="",
         )
-        d = r.to_dict()
-        assert d["passed"] is True
-        assert d["duration_s"] == 1.0
-        # Verify it matches VerificationResultDict keys
+        result = run_verification("/tmp/test")
+        d = result.to_dict()
         from golem.types import VerificationResultDict
 
         for (
             key
         ) in VerificationResultDict.__required_keys__:  # pylint: disable=no-member
             assert key in d, f"Missing key: {key}"
+        assert isinstance(d["passed"], bool)
+        assert isinstance(d["test_count"], int)
+        assert isinstance(d["coverage_pct"], float)
+        assert d["test_count"] == 64
+        assert d["coverage_pct"] == 100.0
 
 
 class TestRunVerification:

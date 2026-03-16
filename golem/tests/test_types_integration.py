@@ -1,36 +1,12 @@
-"""Integration tests verifying producer -> consumer paths use matching contracts."""
+"""Integration tests verifying producer -> consumer paths use matching contracts.
 
-from golem.core.live_state import LiveState
+LiveState contract tests live in test_types.py (TestActiveTaskDict,
+TestCompletedTaskDict, TestLiveSnapshotDict).  This file covers cross-module
+round-trips where a producer's output is fed to a consumer.
+"""
+
 from golem.event_tracker import TaskEventTracker
-from golem.types import (
-    ActiveTaskDict,
-    CompletedTaskDict,
-    LiveSnapshotDict,
-    MilestoneDict,
-)
-
-
-class TestLiveStateContract:
-    def test_snapshot_produces_valid_live_snapshot_dict(self):
-        state = LiveState.get()
-        state.enqueue("evt-1", "golem", "opus")
-        snap = state.snapshot()
-        for key in LiveSnapshotDict.__required_keys__:
-            assert key in snap, f"Missing key: {key}"
-        assert len(snap["active_tasks"]) == 1
-        task = snap["active_tasks"][0]
-        for key in ActiveTaskDict.__required_keys__:
-            assert key in task, f"Missing key in active task: {key}"
-
-    def test_completed_task_produces_valid_dict(self):
-        state = LiveState.get()
-        state.enqueue("evt-2", "golem", "opus")
-        state.finish("evt-2", success=True, cost_usd=1.5)
-        snap = state.snapshot()
-        assert len(snap["recently_completed"]) == 1
-        completed = snap["recently_completed"][0]
-        for key in CompletedTaskDict.__required_keys__:
-            assert key in completed, f"Missing key: {key}"
+from golem.types import MilestoneDict
 
 
 class TestProducerConsumerRoundTrip:
