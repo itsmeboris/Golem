@@ -37,6 +37,19 @@ Scans the codebase for:
 - Modules below 100% coverage
 - Recurring antipatterns from `AGENTS.md`
 
+Tier 2 candidates are **batched by category** — related fixes (e.g. all
+empty-exception-handler fixes) are grouped into a single task, capped at
+`heartbeat_batch_size`. This reduces orchestration overhead per line of change.
+
+### Tier 1 Promotion
+
+After every `heartbeat_tier1_every_n` successful Tier 2 completions, the
+heartbeat forces a GitHub issue submission — bypassing budget, inflight limits,
+and complexity filters. This ensures real feature work gets attention instead
+of endless self-improvement. The promoted task runs as a normal Golem task
+(not tracked in heartbeat inflight) and uses the real state backend so issue
+close/comment updates reach the tracker.
+
 ### Deduplication
 
 Candidates are deduplicated with a configurable TTL (default 30 days). The
@@ -53,6 +66,8 @@ dedup memory, inflight task IDs, and daily spend are persisted to
 | `heartbeat_daily_budget_usd` | `1.0` | Daily spend cap for heartbeat tasks |
 | `heartbeat_max_inflight` | `1` | Max concurrent heartbeat tasks |
 | `heartbeat_candidate_limit` | `5` | Max candidates per scan |
+| `heartbeat_batch_size` | `5` | Max Tier 2 candidates per batch submission |
+| `heartbeat_tier1_every_n` | `3` | Force a GH issue after N Tier 2 completions |
 | `heartbeat_dedup_ttl_days` | `30` | Deduplication memory TTL |
 
 ---
@@ -259,6 +274,8 @@ This prevents cascading failures when the base branch is temporarily broken.
 | `flaky_tests_file` | `""` | Path to known-flaky tests JSON registry; empty = disabled |
 | `heartbeat_enabled` | `false` | Enable self-directed work when idle (see [Heartbeat](#heartbeat--self-directed-work)) |
 | `heartbeat_daily_budget_usd` | `1.0` | Daily spend cap for heartbeat-spawned tasks |
+| `heartbeat_batch_size` | `5` | Max Tier 2 candidates per batch submission |
+| `heartbeat_tier1_every_n` | `3` | Force a GH issue after N Tier 2 completions |
 | `self_update_enabled` | `false` | Monitor own repo for upstream changes (see [Self-Update](#self-update--zero-downtime-upgrades)) |
 | `self_update_branch` | `master` | Remote branch to watch for updates |
 | `health.enabled` | `true` | Enable health monitoring with threshold-based alerts |
