@@ -947,6 +947,68 @@ class TestCommitAndComplete:
         assert "xyz" in comment_arg
         assert "retry" in comment_arg
 
+    @patch("golem.orchestrator.update_agents_md")
+    @patch("golem.orchestrator.extract_pitfalls")
+    async def test_pitfall_extraction_called_on_completion(
+        self, mock_extract, mock_update
+    ):
+        """After PASS + commit, pitfall extraction runs via executor."""
+        mock_extract.return_value = ["some concern text"]
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        session.validation_verdict = "PASS"
+        profile = MagicMock()
+        orch = _make_orch(session, profile=profile)
+        verdict = ValidationVerdict(verdict="PASS", task_type="code_change")
+
+        with patch(
+            "golem.orchestrator.commit_changes",
+            return_value=CommitResult(committed=True, sha="abc"),
+        ):
+            await orch._commit_and_complete(42, "/work", verdict)
+
+        assert session.state == TaskSessionState.COMPLETED
+        mock_extract.assert_called_once()
+        mock_update.assert_called_once_with(["some concern text"])
+
+    @patch("golem.orchestrator.update_agents_md")
+    @patch("golem.orchestrator.extract_pitfalls")
+    async def test_pitfall_extraction_skipped_on_empty(self, mock_extract, mock_update):
+        """If extract_pitfalls returns empty list, update_agents_md is not called."""
+        mock_extract.return_value = []
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        session.validation_verdict = "PASS"
+        profile = MagicMock()
+        orch = _make_orch(session, profile=profile)
+        verdict = ValidationVerdict(verdict="PASS", task_type="code_change")
+
+        with patch(
+            "golem.orchestrator.commit_changes",
+            return_value=CommitResult(committed=True, sha="abc"),
+        ):
+            await orch._commit_and_complete(42, "/work", verdict)
+
+        mock_extract.assert_called_once()
+        mock_update.assert_not_called()
+
+    @patch("golem.orchestrator.update_agents_md")
+    @patch("golem.orchestrator.extract_pitfalls")
+    async def test_pitfall_extraction_error_non_fatal(self, mock_extract, mock_update):
+        """Pitfall extraction errors don't fail the completion."""
+        mock_extract.side_effect = Exception("disk full")
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        session.validation_verdict = "PASS"
+        profile = MagicMock()
+        orch = _make_orch(session, profile=profile)
+        verdict = ValidationVerdict(verdict="PASS", task_type="code_change")
+
+        with patch(
+            "golem.orchestrator.commit_changes",
+            return_value=CommitResult(committed=True, sha="abc"),
+        ):
+            await orch._commit_and_complete(42, "/work", verdict)
+
+        assert session.state == TaskSessionState.COMPLETED
+
 
 class TestHandleAgentFailure:
     def test_populates_session_and_notifies(self):

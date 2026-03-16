@@ -48,6 +48,8 @@ from .errors import InfrastructureError
 from .event_tracker import Milestone, TaskEventTracker, TrackerState
 from .interfaces import TaskStatus
 from .profile import GolemProfile
+from .pitfall_extractor import extract_pitfalls
+from .pitfall_writer import update_agents_md
 from .validation import ValidationVerdict, run_validation
 from .verifier import VerificationResult, run_verification
 from .workdir import resolve_work_dir
@@ -759,6 +761,19 @@ class TaskOrchestrator:
             self.session.duration_seconds,
             self.session.validation_verdict,
         )
+        # Post-completion: extract pitfalls for AGENTS.md learning loop.
+        # Uses run_in_executor to avoid blocking the event loop — both
+        # extract_pitfalls (CPU-bound) and update_agents_md (file I/O)
+        # are synchronous.
+        # NOTE: update_agents_md writes to the main repo AGENTS.md, not the
+        # worktree. Concurrent completions race (last writer wins via
+        # os.replace). Accepted as best-effort — pitfalls are supplementary
+        # and re-extracted on subsequent tasks.
+        try:
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self._extract_and_write_pitfalls)
+        except Exception:  # pylint: disable=broad-exception-caught
+            self._slog.debug("Pitfall extraction failed", exc_info=True)
 
     def _handle_agent_failure(
         self,
@@ -790,6 +805,14 @@ class TaskOrchestrator:
         self.session.validation_test_failures = verdict.test_failures
         self.session.validation_cost_usd += verdict.cost_usd
         self.session.total_cost_usd += verdict.cost_usd
+
+    def _extract_and_write_pitfalls(self) -> None:
+        """Extract pitfalls from session and write to AGENTS.md (sync, for executor)."""
+        session_dict = asdict(self.session)
+        pitfalls = extract_pitfalls([session_dict])
+        if pitfalls:
+            update_agents_md(pitfalls)
+            self._slog.info("Extracted %d pitfall(s) to AGENTS.md", len(pitfalls))
 
     async def _retry_agent(  # pylint: disable=too-many-locals
         self,
