@@ -1552,6 +1552,299 @@ class TestPreflightCheck:
         orch._preflight_check(str(wt_path))
 
 
+class TestObservationHooksIntegration:
+    """Tests for observation hooks integration in TaskOrchestrator."""
+
+    def _make_fail_verification(self):
+        from golem.verifier import VerificationResult
+
+        return VerificationResult(
+            passed=False,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=False,
+            pytest_output="FAILED golem/tests/test_foo.py::test_bar",
+            failures=["golem/tests/test_foo.py::test_bar"],
+            duration_s=2.0,
+        )
+
+    def _make_pass_verification(self):
+        from golem.verifier import VerificationResult
+
+        return VerificationResult(
+            passed=True,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="5 passed",
+            duration_s=1.0,
+        )
+
+    async def test_run_verification_mines_signals_on_failure(self):
+        """_run_verification calls mine_verification_signals and records non-empty result."""
+        from golem.observation_hooks import ObservationSignal
+
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        orch = _make_orch(session)
+
+        fail_result = self._make_fail_verification()
+        fake_signal = ObservationSignal(
+            category="pytest_failure",
+            pattern="test_failed: golem/tests/test_foo.py::test_bar",
+            source="verification",
+        )
+
+        with (
+            patch("golem.orchestrator.run_verification", return_value=fail_result),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch(
+                "golem.orchestrator.mine_verification_signals",
+                return_value=[fake_signal],
+            ) as mock_mine,
+            patch.object(orch._signal_accumulator, "record") as mock_record,
+        ):
+            result = await orch._run_verification("/work")
+
+        mock_mine.assert_called_once_with(fail_result)
+        mock_record.assert_called_once_with([fake_signal])
+        assert result is fail_result
+
+    async def test_run_verification_skips_record_when_no_signals(self):
+        """_run_verification does not call record when mine returns empty list."""
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        orch = _make_orch(session)
+
+        pass_result = self._make_pass_verification()
+
+        with (
+            patch("golem.orchestrator.run_verification", return_value=pass_result),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch(
+                "golem.orchestrator.mine_verification_signals",
+                return_value=[],
+            ) as mock_mine,
+            patch.object(orch._signal_accumulator, "record") as mock_record,
+        ):
+            await orch._run_verification("/work")
+
+        mock_mine.assert_called_once_with(pass_result)
+        mock_record.assert_not_called()
+
+    async def test_run_verification_compare_retry_on_second_call(self):
+        """Second call to _run_verification compares with _last_verification."""
+        from golem.observation_hooks import ObservationSignal
+
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        orch = _make_orch(session)
+
+        first_result = self._make_fail_verification()
+        second_result = self._make_fail_verification()
+        retry_signal = ObservationSignal(
+            category="retry_identical",
+            pattern="test_failures: golem/tests/test_foo.py::test_bar",
+            source="retry",
+        )
+
+        # Pre-load last_verification so comparison runs on second call
+        orch._last_verification = first_result
+
+        with (
+            patch("golem.orchestrator.run_verification", return_value=second_result),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch("golem.orchestrator.mine_verification_signals", return_value=[]),
+            patch(
+                "golem.orchestrator.compare_retry_signatures",
+                return_value=[retry_signal],
+            ) as mock_compare,
+            patch.object(orch._signal_accumulator, "record") as mock_record,
+        ):
+            await orch._run_verification("/work")
+
+        mock_compare.assert_called_once_with(second_result, first_result)
+        mock_record.assert_called_once_with([retry_signal])
+
+    async def test_run_verification_no_compare_on_first_call(self):
+        """First call to _run_verification does not call compare_retry_signatures."""
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        orch = _make_orch(session)
+
+        assert orch._last_verification is None
+
+        pass_result = self._make_pass_verification()
+
+        with (
+            patch("golem.orchestrator.run_verification", return_value=pass_result),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch("golem.orchestrator.mine_verification_signals", return_value=[]),
+            patch(
+                "golem.orchestrator.compare_retry_signatures",
+            ) as mock_compare,
+        ):
+            await orch._run_verification("/work")
+
+        mock_compare.assert_not_called()
+        assert orch._last_verification is pass_result
+
+    async def test_validation_signals_mined_and_recorded(self):
+        """mine_validation_signals is called after _run_validation returns verdict."""
+        from golem.observation_hooks import ObservationSignal
+
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        profile = MagicMock()
+        profile.task_source.get_task_description.return_value = "desc"
+        orch = _make_orch(session, profile=profile)
+
+        verdict = ValidationVerdict(
+            verdict="PARTIAL",
+            confidence=0.5,
+            summary="needs work",
+            concerns=["Missing error handling in foo.py"],
+        )
+        val_signal = ObservationSignal(
+            category="validation_concern",
+            pattern="missing error handling in foo.py",
+            source="validation",
+        )
+
+        with (
+            patch.object(orch, "_run_validation_in_executor", return_value=verdict),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch(
+                "golem.orchestrator.mine_validation_signals",
+                return_value=[val_signal],
+            ) as mock_mine,
+            patch.object(orch._signal_accumulator, "record") as mock_record,
+        ):
+            result = await orch._run_validation(42, "/work")
+
+        mock_mine.assert_called_once_with(verdict)
+        mock_record.assert_called_once_with([val_signal])
+        assert result is verdict
+
+    async def test_validation_no_record_when_no_signals(self):
+        """No call to record when mine_validation_signals returns empty list."""
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        profile = MagicMock()
+        profile.task_source.get_task_description.return_value = "desc"
+        orch = _make_orch(session, profile=profile)
+
+        verdict = ValidationVerdict(
+            verdict="PASS",
+            confidence=0.9,
+            summary="great",
+        )
+
+        with (
+            patch.object(orch, "_run_validation_in_executor", return_value=verdict),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch(
+                "golem.orchestrator.mine_validation_signals",
+                return_value=[],
+            ) as mock_mine,
+            patch.object(orch._signal_accumulator, "record") as mock_record,
+        ):
+            await orch._run_validation(42, "/work")
+
+        mock_mine.assert_called_once_with(verdict)
+        mock_record.assert_not_called()
+
+    @patch("golem.orchestrator.update_agents_md")
+    @patch("golem.orchestrator.extract_pitfalls")
+    def test_extract_and_write_pitfalls_includes_promoted_signals(
+        self, mock_extract, mock_update
+    ):
+        """_extract_and_write_pitfalls appends promoted signals to pitfalls."""
+        mock_extract.return_value = ["existing pitfall"]
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        orch = _make_orch(session)
+
+        promoted = ["pytest_failure::import_error: golem.foo"]
+        with (
+            patch.object(
+                orch._signal_accumulator, "get_promoted", return_value=promoted
+            ),
+            patch.object(orch._signal_accumulator, "clear_promoted") as mock_clear,
+        ):
+            orch._extract_and_write_pitfalls()
+
+        mock_update.assert_called_once_with(["existing pitfall"] + promoted)
+        mock_clear.assert_called_once()
+
+    @patch("golem.orchestrator.update_agents_md")
+    @patch("golem.orchestrator.extract_pitfalls")
+    def test_extract_and_write_pitfalls_no_promoted_signals(
+        self, mock_extract, mock_update
+    ):
+        """_extract_and_write_pitfalls with empty promoted list does not call clear_promoted."""
+        mock_extract.return_value = ["only pitfall"]
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        orch = _make_orch(session)
+
+        with (
+            patch.object(orch._signal_accumulator, "get_promoted", return_value=[]),
+            patch.object(orch._signal_accumulator, "clear_promoted") as mock_clear,
+        ):
+            orch._extract_and_write_pitfalls()
+
+        mock_update.assert_called_once_with(["only pitfall"])
+        mock_clear.assert_not_called()
+
+    @patch("golem.orchestrator.update_agents_md")
+    @patch("golem.orchestrator.extract_pitfalls")
+    def test_extract_and_write_pitfalls_only_promoted_no_pitfalls(
+        self, mock_extract, mock_update
+    ):
+        """_extract_and_write_pitfalls with only promoted signals (no pitfalls from extract)."""
+        mock_extract.return_value = []
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        orch = _make_orch(session)
+
+        promoted = ["retry_identical::test_failures: test_foo"]
+        with (
+            patch.object(
+                orch._signal_accumulator, "get_promoted", return_value=promoted
+            ),
+            patch.object(orch._signal_accumulator, "clear_promoted") as mock_clear,
+        ):
+            orch._extract_and_write_pitfalls()
+
+        mock_update.assert_called_once_with(promoted)
+        mock_clear.assert_called_once()
+
+    def test_signal_accumulator_initialized_in_init(self):
+        """TaskOrchestrator.__init__ creates a SignalAccumulator instance."""
+        from golem.observation_hooks import SignalAccumulator
+
+        session = TaskSession(parent_issue_id=42)
+        orch = _make_orch(session)
+        assert isinstance(orch._signal_accumulator, SignalAccumulator)
+
+    def test_last_verification_initialized_to_none(self):
+        """TaskOrchestrator.__init__ sets _last_verification to None."""
+        session = TaskSession(parent_issue_id=42)
+        orch = _make_orch(session)
+        assert orch._last_verification is None
+
+    async def test_run_verification_updates_last_verification(self):
+        """After _run_verification, _last_verification is set to the result."""
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        orch = _make_orch(session)
+        pass_result = self._make_pass_verification()
+
+        with (
+            patch("golem.orchestrator.run_verification", return_value=pass_result),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch("golem.orchestrator.mine_verification_signals", return_value=[]),
+        ):
+            await orch._run_verification("/work")
+
+        assert orch._last_verification is pass_result
+
+
 class TestInfraErrorReraised:
     async def test_infra_error_from_preflight_propagates(self):
         from golem.errors import InfrastructureError

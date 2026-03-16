@@ -48,6 +48,12 @@ from .errors import InfrastructureError
 from .event_tracker import Milestone, TaskEventTracker, TrackerState
 from .interfaces import TaskStatus
 from .profile import GolemProfile
+from .observation_hooks import (
+    SignalAccumulator,
+    compare_retry_signatures,
+    mine_validation_signals,
+    mine_verification_signals,
+)
 from .pitfall_extractor import extract_pitfalls
 from .pitfall_writer import update_agents_md
 from .validation import ValidationVerdict, run_validation
@@ -251,6 +257,10 @@ class TaskOrchestrator:
         self._on_verified_ref = on_verified_ref
         self._last_checkpoint_time: float = 0.0
         self._checkpoint_interval: float = 10.0  # seconds between disk writes
+        self._signal_accumulator = SignalAccumulator(
+            DATA_DIR / "observation_signals.json"
+        )
+        self._last_verification: VerificationResult | None = None
         self._slog = SessionLogAdapter(
             logger,
             session_id=session.parent_issue_id,
@@ -638,6 +648,15 @@ class TaskOrchestrator:
         )
         self._apply_verdict(verdict)
 
+        # Mine validation output for observation signals
+        val_signals = mine_validation_signals(verdict)
+        if val_signals:
+            self._signal_accumulator.record(val_signals)
+            self._slog.info(
+                "Mined %d observation signal(s) from validation",
+                len(val_signals),
+            )
+
         try:
             save_checkpoint(issue_id, self.session, phase="validated")
         except Exception:  # pylint: disable=broad-exception-caught
@@ -667,6 +686,24 @@ class TaskOrchestrator:
             None, run_verification, work_dir
         )
         self.session.verification_result = result.to_dict()
+
+        # Mine verification output for observation signals
+        signals = mine_verification_signals(result)
+        if signals:
+            self._signal_accumulator.record(signals)
+            self._slog.info(
+                "Mined %d observation signal(s) from verification", len(signals)
+            )
+
+        # Compare with previous verification for retry pattern detection
+        if self._last_verification is not None:
+            retry_signals = compare_retry_signatures(result, self._last_verification)
+            if retry_signals:
+                self._signal_accumulator.record(retry_signals)
+                self._slog.info(
+                    "Detected %d identical retry pattern(s)", len(retry_signals)
+                )
+        self._last_verification = result
 
         try:
             save_checkpoint(
@@ -802,6 +839,16 @@ class TaskOrchestrator:
         """Extract pitfalls from session and write to AGENTS.md (sync, for executor)."""
         session_dict = asdict(self.session)
         pitfalls = extract_pitfalls([session_dict])
+
+        # Also collect promoted observation signals
+        promoted = self._signal_accumulator.get_promoted()
+        if promoted:
+            pitfalls.extend(promoted)
+            self._signal_accumulator.clear_promoted()
+            self._slog.info(
+                "Promoted %d observation signal(s) to pitfalls", len(promoted)
+            )
+
         if pitfalls:
             update_agents_md(pitfalls)
             self._slog.info("Extracted %d pitfall(s) to AGENTS.md", len(pitfalls))
