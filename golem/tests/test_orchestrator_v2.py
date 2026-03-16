@@ -861,7 +861,7 @@ class TestRunValidation:
 
 
 class TestCommitAndComplete:
-    def test_pass_with_commit(self):
+    async def test_pass_with_commit(self):
         session = TaskSession(parent_issue_id=42, parent_subject="Fix")
         session.validation_verdict = "PASS"
         profile = MagicMock()
@@ -872,13 +872,13 @@ class TestCommitAndComplete:
             "golem.orchestrator.commit_changes",
             return_value=CommitResult(committed=True, sha="abc"),
         ):
-            orch._commit_and_complete(42, "/work", verdict)
+            await orch._commit_and_complete(42, "/work", verdict)
 
         assert session.state == TaskSessionState.COMPLETED
         assert session.commit_sha == "abc"
         profile.state_backend.update_status.assert_called()
 
-    def test_commit_error_sets_failed(self):
+    async def test_commit_error_sets_failed(self):
         session = TaskSession(parent_issue_id=42, parent_subject="Fix")
         session.validation_verdict = "PASS"
         profile = MagicMock()
@@ -889,12 +889,12 @@ class TestCommitAndComplete:
             "golem.orchestrator.commit_changes",
             return_value=CommitResult(committed=False, error="hook failed"),
         ):
-            orch._commit_and_complete(42, "/work", verdict)
+            await orch._commit_and_complete(42, "/work", verdict)
 
         assert session.state == TaskSessionState.FAILED
         assert any("commit failed" in e for e in session.errors)
 
-    def test_no_commit_no_changes(self):
+    async def test_no_commit_no_changes(self):
         session = TaskSession(parent_issue_id=42, parent_subject="Fix")
         session.validation_verdict = "PASS"
         profile = MagicMock()
@@ -905,12 +905,12 @@ class TestCommitAndComplete:
             "golem.orchestrator.commit_changes",
             return_value=CommitResult(committed=False),
         ):
-            orch._commit_and_complete(42, "/work", verdict)
+            await orch._commit_and_complete(42, "/work", verdict)
 
         assert session.state == TaskSessionState.COMPLETED
         assert not session.commit_sha
 
-    def test_auto_commit_disabled(self):
+    async def test_auto_commit_disabled(self):
         session = TaskSession(parent_issue_id=42, parent_subject="Fix")
         session.validation_verdict = "PARTIAL"
         tc = MagicMock()
@@ -920,12 +920,12 @@ class TestCommitAndComplete:
         verdict = ValidationVerdict(verdict="PARTIAL")
 
         with patch("golem.orchestrator.commit_changes") as m_commit:
-            orch._commit_and_complete(42, "/work", verdict)
+            await orch._commit_and_complete(42, "/work", verdict)
 
         m_commit.assert_not_called()
         assert session.state == TaskSessionState.COMPLETED
 
-    def test_complete_comment_includes_extras(self):
+    async def test_complete_comment_includes_extras(self):
         session = TaskSession(parent_issue_id=42, parent_subject="Fix")
         session.validation_verdict = "PASS"
         session.retry_count = 1
@@ -940,7 +940,7 @@ class TestCommitAndComplete:
             "golem.orchestrator.commit_changes",
             return_value=CommitResult(committed=True, sha="xyz"),
         ):
-            orch._commit_and_complete(42, "/work", verdict)
+            await orch._commit_and_complete(42, "/work", verdict)
 
         assert session.state == TaskSessionState.COMPLETED
         comment_arg = profile.state_backend.post_comment.call_args[0][1]

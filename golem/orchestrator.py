@@ -458,7 +458,9 @@ class TaskOrchestrator:
                     await self._retry_agent(synth_verdict, work_dir, mcp_servers)
                     # _retry_agent re-validates internally; commit if PASS
                     if self.session.state != TaskSessionState.FAILED:
-                        self._commit_and_complete(issue_id, work_dir, synth_verdict)
+                        await self._commit_and_complete(
+                            issue_id, work_dir, synth_verdict
+                        )
                     return
                 synth_verdict = ValidationVerdict(
                     verdict="FAIL",
@@ -481,7 +483,7 @@ class TaskOrchestrator:
                 self._escalate(verdict)
                 return
 
-            self._commit_and_complete(issue_id, work_dir, verdict)
+            await self._commit_and_complete(issue_id, work_dir, verdict)
 
             if worktree_path and self.session.commit_sha:
                 self.session.merge_ready = True
@@ -696,18 +698,21 @@ class TaskOrchestrator:
                 parts.append(f"\n{result.pytest_output[-2000:]}")
         return "\n".join(parts)
 
-    def _commit_and_complete(
+    async def _commit_and_complete(
         self, issue_id: int, work_dir: str, verdict: ValidationVerdict
     ) -> None:
         """Phase 5: Commit changes (if applicable) and mark session COMPLETED."""
         if self.task_config.auto_commit and self.session.validation_verdict == "PASS":
             task_type = verdict.task_type if verdict.verdict == "PASS" else "other"
-            cr = commit_changes(
-                work_dir=work_dir,
-                issue_id=issue_id,
-                subject=self.session.parent_subject,
-                task_type=task_type,
-                summary=self.session.validation_summary,
+            cr = await asyncio.get_running_loop().run_in_executor(
+                None,
+                lambda: commit_changes(
+                    work_dir=work_dir,
+                    issue_id=issue_id,
+                    subject=self.session.parent_subject,
+                    task_type=task_type,
+                    summary=self.session.validation_summary,
+                ),
             )
             if cr.committed:
                 self.session.commit_sha = cr.sha

@@ -90,8 +90,8 @@ class MergeQueue:
         """
         async with self._lock:
             if not entry.changed_files:
-                entry.changed_files = get_changed_files(
-                    entry.base_dir, entry.branch_name
+                entry.changed_files = await asyncio.to_thread(
+                    get_changed_files, entry.base_dir, entry.branch_name
                 )
             if not entry.queued_at:
                 entry.queued_at = datetime.now(timezone.utc).isoformat()
@@ -248,7 +248,9 @@ class MergeQueue:
     ) -> MergeResult | None:
         """Single merge attempt.  Returns None to signal 'retry'."""
         try:
-            outcome = merge_in_worktree(entry.base_dir, entry.session_id)
+            outcome = await asyncio.to_thread(
+                merge_in_worktree, entry.base_dir, entry.session_id
+            )
             resolution_occurred = False
 
             # --- Merge failed (empty sha + error) ---
@@ -264,7 +266,8 @@ class MergeQueue:
                     )
                     if recon.resolved:
                         # Agent resolved — retry merge
-                        outcome2 = merge_in_worktree(
+                        outcome2 = await asyncio.to_thread(
+                            merge_in_worktree,
                             entry.base_dir,
                             entry.session_id,
                         )
@@ -289,7 +292,9 @@ class MergeQueue:
                                     error="post-merge verification failed",
                                     changed_files=entry.changed_files,
                                 )
-                            return self._try_ff(entry, outcome2)
+                            return await asyncio.to_thread(
+                                self._try_ff, entry, outcome2
+                            )
                         # Retry still failed
                         logger.warning(
                             "Session %d: merge still fails after agent resolution",
@@ -393,7 +398,7 @@ class MergeQueue:
                             error="post-merge verification failed",
                             changed_files=entry.changed_files,
                         )
-                return self._try_ff(entry, outcome)
+                return await asyncio.to_thread(self._try_ff, entry, outcome)
 
             # Empty sha with no error — no changes to merge
             logger.info(
