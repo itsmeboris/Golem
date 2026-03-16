@@ -441,10 +441,77 @@ class HeartbeatManager:
             if complexity not in valid_complexities:
                 continue
 
+            # Category: use explicit field, fall back to ID prefix
+            category = c.get("category", "")
+            if not category or not isinstance(category, str):
+                category = self._extract_category_from_id(c.get("id", ""))
+            if not category:
+                logger.warning(
+                    "Candidate %r has no category and unparseable ID — skipping",
+                    c.get("id", ""),
+                )
+                continue
+            c["category"] = category.lower()
+
             if conf >= 0.7:
                 valid.append(c)
 
         return sorted(valid, key=lambda x: x["confidence"], reverse=True)
+
+    @staticmethod
+    def _extract_category_from_id(candidate_id: str) -> str:
+        """Extract category from candidate ID.
+
+        - ``improvement:<category>:<name>`` -> ``<category>``
+        - ``<backend>:<id>`` (e.g. ``github:42``) -> ``<backend>``
+        """
+        parts = candidate_id.split(":")
+        if len(parts) >= 3 and parts[0] == "improvement":
+            return parts[1]
+        if len(parts) >= 2:
+            return parts[0]
+        return ""
+
+    def _group_candidates(
+        self, candidates: list[HeartbeatCandidateDict]
+    ) -> list[HeartbeatCandidateDict]:
+        """Group Tier 2 candidates by category, pick the best batch.
+
+        1. Group by ``category`` field
+        2. Cap each group at ``heartbeat_batch_size``
+        3. Return the largest group (ties broken by highest avg confidence)
+        """
+        if not candidates:
+            return []
+
+        groups: dict[str, list[HeartbeatCandidateDict]] = {}
+        for c in candidates:
+            cat = c.get("category", "")
+            if not cat:
+                cat = self._extract_category_from_id(c.get("id", ""))
+            if not cat:
+                logger.warning(
+                    "Candidate %r has no category — skipping for batching",
+                    c.get("id", ""),
+                )
+                continue
+            groups.setdefault(cat, []).append(c)
+
+        if not groups:
+            return []
+
+        batch_size = self._config.heartbeat_batch_size
+
+        # Pick largest group; tie-break by highest average confidence
+        best_cat = max(
+            groups,
+            key=lambda cat: (
+                min(len(groups[cat]), batch_size),
+                sum(c.get("confidence", 0) for c in groups[cat]) / len(groups[cat]),
+            ),
+        )
+
+        return groups[best_cat][:batch_size]
 
     # -- Tier 1 ---------------------------------------------------------------
 
@@ -671,9 +738,12 @@ class HeartbeatManager:
             "Rank these improvement opportunities by impact and estimated effort. "
             "For each, assess if a coding agent can complete it autonomously.\n"
             "Respond with JSON matching this schema:\n"
-            '{"candidates": [{"id": "improvement:<type>:<name>", "automatable": bool, '
+            '{"candidates": [{"id": "improvement:<category>:<name>", '
+            '"category": "<category>", "automatable": bool, '
             '"confidence": float (0-1), "complexity": "small"|"medium"|"large", '
-            '"reason": "..."}]}'
+            '"reason": "..."}]}\n'
+            "IMPORTANT: Always include the 'category' field (e.g. 'error-handling', "
+            "'reliability', 'coverage', 'dead-code'). This is used for batching."
         )
 
         response = await self._call_haiku(prompt, json.dumps(findings, indent=2))
@@ -705,16 +775,32 @@ class HeartbeatManager:
             self.save_state()
             return
 
-        # Submit top candidate
-        top = candidates[0]
-        subject = f"[HEARTBEAT] {top.get('subject', top.get('id', 'improvement'))}"
-        body = top.get("body", top.get("reason", ""))
+        # Tier 2: batch by category; Tier 1: single submission
+        if self._last_scan_tier == 2:
+            batch = self._group_candidates(candidates)
+            if not batch:
+                self._state = "idle"
+                self.save_state()
+                return
+            self._submit_batch(batch)
+        else:
+            self._submit_single(candidates[0])
+
+        self.save_state()
+
+    def _submit_single(self, candidate: HeartbeatCandidateDict) -> None:
+        """Submit a single candidate as a heartbeat task."""
+        subject = (
+            f"[HEARTBEAT] "
+            f"{candidate.get('subject', candidate.get('id', 'improvement'))}"
+        )
+        body = candidate.get("body", candidate.get("reason", ""))
         prompt = (
             f"{body}\n\n"
             f"Source: heartbeat tier {self._last_scan_tier}\n"
-            f"Confidence: {top.get('confidence', 0)}\n"
-            f"Complexity: {top.get('complexity', 'unknown')}\n"
-            f"Reason: {top.get('reason', '')}"
+            f"Confidence: {candidate.get('confidence', 0)}\n"
+            f"Complexity: {candidate.get('complexity', 'unknown')}\n"
+            f"Reason: {candidate.get('reason', '')}"
         )
 
         try:
@@ -724,24 +810,66 @@ class HeartbeatManager:
             if coerced is None:
                 logger.error("submit_task returned non-integer task_id: %r", task_id)
                 self._state = "idle"
-                self.save_state()
                 return
             task_id = coerced
             self._inflight_task_ids.append(task_id)
-            self.record_dedup(top["id"], "submitted", task_id=task_id)
+            self.record_dedup(candidate["id"], "submitted", task_id=task_id)
             self._state = "submitted"
             logger.info(
                 "Heartbeat submitted task #%d: %s (tier=%d, confidence=%.2f)",
                 task_id,
                 subject,
                 self._last_scan_tier,
-                top.get("confidence", 0),
+                candidate.get("confidence", 0),
             )
         except Exception:  # pylint: disable=broad-exception-caught
             logger.exception("Heartbeat failed to submit task")
             self._state = "idle"
 
-        self.save_state()
+    def _submit_batch(self, batch: list[HeartbeatCandidateDict]) -> None:
+        """Submit a batch of Tier 2 candidates as a single heartbeat task."""
+        category = batch[0].get("category", "improvement")
+        subject = f"[HEARTBEAT] batch:{category} ({len(batch)} items)"
+
+        items_text = []
+        for i, c in enumerate(batch, 1):
+            items_text.append(
+                f"{i}. [{c.get('id', 'unknown')}] "
+                f"{c.get('reason', c.get('body', ''))}"
+            )
+
+        prompt = (
+            f"Fix the following {len(batch)} related issues "
+            f"(category: {category}):\n\n"
+            + "\n".join(items_text)
+            + f"\n\nSource: heartbeat tier {self._last_scan_tier}\n"
+            f"Batch size: {len(batch)}\n"
+            f"Category: {category}"
+        )
+
+        try:
+            result = self._flow.submit_task(prompt=prompt, subject=subject)
+            task_id = result["task_id"]
+            coerced = _coerce_task_id(task_id)
+            if coerced is None:
+                logger.error("submit_task returned non-integer task_id: %r", task_id)
+                self._state = "idle"
+                return
+            task_id = coerced
+            self._inflight_task_ids.append(task_id)
+            for c in batch:
+                self.record_dedup(c["id"], "submitted", task_id=task_id)
+            self._state = "submitted"
+            logger.info(
+                "Heartbeat submitted batch task #%d: %s (tier=%d, items=%d)",
+                task_id,
+                subject,
+                self._last_scan_tier,
+                len(batch),
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.exception("Heartbeat failed to submit batch task")
+            self._state = "idle"
 
     # -- Snapshot (dashboard) -------------------------------------------------
 
