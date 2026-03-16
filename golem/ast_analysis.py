@@ -70,7 +70,8 @@ def run_ast_analysis(
                         )
                         message = match.get("message", rule_file.stem)
                         concerns.append(f"AST: {message} in {filepath}:{line_num}")
-                    except json.JSONDecodeError:
+                    except json.JSONDecodeError as exc:
+                        logger.debug("ast-grep output not valid JSON: %s", exc)
                         continue
         except (subprocess.SubprocessError, OSError) as exc:
             logger.debug("ast-grep rule %s failed: %s", rule_file.name, exc)

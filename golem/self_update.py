@@ -132,7 +132,8 @@ class SelfUpdateManager:
         try:
             last_ts = datetime.fromisoformat(self._last_startup_timestamp)
             elapsed = (datetime.now(timezone.utc) - last_ts).total_seconds()
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as exc:
+            logger.debug("Invalid startup timestamp: %s", exc)
             return
         if elapsed < 60:
             self._consecutive_crash_count += 1
@@ -177,7 +178,8 @@ class SelfUpdateManager:
                 check=True,
             )
             return result.stdout.strip()
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError as exc:
+            logger.debug("git rev-parse HEAD failed: %s", exc)
             return ""
 
     def _get_remote_sha(self) -> str:
@@ -190,7 +192,8 @@ class SelfUpdateManager:
                 check=True,
             )
             return result.stdout.strip()
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError as exc:
+            logger.debug("git rev-parse remote failed: %s", exc)
             return ""
 
     def _fetch(self) -> bool:
@@ -214,7 +217,8 @@ class SelfUpdateManager:
                 text=True,
             )
             return result.returncode == 0
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError as exc:
+            logger.debug("git merge-base check failed: %s", exc)
             return False
 
     def _get_diff(self, remote_sha: str) -> str:
@@ -226,7 +230,8 @@ class SelfUpdateManager:
                 check=True,
             )
             return result.stdout
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError as exc:
+            logger.debug("git diff failed: %s", exc)
             return ""
 
     def _get_commit_log(self, remote_sha: str) -> str:
@@ -238,7 +243,8 @@ class SelfUpdateManager:
                 check=True,
             )
             return result.stdout
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError as exc:
+            logger.debug("git log failed: %s", exc)
             return ""
 
     # -- update loop --

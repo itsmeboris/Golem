@@ -8,8 +8,11 @@ Output: ParsedTrace dict (see design spec for full shape).
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 PHASE_NAMES = ("UNDERSTAND", "PLAN", "BUILD", "REVIEW", "VERIFY")
 PHASE_MARKER_RE = re.compile(r"## Phase:\s*(UNDERSTAND|PLAN|BUILD|REVIEW|VERIFY)")
@@ -509,7 +512,8 @@ def _extract_final_report(events: list[dict[str, Any]]) -> dict[str, Any] | None
                 return None
             try:
                 data = json.loads(match.group(1))
-            except (json.JSONDecodeError, ValueError):
+            except (json.JSONDecodeError, ValueError) as exc:
+                logger.debug("Failed to parse report JSON block: %s", exc)
                 return None
             if not isinstance(data, dict):
                 return None

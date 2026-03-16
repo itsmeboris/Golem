@@ -87,7 +87,8 @@ def read_pid(pid_file: Path) -> int | None:
         return None
     try:
         return int(pid_file.read_text(encoding="utf-8").strip())
-    except (ValueError, OSError):
+    except (ValueError, OSError) as exc:
+        logger.debug("Cannot read PID file: %s", exc)
         return None
 
 

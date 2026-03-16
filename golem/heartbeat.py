@@ -533,7 +533,8 @@ class HeartbeatManager:
                 return []
             files = [f.strip() for f in result.stdout.strip().split("\n") if f.strip()]
             return list(set(files))
-        except (OSError, subprocess.TimeoutExpired):
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            logger.debug("git diff-tree scan failed: %s", exc)
             return []
 
     def _scan_coverage(self) -> list[str]:
@@ -550,7 +551,8 @@ class HeartbeatManager:
                 check=False,
                 cwd=work_dir,
             ).stdout.strip()
-        except (OSError, subprocess.TimeoutExpired):
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            logger.debug("git rev-parse HEAD failed: %s", exc)
             return []
 
         cached_hash = self._coverage_cache.get("commit_hash", "")
@@ -620,7 +622,8 @@ class HeartbeatManager:
 
         try:
             content = agents_path.read_text(encoding="utf-8")
-        except OSError:
+        except OSError as exc:
+            logger.debug("Failed to read AGENTS.md: %s", exc)
             return []
 
         pitfalls = []

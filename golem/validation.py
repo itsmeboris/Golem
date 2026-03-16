@@ -71,7 +71,8 @@ def has_uncommitted_changes(work_dir: str) -> bool:
             check=False,
         )
         return bool(result.stdout.strip())
-    except (subprocess.SubprocessError, OSError):
+    except (subprocess.SubprocessError, OSError) as exc:
+        logger.debug("git status check failed: %s", exc)
         return False
 
 

@@ -980,7 +980,8 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
 
             try:
                 iid = int(task.get("id", 0))
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as exc:
+                logger.debug("Invalid task ID in submission: %s", exc)
                 continue
 
             if not iid or iid in self._sessions or iid in self._processed_ids:

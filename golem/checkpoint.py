@@ -106,7 +106,8 @@ def is_checkpoint_fresh(checkpoint: dict[str, Any], max_age_minutes: int = 10) -
         if saved_at.tzinfo is None:
             saved_at = saved_at.replace(tzinfo=timezone.utc)
         age_seconds: float = (datetime.now(timezone.utc) - saved_at).total_seconds()
-    except (KeyError, ValueError, TypeError):
+    except (KeyError, ValueError, TypeError) as exc:
+        logger.debug("Invalid checkpoint timestamp: %s", exc)
         return False
     return age_seconds < max_age_minutes * 60
 
