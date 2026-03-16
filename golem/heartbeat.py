@@ -140,6 +140,10 @@ class HeartbeatManager:
         self._next_tick_at: float = 0.0  # epoch when next tick fires
         self._trigger_event: Any = None  # asyncio.Event for force-trigger
 
+        # Tier 1 promotion
+        self._tier2_completions_since_tier1: int = 0
+        self._tier1_owed: bool = False
+
     # -- Budget ---------------------------------------------------------------
 
     def budget_allows(self) -> bool:
@@ -232,6 +236,25 @@ class HeartbeatManager:
             "Heartbeat task #%d %s", task_id, "completed" if success else "failed"
         )
 
+        # Tier 1 promotion counter — count Tier 2 successes
+        if success:
+            is_tier2 = any(
+                key.startswith("improvement:")
+                for key, entry in self._dedup_memory.items()
+                if entry.get("task_id") == task_id
+            )
+            if is_tier2:
+                self._tier2_completions_since_tier1 += 1
+                if (
+                    self._tier2_completions_since_tier1
+                    >= self._config.heartbeat_tier1_every_n
+                ):
+                    self._tier1_owed = True
+                    logger.info(
+                        "Tier 1 promotion owed after %d Tier 2 completions",
+                        self._tier2_completions_since_tier1,
+                    )
+
     def reconcile_inflight(self, active_session_ids: set[int]) -> None:
         """Remove inflight IDs not present in active sessions (startup recovery)."""
         before = len(self._inflight_task_ids)
@@ -258,6 +281,8 @@ class HeartbeatManager:
             "dedup_memory": self._dedup_memory,
             "coverage_cache": self._coverage_cache,
             "candidates": self._candidates,
+            "tier2_completions_since_tier1": self._tier2_completions_since_tier1,
+            "tier1_owed": self._tier1_owed,
         }
         self._state_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
@@ -285,6 +310,10 @@ class HeartbeatManager:
         self._coverage_cache = data.get("coverage_cache", {})
         self._candidates = data.get("candidates", [])
         self._prune_dedup()
+        self._tier2_completions_since_tier1 = data.get(
+            "tier2_completions_since_tier1", 0
+        )
+        self._tier1_owed = data.get("tier1_owed", False)
 
     # -- Idle detection -------------------------------------------------------
 
@@ -570,6 +599,56 @@ class HeartbeatManager:
 
         return candidates
 
+    async def _run_tier1_promoted(self) -> list[HeartbeatCandidateDict]:
+        """Tier 1 scan for promotion: relaxed complexity, no reject dedup."""
+        try:
+            issues = self._flow._profile.task_source.poll_untagged_tasks(
+                self._config.projects,
+                self._config.detection_tag,
+                limit=self._config.heartbeat_candidate_limit,
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.exception("Promoted Tier 1: failed to poll untagged tasks")
+            return []
+
+        backend = self._config.profile
+        new_issues = [
+            issue for issue in issues if not self.is_deduped(f"{backend}:{issue['id']}")
+        ]
+
+        if not new_issues:
+            return []
+
+        if not self.budget_allows():
+            return []
+
+        issues_json = json.dumps(
+            [
+                {"id": i["id"], "subject": i["subject"], "body": i.get("body", "")}
+                for i in new_issues
+            ],
+            indent=2,
+        )
+        prompt = (
+            "For each issue below, assess whether it can be completed autonomously "
+            "by a coding agent. Respond with JSON matching this schema:\n"
+            '{"candidates": [{"id": "' + backend + ':<number>", "automatable": bool, '
+            '"confidence": float (0-1), "complexity": "small"|"medium"|"large", '
+            '"reason": "..."}]}'
+        )
+
+        response = await self._call_haiku(prompt, issues_json)
+        # Accept all complexities for promoted scan
+        candidates = self._validate_candidates(
+            response, valid_complexities=("small", "medium", "large")
+        )
+
+        # Only record candidates in dedup — NOT rejects
+        for c in candidates:
+            self.record_dedup(c["id"], "candidate")
+
+        return candidates
+
     # -- Tier 2 scanners (deterministic) --------------------------------------
 
     def _scan_todos(self) -> list[str]:
@@ -750,22 +829,32 @@ class HeartbeatManager:
         return self._validate_candidates(response)
 
     async def _run_heartbeat_tick(self) -> None:
-        """Execute one heartbeat cycle: Tier 1 -> Tier 2 -> submit."""
+        """Execute one heartbeat cycle: promotion -> Tier 1 -> Tier 2 -> submit."""
         if not self.can_submit():
             logger.debug("Heartbeat tick skipped — inflight limit reached")
             return
 
         self._state = "scanning"
 
-        # Tier 1: discover untagged issues
-        candidates = await self._run_tier1()
-        if candidates:
-            self._last_scan_tier = 1
-        else:
-            # Tier 2: self-improvement scan
+        # Tier 1 promotion: when owed, run relaxed scan first
+        if self._tier1_owed:
+            promoted = await self._run_tier1_promoted()
+            if promoted:
+                self._submit_promoted(promoted[0])
+                self.save_state()
+            # Skip normal Tier 1 (promoted scan already ran with relaxed criteria)
             candidates = await self._run_tier2()
             if candidates:
                 self._last_scan_tier = 2
+        else:
+            # Normal flow: Tier 1 -> Tier 2
+            candidates = await self._run_tier1()
+            if candidates:
+                self._last_scan_tier = 1
+            else:
+                candidates = await self._run_tier2()
+                if candidates:
+                    self._last_scan_tier = 2
 
         self._last_scan_at = datetime.now(timezone.utc).isoformat()
         self._candidates = candidates
@@ -870,6 +959,35 @@ class HeartbeatManager:
         except Exception:  # pylint: disable=broad-exception-caught
             logger.exception("Heartbeat failed to submit batch task")
             self._state = "idle"
+
+    def _submit_promoted(self, candidate: HeartbeatCandidateDict) -> None:
+        """Submit a promoted GH issue directly, bypassing heartbeat limits."""
+        subject = (
+            f"[PROMOTED] "
+            f"{candidate.get('subject', candidate.get('id', 'github-issue'))}"
+        )
+        body = candidate.get("body", candidate.get("reason", ""))
+        prompt = (
+            f"{body}\n\n"
+            f"Source: heartbeat tier 1 promotion\n"
+            f"Confidence: {candidate.get('confidence', 0)}\n"
+            f"Complexity: {candidate.get('complexity', 'unknown')}\n"
+            f"Reason: {candidate.get('reason', '')}"
+        )
+
+        try:
+            self._flow.submit_task(prompt=prompt, subject=subject)
+            # NOT added to inflight — runs as normal Golem task
+            self.record_dedup(candidate["id"], "promoted")
+            self._tier1_owed = False
+            self._tier2_completions_since_tier1 = 0
+            logger.info(
+                "Promoted GH issue submitted: %s (confidence=%.2f)",
+                subject,
+                candidate.get("confidence", 0),
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.exception("Failed to submit promoted GH issue")
 
     # -- Snapshot (dashboard) -------------------------------------------------
 

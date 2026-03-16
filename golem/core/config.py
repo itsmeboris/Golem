@@ -102,6 +102,7 @@ class GolemFlowConfig(FlowConfig):
     heartbeat_max_inflight: int = 1
     heartbeat_candidate_limit: int = 5
     heartbeat_batch_size: int = 5  # max items per Tier 2 batch submission
+    heartbeat_tier1_every_n: int = 3
     heartbeat_dedup_ttl_days: int = 30
     # Self-update — daemon monitors its own repo for changes (opt-in)
     self_update_enabled: bool = False
@@ -320,6 +321,7 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
         heartbeat_max_inflight=data.get("heartbeat_max_inflight", 1),
         heartbeat_candidate_limit=data.get("heartbeat_candidate_limit", 5),
         heartbeat_batch_size=data.get("heartbeat_batch_size", 5),
+        heartbeat_tier1_every_n=data.get("heartbeat_tier1_every_n", 3),
         heartbeat_dedup_ttl_days=data.get("heartbeat_dedup_ttl_days", 30),
         # Self-update
         self_update_enabled=data.get("self_update_enabled", False),
@@ -565,6 +567,11 @@ def validate_config(config: Config) -> list[str]:
             errors.append(
                 "golem.heartbeat_batch_size must be >= 1, "
                 f"got {config.golem.heartbeat_batch_size}"
+            )
+        if config.golem.heartbeat_tier1_every_n < 1:
+            errors.append(
+                "golem.heartbeat_tier1_every_n must be >= 1, "
+                f"got {config.golem.heartbeat_tier1_every_n}"
             )
 
     # Self-update validation (always run, not gated on enabled)
