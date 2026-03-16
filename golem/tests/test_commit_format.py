@@ -90,11 +90,8 @@ class TestCommitFormat:
             sub_tags_areas=(),
             sub_tags_chips=(),
         )
-        try:
+        with pytest.raises(AttributeError):
             fmt.main_tags = ("B",)  # type: ignore[misc]
-            assert False, "Should raise"
-        except AttributeError:
-            pass
 
 
 class TestParse:

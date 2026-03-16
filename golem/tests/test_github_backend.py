@@ -66,10 +66,8 @@ class TestGhHelper:
         # Simulate the subprocess raising on non-zero since check=True
         mock_run.side_effect = Exception("non-zero returncode")
         with caplog.at_level(logging.DEBUG, logger="golem.backends.github"):
-            try:
+            with pytest.raises(Exception, match="non-zero returncode"):
                 _gh("issue", "list", check=True)
-            except Exception:
-                pass
         assert "failed (rc=" not in caplog.text
 
 
