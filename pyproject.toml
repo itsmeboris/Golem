@@ -100,6 +100,7 @@ markers = [
 ]
 filterwarnings = [
     "ignore:coroutine .* was never awaited:RuntimeWarning",
+    "ignore:cannot collect test class.*__init__:pytest.PytestCollectionWarning",
 ]
 
 [tool.coverage.run]

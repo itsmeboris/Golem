@@ -309,8 +309,8 @@ class TestTier1PromotionTick:
             with patch.object(mgr, "_run_tier2", return_value=[]):
                 await mgr._run_heartbeat_tick()
 
-        mock_flow.submit_task.assert_called()
-        subject = mock_flow.submit_task.call_args.kwargs.get("subject", "")
+        assert mock_flow.submit_task.called
+        subject = mock_flow.submit_task.call_args[1].get("subject", "")
         assert "[PROMOTED]" in subject
         assert mgr._tier1_owed is False
         assert mgr._tier2_completions_since_tier1 == 0
@@ -399,8 +399,8 @@ class TestTier1PromotionTick:
                 with patch.object(mgr, "_run_tier1") as mock_normal_t1:
                     await mgr._run_heartbeat_tick()
 
-        mock_normal_t1.assert_not_called()
-        mock_flow.submit_task.assert_called()
+        assert not mock_normal_t1.called
+        assert mock_flow.submit_task.called
         assert mgr._tier1_owed is True
 
     @pytest.mark.asyncio

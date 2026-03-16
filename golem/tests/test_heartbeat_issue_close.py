@@ -31,16 +31,12 @@ def _make_manager(tmp_path, **config_overrides) -> HeartbeatManager:
     return HeartbeatManager(cfg, state_dir=tmp_path)
 
 
+def _get_submit_kwargs(mock_flow: MagicMock) -> dict:
+    """Extract kwargs from the most recent submit_task call."""
+    return mock_flow.submit_task.call_args[1]
+
+
 class TestSubmitTaskIssueMode:
-    def test_submit_task_default_prompt_mode(self):
-        """Default submit_task sets execution_mode to 'prompt'."""
-        from golem.flow import GolemFlow
-
-        flow = MagicMock(spec=GolemFlow)
-        flow.submit_task = GolemFlow.submit_task.__get__(flow)
-        # Can't easily test without full setup; test via heartbeat instead
-        pass
-
     @pytest.mark.asyncio
     async def test_tier1_submit_passes_issue_mode(self, tmp_path):
         """Tier 1 single submission passes issue_mode=True."""
@@ -66,7 +62,7 @@ class TestSubmitTaskIssueMode:
         with patch.object(mgr, "_run_tier1", return_value=tier1_candidates):
             await mgr._run_heartbeat_tick()
 
-        call_kwargs = mock_flow.submit_task.call_args.kwargs
+        call_kwargs = _get_submit_kwargs(mock_flow)
         assert call_kwargs.get("issue_mode") is True
 
     @pytest.mark.asyncio
@@ -95,7 +91,7 @@ class TestSubmitTaskIssueMode:
             with patch.object(mgr, "_run_tier2", return_value=tier2_candidates):
                 await mgr._run_heartbeat_tick()
 
-        call_kwargs = mock_flow.submit_task.call_args.kwargs
+        call_kwargs = _get_submit_kwargs(mock_flow)
         assert (
             "issue_mode" not in call_kwargs or call_kwargs.get("issue_mode") is not True
         )
@@ -127,5 +123,5 @@ class TestSubmitTaskIssueMode:
             with patch.object(mgr, "_run_tier2", return_value=[]):
                 await mgr._run_heartbeat_tick()
 
-        call_kwargs = mock_flow.submit_task.call_args.kwargs
+        call_kwargs = _get_submit_kwargs(mock_flow)
         assert call_kwargs.get("issue_mode") is True
