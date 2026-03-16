@@ -119,7 +119,7 @@ def _require_admin(request: "Request"):
         token = auth[7:]
     if not token:
         token = request.query_params.get("token", "")
-    if not token or token != _admin_token:
+    if not token or not hmac.compare_digest(token, _admin_token):
         raise HTTPException(status_code=401, detail="Invalid admin token")
 
 
