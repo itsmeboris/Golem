@@ -108,7 +108,20 @@ class SubagentSupervisor:
         return self.profile.prompt_provider.format(name, **kwargs)
 
     def _get_mcp_servers(self, subject: str) -> list[str]:
-        return self.profile.tool_provider.servers_for_subject(subject)
+        servers = self.profile.tool_provider.servers_for_subject(subject)
+        max_servers = self.task_config.max_mcp_servers
+        self._slog.info(
+            "MCP servers for '%s': %d servers %s", subject, len(servers), servers
+        )
+        if max_servers > 0 and len(servers) > max_servers:
+            self._slog.warning(
+                "MCP server count %d exceeds limit %d, truncating to first %d",
+                len(servers),
+                max_servers,
+                max_servers,
+            )
+            servers = servers[:max_servers]
+        return servers
 
     def _chain_event_callback(self, tracker_callback):
         if not self._event_callback:

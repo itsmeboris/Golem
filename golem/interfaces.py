@@ -221,8 +221,12 @@ class ToolProvider(Protocol):
         """Servers always included (e.g. ``["redmine"]`` or ``[]``)."""
         ...  # pragma: no cover
 
-    def servers_for_subject(self, subject: str) -> list[str]:
-        """Return full list of MCP servers for the given task subject."""
+    def servers_for_subject(self, subject: str, *, role: str = "") -> list[str]:
+        """Return full list of MCP servers for the given task subject.
+
+        When *role* is provided, implementations may filter the result to
+        servers appropriate for that role.  An empty string means no filtering.
+        """
         ...  # pragma: no cover
 
 
