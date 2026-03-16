@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/golem-exploded-v8-collectible.png" alt="Golem" width="520" />
+  <img src="assets/golem-logo.png" alt="Golem" width="240" />
 </p>
 
 <h1 align="center">Golem</h1>
