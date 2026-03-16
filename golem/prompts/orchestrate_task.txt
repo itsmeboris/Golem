@@ -47,6 +47,8 @@ the agent gets the right capabilities and restrictions.
 - Use ONLY when you cannot determine the relevant files yourself
 - Most tasks do NOT need a Scout — read files directly instead
 
+{role_contexts}
+
 ## Skills
 
 You and your subagents have access to skills via the Skill tool. Invoke
