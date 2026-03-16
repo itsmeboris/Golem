@@ -322,7 +322,7 @@ class TestTick:
         result = await orch.tick()
         assert result is session
         orch._run_agent.assert_awaited_once()
-        assert session.state != TaskSessionState.DETECTED
+        assert session.state == TaskSessionState.RUNNING
 
     async def test_tick_detected_grace_not_elapsed(self):
         session = TaskSession(
