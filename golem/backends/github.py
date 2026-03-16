@@ -276,7 +276,7 @@ class GitHubStateBackend:
         for other_status, other_label in _STATUS_LABELS.items():
             if other_status != status:
                 try:
-                    _gh(
+                    result = _gh(
                         "issue",
                         "edit",
                         str(task_id),
@@ -284,6 +284,12 @@ class GitHubStateBackend:
                         other_label,
                         *repo_args,
                     )
+                    if result.returncode != 0:
+                        logger.debug(
+                            "Failed to remove label %s (non-fatal): %s",
+                            other_label,
+                            result.stderr,
+                        )
                 except OSError as exc:
                     logger.debug("Failed to remove label %s: %s", other_label, exc)
         # Add the new status label

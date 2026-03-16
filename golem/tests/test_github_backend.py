@@ -343,6 +343,23 @@ class TestGitHubStateBackend:
         assert backend.update_status(42, "in_progress") is True
 
     @patch("golem.backends.github.subprocess.run")
+    def test_update_status_remove_label_nonzero_returncode(self, mock_run):
+        """Non-zero returncode from remove-label is non-fatal; add-label still executes."""
+
+        def side_effect(cmd, **kwargs):
+            if "--remove-label" in cmd:
+                return MagicMock(returncode=1, stdout="", stderr="label not found")
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        mock_run.side_effect = side_effect
+        backend = GitHubStateBackend()
+        assert backend.update_status(42, "in_progress") is True
+        add_label_calls = [
+            c for c in mock_run.call_args_list if "--add-label" in c.args[0]
+        ]
+        assert len(add_label_calls) == 1
+
+    @patch("golem.backends.github.subprocess.run")
     def test_update_status_closed_closes_issue(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
         backend = GitHubStateBackend()
