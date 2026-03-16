@@ -196,8 +196,8 @@ class TestConfigUpdateEndpoint:
             )
         assert resp.status_code == 200
         assert resp.json()["success"] is True
-        # Wait briefly for the deferred asyncio task to fire
-        await asyncio.sleep(0.7)
+        # Wait for the deferred asyncio task (sleeps 0.5s then sets event)
+        await asyncio.wait_for(reload_event.wait(), timeout=5.0)
         assert reload_event.is_set()
 
 
