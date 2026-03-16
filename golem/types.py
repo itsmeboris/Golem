@@ -352,3 +352,32 @@ class SelfUpdateSnapshotDict(TypedDict):
     last_review_reasoning: str
     current_sha: str
     update_history: list[dict[str, Any]]
+
+
+class FileRoleDict(TypedDict):
+    """A file identified during phase handoff with its role and relevance.
+
+    Producers: handoff.py create_handoff()
+    Consumers: handoff.py format_handoff_markdown(), orchestrator.py TaskSession
+    """
+
+    path: str
+    role: str  # "modify" | "read" | "create"
+    relevance: str
+
+
+class PhaseHandoffDict(TypedDict):
+    """Structured context passed between orchestration phases.
+
+    Producers: handoff.py create_handoff()
+    Consumers: handoff.py validate_handoff(), format_handoff_markdown(),
+               orchestrator.py TaskSession.phase_handoffs
+    """
+
+    from_phase: str
+    to_phase: str
+    context: list[str]
+    files: list[FileRoleDict]
+    open_questions: list[str]
+    warnings: list[str]
+    timestamp: str

@@ -474,6 +474,40 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
         assert session.state == TaskSessionState.COMPLETED
         assert session.commit_sha == "def456"
 
+    async def test_happy_path_populates_phase_handoffs(self):
+        """_run_agent_monolithic populates session.phase_handoffs at each phase transition."""
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        profile = MagicMock()
+        profile.task_source.get_task_description.return_value = "desc"
+        profile.prompt_provider.format.return_value = "prompt"
+        profile.tool_provider.servers_for_subject.return_value = []
+        orch = _make_orch(session, profile=profile)
+
+        deps = self._mock_deps()
+        with (
+            deps["resolve"],
+            deps["invoke"],
+            deps["run_verification"],
+            deps["run_val"],
+            deps["commit"],
+            deps["write_prompt"],
+            deps["write_trace"],
+            deps["preflight"],
+            deps["save_cp"],
+            deps["del_cp"],
+            patch.object(orch, "_write_report"),
+            patch.object(orch, "_record_run"),
+        ):
+            await orch._run_agent_monolithic()
+
+        # Should have three handoffs: executing→verifying, verifying→validating,
+        # validating→committing
+        assert len(session.phase_handoffs) == 3
+        phases = [(h["from_phase"], h["to_phase"]) for h in session.phase_handoffs]
+        assert ("executing", "verifying") in phases
+        assert ("verifying", "validating") in phases
+        assert ("validating", "committing") in phases
+
     async def test_pass_with_worktree_signals_merge_ready(self):
         session = TaskSession(parent_issue_id=42, parent_subject="Fix")
         profile = MagicMock()
@@ -1236,6 +1270,96 @@ class TestWriteReport:
             orch._write_report()
         detail_content = mock_writer.write_detail.call_args[0][1]
         assert "none" in detail_content
+
+
+class TestRecordHandoff:
+    """Tests for TaskOrchestrator._record_handoff."""
+
+    def test_appends_handoff_to_session(self):
+        """_record_handoff creates a handoff and appends it to session.phase_handoffs."""
+        session = TaskSession(parent_issue_id=1)
+        orch = _make_orch(session)
+
+        orch._record_handoff(
+            from_phase="executing",
+            to_phase="verifying",
+            context=["Agent done", "3 errors"],
+            files=[],
+        )
+
+        assert len(session.phase_handoffs) == 1
+        h = session.phase_handoffs[0]
+        assert h["from_phase"] == "executing"
+        assert h["to_phase"] == "verifying"
+        assert h["context"] == ["Agent done", "3 errors"]
+        assert h["files"] == []
+        assert h["open_questions"] == []
+        assert h["warnings"] == []
+        assert "timestamp" in h
+
+    def test_multiple_calls_accumulate_handoffs(self):
+        """_record_handoff accumulates all handoffs in order."""
+        session = TaskSession(parent_issue_id=1)
+        orch = _make_orch(session)
+
+        orch._record_handoff(
+            from_phase="executing",
+            to_phase="verifying",
+            context=["exec done"],
+            files=[],
+        )
+        orch._record_handoff(
+            from_phase="verifying",
+            to_phase="validating",
+            context=["verification passed"],
+            files=[],
+        )
+        orch._record_handoff(
+            from_phase="validating",
+            to_phase="committing",
+            context=["verdict: PASS"],
+            files=[],
+        )
+
+        assert len(session.phase_handoffs) == 3
+        assert session.phase_handoffs[0]["from_phase"] == "executing"
+        assert session.phase_handoffs[1]["from_phase"] == "verifying"
+        assert session.phase_handoffs[2]["from_phase"] == "validating"
+
+    def test_invalid_handoff_still_appended_and_warns(self):
+        """_record_handoff with empty context logs warning but still appends handoff."""
+        session = TaskSession(parent_issue_id=1)
+        orch = _make_orch(session)
+
+        with patch.object(orch._slog, "warning") as mock_warn:
+            orch._record_handoff(
+                from_phase="executing",
+                to_phase="verifying",
+                context=[],  # invalid: empty context
+                files=[],
+            )
+
+        assert len(session.phase_handoffs) == 1
+        mock_warn.assert_called_once()
+        warn_args = mock_warn.call_args[0]
+        assert "executing" in str(warn_args)
+        assert "verifying" in str(warn_args)
+
+    def test_invalid_from_phase_warns(self):
+        """_record_handoff with empty from_phase logs warning but still appends."""
+        session = TaskSession(parent_issue_id=1)
+        orch = _make_orch(session)
+
+        with patch.object(orch._slog, "warning") as mock_warn:
+            orch._record_handoff(
+                from_phase="",
+                to_phase="verifying",
+                context=["some context"],
+                files=[],
+            )
+
+        assert len(session.phase_handoffs) == 1
+        mock_warn.assert_called_once()
 
 
 class TestRecordRun:

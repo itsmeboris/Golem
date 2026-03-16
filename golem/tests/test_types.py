@@ -15,6 +15,7 @@ from golem.core.config import Config
 from golem.core.live_state import LiveState
 from golem.core.run_log import RunRecord
 from golem.event_tracker import TaskEventTracker
+from golem.handoff import create_handoff
 from golem.types import (
     ActiveTaskDict,
     AlertDict,
@@ -22,6 +23,7 @@ from golem.types import (
     ConfigSnapshotDict,
     FieldInfoDict,
     FieldMetaDict,
+    FileRoleDict,
     HeartbeatCandidateDict,
     HeartbeatSnapshotDict,
     LiveSnapshotDict,
@@ -29,6 +31,7 @@ from golem.types import (
     MergeHistoryEntryDict,
     MergeQueueSnapshotDict,
     MilestoneDict,
+    PhaseHandoffDict,
     RunRecordDict,
     SelfUpdateSnapshotDict,
     SelfUpdateStateDict,
@@ -404,3 +407,46 @@ class TestSelfUpdateSnapshotDict:
             "update_history",
         }
         assert expected <= req
+
+
+class TestFileRoleDictContract:
+    def test_required_keys(self):
+        """FileRoleDict has expected required keys (importable from golem.types)."""
+        req = FileRoleDict.__required_keys__  # pylint: disable=no-member
+        assert {"path", "role", "relevance"} <= req
+
+    def test_no_optional_keys(self):
+        """FileRoleDict has no optional keys."""
+        opt = FileRoleDict.__optional_keys__  # pylint: disable=no-member
+        assert len(opt) == 0
+
+
+class TestPhaseHandoffDictContract:
+    def test_required_keys(self):
+        """PhaseHandoffDict has expected required keys (importable from golem.types)."""
+        req = PhaseHandoffDict.__required_keys__  # pylint: disable=no-member
+        expected = {
+            "from_phase",
+            "to_phase",
+            "context",
+            "files",
+            "open_questions",
+            "warnings",
+            "timestamp",
+        }
+        assert expected <= req
+
+    def test_create_handoff_produces_valid_phase_handoff(self):
+        """create_handoff() output matches PhaseHandoffDict contract."""
+        result = create_handoff(
+            from_phase="BUILD",
+            to_phase="REVIEW",
+            context=["implemented feature"],
+            files=[],
+            open_questions=[],
+            warnings=[],
+        )
+        for key in PhaseHandoffDict.__required_keys__:  # pylint: disable=no-member
+            assert key in result, "Missing required key: %s" % key
+        assert result["from_phase"] == "BUILD"
+        assert result["to_phase"] == "REVIEW"
