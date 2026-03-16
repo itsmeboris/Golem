@@ -13,6 +13,14 @@ from golem.orchestrator import TaskSessionState
 # ---------------------------------------------------------------------------
 
 
+def _get_facts(card):
+    """Extract {title: value} dict from the first FactSet in card body."""
+    for item in card["body"]:
+        if item.get("type") == "FactSet":
+            return {f["title"]: f["value"] for f in item["facts"]}
+    return {}
+
+
 def _make_test_profile():
     from golem.backends.local import (
         LocalFileTaskSource,
@@ -283,9 +291,8 @@ class TestTeamsNotifierHealthAlert:
         notifier.notify_health_alert("stale_daemon", "Daemon is idle")
         client.send_to_channel.assert_called_once()
         card = client.send_to_channel.call_args[0][1]
-        body_str = str(card)
-        assert "Health Alert" in body_str
-        assert "Daemon Idle" in body_str
+        assert "Health Alert" in card["body"][0]["text"]
+        assert "Daemon Idle" in card["body"][0]["text"]
 
     def test_notify_health_alert_with_details(self):
         from golem.backends.teams_notifier import TeamsNotifier
@@ -297,9 +304,10 @@ class TestTeamsNotifierHealthAlert:
             "Too many failures",
             details={"value": 7, "threshold": 5},
         )
-        body_str = str(client.send_to_channel.call_args[0][1])
-        assert "7" in body_str
-        assert "5" in body_str
+        card = client.send_to_channel.call_args[0][1]
+        facts = _get_facts(card)
+        assert facts["Current"] == "7"
+        assert facts["Threshold"] == "5"
 
 
 class TestLogNotifierHealthAlert:

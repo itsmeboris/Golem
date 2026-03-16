@@ -670,6 +670,14 @@ class TestMCPScope:
 # -- Notifications (card builders) ------------------------------------------
 
 
+def _get_facts(card):
+    """Extract {title: value} dict from the first FactSet in card body."""
+    for item in card["body"]:
+        if item.get("type") == "FactSet":
+            return {f["title"]: f["value"] for f in item["facts"]}
+    return {}
+
+
 class TestNotifications:
     def test_build_task_started_card(self):
         card = build_task_started_card(
@@ -677,9 +685,8 @@ class TestNotifications:
             subject="Fix everything",
         )
         assert card["type"] == "AdaptiveCard"
-        body_str = str(card["body"])
-        assert "Started" in body_str
-        assert "#100" in body_str
+        assert "Started" in card["body"][0]["text"]
+        assert "#100" in card["body"][0]["text"]
 
     def test_build_task_completed_card(self):
         card = build_task_completed_card(
@@ -690,11 +697,11 @@ class TestNotifications:
             steps=29,
         )
         assert card["type"] == "AdaptiveCard"
-        body_str = str(card["body"])
-        assert "Completed" in body_str
-        assert "$1.30" in body_str
-        assert "3m 40s" in body_str
-        assert "29" in body_str
+        assert "Completed" in card["body"][0]["text"]
+        facts = _get_facts(card)
+        assert facts["Cost"] == "$1.30"
+        assert facts["Duration"] == "3m 40s"
+        assert facts["Steps"] == "29"
 
     def test_build_task_completed_card_short_duration(self):
         card = build_task_completed_card(
@@ -704,8 +711,8 @@ class TestNotifications:
             duration_s=45.0,
             steps=5,
         )
-        body_str = str(card["body"])
-        assert "45s" in body_str
+        facts = _get_facts(card)
+        assert facts["Duration"] == "45s"
 
     def test_build_task_activity_card(self):
         card = build_task_activity_card(
@@ -716,10 +723,10 @@ class TestNotifications:
             milestone_count=14,
         )
         assert card["type"] == "AdaptiveCard"
-        body_str = str(card["body"])
-        assert "In Progress" in body_str
-        assert "config.yaml" in body_str
-        assert "1m 2s" in body_str
+        assert "In Progress" in card["body"][0]["text"]
+        assert "config.yaml" in card["body"][2]["text"]
+        facts = _get_facts(card)
+        assert facts["Elapsed"] == "1m 2s"
 
     def test_build_task_failure_card(self):
         card = build_task_failure_card(
@@ -730,10 +737,10 @@ class TestNotifications:
             duration_s=72.0,
         )
         assert card["type"] == "AdaptiveCard"
-        body_str = str(card["body"])
-        assert "Failed" in body_str
-        assert "Budget exceeded" in body_str
-        assert "1m 12s" in body_str
+        assert "Failed" in card["body"][0]["text"]
+        facts = _get_facts(card)
+        assert facts["Error"] == "Budget exceeded"
+        assert facts["Duration"] == "1m 12s"
 
     def test_fmt_duration(self):
         assert _fmt_duration(0) == "0s"

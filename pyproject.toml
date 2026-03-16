@@ -74,12 +74,16 @@ disable = [
     "unnecessary-ellipsis",
     "cyclic-import",
 ]
+enable = [
+    "logging-fstring-interpolation",   # W1203: no f-strings in logging
+    "logging-format-interpolation",    # W1202: no .format() in logging
+]
 
 [tool.pylint.format]
 max-line-length = 99
 
 [tool.pylint.main]
-load-plugins = []
+load-plugins = ["golem.lint.test_quality"]
 source-roots = ["."]
 
 [tool.pytest.ini_options]
