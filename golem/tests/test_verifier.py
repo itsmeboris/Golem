@@ -7,7 +7,54 @@ import json
 import subprocess
 from unittest.mock import MagicMock, patch
 
-from golem.verifier import run_verification, VerificationResult
+import pytest
+
+from golem.verifier import _parse_pytest_output, run_verification, VerificationResult
+
+
+class TestParsePytestOutput:
+    @pytest.mark.parametrize(
+        "output, expected_count, expected_failures, expected_coverage",
+        [
+            # Normal: passed only
+            ("64 passed in 1.01s\nTOTAL    1000    0   100%", 64, [], 100.0),
+            # Mixed passed and failed
+            (
+                "FAILED golem/tests/test_foo.py::test_bar\n"
+                "FAILED golem/tests/test_baz.py::test_qux\n"
+                "2 failed, 10 passed in 3.5s\n"
+                "TOTAL    500    50    90%",
+                12,
+                [
+                    "golem/tests/test_foo.py::test_bar",
+                    "golem/tests/test_baz.py::test_qux",
+                ],
+                90.0,
+            ),
+            # Zero tests
+            ("0 passed in 0.01s", 0, [], 0.0),
+            # No coverage line
+            ("10 passed in 1.0s", 10, [], 0.0),
+            # Only failed, no passed line
+            (
+                "FAILED test_x.py::test_y\n1 failed in 0.5s",
+                1,
+                ["test_x.py::test_y"],
+                0.0,
+            ),
+            # Empty output
+            ("", 0, [], 0.0),
+            # Malformed — no numbers at all
+            ("Some random output\nwith no test results", 0, [], 0.0),
+        ],
+    )
+    def test_parse_pytest_output(
+        self, output, expected_count, expected_failures, expected_coverage
+    ):
+        count, failures, coverage = _parse_pytest_output(output)
+        assert count == expected_count
+        assert failures == expected_failures
+        assert coverage == expected_coverage
 
 
 class TestVerificationResult:
