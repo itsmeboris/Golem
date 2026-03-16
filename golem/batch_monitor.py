@@ -8,12 +8,15 @@ from __future__ import annotations
 
 import datetime as _dt
 import json as _json
+import logging
 import os
 import tempfile
 import time as _time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def _now_iso() -> str:
@@ -213,8 +216,8 @@ class BatchMonitor:
                 os.close(fd)
             try:
                 os.unlink(tmp_path)
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.debug("Failed to clean up temp file: %s", exc)
             raise
 
     def load(self, path: Path) -> None:

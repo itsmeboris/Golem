@@ -984,6 +984,31 @@ class TestTier2:
         assert result == ["golem/new.py"]
         assert len(calls) == 2
 
+    def test_scan_coverage_invalid_cache_time_logs_debug(self, tmp_path, caplog):
+        """Invalid cached timestamp triggers a debug log message."""
+        import logging
+
+        mgr = _make_manager(tmp_path)
+        mgr._coverage_cache = {
+            "commit_hash": "abc123",
+            "ran_at": "not-a-date",
+            "uncovered_modules": ["golem/old.py"],
+        }
+
+        def mock_run(cmd, **kwargs):
+            if cmd[0] == "git":
+                return MagicMock(returncode=0, stdout="abc123\n")
+            return MagicMock(returncode=0, stdout="golem/new.py  95%\n")
+
+        with caplog.at_level(logging.DEBUG, logger="golem.heartbeat"):
+            with patch("subprocess.run", side_effect=mock_run):
+                mgr._scan_coverage()
+
+        assert any(
+            "Invalid cached timestamp" in r.message and r.levelno == logging.DEBUG
+            for r in caplog.records
+        )
+
 
 class TestHeartbeatTick:
     @pytest.mark.asyncio

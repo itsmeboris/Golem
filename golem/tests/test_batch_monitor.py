@@ -296,6 +296,32 @@ class TestBatchMonitorUpdateEdgeCases:
         with pytest.raises(OSError, match="disk full"):
             mon.save(save_path)
 
+    def test_save_error_unlink_fails_logs_debug(self, tmp_path, monkeypatch, caplog):
+        """save() logs at debug level when os.unlink fails during cleanup."""
+        import logging
+
+        mon = BatchMonitor()
+        mon.register("grp", [1])
+
+        save_path = tmp_path / "batches.json"
+
+        def fail_replace(src, dst):
+            raise OSError("disk full")
+
+        def fail_unlink(path):
+            raise OSError("unlink failed")
+
+        monkeypatch.setattr("os.replace", fail_replace)
+        monkeypatch.setattr("os.unlink", fail_unlink)
+        with caplog.at_level(logging.DEBUG, logger="golem.batch_monitor"):
+            with pytest.raises(OSError, match="disk full"):
+                mon.save(save_path)
+
+        assert any(
+            "Failed to clean up temp file" in r.message and r.levelno == logging.DEBUG
+            for r in caplog.records
+        )
+
 
 class TestBatchMonitorList:
     def test_list_batches_sorted_by_created_at(self):
