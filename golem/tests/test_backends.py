@@ -117,6 +117,90 @@ class TestRedmineTaskSource:
         assert source.create_child_task(42, "Sub", "Desc") is None
 
 
+class TestRedmineGetTaskComments:
+    @patch("golem.backends.redmine._request_with_retry")
+    def test_returns_comments_from_journals(self, mock_req):
+        mock_req.return_value = MagicMock(
+            status_code=200,
+            json=MagicMock(
+                return_value={
+                    "issue": {
+                        "journals": [
+                            {
+                                "notes": "First comment",
+                                "user": {"name": "Alice"},
+                                "created_on": "2026-01-15T10:00:00Z",
+                            },
+                            {
+                                "notes": "",  # empty notes — should be filtered
+                                "user": {"name": "Bob"},
+                                "created_on": "2026-01-15T11:00:00Z",
+                            },
+                            {
+                                "notes": "Second comment",
+                                "user": {"name": "Charlie"},
+                                "created_on": "2026-01-15T12:00:00Z",
+                            },
+                        ]
+                    }
+                }
+            ),
+        )
+        source = RedmineTaskSource()
+        comments = source.get_task_comments(task_id=123)
+        assert len(comments) == 2
+        assert comments[0]["author"] == "Alice"
+        assert comments[0]["body"] == "First comment"
+        assert comments[1]["author"] == "Charlie"
+
+    @patch("golem.backends.redmine._request_with_retry")
+    def test_since_filter(self, mock_req):
+        mock_req.return_value = MagicMock(
+            status_code=200,
+            json=MagicMock(
+                return_value={
+                    "issue": {
+                        "journals": [
+                            {
+                                "notes": "Old comment",
+                                "user": {"name": "Alice"},
+                                "created_on": "2026-01-10T10:00:00Z",
+                            },
+                            {
+                                "notes": "New comment",
+                                "user": {"name": "Bob"},
+                                "created_on": "2026-01-20T10:00:00Z",
+                            },
+                        ]
+                    }
+                }
+            ),
+        )
+        source = RedmineTaskSource()
+        comments = source.get_task_comments(task_id=123, since="2026-01-15T00:00:00Z")
+        assert len(comments) == 1
+        assert comments[0]["author"] == "Bob"
+
+    @patch("golem.backends.redmine._request_with_retry")
+    def test_empty_journals(self, mock_req):
+        mock_req.return_value = MagicMock(
+            status_code=200,
+            json=MagicMock(return_value={"issue": {"journals": []}}),
+        )
+        source = RedmineTaskSource()
+        comments = source.get_task_comments(task_id=123)
+        assert comments == []
+
+    @patch("golem.backends.redmine._request_with_retry")
+    def test_request_failure(self, mock_req):
+        from requests.exceptions import RequestException
+
+        mock_req.side_effect = RequestException("Connection refused")
+        source = RedmineTaskSource()
+        comments = source.get_task_comments(task_id=123)
+        assert comments == []
+
+
 class TestUpdateRedmineIssue:
     @patch("golem.backends.redmine._request_with_retry")
     def test_put_failure_returns_false(self, mock_req):
