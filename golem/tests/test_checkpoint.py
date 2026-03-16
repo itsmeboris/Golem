@@ -142,6 +142,21 @@ def test_delete_checkpoint_noop_when_missing() -> None:
     delete_checkpoint(8888)
 
 
+def test_delete_checkpoint_logs_debug_on_unlink_failure(caplog) -> None:
+    """delete_checkpoint logs at debug when unlink fails."""
+    with patch.object(
+        checkpoint_mod.CHECKPOINTS_DIR.__class__,
+        "__truediv__",
+        wraps=checkpoint_mod.CHECKPOINTS_DIR.__truediv__,
+    ):
+        with caplog.at_level(logging.DEBUG, logger="golem.checkpoint"):
+            delete_checkpoint(9999)
+    assert any(
+        "Failed to unlink checkpoint" in r.message and r.levelno == logging.DEBUG
+        for r in caplog.records
+    )
+
+
 # ---------------------------------------------------------------------------
 # directory creation
 # ---------------------------------------------------------------------------

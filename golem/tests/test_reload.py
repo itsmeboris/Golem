@@ -102,6 +102,27 @@ class TestHandleReload:
         mock_execv.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_human_review_treated_as_terminal(self):
+        """HUMAN_REVIEW sessions should not block the drain loop."""
+        from golem.orchestrator import TaskSession, TaskSessionState
+
+        flow = MagicMock()
+        flow.stop_tick_loop = MagicMock()
+        flow._sessions = {
+            1: TaskSession(parent_issue_id=1, state=TaskSessionState.HUMAN_REVIEW),
+        }
+        reload_event = asyncio.Event()
+        reload_event.set()
+        with patch("golem.cli.os.execv") as mock_execv:
+            await _handle_reload(
+                reload_event,
+                flow=flow,
+                drain_timeout=1,
+            )
+        # Should proceed immediately without hitting drain timeout
+        mock_execv.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_calls_apply_update_before_execv(self):
         """self_update_manager.apply_update() is called after drain, before execv."""
         flow = MagicMock()

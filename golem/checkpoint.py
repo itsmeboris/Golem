@@ -122,14 +122,14 @@ def delete_checkpoint(issue_id: int) -> None:
     try:
         checkpoint_path.unlink()
         removed = True
-    except (FileNotFoundError, OSError):
-        pass
+    except (FileNotFoundError, OSError) as exc:
+        logger.debug("Failed to unlink checkpoint %s: %s", checkpoint_path, exc)
 
     issue_dir = CHECKPOINTS_DIR / str(issue_id)
     try:
         issue_dir.rmdir()
-    except (FileNotFoundError, OSError):
-        pass
+    except (FileNotFoundError, OSError) as exc:
+        logger.debug("Failed to rmdir checkpoint dir %s: %s", issue_dir, exc)
 
     if removed:
         logger.debug("Checkpoint deleted for #%s", issue_id)
