@@ -268,7 +268,12 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         self._spawn_existing_sessions()
         self._detection_task = asyncio.create_task(self._detection_loop())
         if self._heartbeat is not None:
-            self._heartbeat.reconcile_inflight(set(self._sessions.keys()))
+            active_ids = {
+                sid
+                for sid, s in self._sessions.items()
+                if s.state not in (TaskSessionState.COMPLETED, TaskSessionState.FAILED)
+            }
+            self._heartbeat.reconcile_inflight(active_ids)
             self._heartbeat.start(self)
         if self._self_update is not None:
             self._self_update.start()

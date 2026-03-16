@@ -617,6 +617,10 @@ class HeartbeatManager:
 
     async def _run_heartbeat_tick(self) -> None:
         """Execute one heartbeat cycle: Tier 1 -> Tier 2 -> submit."""
+        if not self.can_submit():
+            logger.debug("Heartbeat tick skipped — inflight limit reached")
+            return
+
         self._state = "scanning"
 
         # Tier 1: discover untagged issues
