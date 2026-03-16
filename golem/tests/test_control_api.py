@@ -16,6 +16,7 @@ from golem.core.control_api import (
     _require_polling,
     wire_control_api,
 )
+from golem.errors import TaskNotCancelableError, TaskNotFoundError
 
 # ---------------------------------------------------------------------------
 # wire_control_api
@@ -840,6 +841,118 @@ class TestSubmitNoApiKey:
         req.query_params = {}
         result = await submit_batch(req)
         assert result["ok"] is True
+
+
+# ---------------------------------------------------------------------------
+# POST /cancel/{task_id}
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(
+    not control_api.FASTAPI_AVAILABLE,
+    reason="FastAPI not installed",
+)
+class TestCancelEndpoint:
+    @pytest.mark.asyncio
+    async def test_cancel_success(self, _wire_deps):
+        from golem.core.control_api import cancel_task
+
+        gf = control_api._golem_flow
+        gf.cancel_session = MagicMock(return_value={"state": "cancelled"})
+        result = await cancel_task(task_id=42)
+        assert result["ok"] is True
+        gf.cancel_session.assert_called_once_with(42)
+
+    @pytest.mark.asyncio
+    async def test_cancel_not_found(self, _wire_deps):
+        from golem.core.control_api import cancel_task
+
+        gf = control_api._golem_flow
+        gf.cancel_session = MagicMock(side_effect=TaskNotFoundError("No task 99"))
+        with pytest.raises(Exception) as exc_info:
+            await cancel_task(task_id=99)
+        assert exc_info.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_cancel_not_cancelable(self, _wire_deps):
+        from golem.core.control_api import cancel_task
+
+        gf = control_api._golem_flow
+        gf.cancel_session = MagicMock(
+            side_effect=TaskNotCancelableError("Task already completed")
+        )
+        with pytest.raises(Exception) as exc_info:
+            await cancel_task(task_id=42)
+        assert exc_info.value.status_code == 409
+
+    @pytest.mark.asyncio
+    async def test_cancel_no_flow(self):
+        from golem.core.control_api import cancel_task
+
+        wire_control_api()  # reset — no flow
+        with pytest.raises(Exception) as exc_info:
+            await cancel_task(task_id=1)
+        assert exc_info.value.status_code == 503
+
+
+# ---------------------------------------------------------------------------
+# GET /batch/{group_id} and GET /batches
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(
+    not control_api.FASTAPI_AVAILABLE,
+    reason="FastAPI not installed",
+)
+class TestBatchEndpoints:
+    @pytest.mark.asyncio
+    async def test_get_batch_success(self, _wire_deps):
+        from golem.core.control_api import get_batch
+
+        gf = control_api._golem_flow
+        gf.get_batch = MagicMock(return_value={"id": "b1", "status": "running"})
+        result = await get_batch(group_id="b1")
+        assert result["ok"] is True
+        assert result["batch"]["id"] == "b1"
+        gf.get_batch.assert_called_once_with("b1")
+
+    @pytest.mark.asyncio
+    async def test_get_batch_not_found(self, _wire_deps):
+        from golem.core.control_api import get_batch
+
+        gf = control_api._golem_flow
+        gf.get_batch = MagicMock(return_value=None)
+        with pytest.raises(Exception) as exc_info:
+            await get_batch(group_id="nope")
+        assert exc_info.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_get_batch_no_flow(self):
+        from golem.core.control_api import get_batch
+
+        wire_control_api()  # reset — no flow
+        with pytest.raises(Exception) as exc_info:
+            await get_batch(group_id="b1")
+        assert exc_info.value.status_code == 503
+
+    @pytest.mark.asyncio
+    async def test_list_batches_success(self, _wire_deps):
+        from golem.core.control_api import list_batches
+
+        gf = control_api._golem_flow
+        gf.list_batches = MagicMock(return_value=[{"id": "b1"}, {"id": "b2"}])
+        result = await list_batches()
+        assert result["ok"] is True
+        assert len(result["batches"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_list_batches_no_flow(self):
+        from golem.core.control_api import list_batches
+
+        wire_control_api()  # reset — no flow
+        with pytest.raises(Exception) as exc_info:
+            await list_batches()
+        assert exc_info.value.status_code == 503
 
 
 # ---------------------------------------------------------------------------
