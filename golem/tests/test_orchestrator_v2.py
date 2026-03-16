@@ -947,10 +947,10 @@ class TestCommitAndComplete:
         assert "xyz" in comment_arg
         assert "retry" in comment_arg
 
-    @patch("golem.orchestrator.update_agents_md")
+    @patch("golem.orchestrator.update_agents_md_from_instincts")
     @patch("golem.orchestrator.extract_pitfalls")
     async def test_pitfall_extraction_called_on_completion(
-        self, mock_extract, mock_update
+        self, mock_extract, mock_update_from_instincts
     ):
         """After PASS + commit, pitfall extraction runs via executor."""
         mock_extract.return_value = ["some concern text"]
@@ -968,12 +968,17 @@ class TestCommitAndComplete:
 
         assert session.state == TaskSessionState.COMPLETED
         mock_extract.assert_called_once()
-        mock_update.assert_called_once_with(["some concern text"])
+        mock_update_from_instincts.assert_called_once()
+        # Verify pitfall was added to instinct store
+        instincts = orch._instinct_store.get_all()
+        assert len(instincts) == 1
 
-    @patch("golem.orchestrator.update_agents_md")
+    @patch("golem.orchestrator.update_agents_md_from_instincts")
     @patch("golem.orchestrator.extract_pitfalls")
-    async def test_pitfall_extraction_skipped_on_empty(self, mock_extract, mock_update):
-        """If extract_pitfalls returns empty list, update_agents_md is not called."""
+    async def test_pitfall_extraction_skipped_on_empty(
+        self, mock_extract, mock_update_from_instincts
+    ):
+        """If extract_pitfalls returns empty list, update still runs (instinct store prune)."""
         mock_extract.return_value = []
         session = TaskSession(parent_issue_id=42, parent_subject="Fix")
         session.validation_verdict = "PASS"
@@ -988,11 +993,14 @@ class TestCommitAndComplete:
             await orch._commit_and_complete(42, "/work", verdict)
 
         mock_extract.assert_called_once()
-        mock_update.assert_not_called()
+        # update_agents_md_from_instincts is always called (prune + regenerate)
+        mock_update_from_instincts.assert_called_once()
 
-    @patch("golem.orchestrator.update_agents_md")
+    @patch("golem.orchestrator.update_agents_md_from_instincts")
     @patch("golem.orchestrator.extract_pitfalls")
-    async def test_pitfall_extraction_error_non_fatal(self, mock_extract, mock_update):
+    async def test_pitfall_extraction_error_non_fatal(
+        self, mock_extract, mock_update_from_instincts
+    ):
         """Pitfall extraction errors don't fail the completion."""
         mock_extract.side_effect = Exception("disk full")
         session = TaskSession(parent_issue_id=42, parent_subject="Fix")
@@ -1752,12 +1760,12 @@ class TestObservationHooksIntegration:
         mock_mine.assert_called_once_with(verdict)
         mock_record.assert_not_called()
 
-    @patch("golem.orchestrator.update_agents_md")
+    @patch("golem.orchestrator.update_agents_md_from_instincts")
     @patch("golem.orchestrator.extract_pitfalls")
     def test_extract_and_write_pitfalls_includes_promoted_signals(
-        self, mock_extract, mock_update
+        self, mock_extract, mock_update_from_instincts
     ):
-        """_extract_and_write_pitfalls appends promoted signals to pitfalls."""
+        """_extract_and_write_pitfalls appends promoted signals to instinct store."""
         mock_extract.return_value = ["existing pitfall"]
         session = TaskSession(parent_issue_id=42, parent_subject="Fix")
         orch = _make_orch(session)
@@ -1771,13 +1779,15 @@ class TestObservationHooksIntegration:
         ):
             orch._extract_and_write_pitfalls()
 
-        mock_update.assert_called_once_with(["existing pitfall"] + promoted)
+        mock_update_from_instincts.assert_called_once()
         mock_clear.assert_called_once()
+        # Both pitfall and promoted signal should be in instinct store
+        assert len(orch._instinct_store.get_all()) == 2
 
-    @patch("golem.orchestrator.update_agents_md")
+    @patch("golem.orchestrator.update_agents_md_from_instincts")
     @patch("golem.orchestrator.extract_pitfalls")
     def test_extract_and_write_pitfalls_no_promoted_signals(
-        self, mock_extract, mock_update
+        self, mock_extract, mock_update_from_instincts
     ):
         """_extract_and_write_pitfalls with empty promoted list does not call clear_promoted."""
         mock_extract.return_value = ["only pitfall"]
@@ -1790,13 +1800,14 @@ class TestObservationHooksIntegration:
         ):
             orch._extract_and_write_pitfalls()
 
-        mock_update.assert_called_once_with(["only pitfall"])
+        mock_update_from_instincts.assert_called_once()
         mock_clear.assert_not_called()
+        assert len(orch._instinct_store.get_all()) == 1
 
-    @patch("golem.orchestrator.update_agents_md")
+    @patch("golem.orchestrator.update_agents_md_from_instincts")
     @patch("golem.orchestrator.extract_pitfalls")
     def test_extract_and_write_pitfalls_only_promoted_no_pitfalls(
-        self, mock_extract, mock_update
+        self, mock_extract, mock_update_from_instincts
     ):
         """_extract_and_write_pitfalls with only promoted signals (no pitfalls from extract)."""
         mock_extract.return_value = []
@@ -1812,8 +1823,9 @@ class TestObservationHooksIntegration:
         ):
             orch._extract_and_write_pitfalls()
 
-        mock_update.assert_called_once_with(promoted)
+        mock_update_from_instincts.assert_called_once()
         mock_clear.assert_called_once()
+        assert len(orch._instinct_store.get_all()) == 1
 
     def test_signal_accumulator_initialized_in_init(self):
         """TaskOrchestrator.__init__ creates a SignalAccumulator instance."""

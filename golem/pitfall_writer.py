@@ -245,3 +245,36 @@ def update_agents_md(
         except OSError as exc:
             logger.debug("Failed to unlink pitfall_writer temp file: %s", exc)
         raise
+
+
+def update_agents_md_from_instincts(
+    store: "object", agents_md_path: Path | None = None
+) -> None:
+    """Generate AGENTS.md from the instinct store.
+
+    Uses atomic write (temp file + os.replace).
+    Default path: PROJECT_ROOT.parent / "AGENTS.md" (repo root).
+    """
+    path = agents_md_path or PROJECT_ROOT.parent / "AGENTS.md"
+    dir_path = path.parent
+    dir_path.mkdir(parents=True, exist_ok=True)
+
+    preamble_text = ""
+    if path.exists():
+        existing = path.read_text(encoding="utf-8")
+        preamble_text = _preamble(existing)
+
+    content = store.generate_agents_md(preamble_text)
+
+    # Atomic write: temp file + rename
+    fd, tmp_path = tempfile.mkstemp(dir=dir_path, prefix=".agents_md_")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(content)
+        os.replace(tmp_path, path)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError as exc:
+            logger.debug("Failed to unlink pitfall_writer temp file: %s", exc)
+        raise
