@@ -1406,6 +1406,50 @@ class TestHeartbeatIntegration:
         except asyncio.CancelledError:
             pass
 
+    async def test_repro_human_review_excluded_from_reconcile(
+        self, monkeypatch, tmp_path
+    ):
+        """HUMAN_REVIEW sessions must be excluded from active_ids passed to reconcile_inflight.
+
+        Regression test: before the fix, HUMAN_REVIEW was not in the exclusion
+        tuple, so its session ID leaked into _inflight_task_ids after restart,
+        permanently blocking can_submit().
+        """
+        flow = _make_flow(monkeypatch, tmp_path, heartbeat_enabled=True)
+        mock_heartbeat = MagicMock()
+        flow._heartbeat = mock_heartbeat
+
+        # Populate sessions covering every state.
+        flow._sessions = {
+            1: TaskSession(parent_issue_id=1, state=TaskSessionState.DETECTED),
+            2: TaskSession(parent_issue_id=2, state=TaskSessionState.RUNNING),
+            3: TaskSession(parent_issue_id=3, state=TaskSessionState.VERIFYING),
+            4: TaskSession(parent_issue_id=4, state=TaskSessionState.VALIDATING),
+            5: TaskSession(parent_issue_id=5, state=TaskSessionState.RETRYING),
+            6: TaskSession(parent_issue_id=6, state=TaskSessionState.COMPLETED),
+            7: TaskSession(parent_issue_id=7, state=TaskSessionState.FAILED),
+            8: TaskSession(parent_issue_id=8, state=TaskSessionState.HUMAN_REVIEW),
+        }
+
+        async def fake_detection_loop():
+            pass
+
+        monkeypatch.setattr(flow, "_detection_loop", fake_detection_loop)
+
+        task = flow.start_tick_loop()
+        called_with = mock_heartbeat.reconcile_inflight.call_args[0][0]
+
+        # Active states: DETECTED, RUNNING, VERIFYING, VALIDATING, RETRYING
+        assert called_with == {1, 2, 3, 4, 5}
+        # HUMAN_REVIEW session (id=8) must NOT appear
+        assert 8 not in called_with
+
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
     def test_stop_tick_loop_stops_heartbeat(self, monkeypatch, tmp_path):
         """stop_tick_loop calls heartbeat.stop() when heartbeat is present."""
         flow = _make_flow(monkeypatch, tmp_path, heartbeat_enabled=True)

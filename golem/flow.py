@@ -271,7 +271,12 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             active_ids = {
                 sid
                 for sid, s in self._sessions.items()
-                if s.state not in (TaskSessionState.COMPLETED, TaskSessionState.FAILED)
+                if s.state
+                not in (
+                    TaskSessionState.COMPLETED,
+                    TaskSessionState.FAILED,
+                    TaskSessionState.HUMAN_REVIEW,
+                )
             }
             self._heartbeat.reconcile_inflight(active_ids)
             self._heartbeat.start(self)
