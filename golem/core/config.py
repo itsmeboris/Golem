@@ -39,6 +39,7 @@ class FlowConfig:
 class GolemFlowConfig(FlowConfig):
     """Golem orchestration settings."""
 
+    max_mcp_servers: int = 10
     projects: list[str] = field(default_factory=list)
     tick_interval: int = 30
     grace_period_seconds: int = 120
@@ -270,6 +271,7 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
     default_tag = _PROFILE_DEFAULT_TAGS.get(profile, "[AGENT]")
     return GolemFlowConfig(
         **common,
+        max_mcp_servers=data.get("max_mcp_servers", 10),
         projects=data.get("projects", []),
         tick_interval=data.get("tick_interval", 30),
         grace_period_seconds=data.get("grace_period_seconds", 120),
@@ -576,6 +578,12 @@ def validate_config(config: Config) -> list[str]:
                 "golem.heartbeat_tier1_every_n must be >= 1, "
                 f"got {config.golem.heartbeat_tier1_every_n}"
             )
+
+    # max_mcp_servers validation
+    if config.golem.max_mcp_servers < 1:
+        errors.append(
+            "golem.max_mcp_servers must be >= 1, " f"got {config.golem.max_mcp_servers}"
+        )
 
     # Self-update validation (always run, not gated on enabled)
     if config.golem.self_update_strategy not in ("merged_only", "any_commit"):

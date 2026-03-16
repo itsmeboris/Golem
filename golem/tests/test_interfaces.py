@@ -79,7 +79,7 @@ class DummyToolProvider:
     def base_servers(self):
         return []
 
-    def servers_for_subject(self, subject):
+    def servers_for_subject(self, subject, *, role: str = ""):
         return []
 
 
