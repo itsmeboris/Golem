@@ -1,6 +1,10 @@
 """Tests for task clarity pre-check."""
 
+import json
+
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from golem.core.config import GolemFlowConfig
 
@@ -62,3 +66,43 @@ class TestClarityScore:
             result = check_clarity(subject="Fix bug", description="Something broke")
             assert result.score >= 3  # Fail-open: don't block on infra error
             assert result.cost_usd == 0.0
+
+
+class TestClarityScoreClamping:
+    """Verify score clamping (max(1, min(5, score))) and fallback defaults."""
+
+    @pytest.mark.parametrize(
+        "raw_score, expected",
+        [
+            (0, 1),  # below min, clamp to 1
+            (1, 1),  # at min
+            (3, 3),  # normal
+            (5, 5),  # at max
+            (10, 5),  # above max, clamp to 5
+            (-1, 1),  # negative, clamp to 1
+        ],
+    )
+    def test_score_clamping(self, raw_score, expected):
+        from golem.clarity import check_clarity
+
+        mock_result = MagicMock()
+        mock_result.output = {
+            "result": json.dumps({"score": raw_score, "reason": "test"})
+        }
+        mock_result.cost_usd = 0.001
+
+        with patch("golem.clarity.invoke_cli", return_value=mock_result):
+            result = check_clarity(subject="Test", description="test")
+            assert result.score == expected
+
+    def test_missing_score_defaults_to_5(self):
+        """When extract_json returns no 'score' key, default to 5."""
+        from golem.clarity import check_clarity
+
+        mock_result = MagicMock()
+        mock_result.output = {"result": json.dumps({"reason": "no score key here"})}
+        mock_result.cost_usd = 0.001
+
+        with patch("golem.clarity.invoke_cli", return_value=mock_result):
+            result = check_clarity(subject="Test", description="test")
+            assert result.score == 5
