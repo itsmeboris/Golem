@@ -84,7 +84,7 @@ async function resubmitTask(prompt, subject) {
 // ── Navigation ─────────────────────────────────
 async function showView(view) {
   S.view = view;
-  const views = ['overview', 'detail', 'merge-queue'];
+  const views = ['overview', 'detail', 'merge-queue', 'config'];
   views.forEach(v => {
     const el = document.getElementById(`view-${v}`);
     if (el) el.style.display = (v === view) ? 'flex' : 'none';
@@ -99,6 +99,8 @@ async function showView(view) {
     if (location.hash !== newHash) history.pushState(null, '', newHash);
   } else if (view === 'merge-queue') {
     if (location.hash !== '#merge-queue') history.pushState(null, '', '#merge-queue');
+  } else if (view === 'config') {
+    if (location.hash !== '#config') history.pushState(null, '', '#config');
   } else {
     if (location.hash !== '#overview') history.pushState(null, '', '#overview');
   }
@@ -114,6 +116,9 @@ async function showView(view) {
   }
   if (view === 'merge-queue' && typeof renderMergeQueue === 'function') {
     renderMergeQueue();
+  }
+  if (view === 'config' && typeof window.initConfigTab === 'function') {
+    window.initConfigTab();
   }
 }
 

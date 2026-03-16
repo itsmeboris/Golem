@@ -43,14 +43,17 @@
     for (const fi of fields) {
       const row = document.createElement("div");
       row.className = "config-field";
+      const labelWrap = document.createElement("div");
+      labelWrap.className = "field-label-wrap";
       const label = document.createElement("label");
       label.textContent = fi.key;
-      row.appendChild(label);
-      row.appendChild(createInput(fi));
+      labelWrap.appendChild(label);
       const desc = document.createElement("span");
       desc.className = "field-desc";
       desc.textContent = fi.meta.description;
-      row.appendChild(desc);
+      labelWrap.appendChild(desc);
+      row.appendChild(labelWrap);
+      row.appendChild(createInput(fi));
       container.appendChild(row);
     }
     const btn = document.createElement("button");
@@ -58,6 +61,16 @@
     btn.textContent = "Save";
     btn.onclick = saveChanges;
     container.appendChild(btn);
+  }
+
+  /** Pick a sensible step for number inputs based on field metadata. */
+  function pickStep(fi) {
+    const meta = fi.meta;
+    if (meta.field_type === "int") return "1";
+    // Ratio fields (0.0–1.0) get a fine step
+    if (meta.max_val != null && meta.max_val <= 1.0) return "0.05";
+    // USD / budget floats get a whole-dollar step
+    return "1";
   }
 
   function createInput(fi) {
@@ -74,22 +87,29 @@
       return sel;
     }
     if (meta.field_type === "bool") {
+      const wrap = document.createElement("label");
+      wrap.className = "toggle-switch";
       const cb = document.createElement("input");
       cb.type = "checkbox"; cb.checked = fi.value;
-      cb.className = "toggle";
       cb.onchange = () => { unsavedChanges[fi.key] = cb.checked; };
-      return cb;
+      const track = document.createElement("span");
+      track.className = "toggle-track";
+      wrap.appendChild(cb);
+      wrap.appendChild(track);
+      return wrap;
     }
     const inp = document.createElement("input");
     if (meta.field_type === "int" || meta.field_type === "float") {
       inp.type = "number";
       if (meta.min_val != null) inp.min = meta.min_val;
       if (meta.max_val != null) inp.max = meta.max_val;
-      if (meta.field_type === "float") inp.step = "0.01";
+      inp.step = pickStep(fi);
     } else {
       inp.type = meta.sensitive ? "password" : "text";
     }
-    inp.value = fi.value != null ? fi.value : "";
+    const raw = fi.value != null ? fi.value : "";
+    inp.value = Array.isArray(raw) ? raw.join(", ")
+      : typeof raw === "object" ? JSON.stringify(raw) : raw;
     inp.oninput = () => { unsavedChanges[fi.key] = inp.value; };
     return inp;
   }

@@ -228,6 +228,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     showView('detail');
   } else if (hash === 'merge-queue') {
     showView('merge-queue');
+  } else if (hash === 'config') {
+    showView('config');
   } else {
     showView('overview');
   }
@@ -240,6 +242,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       showView('detail');
     } else if (h === 'merge-queue') {
       showView('merge-queue');
+    } else if (h === 'config') {
+      showView('config');
     } else {
       showView('overview');
     }

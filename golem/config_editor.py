@@ -73,141 +73,235 @@ FIELD_REGISTRY: dict[str, FieldMeta] = {
     "golem.profile": FieldMeta(
         "profile",
         "choice",
-        "Issue tracker backend",
+        "Which issue tracker to poll for tasks",
         choices=["github", "redmine", "local", "mcp"],
     ),
-    "golem.projects": FieldMeta("profile", "list", "Comma-separated project list"),
-    "golem.detection_tag": FieldMeta("profile", "str", "Detection tag for issues"),
-    "golem.default_work_dir": FieldMeta("profile", "str", "Default working directory"),
+    "golem.projects": FieldMeta(
+        "profile", "list", "Projects to watch, e.g. owner/repo for GitHub"
+    ),
+    "golem.detection_tag": FieldMeta(
+        "profile", "str", "Label or tag that marks an issue for Golem pickup"
+    ),
+    "golem.default_work_dir": FieldMeta(
+        "profile", "str", "Working directory where Golem clones and builds"
+    ),
     # -- budget --
     "golem.budget_per_task_usd": FieldMeta(
-        "budget", "float", "Max spend per task", min_val=0.0
+        "budget",
+        "float",
+        "Max USD to spend on a single task before aborting (0 = unlimited)",
+        min_val=0.0,
     ),
     "claude.max_budget_usd": FieldMeta(
-        "budget", "float", "Global Claude budget cap", min_val=0.0
+        "budget",
+        "float",
+        "Hard cap on total Claude API spend across all tasks (0 = unlimited)",
+        min_val=0.0,
     ),
     # -- models --
     "golem.task_model": FieldMeta(
         "models",
         "choice",
-        "Model for task execution",
+        "Claude model used for the main build agent",
         choices=["opus", "sonnet", "haiku"],
     ),
     "golem.validation_model": FieldMeta(
         "models",
         "choice",
-        "Model for validation",
+        "Claude model for spec-compliance validation",
         choices=["opus", "sonnet", "haiku"],
     ),
     "golem.orchestrate_model": FieldMeta(
         "models",
         "choice",
-        "Model for orchestration",
+        "Claude model for the orchestrator that plans task phases",
         choices=["opus", "sonnet", "haiku"],
     ),
     "claude.model": FieldMeta(
         "models",
         "choice",
-        "Default Claude model",
+        "Default model when no task-specific override is set",
         choices=["opus", "sonnet", "haiku"],
     ),
     # -- heartbeat --
     "golem.heartbeat_enabled": FieldMeta(
-        "heartbeat", "bool", "Enable heartbeat discovery"
+        "heartbeat",
+        "bool",
+        "Auto-discover improvements when idle (code smells, test gaps, etc.)",
     ),
     "golem.heartbeat_interval_seconds": FieldMeta(
-        "heartbeat", "int", "Seconds between heartbeat scans", min_val=1
+        "heartbeat",
+        "int",
+        "How often the heartbeat scanner looks for candidates",
+        min_val=1,
     ),
     "golem.heartbeat_idle_threshold_seconds": FieldMeta(
-        "heartbeat", "int", "Idle seconds before heartbeat activates", min_val=1
+        "heartbeat",
+        "int",
+        "Seconds of inactivity before heartbeat tasks start spawning",
+        min_val=1,
     ),
     "golem.heartbeat_daily_budget_usd": FieldMeta(
-        "heartbeat", "float", "Daily heartbeat budget", min_val=0.0
+        "heartbeat",
+        "float",
+        "Max daily spend on heartbeat-discovered tasks",
+        min_val=0.0,
     ),
     "golem.heartbeat_max_inflight": FieldMeta(
-        "heartbeat", "int", "Max concurrent heartbeat tasks", min_val=1
+        "heartbeat",
+        "int",
+        "Max heartbeat tasks running in parallel",
+        min_val=1,
     ),
     "golem.heartbeat_candidate_limit": FieldMeta(
-        "heartbeat", "int", "Max candidates per scan", min_val=1
+        "heartbeat",
+        "int",
+        "Max improvement candidates evaluated per scan",
+        min_val=1,
     ),
     "golem.heartbeat_dedup_ttl_days": FieldMeta(
-        "heartbeat", "int", "Dedup TTL in days", min_val=1
+        "heartbeat",
+        "int",
+        "Days before a previously attempted improvement can be retried",
+        min_val=1,
     ),
     # -- self_update --
     "golem.self_update_enabled": FieldMeta(
-        "self_update", "bool", "Enable self-update monitoring"
+        "self_update",
+        "bool",
+        "Watch for upstream changes and auto-restart on new commits",
     ),
     "golem.self_update_branch": FieldMeta(
-        "self_update", "str", "Remote branch to watch"
+        "self_update", "str", "Git branch to track for updates (e.g. main, master)"
     ),
     "golem.self_update_interval_seconds": FieldMeta(
-        "self_update", "int", "Poll frequency in seconds", min_val=60
+        "self_update",
+        "int",
+        "How often to check the remote branch for new commits",
+        min_val=60,
     ),
     "golem.self_update_strategy": FieldMeta(
         "self_update",
         "choice",
-        "Update strategy",
+        "merged_only = only merged PRs; any_commit = any new commit triggers update",
         choices=["merged_only", "any_commit"],
     ),
     # -- integrations --
-    "slack.enabled": FieldMeta("integrations", "bool", "Enable Slack notifications"),
-    "slack.webhooks": FieldMeta(
-        "integrations", "str", "Slack webhooks (JSON dict of channel:url)"
+    "slack.enabled": FieldMeta(
+        "integrations", "bool", "Post task results and alerts to Slack channels"
     ),
-    "teams.enabled": FieldMeta("integrations", "bool", "Enable Teams notifications"),
+    "slack.webhooks": FieldMeta(
+        "integrations",
+        "str",
+        'JSON map of channel name to webhook URL, e.g. {"#dev": "https://..."}',
+    ),
+    "teams.enabled": FieldMeta(
+        "integrations", "bool", "Post task results and alerts to Microsoft Teams"
+    ),
     "teams.webhooks": FieldMeta(
-        "integrations", "str", "Teams webhooks (JSON dict of channel:url)"
+        "integrations",
+        "str",
+        'JSON map of channel name to webhook URL, e.g. {"General": "https://..."}',
     ),
     "webhook.enabled": FieldMeta(
-        "integrations", "bool", "Enable webhook notifications"
+        "integrations",
+        "bool",
+        "Listen for inbound webhooks to trigger tasks",
     ),
     "webhook.port": FieldMeta(
-        "integrations", "int", "Webhook listener port", min_val=1, max_val=65535
+        "integrations",
+        "int",
+        "TCP port for the inbound webhook listener",
+        min_val=1,
+        max_val=65535,
     ),
     "webhook.secret": FieldMeta(
-        "integrations", "str", "Webhook secret", sensitive=True
+        "integrations",
+        "str",
+        "HMAC secret for webhook signature verification",
+        sensitive=True,
     ),
     # -- dashboard --
     "dashboard.port": FieldMeta(
-        "dashboard", "int", "Dashboard port", min_val=1, max_val=65535
+        "dashboard", "int", "TCP port for this web dashboard", min_val=1, max_val=65535
     ),
     "dashboard.admin_token": FieldMeta(
-        "dashboard", "str", "Admin token", sensitive=True
+        "dashboard",
+        "str",
+        "Bearer token required for config changes (empty = open access)",
+        sensitive=True,
     ),
-    "dashboard.api_key": FieldMeta("dashboard", "str", "API key", sensitive=True),
+    "dashboard.api_key": FieldMeta(
+        "dashboard",
+        "str",
+        "API key for external dashboard integrations",
+        sensitive=True,
+    ),
     # -- daemon --
     "daemon.drain_timeout_seconds": FieldMeta(
-        "daemon", "int", "Drain timeout for reload", min_val=1
+        "daemon",
+        "int",
+        "Seconds to wait for running tasks to finish during a graceful reload",
+        min_val=1,
     ),
     # -- logging --
-    "logging.log_file": FieldMeta("logging", "str", "Log file path"),
+    "logging.log_file": FieldMeta(
+        "logging", "str", "Path to the daemon log file (empty = stderr only)"
+    ),
     "logging.log_level": FieldMeta(
         "logging",
         "choice",
-        "Log level",
+        "Minimum severity to log; DEBUG is verbose, ERROR is quiet",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
     ),
-    "logging.store_agent_traces": FieldMeta("logging", "bool", "Store agent traces"),
-    "logging.store_thinking": FieldMeta("logging", "bool", "Store thinking blocks"),
+    "logging.store_agent_traces": FieldMeta(
+        "logging",
+        "bool",
+        "Save full Claude agent traces to disk for later inspection",
+    ),
+    "logging.store_thinking": FieldMeta(
+        "logging",
+        "bool",
+        "Include extended thinking blocks in stored traces",
+    ),
     # -- health --
     "health.check_interval_seconds": FieldMeta(
-        "health", "int", "Health check interval", min_val=1
+        "health",
+        "int",
+        "Seconds between internal health checks (error rate, queue depth)",
+        min_val=1,
     ),
     "health.error_rate_threshold": FieldMeta(
-        "health", "float", "Error rate threshold", min_val=0.0, max_val=1.0
+        "health",
+        "float",
+        "Fraction of failed tasks (0.0\u20131.0) that triggers a health alert",
+        min_val=0.0,
+        max_val=1.0,
     ),
     "health.queue_depth_threshold": FieldMeta(
-        "health", "int", "Queue depth threshold", min_val=1
+        "health",
+        "int",
+        "Pending task count that triggers a queue-depth alert",
+        min_val=1,
     ),
     # -- polling --
     "polling.error_threshold": FieldMeta(
-        "polling", "int", "Error threshold", min_val=1
+        "polling",
+        "int",
+        "Consecutive poll failures before exponential backoff kicks in",
+        min_val=1,
     ),
     "polling.max_backoff_seconds": FieldMeta(
-        "polling", "int", "Max backoff seconds", min_val=1
+        "polling",
+        "int",
+        "Maximum delay between poll retries during backoff",
+        min_val=1,
     ),
     "polling.recent_items_limit": FieldMeta(
-        "polling", "int", "Recent items limit", min_val=1
+        "polling",
+        "int",
+        "How many recent issues to fetch per poll cycle",
+        min_val=1,
     ),
 }
 
