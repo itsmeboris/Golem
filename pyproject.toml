@@ -48,6 +48,7 @@ dev = [
     "black>=23.0",
     "pylint>=3.0",
     "httpx>=0.24",
+    "mutmut>=2.0",
 ]
 
 [project.urls]

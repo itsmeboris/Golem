@@ -9,7 +9,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from golem.verifier import _parse_pytest_output, run_verification, VerificationResult
+from golem.verifier import (
+    _parse_pytest_output,
+    run_verification,
+    run_mutation_testing,
+    MutationResult,
+    VerificationResult,
+)
 
 
 class TestParsePytestOutput:
@@ -295,3 +301,85 @@ class TestRunVerification:
         )
         d = r.to_dict()
         assert "coverage_delta" not in d
+
+
+class TestRunMutationTesting:
+    def test_empty_file_paths_returns_early(self):
+        """When file_paths is empty, no subprocess is called and passed=True."""
+        with patch("golem.verifier.subprocess.run") as mock_run:
+            result = run_mutation_testing([], "/tmp/workdir")
+            mock_run.assert_not_called()
+        assert result.passed is True
+        assert result.exit_code == 0
+        assert result.output == "No files to mutate"
+        assert result.duration_s == 0.0
+
+    @patch("golem.verifier.subprocess.run")
+    def test_successful_run(self, mock_run):
+        """Successful mutmut run returns passed=True and exit_code=0."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="Killed 10 out of 10 mutants (100%)\n",
+            stderr="",
+        )
+        result = run_mutation_testing(["golem/verifier.py"], "/tmp/workdir")
+        assert result.passed is True
+        assert result.exit_code == 0
+        assert "Killed" in result.output
+        # Verify mutmut was called with the correct command
+        called_cmd = mock_run.call_args.args[0]
+        assert called_cmd[0] == "mutmut"
+        assert called_cmd[1] == "run"
+        assert "--paths-to-mutate=golem/verifier.py" in called_cmd
+
+    @patch("golem.verifier.subprocess.run")
+    def test_failed_run(self, mock_run):
+        """When mutmut returns non-zero, passed=False and exit_code=1."""
+        mock_run.return_value = MagicMock(
+            returncode=1,
+            stdout="2 out of 10 mutants survived\n",
+            stderr="",
+        )
+        result = run_mutation_testing(["golem/verifier.py"], "/tmp/workdir")
+        assert result.passed is False
+        assert result.exit_code == 1
+        assert "survived" in result.output
+
+    @patch("golem.verifier.subprocess.run")
+    def test_timeout_handled(self, mock_run):
+        """TimeoutExpired is caught and returns passed=False with timed out in output."""
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="mutmut", timeout=600)
+        result = run_mutation_testing(["golem/verifier.py"], "/tmp/workdir")
+        assert result.passed is False
+        assert "timed out" in result.output.lower()
+        assert result.exit_code == 1
+        assert result.duration_s >= 0.0
+
+    @patch("golem.verifier.subprocess.run")
+    def test_oserror_handled(self, mock_run):
+        """OSError is caught and returns passed=False."""
+        mock_run.side_effect = OSError("No such file or directory: 'mutmut'")
+        result = run_mutation_testing(["golem/verifier.py"], "/tmp/workdir")
+        assert result.passed is False
+        assert "command failed" in result.output.lower()
+        assert result.exit_code == 1
+        assert result.duration_s >= 0.0
+
+    @patch("golem.verifier.subprocess.run")
+    def test_custom_timeout(self, mock_run):
+        """The timeout kwarg is forwarded to the subprocess call."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        result = run_mutation_testing(
+            ["golem/verifier.py"], "/tmp/workdir", timeout=120
+        )
+        assert mock_run.call_args.kwargs["timeout"] == 120
+        assert result.passed is True
+        assert result.exit_code == 0
+
+    @patch("golem.verifier.subprocess.run")
+    def test_paths_joined_with_commas(self, mock_run):
+        """Multiple file paths are comma-separated in the mutmut command."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        run_mutation_testing(["golem/verifier.py", "golem/runner.py"], "/tmp/workdir")
+        called_cmd = mock_run.call_args.args[0]
+        assert "--paths-to-mutate=golem/verifier.py,golem/runner.py" in called_cmd

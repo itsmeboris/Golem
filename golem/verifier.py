@@ -187,6 +187,50 @@ def _load_coverage_delta(cov_json_path: Path, work_dir: str) -> CoverageDelta | 
         cov_json_path.unlink(missing_ok=True)
 
 
+@dataclass
+class MutationResult:
+    """Structured output from running mutmut mutation testing."""
+
+    exit_code: int
+    output: str
+    passed: bool
+    duration_s: float
+
+
+def run_mutation_testing(
+    file_paths: list[str], work_dir: str, *, timeout: int = 600
+) -> MutationResult:
+    """Run mutmut mutation testing on the given files.
+
+    Returns early with passed=True if file_paths is empty.
+    """
+    if not file_paths:
+        return MutationResult(
+            exit_code=0,
+            output="No files to mutate",
+            passed=True,
+            duration_s=0.0,
+        )
+
+    start = time.time()
+    cmd = ["mutmut", "run", "--paths-to-mutate=" + ",".join(file_paths)]
+    success, output = _run_cmd(cmd, work_dir, timeout)
+    duration = round(time.time() - start, 2)
+
+    logger.info(
+        "Mutation testing %s in %.1fs",
+        "PASSED" if success else "FAILED",
+        duration,
+    )
+
+    return MutationResult(
+        exit_code=0 if success else 1,
+        output=output,
+        passed=success,
+        duration_s=duration,
+    )
+
+
 def run_verification(work_dir: str, *, timeout: int = 300) -> VerificationResult:
     """Run black, pylint, pytest and return structured results.
 
