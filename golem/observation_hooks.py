@@ -79,7 +79,6 @@ _IMPORT_ERROR_RE = re.compile(
 _FIXTURE_NOT_FOUND_RE = re.compile(r"fixture '([^']+)' not found")
 _TYPE_ERROR_RE = re.compile(r"TypeError: (.+)")
 _ASSERTION_ERROR_RE = re.compile(r"FAILED\s+(\S+).*AssertionError", re.IGNORECASE)
-_ASSERTION_ERROR_LINE_RE = re.compile(r"FAILED\s+(\S+)")
 
 
 def _mine_pytest_signals(result: VerificationResult) -> list[ObservationSignal]:
