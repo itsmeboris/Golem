@@ -9,12 +9,17 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from golem.types import MutationResultDict, VerificationResultDict
 from golem.verifier import (
-    _parse_pytest_output,
-    run_verification,
-    run_mutation_testing,
+    CoverageDelta,
     MutationResult,
+    SurvivedMutant,
     VerificationResult,
+    _parse_pytest_output,
+    parse_mutmut_results,
+    parse_mutmut_summary,
+    run_mutation_testing,
+    run_verification,
 )
 
 
@@ -110,8 +115,6 @@ class TestVerificationResult:
         )
         result = run_verification("/tmp/test")
         d = result.to_dict()
-        from golem.types import VerificationResultDict
-
         for (
             key
         ) in VerificationResultDict.__required_keys__:  # pylint: disable=no-member
@@ -142,7 +145,7 @@ class TestRunVerification:
 
     @patch("golem.verifier.subprocess.run")
     def test_black_fails(self, mock_run):
-        def side_effect(*args, **kwargs):
+        def side_effect(*args, **_kwargs):
             cmd = args[0]
             if "black" in cmd:
                 return MagicMock(
@@ -160,7 +163,7 @@ class TestRunVerification:
 
     @patch("golem.verifier.subprocess.run")
     def test_pytest_fails_with_failures(self, mock_run):
-        def side_effect(*args, **kwargs):
+        def side_effect(*args, **_kwargs):
             cmd = args[0]
             if "pytest" in cmd:
                 return MagicMock(
@@ -217,7 +220,7 @@ class TestRunVerification:
         }
         cov_json.write_text(json.dumps(cov_data))
 
-        def side_effect(*args, **kwargs):
+        def side_effect(*args, **_kwargs):
             cmd = args[0]
             if "git" in cmd:
                 return MagicMock(returncode=0, stdout="golem/foo.py\n", stderr="")
@@ -261,8 +264,6 @@ class TestRunVerification:
 
     def test_to_dict_includes_coverage_delta(self):
         """to_dict includes coverage_delta key."""
-        from golem.verifier import CoverageDelta
-
         delta = CoverageDelta(all_covered=True, delta_pct=100.0, uncovered_lines={})
         r = VerificationResult(
             passed=True,
@@ -383,3 +384,294 @@ class TestRunMutationTesting:
         run_mutation_testing(["golem/verifier.py", "golem/runner.py"], "/tmp/workdir")
         called_cmd = mock_run.call_args.args[0]
         assert "--paths-to-mutate=golem/verifier.py,golem/runner.py" in called_cmd
+
+    def test_empty_file_paths_structured_fields_are_zero(self):
+        """When file_paths is empty, all count fields are 0 and survived_mutants is empty."""
+        with patch("golem.verifier.subprocess.run") as mock_run:
+            result = run_mutation_testing([], "/tmp/workdir")
+            mock_run.assert_not_called()
+        assert result.mutants_total == 0
+        assert result.killed == 0
+        assert result.survived == 0
+        assert result.timeout == 0
+        assert result.suspicious == 0
+        assert result.skipped == 0
+        assert result.survived_mutants == []
+
+    @patch("golem.verifier.subprocess.run")
+    def test_successful_run_populates_counts(self, mock_run):
+        """Structured count fields are populated from mutmut run output."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="\u2838 10/10  \U0001f389 8  \u23f0 0  \U0001f914 0  \U0001f641 2  \U0001f507 0\n",
+            stderr="",
+        )
+        result = run_mutation_testing(["golem/verifier.py"], "/tmp/workdir")
+        assert result.mutants_total == 10
+        assert result.killed == 8
+        assert result.survived == 2
+        assert result.timeout == 0
+        assert result.suspicious == 0
+        assert result.skipped == 0
+
+    @patch("golem.verifier.subprocess.run")
+    def test_run_with_no_summary_line_zero_counts(self, mock_run):
+        """When output has no emoji summary line, counts default to 0."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="Some output without summary line\n",
+            stderr="",
+        )
+        result = run_mutation_testing(["golem/verifier.py"], "/tmp/workdir")
+        assert result.mutants_total == 0
+        assert result.killed == 0
+        assert result.survived == 0
+
+
+class TestParseMutmutSummary:
+    @pytest.mark.parametrize(
+        "output, expected",
+        [
+            # Normal progress line with all mutants killed
+            (
+                "\u2838 10/10  \U0001f389 8  \u23f0 0  \U0001f914 0  \U0001f641 2  \U0001f507 0\n",
+                {
+                    "mutants_total": 10,
+                    "killed": 8,
+                    "survived": 2,
+                    "timeout": 0,
+                    "suspicious": 0,
+                    "skipped": 0,
+                },
+            ),
+            # All killed, no survivors
+            (
+                "\u2838 5/5  \U0001f389 5  \u23f0 0  \U0001f914 0  \U0001f641 0  \U0001f507 0",
+                {
+                    "mutants_total": 5,
+                    "killed": 5,
+                    "survived": 0,
+                    "timeout": 0,
+                    "suspicious": 0,
+                    "skipped": 0,
+                },
+            ),
+            # All zeros/one mutant with skipped
+            (
+                "\u2838 3/3  \U0001f389 0  \u23f0 1  \U0001f914 1  \U0001f641 0  \U0001f507 1",
+                {
+                    "mutants_total": 3,
+                    "killed": 0,
+                    "survived": 0,
+                    "timeout": 1,
+                    "suspicious": 1,
+                    "skipped": 1,
+                },
+            ),
+            # Empty output
+            (
+                "",
+                {
+                    "mutants_total": 0,
+                    "killed": 0,
+                    "survived": 0,
+                    "timeout": 0,
+                    "suspicious": 0,
+                    "skipped": 0,
+                },
+            ),
+            # No emoji summary line
+            (
+                "Some random output with no summary",
+                {
+                    "mutants_total": 0,
+                    "killed": 0,
+                    "survived": 0,
+                    "timeout": 0,
+                    "suspicious": 0,
+                    "skipped": 0,
+                },
+            ),
+            # Partial/truncated line (missing some fields)
+            (
+                "\u2838 7/7  \U0001f389 4",
+                {
+                    "mutants_total": 0,
+                    "killed": 0,
+                    "survived": 0,
+                    "timeout": 0,
+                    "suspicious": 0,
+                    "skipped": 0,
+                },
+            ),
+            # Summary line embedded in longer output
+            (
+                "Running mutmut...\n\u2838 20/20  \U0001f389 18  \u23f0 1  \U0001f914 0  \U0001f641 1  \U0001f507 0\nDone.\n",
+                {
+                    "mutants_total": 20,
+                    "killed": 18,
+                    "survived": 1,
+                    "timeout": 1,
+                    "suspicious": 0,
+                    "skipped": 0,
+                },
+            ),
+        ],
+    )
+    def test_parse_mutmut_summary(self, output, expected):
+        result = parse_mutmut_summary(output)
+        assert result == expected
+
+
+class TestParseMutmutResults:
+    @pytest.mark.parametrize(
+        "output, expected_mutants",
+        [
+            # Normal output with two survived mutants
+            (
+                "To apply a mutant on disk:\n"
+                "    mutmut apply <id>\n\n"
+                "Survived \U0001f641 (2)\n\n"
+                "---- golem/verifier.py (line 42) ----\n"
+                "1\n\n"
+                "---- golem/verifier.py (line 55) ----\n"
+                "3\n",
+                [
+                    SurvivedMutant(file="golem/verifier.py", line=42, mutant_id=1),
+                    SurvivedMutant(file="golem/verifier.py", line=55, mutant_id=3),
+                ],
+            ),
+            # Single survived mutant
+            (
+                "Survived \U0001f641 (1)\n\n"
+                "---- golem/foo.py (line 10) ----\n"
+                "7\n",
+                [SurvivedMutant(file="golem/foo.py", line=10, mutant_id=7)],
+            ),
+            # Multiple files
+            (
+                "Survived \U0001f641 (3)\n\n"
+                "---- golem/a.py (line 1) ----\n"
+                "2\n\n"
+                "---- golem/b.py (line 99) ----\n"
+                "5\n\n"
+                "---- golem/c.py (line 200) ----\n"
+                "10\n",
+                [
+                    SurvivedMutant(file="golem/a.py", line=1, mutant_id=2),
+                    SurvivedMutant(file="golem/b.py", line=99, mutant_id=5),
+                    SurvivedMutant(file="golem/c.py", line=200, mutant_id=10),
+                ],
+            ),
+            # No survived mutants (empty results)
+            (
+                "To apply a mutant on disk:\n"
+                "    mutmut apply <id>\n\n"
+                "Survived \U0001f641 (0)\n",
+                [],
+            ),
+            # Empty output
+            ("", []),
+            # Malformed output (no matching blocks)
+            ("Random output without mutant blocks", []),
+            # Malformed line number (non-numeric) — skipped gracefully
+            (
+                "---- golem/foo.py (line abc) ----\n" "1\n",
+                [],
+            ),
+            # Missing mutant ID — block without id line skipped
+            (
+                "---- golem/foo.py (line 10) ----\n",
+                [],
+            ),
+            # Consecutive headers: first block has no ID line (malformed),
+            # second block must still be parsed
+            (
+                "---- golem/a.py (line 10) ----\n"
+                "---- golem/b.py (line 20) ----\n"
+                "5\n",
+                [SurvivedMutant(file="golem/b.py", line=20, mutant_id=5)],
+            ),
+            # Blank line between header and mutant ID (exercises j += 1, line 262)
+            (
+                "---- golem/foo.py (line 10) ----\n" "\n" "7\n",
+                [SurvivedMutant(file="golem/foo.py", line=10, mutant_id=7)],
+            ),
+        ],
+    )
+    def test_parse_mutmut_results(self, output, expected_mutants):
+        result = parse_mutmut_results(output)
+        assert result == expected_mutants
+
+
+class TestMutationResultToDict:
+    def test_to_dict_contains_all_required_keys(self):
+        """to_dict() includes all MutationResultDict required keys."""
+        mr = MutationResult(
+            exit_code=0,
+            output="output text",
+            passed=True,
+            duration_s=1.5,
+            mutants_total=10,
+            killed=8,
+            survived=2,
+            timeout=0,
+            suspicious=0,
+            skipped=0,
+            survived_mutants=[
+                SurvivedMutant(file="golem/foo.py", line=42, mutant_id=1)
+            ],
+        )
+        d = mr.to_dict()
+        for key in MutationResultDict.__required_keys__:  # pylint: disable=no-member
+            assert key in d, f"Missing key: {key}"
+
+    def test_to_dict_values_match_fields(self):
+        """to_dict() values reflect the dataclass fields accurately."""
+        mr = MutationResult(
+            exit_code=1,
+            output="some output",
+            passed=False,
+            duration_s=3.7,
+            mutants_total=5,
+            killed=3,
+            survived=2,
+            timeout=0,
+            suspicious=0,
+            skipped=0,
+            survived_mutants=[
+                SurvivedMutant(file="golem/bar.py", line=10, mutant_id=7),
+            ],
+        )
+        d = mr.to_dict()
+        assert d["exit_code"] == 1
+        assert d["output"] == "some output"
+        assert d["passed"] is False
+        assert d["duration_s"] == 3.7
+        assert d["mutants_total"] == 5
+        assert d["killed"] == 3
+        assert d["survived"] == 2
+        assert d["timeout"] == 0
+        assert d["suspicious"] == 0
+        assert d["skipped"] == 0
+        assert len(d["survived_mutants"]) == 1
+        assert d["survived_mutants"][0]["file"] == "golem/bar.py"
+        assert d["survived_mutants"][0]["line"] == 10
+        assert d["survived_mutants"][0]["mutant_id"] == 7
+
+    def test_to_dict_empty_survived_mutants(self):
+        """to_dict() with no survived mutants has empty list."""
+        mr = MutationResult(
+            exit_code=0,
+            output="all killed",
+            passed=True,
+            duration_s=2.0,
+            mutants_total=3,
+            killed=3,
+            survived=0,
+            timeout=0,
+            suspicious=0,
+            skipped=0,
+        )
+        d = mr.to_dict()
+        assert d["survived_mutants"] == []
