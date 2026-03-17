@@ -1,11 +1,17 @@
 """Write extracted pitfalls to AGENTS.md with categorization and atomic writes."""
 
+from __future__ import annotations
+
 import logging
 import os
 import re
 import tempfile
 from datetime import date, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .instinct_store import InstinctStore
 
 from .core.config import PROJECT_ROOT
 from .pitfall_extractor import (
@@ -248,7 +254,7 @@ def update_agents_md(
 
 
 def update_agents_md_from_instincts(
-    store: "object", agents_md_path: Path | None = None
+    store: "InstinctStore", agents_md_path: Path | None = None
 ) -> None:
     """Generate AGENTS.md from the instinct store.
 

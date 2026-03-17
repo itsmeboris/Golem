@@ -593,7 +593,7 @@ def validate_config(config: Config) -> list[str]:
     # max_mcp_servers validation
     if config.golem.max_mcp_servers < 1:
         errors.append(
-            "golem.max_mcp_servers must be >= 1, " f"got {config.golem.max_mcp_servers}"
+            "golem.max_mcp_servers must be >= 1, got %d" % config.golem.max_mcp_servers
         )
 
     # Self-update validation (always run, not gated on enabled)

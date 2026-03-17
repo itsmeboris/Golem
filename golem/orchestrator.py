@@ -30,7 +30,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from .types import MilestoneDict, PhaseHandoffDict
+from .types import FileRoleDict, MilestoneDict, PhaseHandoffDict
 from .handoff import create_handoff, validate_handoff
 
 from .core.cli_wrapper import CLIConfig, CLIResult, CLIType, invoke_cli_monitored
@@ -323,7 +323,7 @@ class TaskOrchestrator:
         from_phase: str,
         to_phase: str,
         context: list[str],
-        files: list[dict],
+        files: list[FileRoleDict],
     ) -> None:
         """Create, validate, and store a phase handoff document."""
         handoff = create_handoff(
