@@ -91,6 +91,13 @@ class TaskSessionState(str, Enum):
     HUMAN_REVIEW = "human_review"
 
 
+class RootCause(str, Enum):
+    """Named root causes for task escalation."""
+
+    IDENTICAL_FAILURES = "identical_failures"
+    BUDGET_EXCEEDED = "budget_exceeded"
+
+
 @dataclass
 class TaskSession:
     """Persistent state for a single [AGENT] task orchestration (v2).
@@ -548,7 +555,9 @@ class TaskOrchestrator:
                         concerns=[feedback],
                     )
                     self._apply_verdict(synth_verdict)
-                    self._escalate(synth_verdict, root_cause="identical_failures")
+                    self._escalate(
+                        synth_verdict, root_cause=RootCause.IDENTICAL_FAILURES
+                    )
                     return
                 # Guard 2: budget exceeded — abort instead of retrying
                 if self.session.total_cost_usd >= self.session.budget_usd:
@@ -565,7 +574,7 @@ class TaskOrchestrator:
                         concerns=[feedback],
                     )
                     self._apply_verdict(synth_verdict)
-                    self._escalate(synth_verdict, root_cause="budget_exceeded")
+                    self._escalate(synth_verdict, root_cause=RootCause.BUDGET_EXCEEDED)
                     return
                 if self.session.retry_count < self.task_config.max_retries:
                     # Build a synthetic PARTIAL verdict from verification failure

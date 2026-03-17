@@ -13,6 +13,7 @@ from golem.committer import CommitResult
 from golem.core.cli_wrapper import CLIResult
 from golem.event_tracker import Milestone, TaskEventTracker, TrackerState
 from golem.orchestrator import (
+    RootCause,
     TaskOrchestrator,
     TaskSession,
     TaskSessionState,
@@ -2717,15 +2718,17 @@ class TestRootCause:
         assert session.root_cause == ""
 
     def test_root_cause_round_trips_to_dict(self):
-        session = TaskSession(parent_issue_id=42, root_cause="identical_failures")
+        session = TaskSession(
+            parent_issue_id=42, root_cause=RootCause.IDENTICAL_FAILURES
+        )
         d = session.to_dict()
-        assert d["root_cause"] == "identical_failures"
+        assert d["root_cause"] == RootCause.IDENTICAL_FAILURES
 
     def test_root_cause_round_trips_from_dict(self):
         session = TaskSession.from_dict(
             {"parent_issue_id": 1, "state": "detected", "root_cause": "budget_exceeded"}
         )
-        assert session.root_cause == "budget_exceeded"
+        assert session.root_cause == RootCause.BUDGET_EXCEEDED
 
     def test_root_cause_defaults_in_from_dict_when_absent(self):
         session = TaskSession.from_dict({"parent_issue_id": 1, "state": "detected"})
@@ -2749,9 +2752,9 @@ class TestEscalateRootCause:
         profile = MagicMock()
         orch = _make_orch(session, profile=profile)
         verdict = ValidationVerdict(verdict="FAIL", confidence=0.1, summary="bad")
-        orch._escalate(verdict, root_cause="identical_failures")
+        orch._escalate(verdict, root_cause=RootCause.IDENTICAL_FAILURES)
         assert session.state == TaskSessionState.FAILED
-        assert session.root_cause == "identical_failures"
+        assert session.root_cause == RootCause.IDENTICAL_FAILURES
 
     def test_escalate_with_budget_exceeded_root_cause(self):
         session = TaskSession(parent_issue_id=42, parent_subject="Fix")
@@ -2760,9 +2763,9 @@ class TestEscalateRootCause:
         verdict = ValidationVerdict(
             verdict="FAIL", confidence=0.0, summary="over budget"
         )
-        orch._escalate(verdict, root_cause="budget_exceeded")
+        orch._escalate(verdict, root_cause=RootCause.BUDGET_EXCEEDED)
         assert session.state == TaskSessionState.FAILED
-        assert session.root_cause == "budget_exceeded"
+        assert session.root_cause == RootCause.BUDGET_EXCEEDED
 
 
 class TestStallDetection:
@@ -2826,7 +2829,7 @@ class TestStallDetection:
             await orch._run_agent_monolithic()
 
         assert session.state == TaskSessionState.FAILED
-        assert session.root_cause == "identical_failures"
+        assert session.root_cause == RootCause.IDENTICAL_FAILURES
 
     async def test_identical_failures_empty_does_not_abort(self):
         """SPEC-1: empty failures list should NOT trigger identical-failure guard."""
@@ -2876,7 +2879,7 @@ class TestStallDetection:
             await orch._run_agent_monolithic()
 
         orch._retry_agent.assert_awaited_once()
-        assert session.root_cause != "identical_failures"
+        assert session.root_cause == ""
 
     async def test_different_failures_triggers_normal_retry(self):
         """SPEC-5: when failures differ, normal retry path runs."""
@@ -2917,7 +2920,7 @@ class TestStallDetection:
             await orch._run_agent_monolithic()
 
         orch._retry_agent.assert_awaited_once()
-        assert session.root_cause != "identical_failures"
+        assert session.root_cause == ""
 
     async def test_no_last_verification_triggers_normal_retry(self):
         """SPEC-5: when _last_verification is None, normal retry runs."""
@@ -2983,7 +2986,7 @@ class TestStallDetection:
             await orch._run_agent_monolithic()
 
         assert session.state == TaskSessionState.FAILED
-        assert session.root_cause == "budget_exceeded"
+        assert session.root_cause == RootCause.BUDGET_EXCEEDED
 
     async def test_cost_within_budget_does_not_abort(self):
         """SPEC-2: cost below budget does not trigger budget guard."""
@@ -3014,4 +3017,4 @@ class TestStallDetection:
             await orch._run_agent_monolithic()
 
         orch._retry_agent.assert_awaited_once()
-        assert session.root_cause != "budget_exceeded"
+        assert session.root_cause == ""
