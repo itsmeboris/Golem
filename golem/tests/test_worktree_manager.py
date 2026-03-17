@@ -728,3 +728,11 @@ class TestFastForwardIfSafe:
         ok, reason = fast_forward_if_safe(str(tmp_path / "repo"), "branch")
         assert ok is False
         assert "ff-only failed" in reason
+
+    def test_missing_ref_detected(self, git_repo):
+        """Non-existent branch ref is reported as 'ref not found'."""
+        from golem.worktree_manager import fast_forward_if_safe
+
+        ok, reason = fast_forward_if_safe(str(git_repo), "merge-ready/nonexistent")
+        assert ok is False
+        assert "ref not found" in reason

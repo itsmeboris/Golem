@@ -248,13 +248,19 @@ class TestRetryDeferredMerges:
         session.base_work_dir = str(tmp_path / "repo")
         flow._sessions[42] = session
 
+        def fake_run_git(args, cwd):
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = "abc123\n"
+            result.stderr = ""
+            return result
+
         with (
             patch(
                 "golem.flow.fast_forward_if_safe", return_value=(True, "")
             ) as _mock_ff,
-            patch("golem.flow._run_git") as mock_git,
+            patch("golem.flow._run_git", side_effect=fake_run_git) as mock_git,
         ):
-            mock_git.return_value = MagicMock(stdout="abc123\n")
             await flow._retry_deferred_merges()
 
         assert session.merge_deferred is False
@@ -298,7 +304,17 @@ class TestRetryDeferredMerges:
         session.base_work_dir = str(tmp_path / "repo")
         flow._sessions[42] = session
 
-        with patch("golem.flow.fast_forward_if_safe", return_value=(False, "dirty")):
+        def fake_run_git(args, cwd):
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = "abc123"
+            result.stderr = ""
+            return result
+
+        with (
+            patch("golem.flow._run_git", side_effect=fake_run_git),
+            patch("golem.flow.fast_forward_if_safe", return_value=(False, "dirty")),
+        ):
             await flow._retry_deferred_merges()
 
         assert session.merge_deferred is True
@@ -343,7 +359,17 @@ class TestRetryDeferredMerges:
         session.merge_retry_count = 0
         flow._sessions[44] = session
 
-        with patch("golem.flow.fast_forward_if_safe", return_value=(False, "dirty")):
+        def fake_run_git(args, cwd):
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = "abc123"
+            result.stderr = ""
+            return result
+
+        with (
+            patch("golem.flow._run_git", side_effect=fake_run_git),
+            patch("golem.flow.fast_forward_if_safe", return_value=(False, "dirty")),
+        ):
             await flow._retry_deferred_merges()
             assert session.merge_retry_count == 1
             await flow._retry_deferred_merges()
@@ -352,7 +378,7 @@ class TestRetryDeferredMerges:
     async def test_logs_error_when_max_retries_reached(
         self, monkeypatch, tmp_path, caplog
     ):
-        """An ERROR is logged when merge_retry_count reaches _MAX_MERGE_RETRIES."""
+        """An ERROR is logged and session transitions to FAILED at max retries."""
         import logging
 
         flow = _make_flow(monkeypatch, tmp_path)
@@ -370,11 +396,26 @@ class TestRetryDeferredMerges:
         session.merge_retry_count = 2  # one away from limit of 3
         flow._sessions[45] = session
 
-        with patch("golem.flow.fast_forward_if_safe", return_value=(False, "conflict")):
+        def fake_run_git(args, cwd):
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = "abc123"
+            result.stderr = ""
+            return result
+
+        with (
+            patch("golem.flow._run_git", side_effect=fake_run_git),
+            patch(
+                "golem.flow.fast_forward_if_safe",
+                return_value=(False, "conflict"),
+            ),
+        ):
             with caplog.at_level(logging.ERROR, logger="golem.flow"):
                 await flow._retry_deferred_merges()
 
         assert session.merge_retry_count == 3
+        assert session.state == TaskSessionState.FAILED
+        assert session.merge_deferred is False
         assert any(
             "exceeded" in record.message and "45" in record.message
             for record in caplog.records
@@ -398,13 +439,98 @@ class TestRetryDeferredMerges:
         session.merge_retry_count = 2
         flow._sessions[46] = session
 
+        def fake_run_git(args, cwd):
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = "deadbeef\n"
+            result.stderr = ""
+            return result
+
         with (
             patch("golem.flow.fast_forward_if_safe", return_value=(True, "")),
-            patch("golem.flow._run_git") as mock_git,
+            patch("golem.flow._run_git", side_effect=fake_run_git),
         ):
-            mock_git.return_value = MagicMock(stdout="deadbeef\n")
             await flow._retry_deferred_merges()
 
         assert session.merge_retry_count == 0
         assert session.merge_deferred is False
         assert session.commit_sha == "deadbeef"
+
+    async def test_missing_branch_fails_immediately(self, monkeypatch, tmp_path):
+        """When merge branch ref is gone, session transitions to FAILED immediately."""
+        flow = _make_flow(monkeypatch, tmp_path)
+
+        session = TaskSession(
+            parent_issue_id=50,
+            parent_subject="test",
+            state=TaskSessionState.COMPLETED,
+            created_at="2025-01-01T00:00:00",
+            updated_at="2025-01-01T00:00:00",
+        )
+        session.merge_deferred = True
+        session.merge_branch = "merge-ready/50"
+        session.base_work_dir = str(tmp_path / "repo")
+        session.merge_retry_count = 0
+        flow._sessions[50] = session
+
+        # rev-parse --verify returns non-zero (branch doesn't exist)
+        def fake_run_git(args, cwd):
+            result = MagicMock()
+            if args[:2] == ["rev-parse", "--verify"]:
+                result.returncode = 1
+                result.stdout = ""
+                result.stderr = ""
+            else:
+                result.returncode = 0
+                result.stdout = ""
+            return result
+
+        with (
+            patch("golem.flow._run_git", side_effect=fake_run_git),
+            patch("golem.flow.fast_forward_if_safe") as mock_ff,
+        ):
+            await flow._retry_deferred_merges()
+
+        # Should NOT have attempted ff — branch is gone
+        mock_ff.assert_not_called()
+        assert session.state == TaskSessionState.FAILED
+        assert session.merge_deferred is False
+        assert any("branch missing" in e for e in session.errors)
+
+    async def test_max_retries_transitions_to_failed(self, monkeypatch, tmp_path):
+        """When merge_retry_count reaches max, session transitions to FAILED."""
+        flow = _make_flow(monkeypatch, tmp_path)
+
+        session = TaskSession(
+            parent_issue_id=51,
+            parent_subject="test",
+            state=TaskSessionState.COMPLETED,
+            created_at="2025-01-01T00:00:00",
+            updated_at="2025-01-01T00:00:00",
+        )
+        session.merge_deferred = True
+        session.merge_branch = "merge-ready/51"
+        session.base_work_dir = str(tmp_path / "repo")
+        session.merge_retry_count = 2  # one away from limit
+        flow._sessions[51] = session
+
+        # Branch exists but ff fails
+        def fake_run_git(args, cwd):
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = "abc123"
+            result.stderr = ""
+            return result
+
+        with (
+            patch("golem.flow._run_git", side_effect=fake_run_git),
+            patch(
+                "golem.flow.fast_forward_if_safe",
+                return_value=(False, "branches diverged"),
+            ),
+        ):
+            await flow._retry_deferred_merges()
+
+        assert session.state == TaskSessionState.FAILED
+        assert session.merge_deferred is False
+        assert any("merge failed" in e for e in session.errors)

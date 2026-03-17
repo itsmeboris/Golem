@@ -660,6 +660,29 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                 continue
             if session.merge_retry_count >= _MAX_MERGE_RETRIES:
                 continue
+
+            # Check if the merge branch ref still exists
+            ref_check = _run_git(
+                ["rev-parse", "--verify", session.merge_branch],
+                cwd=session.base_work_dir,
+            )
+            if ref_check.returncode != 0:
+                logger.error(
+                    "Session %d: merge branch %s no longer exists — "
+                    "marking as failed",
+                    session.parent_issue_id,
+                    session.merge_branch,
+                )
+                prev_state = session.state
+                session.state = TaskSessionState.FAILED
+                session.merge_deferred = False
+                session.errors.append(
+                    f"merge failed: branch missing ({session.merge_branch})"
+                )
+                self._handle_state_transition(session, prev_state)
+                self._save_state()
+                continue
+
             ok, _reason = fast_forward_if_safe(
                 session.base_work_dir, session.merge_branch
             )
@@ -698,6 +721,14 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                         session.merge_branch,
                         _reason,
                     )
+                    prev_state = session.state
+                    session.state = TaskSessionState.FAILED
+                    session.merge_deferred = False
+                    session.errors.append(
+                        f"merge failed: exhausted {_MAX_MERGE_RETRIES} "
+                        f"retries ({_reason})"
+                    )
+                    self._handle_state_transition(session, prev_state)
             self._save_state()
 
     def _touch_merge_sentinel(self) -> None:

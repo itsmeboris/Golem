@@ -306,6 +306,10 @@ def fast_forward_if_safe(
         logger.warning("Fast-forward not possible for %s: %s", source_branch, output)
         return False, f"branches diverged: {output}"
 
+    if "not something we can merge" in output:
+        logger.error("Branch ref not found: %s", source_branch)
+        return False, f"ref not found: {source_branch}"
+
     return False, f"ff-only failed: {output}"
 
 
