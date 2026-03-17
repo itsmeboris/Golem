@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import subprocess
 from typing import Any
 
@@ -36,6 +37,79 @@ def _gh(
             result.stderr.strip(),
         )
     return result
+
+
+_DEP_PATTERN = re.compile(
+    r"(?:depends\s+on|blocked\s+by|after)\s+#(\d+)",
+    re.IGNORECASE,
+)
+
+
+def parse_dependencies(body: str | None) -> set[int]:
+    """Extract issue numbers from dependency patterns in an issue body.
+
+    Recognises ``Depends on #N``, ``Blocked by #N``, and ``After #N``
+    (case-insensitive, with the ``#`` prefix).
+    """
+    if not body:
+        return set()
+    return {int(m) for m in _DEP_PATTERN.findall(body)}
+
+
+def _detect_circular_deps(deps: dict[int, set[int]]) -> set[int]:
+    """Return the set of all issue numbers involved in any dependency cycle.
+
+    Uses iterative DFS-based cycle detection (three-colour marking).
+    """
+    WHITE, GRAY, BLACK = 0, 1, 2
+    colour: dict[int, int] = {}
+    in_cycle: set[int] = set()
+
+    all_nodes: set[int] = set(deps)
+    for targets in deps.values():
+        all_nodes |= targets
+
+    def dfs(start: int) -> None:
+        stack = [(start, iter(deps.get(start, set())))]
+        path: list[int] = [start]
+        colour[start] = GRAY
+        while stack:
+            node, children = stack[-1]
+            try:
+                child = next(children)
+                if colour.get(child) == GRAY:
+                    # Found a back-edge — everything in the path from child onward is a cycle
+                    cycle_start = path.index(child)
+                    in_cycle.update(path[cycle_start:])
+                elif colour.get(child, WHITE) == WHITE:
+                    colour[child] = GRAY
+                    path.append(child)
+                    stack.append((child, iter(deps.get(child, set()))))
+            except StopIteration:
+                colour[node] = BLACK
+                stack.pop()
+                if path and path[-1] == node:
+                    path.pop()
+
+    for node in all_nodes:
+        if colour.get(node, WHITE) == WHITE:
+            dfs(node)
+
+    return in_cycle
+
+
+def _is_issue_closed(issue_number: int, repo: str) -> bool:
+    """Return True if the given issue is closed, False otherwise or on error."""
+    try:
+        result = _gh(
+            "issue", "view", str(issue_number), "--json", "state", "--repo", repo
+        )
+        if result.returncode != 0:
+            return False
+        data = json.loads(result.stdout)
+        return data.get("state", "").upper() == "CLOSED"
+    except (json.JSONDecodeError, OSError):
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -71,7 +145,7 @@ class GitHubTaskSource:
                     "--label",
                     detection_tag,
                     "--json",
-                    "number,title",
+                    "number,title,body",
                     "--state",
                     "open",
                     "--repo",
@@ -83,8 +157,35 @@ class GitHubTaskSource:
                     )
                     continue
                 issues = json.loads(result.stdout) if result.stdout.strip() else []
+
+                # Build dependency map and detect cycles
+                deps: dict[int, set[int]] = {
+                    issue["number"]: parse_dependencies(issue.get("body", ""))
+                    for issue in issues
+                }
+                circular = _detect_circular_deps(deps)
+                for num in circular:
+                    logger.warning(
+                        "Circular dependency detected for #%d, skipping", num
+                    )
+
                 for issue in issues:
-                    all_tasks.append({"id": issue["number"], "subject": issue["title"]})
+                    num = issue["number"]
+                    if num in circular:
+                        continue
+                    issue_deps = deps.get(num, set())
+                    blocked = False
+                    for dep in issue_deps:
+                        if not _is_issue_closed(dep, repo):
+                            logger.info(
+                                "Skipping #%d: blocked by open dependency #%d",
+                                num,
+                                dep,
+                            )
+                            blocked = True
+                            break
+                    if not blocked:
+                        all_tasks.append({"id": num, "subject": issue["title"]})
             except (json.JSONDecodeError, KeyError, OSError) as exc:
                 logger.warning("Failed to poll GitHub issues for %s: %s", repo, exc)
         return all_tasks

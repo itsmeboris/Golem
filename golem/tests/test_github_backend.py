@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import logging
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -9,7 +11,10 @@ import pytest
 from golem.backends.github import (
     GitHubStateBackend,
     GitHubTaskSource,
+    _detect_circular_deps,
     _gh,
+    _is_issue_closed,
+    parse_dependencies,
 )
 
 
@@ -41,8 +46,6 @@ class TestGhHelper:
 
     @patch("golem.backends.github.subprocess.run")
     def test_nonzero_returncode_logs_debug(self, mock_run, caplog):
-        import logging
-
         mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="auth error")
         with caplog.at_level(logging.DEBUG, logger="golem.backends.github"):
             result = _gh("issue", "list")
@@ -51,8 +54,6 @@ class TestGhHelper:
 
     @patch("golem.backends.github.subprocess.run")
     def test_zero_returncode_no_debug_log(self, mock_run, caplog):
-        import logging
-
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
         with caplog.at_level(logging.DEBUG, logger="golem.backends.github"):
             _gh("issue", "list")
@@ -61,8 +62,6 @@ class TestGhHelper:
     @patch("golem.backends.github.subprocess.run")
     def test_nonzero_returncode_check_true_no_debug_log(self, mock_run, caplog):
         """When check=True, _gh() does NOT emit the debug log (caller gets exception)."""
-        import logging
-
         # Simulate the subprocess raising on non-zero since check=True
         mock_run.side_effect = Exception("non-zero returncode")
         with caplog.at_level(logging.DEBUG, logger="golem.backends.github"):
@@ -268,8 +267,6 @@ class TestGitHubTaskSource:
 
     @patch("golem.backends.github.subprocess.run")
     def test_get_task_comments_failure(self, mock_run, caplog):
-        import logging
-
         mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="err")
         source = GitHubTaskSource()
         with caplog.at_level(logging.WARNING, logger="golem.backends.github"):
@@ -729,8 +726,6 @@ class TestBuildGitHubProfile:
         task_config.prompts_dir = ""
         task_config.mcp_enabled = False
         config.get_flow_config.return_value = task_config
-        import logging
-
         with caplog.at_level(logging.WARNING, logger="golem.backends.profiles"):
             profile = build_profile("github", config)
         assert profile.task_source._repo == "owner/repo1"
@@ -740,8 +735,6 @@ class TestBuildGitHubProfile:
     @patch("golem.backends.github.subprocess.run")
     def test_poll_untagged_tasks_filters_labeled(self, mock_run):
         """poll_untagged_tasks excludes issues that have the exclude_tag label."""
-        import json
-
         mock_run.return_value = MagicMock(
             returncode=0,
             stdout=json.dumps(
@@ -806,8 +799,6 @@ class TestBuildGitHubProfile:
     @patch("golem.backends.github.subprocess.run")
     def test_poll_untagged_tasks_limits_results(self, mock_run):
         """Results are capped at the limit parameter."""
-        import json
-
         issues = [
             {"number": i, "title": f"Issue {i}", "body": "", "labels": []}
             for i in range(30)
@@ -902,3 +893,182 @@ class TestUpdateStatusClosedVerification:
         mock_run.side_effect = side_effect
         backend = GitHubStateBackend()
         assert backend.update_status(42, "closed") is True
+
+
+class TestParseDependencies:
+    """Tests for parse_dependencies()."""
+
+    @pytest.mark.parametrize(
+        "body,expected",
+        [
+            ("Depends on #5", {5}),
+            ("Blocked by #10", {10}),
+            ("After #3", {3}),
+            ("depends on #5 and Blocked by #10", {5, 10}),
+            ("", set()),
+            ("No dependencies here", set()),
+            ("DEPENDS ON #7", {7}),
+            ("Depends on #5\nAfter #3", {5, 3}),
+        ],
+    )
+    def test_parse(self, body, expected):
+        assert parse_dependencies(body) == expected
+
+    def test_none_body_returns_empty(self):
+        assert parse_dependencies(None) == set()
+
+    def test_duplicate_dep_deduplicated(self):
+        assert parse_dependencies("Depends on #5, also Depends on #5") == {5}
+
+
+class TestDetectCircularDeps:
+    """Tests for _detect_circular_deps()."""
+
+    @pytest.mark.parametrize(
+        "deps,expected",
+        [
+            ({}, set()),
+            ({1: {2}, 2: {3}}, set()),
+            ({1: {2}, 2: {1}}, {1, 2}),
+            ({1: {1}}, {1}),
+            ({1: {2}, 2: {3}, 3: {2}}, {2, 3}),
+        ],
+    )
+    def test_detect(self, deps, expected):
+        assert _detect_circular_deps(deps) == expected
+
+
+class TestIsIssueClosed:
+    """Tests for _is_issue_closed()."""
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_closed_returns_true(self, mock_run):
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout='{"state": "CLOSED"}', stderr=""
+        )
+        assert _is_issue_closed(42, "owner/repo") is True
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_open_returns_false(self, mock_run):
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout='{"state": "OPEN"}', stderr=""
+        )
+        assert _is_issue_closed(42, "owner/repo") is False
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_api_error_returns_false(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="api error")
+        assert _is_issue_closed(42, "owner/repo") is False
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_os_error_returns_false(self, mock_run):
+        mock_run.side_effect = OSError("network fail")
+        assert _is_issue_closed(42, "owner/repo") is False
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_json_error_returns_false(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stdout="not json", stderr="")
+        assert _is_issue_closed(42, "owner/repo") is False
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_state_case_insensitive(self, mock_run):
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout='{"state": "closed"}', stderr=""
+        )
+        assert _is_issue_closed(42, "owner/repo") is True
+
+
+class TestPollTasksDependencies:
+    """Tests for dependency filtering in GitHubTaskSource.poll_tasks()."""
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_no_deps_passes_through(self, mock_run):
+        import json
+
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=json.dumps([{"number": 1, "title": "A", "body": "No dependencies"}]),
+            stderr="",
+        )
+        source = GitHubTaskSource()
+        tasks = source.poll_tasks(["owner/repo"], "agent")
+        assert tasks == [{"id": 1, "subject": "A"}]
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_closed_dep_passes_through(self, mock_run):
+        import json
+
+        list_result = MagicMock(
+            returncode=0,
+            stdout=json.dumps([{"number": 5, "title": "B", "body": "Depends on #10"}]),
+            stderr="",
+        )
+        view_result = MagicMock(returncode=0, stdout='{"state": "CLOSED"}', stderr="")
+        mock_run.side_effect = [list_result, view_result]
+        source = GitHubTaskSource()
+        tasks = source.poll_tasks(["owner/repo"], "agent")
+        assert tasks == [{"id": 5, "subject": "B"}]
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_open_dep_filtered_out(self, mock_run, caplog):
+        import json
+        import logging
+
+        list_result = MagicMock(
+            returncode=0,
+            stdout=json.dumps([{"number": 5, "title": "B", "body": "Depends on #10"}]),
+            stderr="",
+        )
+        view_result = MagicMock(returncode=0, stdout='{"state": "OPEN"}', stderr="")
+        mock_run.side_effect = [list_result, view_result]
+        source = GitHubTaskSource()
+        with caplog.at_level(logging.INFO, logger="golem.backends.github"):
+            tasks = source.poll_tasks(["owner/repo"], "agent")
+        assert tasks == []
+        assert "Skipping #5: blocked by open dependency #10" in caplog.text
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_circular_dep_filtered_out(self, mock_run, caplog):
+        import json
+        import logging
+
+        list_result = MagicMock(
+            returncode=0,
+            stdout=json.dumps(
+                [
+                    {"number": 1, "title": "X", "body": "Depends on #2"},
+                    {"number": 2, "title": "Y", "body": "Depends on #1"},
+                ]
+            ),
+            stderr="",
+        )
+        mock_run.return_value = list_result
+        source = GitHubTaskSource()
+        with caplog.at_level(logging.WARNING, logger="golem.backends.github"):
+            tasks = source.poll_tasks(["owner/repo"], "agent")
+        assert tasks == []
+        assert "Circular dependency detected for #1, skipping" in caplog.text
+        assert "Circular dependency detected for #2, skipping" in caplog.text
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_mixed_blocked_and_unblocked(self, mock_run, caplog):
+        import json
+        import logging
+
+        list_result = MagicMock(
+            returncode=0,
+            stdout=json.dumps(
+                [
+                    {"number": 1, "title": "Free", "body": "no deps"},
+                    {"number": 2, "title": "Blocked", "body": "Depends on #3"},
+                ]
+            ),
+            stderr="",
+        )
+        view_result = MagicMock(returncode=0, stdout='{"state": "OPEN"}', stderr="")
+        mock_run.side_effect = [list_result, view_result]
+        source = GitHubTaskSource()
+        with caplog.at_level(logging.INFO, logger="golem.backends.github"):
+            tasks = source.poll_tasks(["owner/repo"], "agent")
+        assert [t["id"] for t in tasks] == [1]
+        assert "Skipping #2: blocked by open dependency #3" in caplog.text
