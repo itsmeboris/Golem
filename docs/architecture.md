@@ -113,6 +113,8 @@ flowchart LR
 
 No locks, no conflicts between tasks. Each instance has full read-write access to its own copy. Validated work enters a sequential **merge queue** that rebases onto HEAD and merges in a temporary worktree — the user's working tree is never touched. A post-merge integrity check catches silently dropped additions; a **merge agent** resolves conflicts automatically.
 
+When merges are deferred (dirty working tree or transient failure), the daemon retries up to 3 times per session. The health monitor fires an `ALERT_MERGE_QUEUE_BLOCKED` alert when deferred merges exceed the configured threshold (default 5), preventing silent merge queue backup.
+
 The `WorktreeManager` (`golem/worktree_manager.py`) owns the full lifecycle: creation, cleanup, and error recovery. The number of concurrent worktrees is bounded by `max_active_sessions` (default: 3).
 
 ---
@@ -145,6 +147,8 @@ flowchart TD
 | **Quality Review** | Only after Spec Review passes. Checks code quality, bugs, edge cases, naming. Reports issues with >= 80% confidence. Writes `## Phase: REVIEW` marker. |
 | **Verify** | Full-suite `black`, `pylint`, `pytest --cov` — the only full run in the workflow. Circuit breaker stops after repeated identical failures. Writes `## Phase: VERIFY` marker. |
 
+When `parallel_review` is enabled, the REVIEW phase dispatches multiple specialized reviewers concurrently — Spec, Quality, Security, Consistency, and Test Quality perspectives (`golem/parallel_review.py`). Results are aggregated by confidence score.
+
 ### Specialized Subagents
 
 Each subagent role is defined in `.claude/agents/` with a specific model, toolset, and turn limit:
@@ -154,7 +158,7 @@ Each subagent role is defined in `.claude/agents/` with a specific model, toolse
 | **Builder** | sonnet | All | Writes code, tests, fixes issues. Self-verifies with targeted tests before reporting |
 | **Spec Reviewer** | sonnet | Read, Grep, Glob | Verifies implementation matches specification — does not trust Builder reports |
 | **Quality Reviewer** | sonnet | Read, Grep, Glob | Code quality, bugs, edge cases. Only reports issues with >= 80% confidence |
-| **Verifier** | sonnet | Bash | Runs full-suite linters and tests, returns structured pass/fail |
+| **Verifier** | haiku | Bash | Runs full-suite linters and tests, returns structured pass/fail |
 | **Scout** | haiku | Read, Grep, Glob | Reserved for unknown codebases — most tasks don't need one |
 
 ### Skill Discovery
@@ -168,6 +172,12 @@ Every prompt template instructs agents to check for relevant skills before start
 - **Domain skills** — project-specific tooling, CI/CD integration, MCP server usage
 
 Skills are discovered dynamically via the Skill tool. When new skills are added to `.claude/skills/`, agents pick them up automatically — no prompt changes needed.
+
+### Context Flow
+
+**Context injection** (`golem/context_injection.py`) loads `AGENTS.md` and `CLAUDE.md` from the workspace into agent sessions as system-prompt context, ensuring agents benefit from accumulated learnings and project conventions.
+
+**Structured handoffs** (`golem/handoff.py`) pass context between orchestrator phases — each handoff captures the from/to phase, relevant files, open questions, and warnings, preventing context loss at phase boundaries.
 
 ---
 
@@ -296,6 +306,10 @@ The development workflow follows the same scout → builder → reviewer → ver
 ## Post-Task Learning Loop
 
 After each task, `pitfall_extractor.py` extracts pitfalls (validation concerns, test failures, errors, retry summaries) from recent sessions, filters out positive outcomes and noise, and classifies each into a category. `pitfall_writer.py` deduplicates and atomically writes them to the repo-root `AGENTS.md` under categorized sections: "Recurring Antipatterns", "Coverage & Verification Gaps", and "Architecture Notes".
+
+The **instinct store** (`golem/instinct_store.py`) provides confidence-weighted pitfall memory. Each observation has a confidence score (0.0–0.9) that increases on confirmation and decreases on contradiction. Observations below 0.2 confidence are auto-archived; those above 0.8 are marked as strong. The store can migrate from the flat `AGENTS.md` format, mapping `seen` counts to initial confidence scores.
+
+**Observation hooks** (`golem/observation_hooks.py`) extract deterministic signals from verification and validation output — patterns like "no independent verification was run" or "blocking I/O in async chain" are accumulated and promoted to pitfalls when a frequency threshold is met.
 
 This runs via `run_in_executor` from `_commit_and_complete` after the session is marked completed. Failures are logged but never block the pipeline.
 

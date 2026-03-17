@@ -159,6 +159,7 @@ notifications through the configured notifier (Slack, Teams, or stdout).
 | Queue depth | `queue_depth_threshold` | `10` |
 | Daemon inactivity | `stale_seconds` | `3600` (1 hour) |
 | Disk usage | `disk_usage_threshold_gb` | `0` (disabled) |
+| Merge queue blocked | `merge_deferred_threshold` | `5` |
 
 ### Status Tiers
 
@@ -181,6 +182,30 @@ includes active alerts and current metrics.
 | `health.error_rate_window_seconds` | `900` | Rolling window for error rate (15 min) |
 | `health.error_rate_min_tasks` | `4` | Min tasks in window before evaluating rate |
 | `health.alert_cooldown_seconds` | `900` | Cooldown between repeated alerts |
+| `health.merge_deferred_threshold` | `5` | Alert when deferred merges exceed this count |
+
+---
+
+## Merge Queue
+
+The merge queue processes validated work sequentially — each merge rebases onto
+HEAD in a disposable worktree, then fast-forwards the main branch.
+
+### Deferred Merges
+
+When the working tree is dirty (human editing files while daemon runs), merges
+are deferred rather than risking conflicts. Deferred merges retry on subsequent
+detection-loop ticks, up to 3 attempts per session. After 3 failures, the
+session stops retrying and logs an ERROR.
+
+The health monitor fires `ALERT_MERGE_QUEUE_BLOCKED` when deferred merges
+exceed the threshold. This alert is classified as **severe** (unhealthy status).
+
+### Cross-Detection Dedup
+
+The detection loop and heartbeat share a dedup layer — `poll_new_items()`
+checks heartbeat's claimed issue IDs before spawning, preventing duplicate
+agent sessions for the same GitHub issue.
 
 ---
 
@@ -269,6 +294,10 @@ This prevents cascading failures when the base branch is temporarily broken.
 | `clarity_check` | `false` | Opt-in: score task clarity with haiku before execution |
 | `clarity_threshold` | `3` | Minimum clarity score (1–5) to proceed without human clarification |
 | `context_injection` | `true` | Auto-inject AGENTS.md + CLAUDE.md from workspace into agent sessions as system prompt context |
+| `enable_simplify_pass` | `true` | Run a code-cleanup pass between BUILD and REVIEW phases |
+| `iterative_retrieval` | `false` | Enable multi-round context retrieval (keyword search, structural summaries, test discovery) |
+| `confidence_override_threshold` | `0.3` | Confidence below which verifier-pass can override validation verdict |
+| `heartbeat_max_consecutive_errors` | `5` | Exit heartbeat loop after N consecutive tick errors |
 | `ensemble_on_second_retry` | `false` | Spawn parallel candidates with different strategies on second retry |
 | `ensemble_candidates` | `2` | Number of parallel candidates for ensemble retry |
 | `flaky_tests_file` | `""` | Path to known-flaky tests JSON registry; empty = disabled |
@@ -279,6 +308,7 @@ This prevents cascading failures when the base branch is temporarily broken.
 | `self_update_enabled` | `false` | Monitor own repo for upstream changes (see [Self-Update](#self-update--zero-downtime-upgrades)) |
 | `self_update_branch` | `master` | Remote branch to watch for updates |
 | `health.enabled` | `true` | Enable health monitoring with threshold-based alerts |
+| `health.merge_deferred_threshold` | `5` | Alert when deferred merges exceed this count |
 | `daemon.drain_timeout_seconds` | `300` | Grace period for active sessions during SIGHUP reload |
 
 See [`config.yaml.example`](../config.yaml.example) for the full list including budget limits, timeouts, checkpoint intervals, and merge settings.
