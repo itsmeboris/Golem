@@ -18,6 +18,13 @@ _NOISE_PHRASES = [
     "follows project conventions",
     "well-structured",
     "always run tests",
+    "all tests pass",
+    "100% coverage",
+    "no antipatterns detected",
+    "no issues found",
+    "no problems detected",
+    "code quality is good",
+    "tests are passing",
 ]
 
 _MIN_PITFALL_LENGTH = 15
@@ -74,10 +81,69 @@ def normalize_pitfall(text: str) -> str:
     return normalized[:200]
 
 
+_STOP_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "has",
+        "have",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "shall",
+        "can",
+        "need",
+        "must",
+        "in",
+        "on",
+        "at",
+        "to",
+        "for",
+        "of",
+        "with",
+        "by",
+        "from",
+        "into",
+        "not",
+        "no",
+        "nor",
+        "but",
+        "or",
+        "and",
+        "so",
+        "if",
+        "then",
+        "that",
+        "this",
+        "it",
+        "its",
+    }
+)
+
+
 def _token_overlap(a: str, b: str) -> float:
-    """Return Jaccard similarity of word tokens between two strings."""
-    tokens_a = set(a.split())
-    tokens_b = set(b.split())
+    """Return Jaccard similarity of meaningful word tokens between two strings.
+
+    Filters stop words so that function words like 'was', 'were', 'provided'
+    don't dilute the overlap between semantically equivalent observations.
+    """
+    tokens_a = set(a.split()) - _STOP_WORDS
+    tokens_b = set(b.split()) - _STOP_WORDS
     union = tokens_a | tokens_b
     if not union:
         return 0.0

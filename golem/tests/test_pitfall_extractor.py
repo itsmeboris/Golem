@@ -202,9 +202,9 @@ def test_extract_from_summary():
 def test_extract_deduplication():
     sessions = [
         {
-            "validation_concerns": ["tests failed due to missing mock in module"],
+            "validation_concerns": ["missing mock configuration causes test failures"],
             "validation_test_failures": [
-                "test failed due to missing mock setup in module"
+                "missing mock configuration leads to test failures"
             ],
             "errors": [],
             "retry_count": 0,
@@ -284,3 +284,46 @@ def test_extract_filters_noise():
     result = extract_pitfalls(sessions)
     assert len(result) == 1
     assert "antipattern" in result[0]
+
+
+# -- noise phrase expansion: status reports ----------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "all tests pass with 100% coverage",
+        "no antipatterns detected in the codebase",
+        "no issues found during review",
+        "no problems detected",
+        "code quality is good enough",
+        "tests are passing successfully",
+    ],
+)
+def test_is_noise_status_reports(text):
+    assert _is_noise(text) is True
+
+
+# -- stop-word filtering in _token_overlap -----------------------------------
+
+
+def test_token_overlap_ignores_stop_words():
+    """Semantically equivalent observations with different function words match.
+
+    Without stop-word filtering the raw Jaccard of these two strings is low
+    because the differences are mostly function words (the/a, was/had, being/been).
+    After filtering stop words both reduce to the same content-word set, yielding
+    a Jaccard of 1.0, well above the 0.6 dedup threshold.
+    """
+    a = "the module was not being tested"
+    b = "a module had not been tested"
+    overlap = _token_overlap(a, b)
+    assert overlap >= 0.6
+
+
+def test_token_overlap_preserves_meaningful_distinction():
+    """Genuinely different observations stay below threshold."""
+    a = "empty exception handler swallows errors"
+    b = "coverage gap in authentication module"
+    overlap = _token_overlap(a, b)
+    assert overlap < 0.6
