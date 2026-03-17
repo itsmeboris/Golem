@@ -98,6 +98,16 @@ class RootCause(str, Enum):
     BUDGET_EXCEEDED = "budget_exceeded"
 
 
+def _parse_root_cause(val: str) -> str:
+    """Convert root_cause string to RootCause enum, falling back to raw string."""
+    if not val:
+        return ""
+    try:
+        return RootCause(val)
+    except ValueError:
+        return val
+
+
 @dataclass
 class TaskSession:
     """Persistent state for a single [AGENT] task orchestration (v2).
@@ -174,6 +184,8 @@ class TaskSession:
         """Serialize to a JSON-safe dictionary."""
         d = asdict(self)
         d["state"] = self.state.value
+        if isinstance(self.root_cause, RootCause):
+            d["root_cause"] = self.root_cause.value
         return d
 
     @classmethod
@@ -229,7 +241,7 @@ class TaskSession:
             human_feedback=data.get("human_feedback", ""),
             human_feedback_at=data.get("human_feedback_at", ""),
             phase_handoffs=data.get("phase_handoffs", []),
-            root_cause=data.get("root_cause", ""),
+            root_cause=_parse_root_cause(data.get("root_cause", "")),
         )
 
 

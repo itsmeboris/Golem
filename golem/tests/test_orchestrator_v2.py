@@ -2734,6 +2734,19 @@ class TestRootCause:
         session = TaskSession.from_dict({"parent_issue_id": 1, "state": "detected"})
         assert session.root_cause == ""
 
+    def test_root_cause_from_dict_is_enum_instance(self):
+        session = TaskSession.from_dict(
+            {"parent_issue_id": 1, "state": "detected", "root_cause": "budget_exceeded"}
+        )
+        assert isinstance(session.root_cause, RootCause)
+        assert session.root_cause is RootCause.BUDGET_EXCEEDED
+
+    def test_root_cause_from_dict_unknown_value_passes_through(self):
+        session = TaskSession.from_dict(
+            {"parent_issue_id": 1, "state": "detected", "root_cause": "unknown_cause"}
+        )
+        assert session.root_cause == "unknown_cause"
+
 
 class TestEscalateRootCause:
     """Tests for SPEC-4: _escalate accepts optional root_cause parameter."""
