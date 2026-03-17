@@ -25,25 +25,37 @@ TRACES_DIR = DATA_DIR / "traces"
 
 
 def _write_prompt(flow_name: str, event_id: str, prompt: str) -> str:
-    safe_id = event_id.replace("/", "_").replace("\\", "_")
-    trace_dir = TRACES_DIR / flow_name
-    trace_dir.mkdir(parents=True, exist_ok=True)
-    prompt_file = trace_dir / f"{safe_id}.prompt.txt"
-    prompt_file.write_text(prompt, encoding="utf-8")
-    path = str(prompt_file.relative_to(DATA_DIR.parent))
-    logger.info("Prompt saved: %s", prompt_file)
-    return path
+    try:
+        safe_id = event_id.replace("/", "_").replace("\\", "_")
+        trace_dir = TRACES_DIR / flow_name
+        trace_dir.mkdir(parents=True, exist_ok=True)
+        prompt_file = trace_dir / f"{safe_id}.prompt.txt"
+        prompt_file.write_text(prompt, encoding="utf-8")
+        path = str(prompt_file.relative_to(DATA_DIR.parent))
+        logger.info("Prompt saved: %s", prompt_file)
+        return path
+    except OSError:
+        logger.warning(
+            "Failed to write prompt for %s/%s", flow_name, event_id, exc_info=True
+        )
+        return ""
 
 
 def _write_trace(flow_name: str, event_id: str, events: list[dict]) -> str:
-    trace_dir = TRACES_DIR / flow_name
-    trace_dir.mkdir(parents=True, exist_ok=True)
-    safe_id = event_id.replace("/", "_").replace("\\", "_")
-    trace_file = trace_dir / f"{safe_id}.jsonl"
-    with open(trace_file, "w", encoding="utf-8") as fh:
-        for ev in events:
-            fh.write(json.dumps(ev, default=str) + "\n")
-    return str(trace_file.relative_to(DATA_DIR.parent))
+    try:
+        trace_dir = TRACES_DIR / flow_name
+        trace_dir.mkdir(parents=True, exist_ok=True)
+        safe_id = event_id.replace("/", "_").replace("\\", "_")
+        trace_file = trace_dir / f"{safe_id}.jsonl"
+        with open(trace_file, "w", encoding="utf-8") as fh:
+            for ev in events:
+                fh.write(json.dumps(ev, default=str) + "\n")
+        return str(trace_file.relative_to(DATA_DIR.parent))
+    except OSError:
+        logger.warning(
+            "Failed to write trace for %s/%s", flow_name, event_id, exc_info=True
+        )
+        return ""
 
 
 class _StreamingTraceWriter:
@@ -56,15 +68,25 @@ class _StreamingTraceWriter:
     def __init__(self, flow_name: str, event_id: str) -> None:
         safe_id = event_id.replace("/", "_").replace("\\", "_")
         trace_dir = TRACES_DIR / flow_name
-        trace_dir.mkdir(parents=True, exist_ok=True)
-        self._path: Path = trace_dir / f"{safe_id}.jsonl"
-        self._fh: IO[str] | None = (
-            open(  # noqa: SIM115  # pylint: disable=consider-using-with
-                self._path, "w", encoding="utf-8"
-            )
-        )
         self._lock = threading.Lock()
-        self.relative_path = str(self._path.relative_to(DATA_DIR.parent))
+        self.relative_path = ""
+        try:
+            trace_dir.mkdir(parents=True, exist_ok=True)
+            self._path: Path = trace_dir / f"{safe_id}.jsonl"
+            self._fh: IO[str] | None = (
+                open(  # noqa: SIM115  # pylint: disable=consider-using-with
+                    self._path, "w", encoding="utf-8"
+                )
+            )
+            self.relative_path = str(self._path.relative_to(DATA_DIR.parent))
+        except OSError:
+            logger.warning(
+                "Failed to open trace file for %s/%s",
+                flow_name,
+                event_id,
+                exc_info=True,
+            )
+            self._fh = None
 
     def append(self, event: dict) -> None:
         """Write a single event as a JSON line, flushing to disk.
@@ -74,10 +96,16 @@ class _StreamingTraceWriter:
         """
         with self._lock:
             if self._fh is not None:
-                if "ts" not in event:
-                    event = {**event, "ts": time.time()}
-                self._fh.write(json.dumps(event, default=str) + "\n")
-                self._fh.flush()
+                try:
+                    if "ts" not in event:
+                        event = {**event, "ts": time.time()}
+                    self._fh.write(json.dumps(event, default=str) + "\n")
+                    self._fh.flush()
+                except OSError:
+                    logger.warning(
+                        "Trace write failed, disabling writer", exc_info=True
+                    )
+                    self._fh = None
 
     def close(self) -> None:
         """Flush and close the underlying file handle (idempotent)."""

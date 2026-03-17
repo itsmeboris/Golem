@@ -60,6 +60,11 @@ class TestLoadSystemPrompt:
     def test_returns_empty_when_neither(self):
         assert _load_system_prompt({}) == ""
 
+    def test_missing_file_returns_empty(self, tmp_path):
+        with patch("golem.core.config.PROJECT_ROOT", tmp_path):
+            result = _load_system_prompt({"system_prompt_file": "nonexistent.txt"})
+        assert result == ""
+
 
 class TestParseClaudeConfig:
     def test_with_cli_type(self):
