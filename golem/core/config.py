@@ -58,6 +58,7 @@ class GolemFlowConfig(FlowConfig):
     retry_budget_usd: float = 5.0
     max_retries: int = 1
     validator_fix_depth: int = 3
+    max_fix_cost_usd: float = 0.0  # 0 = unlimited
     auto_commit: bool = True
     # Subagent orchestration mode
     supervisor_mode: bool = True
@@ -107,6 +108,8 @@ class GolemFlowConfig(FlowConfig):
     heartbeat_batch_size: int = 5  # max items per Tier 2 batch submission
     heartbeat_tier1_every_n: int = 3
     heartbeat_dedup_ttl_days: int = 30
+    heartbeat_max_ticks: int = 0  # 0 = unlimited
+    heartbeat_max_duration_seconds: int = 0  # 0 = unlimited
     # Self-update — daemon monitors its own repo for changes (opt-in)
     self_update_enabled: bool = False
     self_update_branch: str = "master"
@@ -290,6 +293,7 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
         retry_budget_usd=data.get("retry_budget_usd", 5.0),
         max_retries=data.get("max_retries", 1),
         validator_fix_depth=data.get("validator_fix_depth", 3),
+        max_fix_cost_usd=data.get("max_fix_cost_usd", 0.0),
         auto_commit=data.get("auto_commit", True),
         # Subagent orchestration
         supervisor_mode=data.get("supervisor_mode", True),
@@ -328,6 +332,8 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
         heartbeat_batch_size=data.get("heartbeat_batch_size", 5),
         heartbeat_tier1_every_n=data.get("heartbeat_tier1_every_n", 3),
         heartbeat_dedup_ttl_days=data.get("heartbeat_dedup_ttl_days", 30),
+        heartbeat_max_ticks=data.get("heartbeat_max_ticks", 0),
+        heartbeat_max_duration_seconds=data.get("heartbeat_max_duration_seconds", 0),
         # Self-update
         self_update_enabled=data.get("self_update_enabled", False),
         self_update_branch=data.get("self_update_branch", "master"),

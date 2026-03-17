@@ -366,6 +366,8 @@ class HeartbeatManager:
         import asyncio
 
         idle_since: float | None = None
+        tick_count: int = 0
+        loop_start: float = time.time()
         while True:
             try:
                 forced = (
@@ -399,6 +401,19 @@ class HeartbeatManager:
 
             interval = self._config.heartbeat_interval_seconds
             self._next_tick_at = time.time() + interval
+
+            tick_count += 1
+            max_ticks = self._config.heartbeat_max_ticks
+            if max_ticks > 0 and tick_count >= max_ticks:
+                logger.info("Heartbeat loop exiting: reached max_ticks=%d", max_ticks)
+                break
+
+            max_duration = self._config.heartbeat_max_duration_seconds
+            if max_duration > 0 and (time.time() - loop_start) >= max_duration:
+                logger.info(
+                    "Heartbeat loop exiting: reached max_duration=%ds", max_duration
+                )
+                break
 
             # Sleep but wake early on force-trigger
             if self._trigger_event is not None:

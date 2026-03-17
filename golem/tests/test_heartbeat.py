@@ -1407,6 +1407,170 @@ class TestTier2CoverageAndPitfallFindings:
         assert len(candidates) == 1
 
 
+class TestHeartbeatLoopGuards:
+    """Tests for max-ticks and max-duration loop exit guards."""
+
+    async def test_loop_exits_after_max_ticks(self, tmp_path):
+        """_heartbeat_loop exits after heartbeat_max_ticks iterations."""
+        mgr = _make_manager(
+            tmp_path,
+            heartbeat_interval_seconds=0,
+            heartbeat_max_ticks=2,
+        )
+        mock_flow = MagicMock()
+        mock_flow.live = MagicMock()
+        mock_flow.live.snapshot.return_value = {"active_count": 0}
+        mgr._daily_spend_usd = 999.0  # stay in budget_exhausted branch (fast path)
+
+        mgr.start(mock_flow)
+        loop_task = mgr._loop_task
+        try:
+            await asyncio.wait_for(loop_task, timeout=5.0)
+        finally:
+            mgr.stop()
+
+        # wait_for completed without TimeoutError → loop exited on its own
+        assert loop_task.done()
+
+    async def test_loop_exits_after_max_ticks_logs_message(self, tmp_path, caplog):
+        """_heartbeat_loop logs exit message when stopping due to max_ticks."""
+        import logging
+
+        mgr = _make_manager(
+            tmp_path,
+            heartbeat_interval_seconds=0,
+            heartbeat_max_ticks=1,
+        )
+        mock_flow = MagicMock()
+        mock_flow.live = MagicMock()
+        mock_flow.live.snapshot.return_value = {"active_count": 0}
+        mgr._daily_spend_usd = 999.0  # fast budget_exhausted path
+
+        with caplog.at_level(logging.INFO, logger="golem.heartbeat"):
+            mgr.start(mock_flow)
+            try:
+                await asyncio.wait_for(mgr._loop_task, timeout=5.0)
+            finally:
+                mgr.stop()
+
+        assert any(
+            "max_ticks" in r.message or "ticks" in r.message for r in caplog.records
+        )
+
+    async def test_loop_exits_after_max_duration(self, tmp_path):
+        """_heartbeat_loop exits after heartbeat_max_duration_seconds elapsed."""
+        mgr = _make_manager(
+            tmp_path,
+            heartbeat_interval_seconds=0,
+            heartbeat_max_duration_seconds=1,
+        )
+        mock_flow = MagicMock()
+        mock_flow.live = MagicMock()
+        mock_flow.live.snapshot.return_value = {"active_count": 0}
+        mgr._daily_spend_usd = 999.0  # fast budget_exhausted path
+
+        mgr.start(mock_flow)
+        loop_task = mgr._loop_task
+        try:
+            await asyncio.wait_for(loop_task, timeout=10.0)
+        finally:
+            mgr.stop()
+
+        # wait_for completed without TimeoutError → loop exited on its own
+        assert loop_task.done()
+
+    async def test_loop_exits_after_max_duration_logs_message(self, tmp_path, caplog):
+        """_heartbeat_loop logs exit message when stopping due to max_duration."""
+        import logging
+
+        mgr = _make_manager(
+            tmp_path,
+            heartbeat_interval_seconds=0,
+            heartbeat_max_duration_seconds=1,
+        )
+        mock_flow = MagicMock()
+        mock_flow.live = MagicMock()
+        mock_flow.live.snapshot.return_value = {"active_count": 0}
+        mgr._daily_spend_usd = 999.0
+
+        with caplog.at_level(logging.INFO, logger="golem.heartbeat"):
+            mgr.start(mock_flow)
+            try:
+                await asyncio.wait_for(mgr._loop_task, timeout=10.0)
+            finally:
+                mgr.stop()
+
+        assert any(
+            "max_duration" in r.message or "duration" in r.message
+            for r in caplog.records
+        )
+
+    async def test_zero_max_ticks_means_unlimited(self, tmp_path):
+        """heartbeat_max_ticks=0 (default) means unlimited — loop does not exit."""
+        mgr = _make_manager(
+            tmp_path,
+            heartbeat_interval_seconds=0,
+            heartbeat_max_ticks=0,  # unlimited
+        )
+        mock_flow = MagicMock()
+        mock_flow.live = MagicMock()
+        mock_flow.live.snapshot.return_value = {"active_count": 0}
+        mgr._daily_spend_usd = 999.0  # fast budget_exhausted path
+
+        threshold_reached = asyncio.Event()
+
+        def counting_snapshot():
+            counting_snapshot.n += 1
+            if counting_snapshot.n >= 3:
+                threshold_reached.set()
+            return {"active_count": 0}
+
+        counting_snapshot.n = 0
+        mock_flow.live.snapshot.side_effect = counting_snapshot
+
+        mgr.start(mock_flow)
+        try:
+            await asyncio.wait_for(threshold_reached.wait(), timeout=5.0)
+        finally:
+            mgr.stop()
+
+        # Loop ran at least 3 times and did NOT exit on its own
+        assert counting_snapshot.n >= 3
+        assert mgr._loop_task is None  # was stopped via stop()
+
+    async def test_zero_max_duration_means_unlimited(self, tmp_path):
+        """heartbeat_max_duration_seconds=0 (default) means unlimited."""
+        mgr = _make_manager(
+            tmp_path,
+            heartbeat_interval_seconds=0,
+            heartbeat_max_duration_seconds=0,  # unlimited
+        )
+        mock_flow = MagicMock()
+        mock_flow.live = MagicMock()
+        mock_flow.live.snapshot.return_value = {"active_count": 0}
+        mgr._daily_spend_usd = 999.0
+
+        threshold_reached = asyncio.Event()
+
+        def counting_snapshot():
+            counting_snapshot.n += 1
+            if counting_snapshot.n >= 3:
+                threshold_reached.set()
+            return {"active_count": 0}
+
+        counting_snapshot.n = 0
+        mock_flow.live.snapshot.side_effect = counting_snapshot
+
+        mgr.start(mock_flow)
+        try:
+            await asyncio.wait_for(threshold_reached.wait(), timeout=5.0)
+        finally:
+            mgr.stop()
+
+        assert counting_snapshot.n >= 3
+        assert mgr._loop_task is None
+
+
 class TestInterfacesDefaultPollUntagged:
     """Cover the default poll_untagged_tasks return in interfaces.py."""
 
