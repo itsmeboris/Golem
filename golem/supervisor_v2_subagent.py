@@ -465,6 +465,52 @@ class SubagentSupervisor:
                 "**Scoping rule:** Only include files that Builders reported as changed.\n"
                 "If no files were changed, skip this phase with a one-line note.\n"
             )
+        enhanced_review_section = ""
+        if self.task_config.enhanced_review:
+            from .parallel_review import (  # pylint: disable=import-outside-toplevel
+                ReviewerRole,
+                enhanced_reviewers,
+                roles_from_config,
+            )
+
+            if self.task_config.review_roles:
+                roles = roles_from_config(self.task_config.review_roles)
+            else:
+                roles = enhanced_reviewers()
+
+            # Filter out SPEC and QUALITY since those are the existing 2-stage review
+            extra_roles = [
+                r for r in roles if r not in (ReviewerRole.SPEC, ReviewerRole.QUALITY)
+            ]
+
+            if extra_roles:
+                role_list = "\n".join(
+                    "- **%s**: %s" % (r.value, r.description) for r in extra_roles
+                )
+                enhanced_review_section = (
+                    "### Phase 4.5: Enhanced Parallel Review\n"
+                    "\n"
+                    "After the standard 2-stage review passes, dispatch additional\n"
+                    "specialized reviewers **in parallel** (use a single message with\n"
+                    "multiple Agent tool calls). Each reviewer is a separate\n"
+                    '``subagent_type: "reviewer"`` dispatch.\n'
+                    "\n"
+                    "**Additional reviewers to dispatch:**\n"
+                    "%s\n"
+                    "\n"
+                    "Each reviewer prompt template is in ``golem/prompts/`` — read it\n"
+                    "with the Read tool and fill in the ``{work_dir}`` placeholder.\n"
+                    "Include the same context you gave the Stage 1/2 reviewers.\n"
+                    "\n"
+                    "**Aggregation rules:**\n"
+                    "- Only report findings with confidence >= 80\n"
+                    "- If ANY reviewer reports NEEDS_FIXES with findings >= 80\n"
+                    "  confidence → dispatch a Builder to fix → re-review that\n"
+                    "  specific reviewer only\n"
+                    "- All enhanced reviewers must APPROVE before proceeding to\n"
+                    "  Phase 5 (Verify)\n"
+                    "\n"
+                ) % role_list
         role_contexts = ""
         if self.task_config.context_injection:
             from .context_injection import (
@@ -481,6 +527,7 @@ class SubagentSupervisor:
             inner_retry_max=self.task_config.inner_retry_max,
             validator_fix_depth=self.task_config.validator_fix_depth,
             simplify_section=simplify_section,
+            enhanced_review_section=enhanced_review_section,
             role_contexts=role_contexts,
         )
 
