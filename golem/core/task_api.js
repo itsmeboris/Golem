@@ -69,6 +69,14 @@ async function cancelTask(taskId) {
   return res.json();
 }
 
+async function clearFailedSessions() {
+  const res = await fetch('/api/sessions/clear-failed', { method: 'POST' });
+  if (!res.ok) {
+    try { return await res.json(); } catch (_) { return { ok: false, detail: res.statusText }; }
+  }
+  return res.json();
+}
+
 async function resubmitTask(prompt, subject) {
   const res = await fetch('/api/submit', {
     method: 'POST',

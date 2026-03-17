@@ -462,6 +462,16 @@ function updateTopStats(sessions) {
   const totalCost = entries.reduce((sum, s) => sum + (s.total_cost_usd || 0), 0);
   const done = entries.filter(s => (s.state || '').toLowerCase() === 'completed').length;
   const failed = entries.filter(s => (s.state || '').toLowerCase() === 'failed').length;
+  const clearBtn = failed > 0
+    ? `<button class="ov-clear-failed-btn" title="Remove failed tasks from the list">clear failed</button>`
+    : '';
   inner.innerHTML = `${running > 0 ? `<span><span class="dot"></span>${running} running</span>` : ''}
-    <span>${fmtCost(totalCost)} spent</span><span class="stat-sep"></span><span class="stat-pass">${done}&#10003;</span><span class="stat-fail${failed > 0 ? ' has-fails' : ''}">${failed}&#10007;</span>`;
+    <span>${fmtCost(totalCost)} spent</span><span class="stat-sep"></span><span class="stat-pass">${done}&#10003;</span><span class="stat-fail${failed > 0 ? ' has-fails' : ''}">${failed}&#10007;</span>${clearBtn}`;
+  const btn = inner.querySelector('.ov-clear-failed-btn');
+  if (btn) {
+    btn.addEventListener('click', async () => {
+      const result = await clearFailedSessions();
+      if (result.ok) renderOverview();
+    });
+  }
 }

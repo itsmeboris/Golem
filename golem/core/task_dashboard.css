@@ -34,6 +34,8 @@ html,body{height:100%;font-family:var(--font-sans);background:var(--bg-base);col
 .stat-pass{color:var(--green);font-weight:700}
 .stat-fail{color:var(--text-muted);font-weight:700}
 .stat-fail.has-fails{color:var(--red)}
+.ov-clear-failed-btn{background:none;border:1px solid var(--border);color:var(--text-muted);font:inherit;font-size:0.7rem;padding:0.15rem 0.5rem;border-radius:var(--radius-sm);cursor:pointer;transition:color var(--transition),border-color var(--transition)}
+.ov-clear-failed-btn:hover{color:var(--red);border-color:var(--red)}
 .top-stats .dot{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;margin-right:0.3rem;animation:pulse 2s ease-in-out infinite;box-shadow:0 0 8px rgba(52,211,153,0.4)}
 @keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}
 .theme-btn{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1.15rem;padding:0.3rem;transition:color var(--transition)}

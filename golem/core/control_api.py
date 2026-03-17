@@ -264,6 +264,20 @@ if FASTAPI_AVAILABLE:
             ) from None
         return {"ok": True, **result}
 
+    @health_router.post("/sessions/clear-failed")
+    async def clear_failed_sessions():
+        """Remove all FAILED sessions from state.
+
+        Returns ``{"ok": true, "cleared": [...]}``.
+        """
+        if _golem_flow is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Daemon not ready — GolemFlow not wired",
+            )
+        cleared = _golem_flow.clear_failed_sessions()
+        return {"ok": True, "cleared": cleared}
+
     @health_router.post("/cancel/{task_id}")
     async def cancel_task(task_id: int):
         """Cancel a running task by ID.

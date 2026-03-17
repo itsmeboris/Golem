@@ -901,6 +901,37 @@ class TestCancelEndpoint:
 
 
 # ---------------------------------------------------------------------------
+# POST /api/sessions/clear-failed
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(
+    not control_api.FASTAPI_AVAILABLE,
+    reason="FastAPI not installed",
+)
+class TestClearFailedEndpoint:
+    @pytest.mark.asyncio
+    async def test_clear_failed_success(self, _wire_deps):
+        from golem.core.control_api import clear_failed_sessions
+
+        gf = control_api._golem_flow
+        gf.clear_failed_sessions = MagicMock(return_value=[1, 5])
+        result = await clear_failed_sessions()
+        assert result["ok"] is True
+        assert result["cleared"] == [1, 5]
+        gf.clear_failed_sessions.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_clear_failed_no_flow(self):
+        from golem.core.control_api import clear_failed_sessions
+
+        wire_control_api()  # reset — no flow
+        with pytest.raises(HTTPException) as exc_info:
+            await clear_failed_sessions()
+        assert exc_info.value.status_code == 503
+
+
+# ---------------------------------------------------------------------------
 # GET /batch/{group_id} and GET /batches
 # ---------------------------------------------------------------------------
 

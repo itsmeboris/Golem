@@ -1133,6 +1133,20 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         logger.info("Cancelled session #%d (was %s)", task_id, prev_state.value)
         return {"task_id": task_id, "status": "cancelled"}
 
+    def clear_failed_sessions(self) -> list[int]:
+        """Remove all FAILED sessions from state. Returns list of cleared IDs."""
+        failed_ids = [
+            sid
+            for sid, s in self._sessions.items()
+            if s.state == TaskSessionState.FAILED
+        ]
+        for sid in failed_ids:
+            del self._sessions[sid]
+        if failed_ids:
+            self._save_state()
+            logger.info("Cleared %d failed sessions: %s", len(failed_ids), failed_ids)
+        return failed_ids
+
     # -- Session factory ------------------------------------------------------
 
     def _create_session(self, issue_id: int, subject: str) -> TaskSession:

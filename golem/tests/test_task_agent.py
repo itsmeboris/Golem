@@ -924,3 +924,29 @@ class TestGolemFlow:
         flow._save_state()
         flow.reset_state()
         assert not flow._sessions
+
+    def test_clear_failed_sessions(self, monkeypatch, tmp_path):
+        flow = self._make_flow(monkeypatch, tmp_path)
+        flow._sessions[1] = TaskSession(
+            parent_issue_id=1, state=TaskSessionState.FAILED
+        )
+        flow._sessions[2] = TaskSession(
+            parent_issue_id=2, state=TaskSessionState.COMPLETED
+        )
+        flow._sessions[3] = TaskSession(
+            parent_issue_id=3, state=TaskSessionState.RUNNING
+        )
+        cleared = flow.clear_failed_sessions()
+        assert cleared == [1]
+        assert 1 not in flow._sessions
+        assert 2 in flow._sessions
+        assert 3 in flow._sessions
+
+    def test_clear_failed_sessions_none_failed(self, monkeypatch, tmp_path):
+        flow = self._make_flow(monkeypatch, tmp_path)
+        flow._sessions[1] = TaskSession(
+            parent_issue_id=1, state=TaskSessionState.COMPLETED
+        )
+        cleared = flow.clear_failed_sessions()
+        assert cleared == []
+        assert 1 in flow._sessions
