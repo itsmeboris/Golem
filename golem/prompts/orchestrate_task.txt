@@ -228,6 +228,7 @@ Only after Spec Review passes.
 If NEEDS_FIXES with issues >= 80 confidence → dispatch a Builder to fix
 with the review feedback verbatim → re-review.
 
+{enhanced_review_section}
 ### Phase 5: Verify
 
 Write: ``## Phase: VERIFY``

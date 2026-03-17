@@ -97,6 +97,9 @@ class GolemFlowConfig(FlowConfig):
     context_injection: bool = True  # inject AGENTS.md + CLAUDE.md into agent sessions
     # Code simplification pass between BUILD and REVIEW
     enable_simplify_pass: bool = True
+    # Multi-perspective parallel review (opt-in via task config or tiered routing)
+    enhanced_review: bool = False
+    review_roles: list[str] = field(default_factory=list)  # empty = use all 5
     # Heartbeat — self-directed work when idle
     heartbeat_enabled: bool = False
     heartbeat_interval_seconds: int = 300
@@ -316,6 +319,8 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
         ensemble_candidates=data.get("ensemble_candidates", 2),
         context_injection=data.get("context_injection", True),
         enable_simplify_pass=data.get("enable_simplify_pass", True),
+        enhanced_review=data.get("enhanced_review", False),
+        review_roles=data.get("review_roles", []),
         # Heartbeat
         heartbeat_enabled=data.get("heartbeat_enabled", False),
         heartbeat_interval_seconds=data.get("heartbeat_interval_seconds", 300),
