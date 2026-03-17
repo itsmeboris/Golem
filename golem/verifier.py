@@ -249,6 +249,7 @@ def run_verification(work_dir: str, *, timeout: int = 300) -> VerificationResult
             "pytest",
             "--cov=golem",
             "--cov-fail-under=100",
+            "--cov-report=term",
             f"--cov-report=json:{cov_json_path}",
         ],
         work_dir,
