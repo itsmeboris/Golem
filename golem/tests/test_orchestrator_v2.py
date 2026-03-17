@@ -2722,7 +2722,8 @@ class TestRootCause:
             parent_issue_id=42, root_cause=RootCause.IDENTICAL_FAILURES
         )
         d = session.to_dict()
-        assert d["root_cause"] == RootCause.IDENTICAL_FAILURES
+        assert d["root_cause"] == "identical_failures"
+        assert type(d["root_cause"]) is str
 
     def test_root_cause_round_trips_from_dict(self):
         session = TaskSession.from_dict(

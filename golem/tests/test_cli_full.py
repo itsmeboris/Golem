@@ -1977,7 +1977,7 @@ class TestStartDashboardServerAsync:
         ):
             from golem.cli import _start_dashboard_server
 
-            task, server = await _start_dashboard_server(
+            task, _server = await _start_dashboard_server(
                 9090, config_snapshot=None, live_state_file=Path("/tmp/ls.json")
             )
 

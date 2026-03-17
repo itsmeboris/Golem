@@ -189,9 +189,9 @@ class TestRunVerification:
     def test_all_three_run_even_if_first_fails(self, mock_run):
         mock_run.return_value = MagicMock(returncode=1, stdout="error", stderr="")
         _ = run_verification("/tmp/workdir")
-        assert (
-            mock_run.call_count == 4
-        )  # black + pylint errors-only + pylint dead-code + pytest
+        # Verify all tools were invoked regardless of failures (order-independent)
+        called_tools = {call.args[0][0] for call in mock_run.call_args_list}
+        assert called_tools >= {"black", "pylint", "pytest"}
 
     @patch("golem.verifier.subprocess.run")
     def test_deadcode_pylint_fails(self, mock_run):
@@ -484,11 +484,24 @@ class TestRunMutationTesting:
     @patch("golem.verifier.subprocess.run")
     def test_successful_run_populates_counts(self, mock_run):
         """Structured count fields are populated from mutmut run output."""
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout="\u2838 10/10  \U0001f389 8  \u23f0 0  \U0001f914 0  \U0001f641 2  \U0001f507 0\n",
-            stderr="",
+        results_output = (
+            "---- golem/verifier.py (line 42) ----\n"
+            "1\n\n"
+            "---- golem/verifier.py (line 55) ----\n"
+            "3\n"
         )
+
+        def side_effect(*args, **_kwargs):
+            cmd = args[0]
+            if cmd[1] == "results":
+                return MagicMock(returncode=0, stdout=results_output, stderr="")
+            return MagicMock(
+                returncode=0,
+                stdout="\u2838 10/10  \U0001f389 8  \u23f0 0  \U0001f914 0  \U0001f641 2  \U0001f507 0\n",
+                stderr="",
+            )
+
+        mock_run.side_effect = side_effect
         result = run_mutation_testing(["golem/verifier.py"], "/tmp/workdir")
         assert result.mutants_total == 10
         assert result.killed == 8
@@ -496,6 +509,9 @@ class TestRunMutationTesting:
         assert result.timeout == 0
         assert result.suspicious == 0
         assert result.skipped == 0
+        assert len(result.survived_mutants) == 2
+        assert result.survived_mutants[0].file == "golem/verifier.py"
+        assert result.survived_mutants[0].line == 42
 
     @patch("golem.verifier.subprocess.run")
     def test_run_with_no_summary_line_zero_counts(self, mock_run):

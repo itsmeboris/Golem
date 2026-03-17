@@ -352,7 +352,12 @@ def run_mutation_testing(
     )
 
     counts = parse_mutmut_summary(output)
-    survived_mutants = parse_mutmut_results(output)
+
+    # Collect survived mutant details via `mutmut results` (separate command)
+    survived_mutants: list[SurvivedMutant] = []
+    if counts["survived"] > 0:
+        _, results_output = _run_cmd(["mutmut", "results"], work_dir, timeout)
+        survived_mutants = parse_mutmut_results(results_output)
 
     return MutationResult(
         exit_code=0 if success else 1,
