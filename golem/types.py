@@ -205,6 +205,38 @@ class VerificationResultDict(TypedDict):
     coverage_delta: NotRequired[dict[str, Any]]
 
 
+class SurvivedMutantDict(TypedDict):
+    """A single surviving mutant from mutation testing.
+
+    Producers: verifier.py parse_mutmut_results()
+    Consumers: orchestrator.py, dashboard
+    """
+
+    file: str
+    line: int
+    mutant_id: int
+
+
+class MutationResultDict(TypedDict):
+    """Structured output from mutation testing.
+
+    Producers: verifier.py run_mutation_testing()
+    Consumers: orchestrator.py
+    """
+
+    exit_code: int
+    output: str
+    passed: bool
+    duration_s: float
+    mutants_total: int
+    killed: int
+    survived: int
+    timeout: int
+    suspicious: int
+    skipped: int
+    survived_mutants: list[SurvivedMutantDict]
+
+
 class MergeEntryDict(TypedDict):
     """Serialized merge queue entry for dashboard API.
 
