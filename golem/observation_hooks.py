@@ -14,7 +14,7 @@ import logging
 import os
 import re
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
