@@ -158,6 +158,7 @@ class TestProcessAll:
         results = await queue.process_all()
         assert results == []
 
+    @patch("golem.merge_queue.MergeQueue._verify_merge", return_value=_PASSING_VR)
     @patch("golem.merge_queue._run_git")
     @patch("golem.merge_queue.fast_forward_if_safe", return_value=(True, ""))
     @patch(
@@ -165,7 +166,9 @@ class TestProcessAll:
         return_value=MergeOutcome(sha="sha1", merge_branch="merge-ready/1"),
     )
     @patch("golem.merge_queue.get_changed_files", return_value=[])
-    async def test_priority_sorting(self, _gcf, mock_miw, _ff, _rg, queue, tmp_path):
+    async def test_priority_sorting(
+        self, _gcf, mock_miw, _ff, _rg, _vm, queue, tmp_path
+    ):
         low = MergeEntry(
             session_id=10,
             branch_name="b10",
@@ -190,6 +193,7 @@ class TestProcessAll:
         assert results[1].session_id == 10
         assert queue.pending == 0
 
+    @patch("golem.merge_queue.MergeQueue._verify_merge", return_value=_PASSING_VR)
     @patch("golem.merge_queue._run_git")
     @patch("golem.merge_queue.fast_forward_if_safe", return_value=(True, ""))
     @patch(
@@ -197,13 +201,16 @@ class TestProcessAll:
         return_value=MergeOutcome(sha="sha1", merge_branch="merge-ready/1"),
     )
     @patch("golem.merge_queue.get_changed_files", return_value=[])
-    async def test_results_accumulated(self, _gcf, _miw, _ff, _rg, queue, base_entry):
+    async def test_results_accumulated(
+        self, _gcf, _miw, _ff, _rg, _vm, queue, base_entry
+    ):
         await queue.enqueue(base_entry)
         await queue.process_all()
         assert len([r for _, r in queue._history]) == 1
 
 
 class TestMergeOneSuccess:
+    @patch("golem.merge_queue.MergeQueue._verify_merge", return_value=_PASSING_VR)
     @patch("golem.merge_queue._run_git")
     @patch("golem.merge_queue.fast_forward_if_safe", return_value=(True, ""))
     @patch(
@@ -213,7 +220,9 @@ class TestMergeOneSuccess:
         ),
     )
     @patch("golem.merge_queue.get_changed_files", return_value=[])
-    async def test_successful_merge(self, _gcf, mock_miw, _ff, _rg, queue, base_entry):
+    async def test_successful_merge(
+        self, _gcf, mock_miw, _ff, _rg, _vm, queue, base_entry
+    ):
         await queue.enqueue(base_entry)
         results = await queue.process_all()
         assert len(results) == 1
@@ -345,6 +354,7 @@ class TestOnMergeAgentType:
 
 
 class TestMergeWithVerifyClean:
+    @patch("golem.merge_queue.MergeQueue._verify_merge", return_value=_PASSING_VR)
     @patch("golem.merge_queue._run_git")
     @patch("golem.merge_queue.fast_forward_if_safe", return_value=(True, ""))
     @patch(
@@ -356,7 +366,9 @@ class TestMergeWithVerifyClean:
         ),
     )
     @patch("golem.merge_queue.get_changed_files", return_value=[])
-    async def test_clean_verify_succeeds(self, _gcf, _miw, _ff, _rg, queue, base_entry):
+    async def test_clean_verify_succeeds(
+        self, _gcf, _miw, _ff, _rg, _vm, queue, base_entry
+    ):
         await queue.enqueue(base_entry)
         results = await queue.process_all()
         assert results[0].success is True
@@ -441,6 +453,7 @@ class TestMergeAgentReconcileFailure:
 
 
 class TestMergeOutcomeAgentDiffPopulated:
+    @patch("golem.merge_queue.MergeQueue._verify_merge", return_value=_PASSING_VR)
     @patch("golem.merge_queue._run_git")
     @patch("golem.merge_queue.fast_forward_if_safe", return_value=(True, ""))
     @patch(
@@ -453,7 +466,7 @@ class TestMergeOutcomeAgentDiffPopulated:
     )
     @patch("golem.merge_queue.get_changed_files", return_value=[])
     async def test_agent_diff_from_outcome(
-        self, _gcf, _miw, _ff, _rg, queue, base_entry
+        self, _gcf, _miw, _ff, _rg, _vm, queue, base_entry
     ):
         await queue.enqueue(base_entry)
         results = await queue.process_all()
@@ -472,6 +485,7 @@ class TestTransientRetry:
     def test_runtime_error_not_transient(self):
         assert MergeQueue._is_transient(RuntimeError("bad")) is False
 
+    @patch("golem.merge_queue.MergeQueue._verify_merge", return_value=_PASSING_VR)
     @patch("golem.merge_queue._run_git")
     @patch("golem.merge_queue.fast_forward_if_safe", return_value=(True, ""))
     @patch(
@@ -486,7 +500,7 @@ class TestTransientRetry:
     )
     @patch("golem.merge_queue.get_changed_files", return_value=[])
     async def test_retry_on_timeout_then_succeed(
-        self, _gcf, _miw, _ff, _rg, queue, base_entry
+        self, _gcf, _miw, _ff, _rg, _vm, queue, base_entry
     ):
         mock_sleep = AsyncMock()
         with patch("golem.merge_queue.asyncio.sleep", mock_sleep):
@@ -554,6 +568,7 @@ class TestMergeFailureResultShape:
 class TestDeferredMerge:
     """Test that when fast_forward_if_safe returns failure, result is deferred."""
 
+    @patch("golem.merge_queue.MergeQueue._verify_merge", return_value=_PASSING_VR)
     @patch(
         "golem.merge_queue.fast_forward_if_safe",
         return_value=(False, "dirty working tree overlaps with merge-ready/1"),
@@ -567,7 +582,7 @@ class TestDeferredMerge:
         ),
     )
     @patch("golem.merge_queue.get_changed_files", return_value=[])
-    async def test_deferred_when_ff_fails(self, _gcf, _miw, _ff, base_entry):
+    async def test_deferred_when_ff_fails(self, _gcf, _miw, _ff, _vm, base_entry):
         q = MergeQueue()
         await q.enqueue(base_entry)
         results = await q.process_all()
@@ -679,7 +694,7 @@ class TestMergeEmptyShaNoError:
 
 
 class TestPostMergeVerification:
-    """Verification runs after conflict resolution or reconciliation, not on clean merges."""
+    """Verification runs for all merges that have a merge_branch, including clean merges."""
 
     # ------------------------------------------------------------------ #
     # Path 1: conflict resolution
@@ -805,7 +820,7 @@ class TestPostMergeVerification:
         assert "post-merge verification failed" in results[0].error
 
     # ------------------------------------------------------------------ #
-    # SPEC-5: Clean merges skip verification
+    # SPEC-5: Clean merges also run verification
     # ------------------------------------------------------------------ #
 
     @patch("golem.merge_queue._run_git")
@@ -819,17 +834,39 @@ class TestPostMergeVerification:
         ),
     )
     @patch("golem.merge_queue.get_changed_files", return_value=[])
-    async def test_clean_merge_skips_verification(
+    async def test_clean_merge_runs_verification(
         self, _gcf, _miw, _ff, _rg, queue, base_entry
     ):
-        """Clean merges without resolution must NOT call _verify_merge."""
+        """Clean merges must call _verify_merge before fast-forwarding."""
         await queue.enqueue(base_entry)
         with patch.object(
             MergeQueue, "_verify_merge", return_value=_PASSING_VR
         ) as mock_vm:
             results = await queue.process_all()
         assert results[0].success is True
-        mock_vm.assert_not_called()
+        mock_vm.assert_called_once()
+
+    @patch("golem.merge_queue._run_git")
+    @patch("golem.merge_queue.fast_forward_if_safe", return_value=(True, ""))
+    @patch(
+        "golem.merge_queue.merge_in_worktree",
+        return_value=MergeOutcome(
+            sha="clean456",
+            agent_diff="diff",
+            merge_branch="merge-ready/1",
+        ),
+    )
+    @patch("golem.merge_queue.get_changed_files", return_value=[])
+    async def test_clean_merge_verification_fails(
+        self, _gcf, _miw, _ff, _rg, queue, base_entry
+    ):
+        """Clean merge where _verify_merge returns failing result must return failure."""
+        await queue.enqueue(base_entry)
+        with patch.object(MergeQueue, "_verify_merge", return_value=_FAILING_VR):
+            results = await queue.process_all()
+        assert results[0].success is False
+        assert results[0].merge_branch == "merge-ready/1"
+        assert results[0].error == "post-merge verification failed"
 
     # ------------------------------------------------------------------ #
     # SPEC-6: _verify_merge unit tests
@@ -1003,6 +1040,7 @@ async def test_on_state_change_called_during_process_all():
         patch("golem.merge_queue.fast_forward_if_safe", return_value=(True, "")),
         patch("golem.merge_queue._run_git"),
         patch("golem.merge_queue.get_changed_files", return_value=["x.py"]),
+        patch("golem.merge_queue.MergeQueue._verify_merge", return_value=_PASSING_VR),
     ):
         await mq.enqueue(entry)
         cb.reset_mock()
@@ -1032,6 +1070,7 @@ async def test_active_is_none_when_idle():
         patch("golem.merge_queue.fast_forward_if_safe", return_value=(True, "")),
         patch("golem.merge_queue._run_git"),
         patch("golem.merge_queue.get_changed_files", return_value=["a.py"]),
+        patch("golem.merge_queue.MergeQueue._verify_merge", return_value=_PASSING_VR),
     ):
         await mq.enqueue(entry)
         await mq.process_all()
@@ -1058,6 +1097,7 @@ async def test_history_populated_after_process_all():
         patch("golem.merge_queue.fast_forward_if_safe", return_value=(True, "")),
         patch("golem.merge_queue._run_git"),
         patch("golem.merge_queue.get_changed_files", return_value=["z.py"]),
+        patch("golem.merge_queue.MergeQueue._verify_merge", return_value=_PASSING_VR),
     ):
         await mq.enqueue(entry)
         await mq.process_all()
@@ -1087,6 +1127,7 @@ async def test_history_result_timestamp_set():
         patch("golem.merge_queue.fast_forward_if_safe", return_value=(True, "")),
         patch("golem.merge_queue._run_git"),
         patch("golem.merge_queue.get_changed_files", return_value=["t.py"]),
+        patch("golem.merge_queue.MergeQueue._verify_merge", return_value=_PASSING_VR),
     ):
         await mq.enqueue(entry)
         results = await mq.process_all()
