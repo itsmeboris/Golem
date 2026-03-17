@@ -351,7 +351,14 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
 def _load_system_prompt(data: dict[str, Any]) -> str:
     if file_path := data.get("system_prompt_file"):
         resolved = (PROJECT_ROOT / file_path).resolve()
-        return resolved.read_text(encoding="utf-8")
+        try:
+            return resolved.read_text(encoding="utf-8")
+        except OSError:
+            logger.warning(
+                "Cannot read system_prompt_file %s — using empty prompt",
+                resolved,
+            )
+            return ""
     return data.get("system_prompt", "")
 
 

@@ -1,9 +1,15 @@
 # pylint: disable=too-few-public-methods
 """Tests for golem.core.flow_base — trace/prompt helpers and FlowResult."""
 
-from unittest.mock import patch
+import threading
+from unittest.mock import MagicMock, patch
 
-from golem.core.flow_base import FlowResult, _write_prompt, _write_trace
+from golem.core.flow_base import (
+    FlowResult,
+    _StreamingTraceWriter,
+    _write_prompt,
+    _write_trace,
+)
 
 
 class TestWritePrompt:
@@ -20,6 +26,17 @@ class TestWritePrompt:
             _write_prompt("f", "a/b", "content")
         assert (tmp_path / "f" / "a_b.prompt.txt").exists()
 
+    def test_returns_empty_on_oserror(self, tmp_path):
+        readonly_dir = tmp_path / "readonly"
+        readonly_dir.mkdir()
+        readonly_dir.chmod(0o444)
+        try:
+            with patch("golem.core.flow_base.TRACES_DIR", readonly_dir):
+                result = _write_prompt("myflow", "ev-1", "content")
+            assert result == ""
+        finally:
+            readonly_dir.chmod(0o755)
+
 
 class TestWriteTrace:
     def test_creates_jsonl(self, tmp_path):
@@ -31,6 +48,101 @@ class TestWriteTrace:
         lines = trace_file.read_text().strip().splitlines()
         assert len(lines) == 2
         assert "ev-2" in path
+
+    def test_returns_empty_on_oserror(self, tmp_path):
+        readonly_dir = tmp_path / "readonly"
+        readonly_dir.mkdir()
+        readonly_dir.chmod(0o444)
+        try:
+            with patch("golem.core.flow_base.TRACES_DIR", readonly_dir):
+                result = _write_trace("myflow", "ev-2", [{"type": "start"}])
+            assert result == ""
+        finally:
+            readonly_dir.chmod(0o755)
+
+
+class TestStreamingTraceWriter:
+    def test_creates_file_and_appends(self, tmp_path):
+        with patch("golem.core.flow_base.TRACES_DIR", tmp_path):
+            writer = _StreamingTraceWriter("myflow", "ev-3")
+            writer.append({"type": "start"})
+            writer.close()
+        trace_file = tmp_path / "myflow" / "ev-3.jsonl"
+        assert trace_file.exists()
+        lines = trace_file.read_text().strip().splitlines()
+        assert len(lines) == 1
+        assert "ev-3" in writer.relative_path
+
+    def test_injects_ts_field(self, tmp_path):
+        import json as _json
+
+        with patch("golem.core.flow_base.TRACES_DIR", tmp_path):
+            writer = _StreamingTraceWriter("myflow", "ev-ts")
+            writer.append({"type": "tick"})
+            writer.close()
+        trace_file = tmp_path / "myflow" / "ev-ts.jsonl"
+        data = _json.loads(trace_file.read_text().strip())
+        assert "ts" in data
+
+    def test_preserves_existing_ts(self, tmp_path):
+        import json as _json
+
+        with patch("golem.core.flow_base.TRACES_DIR", tmp_path):
+            writer = _StreamingTraceWriter("myflow", "ev-ts2")
+            writer.append({"type": "tick", "ts": 12345.0})
+            writer.close()
+        trace_file = tmp_path / "myflow" / "ev-ts2.jsonl"
+        data = _json.loads(trace_file.read_text().strip())
+        assert data["ts"] == 12345.0
+
+    def test_degrades_to_noop_when_init_fails(self, tmp_path):
+        readonly_dir = tmp_path / "readonly"
+        readonly_dir.mkdir()
+        readonly_dir.chmod(0o444)
+        try:
+            with patch("golem.core.flow_base.TRACES_DIR", readonly_dir):
+                writer = _StreamingTraceWriter("myflow", "ev-4")
+            assert writer._fh is None
+            assert writer.relative_path == ""
+            # append should not raise
+            writer.append({"type": "noop"})
+        finally:
+            readonly_dir.chmod(0o755)
+
+    def test_close_is_idempotent(self, tmp_path):
+        with patch("golem.core.flow_base.TRACES_DIR", tmp_path):
+            writer = _StreamingTraceWriter("myflow", "ev-5")
+            writer.close()
+            writer.close()  # should not raise
+
+    def test_append_disables_on_write_error(self, tmp_path):
+        with patch("golem.core.flow_base.TRACES_DIR", tmp_path):
+            writer = _StreamingTraceWriter("myflow", "ev-6")
+        mock_fh = MagicMock()
+        mock_fh.write.side_effect = OSError("disk full")
+        writer._fh = mock_fh
+        writer.append({"type": "fail"})
+        assert writer._fh is None
+
+    def test_thread_safety(self, tmp_path):
+        with patch("golem.core.flow_base.TRACES_DIR", tmp_path):
+            writer = _StreamingTraceWriter("myflow", "ev-thread")
+            errors = []
+
+            def _append_many():
+                try:
+                    for i in range(20):
+                        writer.append({"i": i})
+                except Exception as exc:  # pylint: disable=broad-except
+                    errors.append(exc)
+
+            threads = [threading.Thread(target=_append_many) for _ in range(5)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+            writer.close()
+        assert not errors
 
 
 class TestFlowResult:
