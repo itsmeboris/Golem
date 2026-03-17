@@ -992,7 +992,7 @@ class TestUpdateAgentsMdFromInstincts:
         store.add("dead code antipattern test default path", CATEGORY_ANTIPATTERNS, 0.5)
 
         # Patch the default path
-        mock_path = tmp_path / "default_AGENTS.md"
+        _mock_path = tmp_path / "default_AGENTS.md"
         with patch("golem.pitfall_writer.PROJECT_ROOT") as mock_root:
             mock_root.parent = tmp_path
             update_agents_md_from_instincts(store, None)

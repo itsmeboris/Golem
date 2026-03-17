@@ -2381,7 +2381,7 @@ class TestFixLoopCostGuard:
             verdict="PARTIAL", confidence=0.5, summary="initial", concerns=["x"]
         )
 
-        result = await sup._fix_loop(initial, "/work", 42, "desc")
+        _result = await sup._fix_loop(initial, "/work", 42, "desc")
 
         # Both iterations should run (no cost check when limit=0)
         assert _patches["cli"].call_count == 2

@@ -256,8 +256,6 @@ class TestBudgetUtilization:
 
     def test_non_terminal_sessions_excluded(self):
         """Sessions not in COMPLETED or FAILED state are excluded."""
-        from golem.orchestrator import TaskSession, TaskSessionState
-
         sessions = {}
         for i, state in enumerate(
             [

@@ -25,7 +25,7 @@ class TestExtractReturnTypes:
         assert result == {}
 
     def test_py_file_with_no_functions_returns_empty_dict(self, tmp_path):
-        pkg, prefix = _make_pkg(tmp_path)
+        pkg, _ = _make_pkg(tmp_path)
         (pkg / "empty.py").write_text("x = 1\n")
         result = extract_return_types(pkg)
         assert result == {}
@@ -43,7 +43,7 @@ class TestExtractReturnTypes:
         assert result == {f"{prefix}.utils:greet": None}
 
     def test_private_function_excluded(self, tmp_path):
-        pkg, prefix = _make_pkg(tmp_path)
+        pkg, _ = _make_pkg(tmp_path)
         (pkg / "utils.py").write_text("def _helper() -> int:\n    return 1\n")
         result = extract_return_types(pkg)
         assert result == {}
@@ -85,7 +85,7 @@ class TestExtractReturnTypes:
         assert result == {f"{prefix}.models:MyClass.method": "str"}
 
     def test_class_method_private_excluded(self, tmp_path):
-        pkg, prefix = _make_pkg(tmp_path)
+        pkg, _ = _make_pkg(tmp_path)
         (pkg / "models.py").write_text(
             "class MyClass:\n    def _private(self) -> int:\n        return 1\n"
         )
@@ -126,7 +126,7 @@ class TestExtractReturnTypes:
         assert result == {f"{prefix}.tasks:run": "None"}
 
     def test_async_private_function_excluded(self, tmp_path):
-        pkg, prefix = _make_pkg(tmp_path)
+        pkg, _ = _make_pkg(tmp_path)
         (pkg / "tasks.py").write_text("async def _run() -> None:\n    pass\n")
         result = extract_return_types(pkg)
         assert result == {}

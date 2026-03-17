@@ -19,7 +19,7 @@ class TestHandleReload:
         flow._sessions = {}
         reload_event = asyncio.Event()
         reload_event.set()
-        with patch("golem.cli.os.execv") as mock_execv:
+        with patch("golem.cli.os.execv") as _mock_execv:
             await _handle_reload(
                 reload_event,
                 flow=flow,

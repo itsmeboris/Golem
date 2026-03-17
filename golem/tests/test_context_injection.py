@@ -288,7 +288,7 @@ class TestSupervisorContextInjection:
             yield mock_cli, str(tmp_path)
 
     async def test_injects_context_when_enabled(self, _patches, tmp_path):
-        mock_cli, work_dir = _patches
+        mock_cli, _ = _patches
         # Place AGENTS.md so context is non-empty
         (tmp_path / "AGENTS.md").write_text("# Guidelines\n- use TDD\n")
 
@@ -301,7 +301,7 @@ class TestSupervisorContextInjection:
         assert "Workspace Context" in cli_config.system_prompt
 
     async def test_no_injection_when_disabled(self, _patches, tmp_path):
-        mock_cli, work_dir = _patches
+        mock_cli, _ = _patches
         (tmp_path / "AGENTS.md").write_text("# Guidelines\n")
 
         config = _make_config(context_injection=False)
@@ -312,7 +312,7 @@ class TestSupervisorContextInjection:
         assert cli_config.system_prompt == ""
 
     async def test_empty_system_prompt_when_no_context_files(self, _patches):
-        mock_cli, work_dir = _patches
+        mock_cli, _ = _patches
         # tmp_path has no AGENTS.md or CLAUDE.md
 
         config = _make_config(context_injection=True)
@@ -386,7 +386,7 @@ class TestMonolithicOrchestratorContextInjection:
     ):
         from golem.orchestrator import TaskOrchestrator
 
-        mock_cli, work_dir = _orch_patches
+        mock_cli, _ = _orch_patches
         (tmp_path / "AGENTS.md").write_text("# Monolithic Guidelines\n- pattern A\n")
 
         config = _make_config(context_injection=True, supervisor_mode=False)
@@ -414,7 +414,7 @@ class TestMonolithicOrchestratorContextInjection:
     ):
         from golem.orchestrator import TaskOrchestrator
 
-        mock_cli, work_dir = _orch_patches
+        mock_cli, _ = _orch_patches
         (tmp_path / "AGENTS.md").write_text("# Guidelines\n")
 
         config = _make_config(context_injection=False, supervisor_mode=False)
