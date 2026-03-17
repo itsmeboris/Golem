@@ -12,6 +12,7 @@ from golem.health import (
     ALERT_DISK_USAGE,
     ALERT_HIGH_ERROR_RATE,
     ALERT_LABELS,
+    ALERT_MERGE_QUEUE_BLOCKED,
     ALERT_QUEUE_DEPTH,
     ALERT_STALE_DAEMON,
     STATUS_DEGRADED,
@@ -469,6 +470,66 @@ class TestDiskUsageAlert:
         assert ALERT_DISK_USAGE not in types
 
 
+class TestCheckMergeQueueBlocked:
+    def test_alert_when_deferred_exceeds_threshold(self, monitor):
+        """Fire alert when deferred merge count >= threshold."""
+        monitor._merge_deferred_count_fn = lambda: 6
+        monitor._config.merge_deferred_threshold = 5
+        alerts = monitor._compute_alerts()
+        types = [a["type"] for a in alerts]
+        assert ALERT_MERGE_QUEUE_BLOCKED in types
+        alert = next(a for a in alerts if a["type"] == ALERT_MERGE_QUEUE_BLOCKED)
+        assert alert["value"] == 6
+        assert alert["threshold"] == 5
+
+    def test_no_alert_when_below_threshold(self, monitor):
+        """No alert when deferred count is below threshold."""
+        monitor._merge_deferred_count_fn = lambda: 2
+        monitor._config.merge_deferred_threshold = 5
+        alerts = monitor._compute_alerts()
+        types = [a["type"] for a in alerts]
+        assert ALERT_MERGE_QUEUE_BLOCKED not in types
+
+    def test_no_alert_when_fn_is_none(self, monitor):
+        """No alert when no merge queue fn is configured."""
+        monitor._merge_deferred_count_fn = None
+        alerts = monitor._compute_alerts()
+        types = [a["type"] for a in alerts]
+        assert ALERT_MERGE_QUEUE_BLOCKED not in types
+
+    def test_fn_exception_is_caught(self, monitor):
+        """Exception in count fn is caught gracefully."""
+
+        def _boom():
+            raise RuntimeError("broken")
+
+        monitor._merge_deferred_count_fn = _boom
+        alerts = monitor._compute_alerts()
+        types = [a["type"] for a in alerts]
+        assert ALERT_MERGE_QUEUE_BLOCKED not in types
+
+    def test_merge_queue_blocked_is_severe(self):
+        """merge_queue_blocked should make status unhealthy."""
+        alerts = [
+            {
+                "type": ALERT_MERGE_QUEUE_BLOCKED,
+                "message": "x",
+                "value": 6,
+                "threshold": 5,
+            }
+        ]
+        status = _compute_status(alerts)
+        assert status == STATUS_UNHEALTHY
+
+    def test_alert_at_exact_threshold(self, monitor):
+        """Alert fires when count equals the threshold (>= not just >)."""
+        monitor._merge_deferred_count_fn = lambda: 5
+        monitor._config.merge_deferred_threshold = 5
+        alerts = monitor._compute_alerts()
+        types = [a["type"] for a in alerts]
+        assert ALERT_MERGE_QUEUE_BLOCKED in types
+
+
 class TestAlertLabels:
     def test_all_constants_have_labels(self):
         for const in (
@@ -477,6 +538,7 @@ class TestAlertLabels:
             ALERT_QUEUE_DEPTH,
             ALERT_STALE_DAEMON,
             ALERT_DISK_USAGE,
+            ALERT_MERGE_QUEUE_BLOCKED,
         ):
             assert const in ALERT_LABELS
 
@@ -496,6 +558,7 @@ class TestParseHealthConfig:
         assert cfg.stale_seconds == 3600
         assert cfg.alert_cooldown_seconds == 900
         assert cfg.disk_usage_threshold_gb == 0
+        assert cfg.merge_deferred_threshold == 5
 
     def test_custom_values(self):
         from golem.core.config import _parse_health_config

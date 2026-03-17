@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import shutil
 import time
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Callable, Protocol, runtime_checkable
 
 from .core.config import HealthConfig
 from .types import AlertDict
@@ -24,6 +24,7 @@ ALERT_HIGH_ERROR_RATE = "high_error_rate"
 ALERT_QUEUE_DEPTH = "queue_depth"
 ALERT_STALE_DAEMON = "stale_daemon"
 ALERT_DISK_USAGE = "disk_usage"
+ALERT_MERGE_QUEUE_BLOCKED = "merge_queue_blocked"
 
 ALERT_LABELS: dict[str, str] = {
     ALERT_CONSECUTIVE_FAILURES: "Consecutive Failures",
@@ -31,6 +32,7 @@ ALERT_LABELS: dict[str, str] = {
     ALERT_QUEUE_DEPTH: "Queue Backlog",
     ALERT_STALE_DAEMON: "Daemon Idle",
     ALERT_DISK_USAGE: "Disk Usage",
+    ALERT_MERGE_QUEUE_BLOCKED: "Merge Queue Blocked",
 }
 
 # -- Health status tiers ------------------------------------------------------
@@ -59,9 +61,11 @@ class HealthMonitor:
         self,
         config: HealthConfig,
         notifier: HealthNotifier | None = None,
+        merge_deferred_count_fn: Callable[[], int] | None = None,
     ):
         self._config = config
         self._notifier = notifier
+        self._merge_deferred_count_fn = merge_deferred_count_fn
         self._task_results: list[tuple[float, bool]] = []  # (timestamp, success)
         self._consecutive_failures: int = 0
         self._last_heartbeat: float = time.time()
@@ -194,6 +198,23 @@ class HealthMonitor:
             except Exception:  # pylint: disable=broad-exception-caught
                 logger.debug("Failed to check disk usage", exc_info=True)
 
+        if self._merge_deferred_count_fn is not None:
+            try:
+                deferred_count = self._merge_deferred_count_fn()
+                if deferred_count >= self._config.merge_deferred_threshold:
+                    alerts.append(
+                        {
+                            "type": ALERT_MERGE_QUEUE_BLOCKED,
+                            "message": (
+                                f"{deferred_count} deferred merges exceed threshold"
+                            ),
+                            "value": deferred_count,
+                            "threshold": self._config.merge_deferred_threshold,
+                        }
+                    )
+            except Exception:  # pylint: disable=broad-exception-caught
+                logger.debug("Failed to read merge queue status", exc_info=True)
+
         return alerts
 
     def check(self) -> list[AlertDict]:
@@ -274,7 +295,12 @@ def _compute_status(alerts: list[AlertDict]) -> str:
     """
     if not alerts:
         return STATUS_HEALTHY
-    severe = {ALERT_CONSECUTIVE_FAILURES, ALERT_STALE_DAEMON, ALERT_DISK_USAGE}
+    severe = {
+        ALERT_CONSECUTIVE_FAILURES,
+        ALERT_STALE_DAEMON,
+        ALERT_DISK_USAGE,
+        ALERT_MERGE_QUEUE_BLOCKED,
+    }
     if any(a["type"] in severe for a in alerts):
         return STATUS_UNHEALTHY
     return STATUS_DEGRADED

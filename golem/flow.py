@@ -109,6 +109,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         self._health = HealthMonitor(
             config=config.health,
             notifier=self._profile.notifier,
+            merge_deferred_count_fn=self._get_deferred_merge_count,
         )
 
         # Heartbeat — self-directed work when idle
@@ -159,6 +160,12 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         """Record the last commit SHA that passed pre-flight verification."""
         self._verified_ref = sha
         logger.info("Updated verified ref to %s", sha)
+
+    def _get_deferred_merge_count(self) -> int:
+        """Return count of sessions with deferred merges (for health monitoring)."""
+        return sum(
+            1 for s in self._sessions.values() if s.merge_deferred and s.merge_branch
+        )
 
     # -- BaseFlow interface ---------------------------------------------------
 

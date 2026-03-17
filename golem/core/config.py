@@ -198,6 +198,7 @@ class HealthConfig:
     stale_seconds: int = 3600
     alert_cooldown_seconds: int = 900
     disk_usage_threshold_gb: float = 0  # 0 = disabled
+    merge_deferred_threshold: int = 5
 
 
 @dataclass
@@ -426,6 +427,7 @@ def _parse_health_config(data: dict[str, Any]) -> HealthConfig:
         stale_seconds=data.get("stale_seconds", 3600),
         alert_cooldown_seconds=data.get("alert_cooldown_seconds", 900),
         disk_usage_threshold_gb=data.get("disk_usage_threshold_gb", 0),
+        merge_deferred_threshold=data.get("merge_deferred_threshold", 5),
     )
 
 
