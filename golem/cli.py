@@ -975,7 +975,7 @@ def cmd_config(args) -> int:
     if action == "list":
         config = load_config(str(config_path))
         categories = get_config_by_category(config)
-        for cat_name, fields in sorted(categories.items()):
+        for _, fields in sorted(categories.items()):
             for fi in fields:
                 display = "***" if fi.meta.sensitive else fi.value
                 print("%s=%s" % (fi.key, display))

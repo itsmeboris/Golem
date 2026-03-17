@@ -365,9 +365,6 @@ def _populate_phases(
     """Populate orchestrator_text, orchestrator_tools, and subagents for each phase."""
     lifecycle = _build_lifecycle_maps(events)
 
-    # Build set of event indices shared by multiple phases for quick lookup
-    phase_starts = {p["start_event"] for p in phases}
-
     for pi, phase in enumerate(phases):
         next_name = phases[pi + 1]["name"] if pi + 1 < len(phases) else None
         text_parts: list[str] = []

@@ -9,8 +9,6 @@ from datetime import datetime
 from pathlib import Path
 
 from golem.types import RunRecordDict
-from golem.utils import format_duration
-
 from .config import DATA_DIR
 
 logger: logging.Logger = logging.getLogger("golem.core.run_log")

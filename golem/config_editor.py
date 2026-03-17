@@ -12,7 +12,7 @@ import os
 import signal
 import tempfile
 import dataclasses
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 

@@ -5,7 +5,6 @@ cost per retry bucket, and budget utilization from task sessions.
 """
 
 import logging
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -170,7 +169,7 @@ def _compute_budget_utilization(sessions: "dict[int, Any] | None") -> "dict | No
     terminal_states = {TaskSessionState.COMPLETED, TaskSessionState.FAILED}
 
     tasks = []
-    for task_id, session in sessions.items():
+    for session in sessions.values():
         if session.state not in terminal_states:
             continue
         budget = session.budget_usd

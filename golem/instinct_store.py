@@ -5,7 +5,7 @@ import logging
 import os
 import tempfile
 import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import date
 from pathlib import Path
 

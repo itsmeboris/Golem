@@ -12,9 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from golem.config_editor import (
-    FIELD_REGISTRY,
     FieldInfo,
-    FieldMeta,
     get_config_by_category,
     signal_daemon_reload,
     update_config,
