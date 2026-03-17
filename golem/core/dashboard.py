@@ -30,6 +30,19 @@ from ..types import (
 
 logger = logging.getLogger("golem.core.dashboard")
 
+_shutting_down = False
+
+
+async def _safe_to_thread(func, *args, **kwargs):
+    """Run *func* in a thread, returning None if the executor is shut down."""
+    try:
+        return await asyncio.to_thread(func, *args, **kwargs)
+    except RuntimeError:
+        if _shutting_down:
+            return None
+        raise
+
+
 try:
     from fastapi import Query
     from fastapi.responses import (
@@ -593,7 +606,9 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
     @app.get("/api/live")
     async def api_live() -> JSONResponse:
         if live_state_file is not None:
-            snap = await asyncio.to_thread(read_live_snapshot, live_state_file)
+            snap = await _safe_to_thread(read_live_snapshot, live_state_file)
+            if snap is None:
+                return JSONResponse(content={})
         else:
             snap = LiveState.get().snapshot()
         return JSONResponse(content=snap)
@@ -602,7 +617,9 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
     async def api_sessions() -> JSONResponse:
         """Return golem session state from the sessions file."""
         try:
-            data = await asyncio.to_thread(_read_sessions)
+            data = await _safe_to_thread(_read_sessions)
+            if data is None:
+                return JSONResponse(content={"sessions": {}})
             return JSONResponse(content=data)
         except (json.JSONDecodeError, OSError):
             return JSONResponse(content={"sessions": {}})
@@ -612,7 +629,9 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
         lines: int = Query(200, ge=10, le=2000),
     ) -> JSONResponse:
         """Return the tail of the daemon log file."""
-        data = await asyncio.to_thread(_read_log_tail, lines)
+        data = await _safe_to_thread(_read_log_tail, lines)
+        if data is None:
+            return JSONResponse(content={"lines": [], "file": "", "total_lines": 0})
         return JSONResponse(content=data)
 
     @app.get("/api/ping")
@@ -631,28 +650,34 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
     async def api_analytics() -> JSONResponse:
         from ..analytics import compute_analytics
 
-        runs = await asyncio.to_thread(read_runs, limit=1000)
+        runs = await _safe_to_thread(read_runs, limit=1000)
+        if runs is None:
+            return JSONResponse(content={})
         return JSONResponse(content=compute_analytics(runs))
 
     @app.get("/api/analytics/by-prompt")
     async def api_analytics_by_prompt() -> JSONResponse:
         from ..analytics import compute_prompt_analytics
 
-        runs = await asyncio.to_thread(read_runs, limit=10_000)
+        runs = await _safe_to_thread(read_runs, limit=10_000)
+        if runs is None:
+            return JSONResponse(content={})
         return JSONResponse(content=compute_prompt_analytics(runs))
 
     @app.get("/api/cost-analytics")
     async def api_cost_analytics() -> JSONResponse:
         from ..cost_analytics import compute_cost_analytics
 
-        runs = await asyncio.to_thread(read_runs, limit=10_000)
-        sessions = await asyncio.to_thread(load_sessions)
+        runs = await _safe_to_thread(read_runs, limit=10_000)
+        sessions = await _safe_to_thread(load_sessions)
+        if runs is None or sessions is None:
+            return JSONResponse(content={})
         return JSONResponse(content=compute_cost_analytics(runs, sessions))
 
     @app.get("/api/trace-parsed/{event_id:path}")
     async def api_trace_parsed(event_id: str, since_event: int = 0) -> JSONResponse:
         """Return parsed trace. Pass ?since_event=N for incremental updates."""
-        result = await asyncio.to_thread(_read_and_parse_trace, event_id, since_event)
+        result = await _safe_to_thread(_read_and_parse_trace, event_id, since_event)
         if result is None:
             return JSONResponse({"error": "Trace not found"}, status_code=404)
         return JSONResponse(result)
@@ -665,7 +690,9 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
                 status_code=404,
                 content={"error": "No trace file found", "event_id": event_id},
             )
-        sections = await asyncio.to_thread(_parse_trace, paths["trace"])
+        sections = await _safe_to_thread(_parse_trace, paths["trace"])
+        if sections is None:
+            return JSONResponse(content={})
         return JSONResponse(content={"event_id": event_id, "sections": sections})
 
     @app.get("/api/prompt/{event_id:path}")
@@ -676,7 +703,9 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
                 status_code=404,
                 content={"error": "No prompt file found", "event_id": event_id},
             )
-        text = await asyncio.to_thread(paths["prompt"].read_text, encoding="utf-8")
+        text = await _safe_to_thread(paths["prompt"].read_text, encoding="utf-8")
+        if text is None:
+            return JSONResponse(content={})
         return JSONResponse(
             content={
                 "event_id": event_id,
@@ -693,7 +722,9 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
                 status_code=404,
                 content={"error": "No report file found", "event_id": event_id},
             )
-        text = await asyncio.to_thread(paths["report"].read_text, encoding="utf-8")
+        text = await _safe_to_thread(paths["report"].read_text, encoding="utf-8")
+        if text is None:
+            return JSONResponse(content={})
         return JSONResponse(content={"event_id": event_id, "markdown": text})
 
     @app.get("/api/trace-terminal/{event_id:path}")
@@ -705,7 +736,10 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
                 status_code=404,
                 content={"error": "No trace file found", "event_id": event_id},
             )
-        events, stats = await asyncio.to_thread(_parse_trace_terminal, paths["trace"])
+        result = await _safe_to_thread(_parse_trace_terminal, paths["trace"])
+        if result is None:
+            return JSONResponse(content={})
+        events, stats = result
         return JSONResponse(
             content={"event_id": event_id, "events": events, "stats": stats}
         )

@@ -576,7 +576,7 @@ class TestRunDaemon:
             return mock_flow
 
         async def fake_dash(*a, **kw):
-            return asyncio.ensure_future(asyncio.sleep(100))
+            return asyncio.ensure_future(asyncio.sleep(100)), MagicMock()
 
         with (
             patch("golem.cli.LiveState", create=True) as mock_ls,
@@ -615,7 +615,7 @@ class TestRunDaemon:
             return mock_flow
 
         async def fake_dash(*a, **kw):
-            return asyncio.ensure_future(asyncio.sleep(100))
+            return asyncio.ensure_future(asyncio.sleep(100)), MagicMock()
 
         signal_handlers = {}
 
@@ -665,7 +665,7 @@ class TestRunDaemon:
             return mock_flow
 
         async def fake_dash(*a, **kw):
-            return asyncio.ensure_future(asyncio.sleep(100))
+            return asyncio.ensure_future(asyncio.sleep(100)), MagicMock()
 
         with (
             patch("golem.cli.LiveState", create=True) as mock_ls,
@@ -707,7 +707,7 @@ class TestRunDaemon:
             return mock_flow
 
         async def fake_dash(*a, **kw):
-            return asyncio.ensure_future(asyncio.sleep(100))
+            return asyncio.ensure_future(asyncio.sleep(100)), MagicMock()
 
         created_tasks = []
         original_create_task = asyncio.create_task
@@ -1919,9 +1919,12 @@ class TestStartDashboardServerAsync:
         ):
             from golem.cli import _start_dashboard_server
 
-            task = await _start_dashboard_server(8080, config_snapshot={"k": "v"})
+            task, server = await _start_dashboard_server(
+                8080, config_snapshot={"k": "v"}
+            )
 
         assert task is not None
+        assert server is mock_server
         task.cancel()
         try:
             await task
@@ -1949,8 +1952,9 @@ class TestStartDashboardServerAsync:
         ):
             from golem.cli import _start_dashboard_server
 
-            task = await _start_dashboard_server(8080)
+            task, server = await _start_dashboard_server(8080)
 
+        assert server is mock_server
         await asyncio.sleep(0)  # let the task start
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
@@ -1973,7 +1977,7 @@ class TestStartDashboardServerAsync:
         ):
             from golem.cli import _start_dashboard_server
 
-            task = await _start_dashboard_server(
+            task, server = await _start_dashboard_server(
                 9090, config_snapshot=None, live_state_file=Path("/tmp/ls.json")
             )
 

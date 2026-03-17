@@ -414,7 +414,7 @@ async def _start_dashboard_server(
     live_state_file: "Path | None" = None,
     merge_queue: "Any | None" = None,
     heartbeat: "Any | None" = None,
-) -> asyncio.Task:
+) -> tuple[asyncio.Task, Any]:
     import socket
 
     import uvicorn
@@ -447,7 +447,7 @@ async def _start_dashboard_server(
     task = asyncio.create_task(_serve_gracefully())
     hostname = socket.getfqdn()
     print(f"Dashboard at http://{hostname}:{port}/dashboard")
-    return task
+    return task, server
 
 
 async def run_daemon(args, config) -> int:
@@ -497,7 +497,7 @@ async def run_daemon(args, config) -> int:
 
     snap = config_to_snapshot(config)
     port = getattr(args, "port", None) or config.dashboard.port
-    dash_task = await _start_dashboard_server(
+    dash_task, dash_server = await _start_dashboard_server(
         port,
         config_snapshot=snap,
         merge_queue=flow._merge_queue if flow else None,
@@ -513,6 +513,11 @@ async def run_daemon(args, config) -> int:
         pass
     finally:
         logger.info("Shutting down agent daemon...")
+        # Signal dashboard to stop accepting new requests before cancelling.
+        from .core import dashboard as _dash_mod
+
+        _dash_mod._shutting_down = True
+        dash_server.should_exit = True
         reload_task.cancel()
         if flow and hasattr(flow, "stop_tick_loop"):
             flow.stop_tick_loop()

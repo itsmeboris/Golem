@@ -24,6 +24,7 @@ from golem.core.dashboard import (
     _read_log_tail,
     _read_sessions,
     _resolve_paths,
+    _safe_to_thread,
     _term_ev,
     config_to_snapshot,
     format_status_text,
@@ -1291,6 +1292,22 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         assert body == {"sessions": {}}
 
     @pytest.mark.asyncio
+    async def test_api_sessions_during_shutdown(self, handlers):
+        """api_sessions returns empty data when executor is shut down."""
+        old = _dashboard_module._shutting_down
+        _dashboard_module._shutting_down = True
+        try:
+            with patch(
+                "golem.core.dashboard._read_sessions",
+                side_effect=RuntimeError("Executor shutdown"),
+            ):
+                resp = await handlers["/api/sessions"]()
+            body = json.loads(resp.body)
+            assert body == {"sessions": {}}
+        finally:
+            _dashboard_module._shutting_down = old
+
+    @pytest.mark.asyncio
     async def test_api_logs(self, handlers):
         with patch(
             "golem.core.dashboard._read_log_tail",
@@ -1650,6 +1667,99 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             "toggleTheme" in body or "setTheme" in body
         ), "Missing theme toggle in shared JS"
 
+    # --- shutdown-guard tests for _safe_to_thread returning None ---
+
+    @pytest.mark.asyncio
+    async def test_api_live_shutdown(self):
+        """api_live returns empty when _safe_to_thread returns None."""
+        app = MagicMock()
+        routes: dict = {}
+
+        def capture(path, **kw):
+            def dec(fn):
+                routes[path] = fn
+                return fn
+
+            return dec
+
+        app.get = capture
+        with patch("golem.core.dashboard.FASTAPI_AVAILABLE", True):
+            with patch(
+                "golem.core.dashboard.Query", lambda default=None, **kw: default
+            ):
+                mount_dashboard(app, live_state_file=Path("/fake"))
+
+        with patch("golem.core.dashboard._safe_to_thread", return_value=None):
+            resp = await routes["/api/live"]()
+        assert json.loads(resp.body) == {}
+
+    @pytest.mark.asyncio
+    async def test_api_logs_shutdown(self, handlers):
+        with patch("golem.core.dashboard._safe_to_thread", return_value=None):
+            resp = await handlers["/api/logs"](lines=200)
+        body = json.loads(resp.body)
+        assert body == {"lines": [], "file": "", "total_lines": 0}
+
+    @pytest.mark.asyncio
+    async def test_api_analytics_shutdown(self, handlers):
+        with patch("golem.core.dashboard._safe_to_thread", return_value=None):
+            resp = await handlers["/api/analytics"]()
+        assert json.loads(resp.body) == {}
+
+    @pytest.mark.asyncio
+    async def test_api_analytics_by_prompt_shutdown(self, handlers):
+        with patch("golem.core.dashboard._safe_to_thread", return_value=None):
+            resp = await handlers["/api/analytics/by-prompt"]()
+        assert json.loads(resp.body) == {}
+
+    @pytest.mark.asyncio
+    async def test_api_trace_shutdown(self, handlers, tmp_path):
+        trace_path = tmp_path / "trace.jsonl"
+        trace_path.write_text("{}\n", encoding="utf-8")
+        with patch(
+            "golem.core.dashboard._resolve_paths",
+            return_value={"trace": trace_path, "prompt": None, "report": None},
+        ):
+            with patch("golem.core.dashboard._safe_to_thread", return_value=None):
+                resp = await handlers["/api/trace/{event_id:path}"]("golem-1")
+        assert json.loads(resp.body) == {}
+
+    @pytest.mark.asyncio
+    async def test_api_prompt_shutdown(self, handlers, tmp_path):
+        prompt_path = tmp_path / "prompt.txt"
+        prompt_path.write_text("x", encoding="utf-8")
+        with patch(
+            "golem.core.dashboard._resolve_paths",
+            return_value={"trace": None, "prompt": prompt_path, "report": None},
+        ):
+            with patch("golem.core.dashboard._safe_to_thread", return_value=None):
+                resp = await handlers["/api/prompt/{event_id:path}"]("golem-1")
+        assert json.loads(resp.body) == {}
+
+    @pytest.mark.asyncio
+    async def test_api_report_shutdown(self, handlers, tmp_path):
+        report_path = tmp_path / "report.md"
+        report_path.write_text("x", encoding="utf-8")
+        with patch(
+            "golem.core.dashboard._resolve_paths",
+            return_value={"trace": None, "prompt": None, "report": report_path},
+        ):
+            with patch("golem.core.dashboard._safe_to_thread", return_value=None):
+                resp = await handlers["/api/report/{event_id:path}"]("golem-1")
+        assert json.loads(resp.body) == {}
+
+    @pytest.mark.asyncio
+    async def test_api_trace_terminal_shutdown(self, handlers, tmp_path):
+        trace_path = tmp_path / "trace.jsonl"
+        trace_path.write_text("{}\n", encoding="utf-8")
+        with patch(
+            "golem.core.dashboard._resolve_paths",
+            return_value={"trace": trace_path, "prompt": None, "report": None},
+        ):
+            with patch("golem.core.dashboard._safe_to_thread", return_value=None):
+                resp = await handlers["/api/trace-terminal/{event_id:path}"]("golem-1")
+        assert json.loads(resp.body) == {}
+
 
 # ---------------------------------------------------------------------------
 # /api/cost-analytics endpoint
@@ -1728,6 +1838,12 @@ class TestCostAnalyticsEndpoint:
                 resp = await handlers["/api/cost-analytics"]()
         body = json.loads(resp.body)
         assert isinstance(body, dict)
+
+    @pytest.mark.asyncio
+    async def test_shutdown_returns_empty(self, handlers):
+        with patch("golem.core.dashboard._safe_to_thread", return_value=None):
+            resp = await handlers["/api/cost-analytics"]()
+        assert json.loads(resp.body) == {}
 
 
 # ---------------------------------------------------------------------------
@@ -2094,3 +2210,45 @@ class TestApiTraceParsedHTTP:
         assert "golem-42-20260101" in _dashboard_module._parsed_trace_cache
         assert "fill-0" not in _dashboard_module._parsed_trace_cache
         assert len(_dashboard_module._parsed_trace_cache) == _MAX_TRACE_CACHE
+
+
+# ---------------------------------------------------------------------------
+# _safe_to_thread — shutdown-aware thread dispatch
+# ---------------------------------------------------------------------------
+
+
+class TestSafeToThread:
+    async def test_normal_call(self):
+        result = await _safe_to_thread(lambda: 42)
+        assert result == 42
+
+    async def test_returns_none_when_shutting_down(self):
+        def _raise():
+            raise RuntimeError("Executor shutdown has been called")
+
+        old = _dashboard_module._shutting_down
+        _dashboard_module._shutting_down = True
+        try:
+            result = await _safe_to_thread(_raise)
+            assert result is None
+        finally:
+            _dashboard_module._shutting_down = old
+
+    async def test_propagates_runtime_error_when_not_shutting_down(self):
+        def _raise():
+            raise RuntimeError("some other error")
+
+        old = _dashboard_module._shutting_down
+        _dashboard_module._shutting_down = False
+        try:
+            with pytest.raises(RuntimeError, match="some other error"):
+                await _safe_to_thread(_raise)
+        finally:
+            _dashboard_module._shutting_down = old
+
+    async def test_passes_kwargs(self):
+        def add(a, b=0):
+            return a + b
+
+        result = await _safe_to_thread(add, 3, b=7)
+        assert result == 10
