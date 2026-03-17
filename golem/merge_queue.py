@@ -484,9 +484,7 @@ class MergeQueue:
 
     @staticmethod
     def _try_ff(entry: MergeEntry, outcome: MergeOutcome) -> MergeResult:
-        ok, reason = fast_forward_if_safe(
-            entry.base_dir, outcome.merge_branch, stash_if_dirty=True
-        )
+        ok, reason = fast_forward_if_safe(entry.base_dir, outcome.merge_branch)
         if ok:
             # Clean up both branches
             _run_git(["branch", "-D", f"agent/{entry.session_id}"], cwd=entry.base_dir)

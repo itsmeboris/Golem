@@ -280,18 +280,12 @@ def merge_in_worktree(  # pylint: disable=too-many-locals
 def fast_forward_if_safe(
     base_dir: str,
     source_branch: str,
-    stash_if_dirty: bool = False,
 ) -> tuple[bool, str]:
     """Attempt to fast-forward the current branch to *source_branch*.
 
     Returns ``(True, "")`` on success.  Returns ``(False, reason)`` if the
-    fast-forward would overwrite dirty files — the working tree is left
-    untouched in that case.
-
-    When *stash_if_dirty* is ``True`` and the merge would clobber dirty files,
-    the working tree is stashed, the fast-forward retried, and the stash
-    popped.  If the pop conflicts, a warning is logged but the merge is
-    still reported as successful (the stash entry is preserved).
+    fast-forward would overwrite dirty files or branches have diverged.
+    The working tree is never modified on failure.
     """
     merge_result = _run_git(
         ["merge", "--ff-only", source_branch],
@@ -302,8 +296,6 @@ def fast_forward_if_safe(
 
     output = (merge_result.stdout + merge_result.stderr).strip()
     if "overwritten by merge" in output or "local changes" in output.lower():
-        if stash_if_dirty:
-            return _stash_and_ff(base_dir, source_branch)
         logger.info(
             "Fast-forward deferred — dirty working tree overlaps with %s",
             source_branch,
@@ -315,31 +307,6 @@ def fast_forward_if_safe(
         return False, f"branches diverged: {output}"
 
     return False, f"ff-only failed: {output}"
-
-
-def _stash_and_ff(base_dir: str, source_branch: str) -> tuple[bool, str]:
-    """Stash dirty changes, fast-forward, then pop the stash."""
-    stash_result = _run_git(["stash", "--include-untracked"], cwd=base_dir)
-    if stash_result.returncode != 0:
-        logger.warning("git stash failed: %s", stash_result.stderr.strip())
-        return False, f"dirty working tree overlaps with {source_branch}"
-
-    retry = _run_git(["merge", "--ff-only", source_branch], cwd=base_dir)
-    pop = _run_git(["stash", "pop"], cwd=base_dir)
-    if pop.returncode != 0:
-        logger.warning(
-            "Stash pop had conflicts after ff merge of %s — resolve manually or check 'git stash list'",
-            source_branch,
-        )
-
-    if retry.returncode == 0:
-        logger.info(
-            "Fast-forward succeeded after stashing dirty working tree for %s",
-            source_branch,
-        )
-        return True, ""
-
-    return False, f"dirty working tree overlaps with {source_branch}"
 
 
 def get_changed_files(
