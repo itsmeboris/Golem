@@ -303,3 +303,108 @@ class TestRetryDeferredMerges:
 
         assert session.merge_deferred is True
         assert session.merge_branch == "merge-ready/42"
+
+    async def test_stops_after_max_retries(self, monkeypatch, tmp_path):
+        """Session at max retry count is skipped — fast_forward_if_safe is not called."""
+        flow = _make_flow(monkeypatch, tmp_path)
+
+        session = TaskSession(
+            parent_issue_id=43,
+            parent_subject="test",
+            state=TaskSessionState.COMPLETED,
+            created_at="2025-01-01T00:00:00",
+            updated_at="2025-01-01T00:00:00",
+        )
+        session.merge_deferred = True
+        session.merge_branch = "merge-ready/43"
+        session.base_work_dir = str(tmp_path / "repo")
+        session.merge_retry_count = 3
+        flow._sessions[43] = session
+
+        with patch("golem.flow.fast_forward_if_safe") as mock_ff:
+            await flow._retry_deferred_merges()
+
+        mock_ff.assert_not_called()
+
+    async def test_increments_retry_count_on_failure(self, monkeypatch, tmp_path):
+        """Each failed fast_forward increments merge_retry_count by 1."""
+        flow = _make_flow(monkeypatch, tmp_path)
+
+        session = TaskSession(
+            parent_issue_id=44,
+            parent_subject="test",
+            state=TaskSessionState.COMPLETED,
+            created_at="2025-01-01T00:00:00",
+            updated_at="2025-01-01T00:00:00",
+        )
+        session.merge_deferred = True
+        session.merge_branch = "merge-ready/44"
+        session.base_work_dir = str(tmp_path / "repo")
+        session.merge_retry_count = 0
+        flow._sessions[44] = session
+
+        with patch("golem.flow.fast_forward_if_safe", return_value=(False, "dirty")):
+            await flow._retry_deferred_merges()
+            assert session.merge_retry_count == 1
+            await flow._retry_deferred_merges()
+            assert session.merge_retry_count == 2
+
+    async def test_logs_error_when_max_retries_reached(
+        self, monkeypatch, tmp_path, caplog
+    ):
+        """An ERROR is logged when merge_retry_count reaches _MAX_MERGE_RETRIES."""
+        import logging
+
+        flow = _make_flow(monkeypatch, tmp_path)
+
+        session = TaskSession(
+            parent_issue_id=45,
+            parent_subject="test",
+            state=TaskSessionState.COMPLETED,
+            created_at="2025-01-01T00:00:00",
+            updated_at="2025-01-01T00:00:00",
+        )
+        session.merge_deferred = True
+        session.merge_branch = "merge-ready/45"
+        session.base_work_dir = str(tmp_path / "repo")
+        session.merge_retry_count = 2  # one away from limit of 3
+        flow._sessions[45] = session
+
+        with patch("golem.flow.fast_forward_if_safe", return_value=(False, "conflict")):
+            with caplog.at_level(logging.ERROR, logger="golem.flow"):
+                await flow._retry_deferred_merges()
+
+        assert session.merge_retry_count == 3
+        assert any(
+            "exceeded" in record.message and "45" in record.message
+            for record in caplog.records
+            if record.levelno == logging.ERROR
+        )
+
+    async def test_resets_retry_count_on_success(self, monkeypatch, tmp_path):
+        """Successful retry resets merge_retry_count to 0."""
+        flow = _make_flow(monkeypatch, tmp_path)
+
+        session = TaskSession(
+            parent_issue_id=46,
+            parent_subject="test",
+            state=TaskSessionState.COMPLETED,
+            created_at="2025-01-01T00:00:00",
+            updated_at="2025-01-01T00:00:00",
+        )
+        session.merge_deferred = True
+        session.merge_branch = "merge-ready/46"
+        session.base_work_dir = str(tmp_path / "repo")
+        session.merge_retry_count = 2
+        flow._sessions[46] = session
+
+        with (
+            patch("golem.flow.fast_forward_if_safe", return_value=(True, "")),
+            patch("golem.flow._run_git") as mock_git,
+        ):
+            mock_git.return_value = MagicMock(stdout="deadbeef\n")
+            await flow._retry_deferred_merges()
+
+        assert session.merge_retry_count == 0
+        assert session.merge_deferred is False
+        assert session.commit_sha == "deadbeef"

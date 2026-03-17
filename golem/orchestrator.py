@@ -149,6 +149,7 @@ class TaskSession:
     checkpoint_phase: str = ""
     merge_deferred: bool = False
     merge_branch: str = ""
+    merge_retry_count: int = 0
     # Dashboard enrichment
     started_at: str = ""
     files_changed: list[str] = field(default_factory=list)

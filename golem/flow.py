@@ -60,6 +60,8 @@ from .validation import ValidationVerdict
 
 SUBMISSIONS_DIR = DATA_DIR / "submissions"
 
+_MAX_MERGE_RETRIES = 3
+
 logger = logging.getLogger("golem.flow")
 
 
@@ -634,6 +636,8 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         for session in list(self._sessions.values()):
             if not session.merge_deferred or not session.merge_branch:
                 continue
+            if session.merge_retry_count >= _MAX_MERGE_RETRIES:
+                continue
             ok, _reason = fast_forward_if_safe(
                 session.base_work_dir, session.merge_branch
             )
@@ -641,13 +645,14 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                 merge_branch = session.merge_branch
                 session.merge_deferred = False
                 session.merge_branch = ""
+                session.merge_retry_count = 0
                 sha = _run_git(
                     ["rev-parse", "--short", "HEAD"],
                     cwd=session.base_work_dir,
                 ).stdout.strip()
                 session.commit_sha = sha
                 logger.info(
-                    "Session %d: deferred merge applied → %s",
+                    "Session %d: deferred merge applied \u2192 %s",
                     session.parent_issue_id,
                     sha,
                 )
@@ -660,7 +665,18 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                     ["branch", "-D", merge_branch],
                     cwd=session.base_work_dir,
                 )
-                self._save_state()
+            else:
+                session.merge_retry_count += 1
+                if session.merge_retry_count >= _MAX_MERGE_RETRIES:
+                    logger.error(
+                        "Session %d: deferred merge exceeded %d retries — "
+                        "giving up (branch=%s, reason=%s)",
+                        session.parent_issue_id,
+                        _MAX_MERGE_RETRIES,
+                        session.merge_branch,
+                        _reason,
+                    )
+            self._save_state()
 
     def _touch_merge_sentinel(self) -> None:
         """Touch the merge-queue sentinel file to trigger SSE update."""
