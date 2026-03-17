@@ -251,7 +251,6 @@ class MergeQueue:
             outcome = await asyncio.to_thread(
                 merge_in_worktree, entry.base_dir, entry.session_id
             )
-            resolution_occurred = False
 
             # --- Merge failed (empty sha + error) ---
             if not outcome.sha and outcome.error:
@@ -349,8 +348,7 @@ class MergeQueue:
                             error=f"reconciliation failed: {recon.explanation}",
                             conflict_files=[m.file for m in outcome.missing_additions],
                         )
-                    # Reconciliation succeeded — proceed to ff
-                    resolution_occurred = True
+                    # Reconciliation succeeded — proceed to verify + ff
                 else:
                     logger.warning(
                         "Session %d: %d file(s) lost additions after merge, "
@@ -377,27 +375,26 @@ class MergeQueue:
                         changed_files=entry.changed_files,
                     )
 
-                if resolution_occurred:
-                    vr = await asyncio.to_thread(
-                        self._verify_merge,
-                        entry.base_dir,
-                        outcome.merge_branch,
+                # Always verify post-merge before fast-forwarding
+                vr = await asyncio.to_thread(
+                    self._verify_merge,
+                    entry.base_dir,
+                    outcome.merge_branch,
+                    entry.session_id,
+                )
+                if not vr.passed:
+                    logger.warning(
+                        "Session %d: post-merge verification failed",
                         entry.session_id,
                     )
-                    if not vr.passed:
-                        logger.warning(
-                            "Session %d: post-merge verification failed"
-                            " after reconciliation",
-                            entry.session_id,
-                        )
-                        return MergeResult(
-                            session_id=entry.session_id,
-                            success=False,
-                            merge_sha=outcome.sha,
-                            merge_branch=outcome.merge_branch,
-                            error="post-merge verification failed",
-                            changed_files=entry.changed_files,
-                        )
+                    return MergeResult(
+                        session_id=entry.session_id,
+                        success=False,
+                        merge_sha=outcome.sha,
+                        merge_branch=outcome.merge_branch,
+                        error="post-merge verification failed",
+                        changed_files=entry.changed_files,
+                    )
                 return await asyncio.to_thread(self._try_ff, entry, outcome)
 
             # Empty sha with no error — no changes to merge
