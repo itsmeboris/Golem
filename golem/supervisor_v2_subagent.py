@@ -622,6 +622,19 @@ class SubagentSupervisor:
         """Inner fix loop: retry with validator concerns up to validator_fix_depth times."""
         depth = self.task_config.validator_fix_depth
         for i in range(depth):
+            max_cost = self.task_config.max_fix_cost_usd
+            if max_cost > 0 and self.session.total_cost_usd >= max_cost:
+                self._slog.info(
+                    "Fix loop cost guard: $%.2f >= $%.2f limit, stopping",
+                    self.session.total_cost_usd,
+                    max_cost,
+                )
+                self._emit_event(
+                    f"Fix loop stopped: cost ${self.session.total_cost_usd:.2f} "
+                    f"exceeds limit ${max_cost:.2f}"
+                )
+                return verdict
+
             self.session.fix_iteration = i + 1
             self.session.state = TaskSessionState.RETRYING
             self.session.updated_at = _now_iso()

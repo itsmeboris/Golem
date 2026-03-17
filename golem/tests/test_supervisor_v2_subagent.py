@@ -2276,3 +2276,211 @@ class TestCreatePullRequestAfterCommit:
         d = session.to_dict()
         restored = TaskSession.from_dict(d)
         assert restored.fix_trace_files == ["/tmp/fix1.jsonl", "/tmp/fix2.jsonl"]
+
+
+class TestFixLoopCostGuard:
+    """Tests for the max_fix_cost_usd cost guard in _fix_loop."""
+
+    @pytest.fixture()
+    def _patches(self):
+        with (
+            patch("golem.supervisor_v2_subagent.invoke_cli_monitored") as mock_cli,
+            patch("golem.supervisor_v2_subagent.run_validation") as mock_val,
+            patch("golem.supervisor_v2_subagent._write_prompt"),
+            patch("golem.supervisor_v2_subagent._write_trace"),
+            patch("golem.supervisor_v2_subagent._StreamingTraceWriter"),
+        ):
+            mock_cli.return_value = _make_cli_result(cost=0.5, session_id="sess-fix")
+            yield {
+                "cli": mock_cli,
+                "val": mock_val,
+            }
+
+    async def test_cost_guard_exits_early_when_budget_exceeded(self, _patches):
+        """_fix_loop exits before first iteration when cost already exceeds limit."""
+        config = _make_config(
+            validator_fix_depth=3,
+            resume_on_partial=True,
+            max_fix_cost_usd=1.0,
+        )
+        session = TaskSession(
+            parent_issue_id=42,
+            parent_subject="Test",
+            cli_session_id="sess-orig",
+        )
+        session.total_cost_usd = 1.5  # already over budget
+        sup = _make_supervisor(session=session, config=config)
+        sup._worktree_path = ""
+
+        initial = ValidationVerdict(
+            verdict="PARTIAL", confidence=0.5, summary="p", concerns=["x"]
+        )
+
+        result = await sup._fix_loop(initial, "/work", 42, "desc")
+
+        # Should return the verdict unchanged without running any CLI call
+        assert result.summary == "p"
+        assert _patches["cli"].call_count == 0
+        assert session.fix_iteration == 0
+
+    async def test_cost_guard_exits_mid_loop_when_budget_exceeded(self, _patches):
+        """_fix_loop exits on second iteration when first iteration exceeded budget."""
+        config = _make_config(
+            validator_fix_depth=3,
+            resume_on_partial=True,
+            max_fix_cost_usd=1.0,
+        )
+        session = TaskSession(
+            parent_issue_id=42,
+            parent_subject="Test",
+            cli_session_id="sess-orig",
+        )
+        session.total_cost_usd = 0.7  # under budget initially
+
+        sup = _make_supervisor(session=session, config=config)
+        sup._worktree_path = ""
+
+        # After the first CLI call (cost=0.5), total becomes 1.2 → over budget
+        _patches["val"].return_value = ValidationVerdict(
+            verdict="PARTIAL", confidence=0.6, summary="still bad", concerns=["c1"]
+        )
+
+        initial = ValidationVerdict(
+            verdict="PARTIAL", confidence=0.5, summary="p", concerns=["x"]
+        )
+
+        result = await sup._fix_loop(initial, "/work", 42, "desc")
+
+        # First iteration completes, second is blocked by cost guard
+        assert _patches["cli"].call_count == 1
+        assert session.fix_iteration == 1
+        assert result.verdict == "PARTIAL"
+
+    async def test_cost_guard_zero_means_unlimited(self, _patches):
+        """max_fix_cost_usd=0 means no cost limit — all iterations run."""
+        config = _make_config(
+            validator_fix_depth=2,
+            resume_on_partial=True,
+            max_fix_cost_usd=0.0,  # unlimited
+        )
+        session = TaskSession(
+            parent_issue_id=42,
+            parent_subject="Test",
+            cli_session_id="sess-orig",
+        )
+        session.total_cost_usd = 999.0  # very high — but limit is 0 (unlimited)
+
+        sup = _make_supervisor(session=session, config=config)
+        sup._worktree_path = ""
+
+        partial = ValidationVerdict(
+            verdict="PARTIAL", confidence=0.5, summary="bad", concerns=["c"]
+        )
+        _patches["val"].side_effect = [partial, partial]
+
+        initial = ValidationVerdict(
+            verdict="PARTIAL", confidence=0.5, summary="initial", concerns=["x"]
+        )
+
+        result = await sup._fix_loop(initial, "/work", 42, "desc")
+
+        # Both iterations should run (no cost check when limit=0)
+        assert _patches["cli"].call_count == 2
+        assert session.fix_iteration == 2
+
+    async def test_cost_guard_logs_when_triggered(self, _patches):
+        """_fix_loop logs when cost guard stops the loop."""
+        import logging
+
+        config = _make_config(
+            validator_fix_depth=3,
+            resume_on_partial=True,
+            max_fix_cost_usd=0.5,
+        )
+        session = TaskSession(
+            parent_issue_id=42,
+            parent_subject="Test",
+            cli_session_id="sess-orig",
+        )
+        session.total_cost_usd = 0.8  # already over the 0.5 limit
+
+        sup = _make_supervisor(session=session, config=config)
+        sup._worktree_path = ""
+
+        initial = ValidationVerdict(
+            verdict="PARTIAL", confidence=0.5, summary="p", concerns=["x"]
+        )
+
+        with patch.object(sup, "_emit_event") as mock_emit:
+            await sup._fix_loop(initial, "/work", 42, "desc")
+
+        # Event should have been emitted describing the cost guard trigger
+        mock_emit.assert_called_once()
+        emitted_msg = mock_emit.call_args[0][0]
+        assert "cost" in emitted_msg.lower() or "limit" in emitted_msg.lower()
+
+
+class TestMaxFixCostUsdConfig:
+    """Config parsing for max_fix_cost_usd."""
+
+    def test_default_value(self):
+        cfg = GolemFlowConfig()
+        assert cfg.max_fix_cost_usd == 0.0
+
+    def test_custom_value(self):
+        cfg = GolemFlowConfig(max_fix_cost_usd=2.5)
+        assert cfg.max_fix_cost_usd == 2.5
+
+    def test_parsed_from_yaml_data(self):
+        from golem.core.config import _parse_golem_config
+
+        data = {"max_fix_cost_usd": 3.0, "projects": ["test"]}
+        cfg = _parse_golem_config(data)
+        assert cfg.max_fix_cost_usd == 3.0
+
+    def test_default_when_missing_from_yaml(self):
+        from golem.core.config import _parse_golem_config
+
+        data = {"projects": ["test"]}
+        cfg = _parse_golem_config(data)
+        assert cfg.max_fix_cost_usd == 0.0
+
+
+class TestHeartbeatGuardConfig:
+    """Config parsing for heartbeat_max_ticks and heartbeat_max_duration_seconds."""
+
+    def test_default_values(self):
+        cfg = GolemFlowConfig()
+        assert cfg.heartbeat_max_ticks == 0
+        assert cfg.heartbeat_max_duration_seconds == 0
+
+    @pytest.mark.parametrize(
+        "field,value",
+        [
+            ("heartbeat_max_ticks", 5),
+            ("heartbeat_max_duration_seconds", 3600),
+        ],
+    )
+    def test_custom_values(self, field, value):
+        cfg = GolemFlowConfig(**{field: value})
+        assert getattr(cfg, field) == value
+
+    def test_parsed_from_yaml_data(self):
+        from golem.core.config import _parse_golem_config
+
+        data = {
+            "heartbeat_max_ticks": 10,
+            "heartbeat_max_duration_seconds": 7200,
+            "projects": ["test"],
+        }
+        cfg = _parse_golem_config(data)
+        assert cfg.heartbeat_max_ticks == 10
+        assert cfg.heartbeat_max_duration_seconds == 7200
+
+    def test_defaults_when_missing_from_yaml(self):
+        from golem.core.config import _parse_golem_config
+
+        data = {"projects": ["test"]}
+        cfg = _parse_golem_config(data)
+        assert cfg.heartbeat_max_ticks == 0
+        assert cfg.heartbeat_max_duration_seconds == 0
