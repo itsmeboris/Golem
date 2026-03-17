@@ -4,6 +4,7 @@
 import asyncio
 import contextlib
 import json
+import os
 import signal
 import time
 from pathlib import Path
@@ -20,6 +21,7 @@ from golem.cli import (
     _get_profile,
     _make_event_handler,
     _manage_golem_tick,
+    _pid_from_health,
     _submit_to_daemon,
     _wait_for_exit,
     cmd_daemon,
@@ -848,6 +850,47 @@ class TestDaemonHealth:
             assert _daemon_health(8082) is False
 
 
+class TestPidFromHealth:
+    def test_returns_pid(self):
+        with patch("golem.cli.urllib.request.urlopen") as mock_open:
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = json.dumps({"ok": True, "pid": 4242}).encode()
+            mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+            mock_resp.__exit__ = MagicMock(return_value=False)
+            mock_open.return_value = mock_resp
+
+            assert _pid_from_health(8082) == 4242
+
+    def test_returns_none_on_connection_error(self):
+        import urllib.error
+
+        with patch(
+            "golem.cli.urllib.request.urlopen",
+            side_effect=urllib.error.URLError("refused"),
+        ):
+            assert _pid_from_health(8082) is None
+
+    def test_returns_none_on_missing_key(self):
+        with patch("golem.cli.urllib.request.urlopen") as mock_open:
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = json.dumps({"ok": True}).encode()
+            mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+            mock_resp.__exit__ = MagicMock(return_value=False)
+            mock_open.return_value = mock_resp
+
+            assert _pid_from_health(8082) is None
+
+    def test_returns_none_on_invalid_json(self):
+        with patch("golem.cli.urllib.request.urlopen") as mock_open:
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = b"not json"
+            mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+            mock_resp.__exit__ = MagicMock(return_value=False)
+            mock_open.return_value = mock_resp
+
+            assert _pid_from_health(8082) is None
+
+
 class TestEnsureDaemon:
     @patch("golem.cli._daemon_health", return_value=True)
     def test_already_running(self, mock_health):
@@ -1189,6 +1232,30 @@ class TestCmdDaemon:
         err = capsys.readouterr().err
         assert "already running" in err
 
+    @patch("golem.cli.setup_daemon_tee")
+    @patch("golem.cli.asyncio")
+    @patch("golem.cli.write_pid")
+    @patch("golem.cli.remove_pid")
+    @patch("golem.cli.load_config")
+    def test_own_pid_skips_already_running(
+        self, mock_config, mock_remove, mock_write, mock_asyncio, mock_tee, tmp_path
+    ):
+        """After os.execv the PID file contains our own PID — should NOT abort."""
+        own_pid = os.getpid()
+        with patch("golem.cli.read_pid", return_value=own_pid):
+            mock_asyncio.run.return_value = 0
+            mock_tee.return_value = (tmp_path / "log", lambda: None)
+            args = SimpleNamespace(
+                config=None,
+                log_dir=str(tmp_path),
+                pid_file=None,
+                foreground=True,
+                port=None,
+            )
+            result = cmd_daemon(args)
+        assert result == 0
+        mock_write.assert_called_once()
+
     @patch("golem.cli.update_latest_symlink")
     @patch("golem.cli.daemonize")
     @patch("golem.cli.asyncio")
@@ -1378,6 +1445,48 @@ class TestCmdStopSignalPaths:
         assert result == 0
         out = capsys.readouterr().out
         assert "Dashboard" in out
+
+    @patch("golem.cli._wait_for_exit", return_value=True)
+    @patch("golem.cli.remove_pid")
+    @patch("os.kill")
+    @patch("golem.cli._pid_from_health", return_value=7777)
+    @patch("golem.cli.load_config")
+    @patch("golem.cli.read_pid", return_value=None)
+    def test_stop_falls_back_to_health_endpoint(
+        self,
+        mock_read,
+        mock_cfg,
+        mock_health,
+        mock_kill,
+        mock_remove,
+        mock_wait,
+        capsys,
+    ):
+        mock_cfg.return_value = MagicMock(dashboard=MagicMock(port=8081))
+        mock_kill.side_effect = lambda pid, sig: None
+        args = SimpleNamespace(dashboard=False, pid_file=None, force=False, config=None)
+        result = cmd_stop(args)
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "recovered PID 7777" in out
+
+    @patch("golem.cli._pid_from_health", return_value=None)
+    @patch("golem.cli.load_config")
+    @patch("golem.cli.read_pid", return_value=None)
+    def test_stop_no_pid_file_no_health(self, mock_read, mock_cfg, mock_health, capsys):
+        mock_cfg.return_value = MagicMock(dashboard=MagicMock(port=8081))
+        args = SimpleNamespace(dashboard=False, pid_file=None, force=False, config=None)
+        result = cmd_stop(args)
+        assert result == 1
+        err = capsys.readouterr().err
+        assert "PID file" in err
+
+    @patch("golem.cli.read_pid", return_value=None)
+    def test_dashboard_stop_no_health_fallback(self, mock_read, capsys):
+        """Dashboard stop does not attempt health endpoint fallback."""
+        args = SimpleNamespace(dashboard=True, pid_file=None, force=False)
+        result = cmd_stop(args)
+        assert result == 1
 
 
 class TestCmdStatus:

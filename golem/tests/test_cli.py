@@ -477,9 +477,12 @@ class TestPollForAgentIssues:
 
 
 class TestCmdStop:
+    @patch("golem.cli._pid_from_health", return_value=None)
+    @patch("golem.cli.load_config")
     @patch("golem.cli.read_pid", return_value=None)
-    def test_no_pid_file(self, _, capsys):
-        args = SimpleNamespace(dashboard=False, pid_file=None, force=False)
+    def test_no_pid_file(self, _read, _cfg, _health, capsys):
+        _cfg.return_value = MagicMock(dashboard=MagicMock(port=8081))
+        args = SimpleNamespace(dashboard=False, pid_file=None, force=False, config=None)
         result = cmd_stop(args)
         assert result == 1
 

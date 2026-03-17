@@ -377,8 +377,7 @@ async def _handle_reload(
         await self_update_manager.apply_update()
 
     logger.info("Restarting daemon via os.execv")
-    # Remove PID file so the re-exec'd process doesn't see itself as "already running".
-    remove_pid(DEFAULT_PID_FILE)
+    # PID file is kept — cmd_daemon recognises its own PID after execv.
     # Use --foreground so the re-exec'd process doesn't fork again.
     argv = list(sys.argv)
     if "--foreground" not in argv:
@@ -387,7 +386,6 @@ async def _handle_reload(
         os.execv(sys.executable, [sys.executable] + argv)
     except OSError:
         logger.exception("os.execv failed — resuming with current code")
-        write_pid(DEFAULT_PID_FILE)
         if flow:
             flow.start_tick_loop()
 
@@ -612,6 +610,18 @@ def _daemon_health(port: int, timeout: int = 3) -> bool:
         return False
 
 
+def _pid_from_health(port: int, timeout: int = 3) -> int | None:
+    """Query /api/health for the daemon PID.  Returns None on failure."""
+    try:
+        url = f"http://127.0.0.1:{port}/api/health"
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read())
+            return int(data["pid"])
+    except (urllib.error.URLError, OSError, KeyError, ValueError, TypeError):
+        return None
+
+
 def _ensure_daemon(args, config, port: int, daemon_cfg=None) -> None:
     """Make sure the daemon is running; start it in background if not."""
     if daemon_cfg is None:
@@ -722,7 +732,7 @@ def cmd_daemon(args) -> int:
     pid_file = Path(getattr(args, "pid_file", None) or DEFAULT_PID_FILE)
 
     existing_pid = read_pid(pid_file)
-    if existing_pid is not None:
+    if existing_pid is not None and existing_pid != os.getpid():
         try:
             os.kill(existing_pid, 0)
             print(
@@ -778,6 +788,12 @@ def cmd_stop(args) -> int:
     force = getattr(args, "force", False)
 
     pid = read_pid(pid_file)
+    if pid is None and not is_dashboard:
+        config = load_config(getattr(args, "config", None))
+        port = getattr(args, "port", None) or config.dashboard.port
+        pid = _pid_from_health(port)
+        if pid is not None:
+            print(f"PID file missing — recovered PID {pid} from health endpoint.")
     if pid is None:
         print(f"No {target.lower()} PID file found. Is it running?", file=sys.stderr)
         return 1
