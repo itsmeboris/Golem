@@ -159,6 +159,8 @@ class TaskSession:
     human_feedback_at: str = ""
     # Phase-to-phase structured context
     phase_handoffs: list[PhaseHandoffDict] = field(default_factory=list)
+    # Stall / abort root cause
+    root_cause: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-safe dictionary."""
@@ -219,6 +221,7 @@ class TaskSession:
             human_feedback=data.get("human_feedback", ""),
             human_feedback_at=data.get("human_feedback_at", ""),
             phase_handoffs=data.get("phase_handoffs", []),
+            root_cause=data.get("root_cause", ""),
         )
 
 
@@ -503,6 +506,7 @@ class TaskOrchestrator:
             )
 
             # Phase 3: Deterministic verification (hard gate before reviewer)
+            _prev_verification = self._last_verification
             verification = await self._run_verification(work_dir)
             self._record_handoff(
                 from_phase="verifying",
@@ -525,6 +529,43 @@ class TaskOrchestrator:
             )
             if not verification.passed:
                 feedback = self._format_verification_feedback(verification)
+                # Guard 1: identical failures — stall detected, abort immediately
+                if (
+                    _prev_verification is not None
+                    and frozenset(verification.failures)
+                    and frozenset(verification.failures)
+                    == frozenset(_prev_verification.failures)
+                ):
+                    self._slog.warning(
+                        "Identical verification failures detected, aborting retry (issue=%s)",
+                        self.session.parent_issue_id,
+                    )
+                    synth_verdict = ValidationVerdict(
+                        verdict="FAIL",
+                        confidence=0.0,
+                        summary=f"Identical failures on retry: {feedback[:200]}",
+                        concerns=[feedback],
+                    )
+                    self._apply_verdict(synth_verdict)
+                    self._escalate(synth_verdict, root_cause="identical_failures")
+                    return
+                # Guard 2: budget exceeded — abort instead of retrying
+                if self.session.total_cost_usd >= self.session.budget_usd:
+                    self._slog.warning(
+                        "Budget exceeded (cost=%.2f >= budget=%.2f), aborting retry (issue=%s)",
+                        self.session.total_cost_usd,
+                        self.session.budget_usd,
+                        self.session.parent_issue_id,
+                    )
+                    synth_verdict = ValidationVerdict(
+                        verdict="FAIL",
+                        confidence=0.0,
+                        summary=f"Budget exceeded, cannot retry: {feedback[:200]}",
+                        concerns=[feedback],
+                    )
+                    self._apply_verdict(synth_verdict)
+                    self._escalate(synth_verdict, root_cause="budget_exceeded")
+                    return
                 if self.session.retry_count < self.task_config.max_retries:
                     # Build a synthetic PARTIAL verdict from verification failure
                     synth_verdict = ValidationVerdict(
@@ -1053,20 +1094,24 @@ class TaskOrchestrator:
         if retry_verdict.verdict != "PASS":
             self._escalate(retry_verdict)
 
-    def _escalate(self, verdict: ValidationVerdict) -> None:
+    def _escalate(self, verdict: ValidationVerdict, root_cause: str = "") -> None:
         """Mark session FAILED and post escalation details to Redmine."""
         issue_id = self.session.parent_issue_id
         self.session.state = TaskSessionState.FAILED
         self.session.updated_at = _now_iso()
+        if root_cause:
+            self.session.root_cause = root_cause
 
         concerns_text = "\n".join(f"- {c}" for c in verdict.concerns) or "- (none)"
         files_text = "\n".join(f"- {f}" for f in verdict.files_to_fix) or "- (none)"
         failures_text = "\n".join(f"- {t}" for t in verdict.test_failures) or "- (none)"
 
+        root_cause_line = f"Root cause: {root_cause}\n\n" if root_cause else ""
         notes = (
             f"**Golem escalation — needs human review**\n\n"
             f"Verdict: {verdict.verdict} (confidence: {verdict.confidence:.0%})\n"
             f"Summary: {verdict.summary}\n\n"
+            f"{root_cause_line}"
             f"Concerns:\n{concerns_text}\n\n"
             f"Files to fix:\n{files_text}\n\n"
             f"Test failures:\n{failures_text}\n\n"

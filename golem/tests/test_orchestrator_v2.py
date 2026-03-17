@@ -2707,3 +2707,311 @@ class TestVerificationInPipeline:
             await orch._run_agent_monolithic()
 
         assert session.state == TaskSessionState.FAILED
+
+
+class TestRootCause:
+    """Tests for SPEC-3: root_cause field on TaskSession."""
+
+    def test_root_cause_default_is_empty(self):
+        session = TaskSession(parent_issue_id=1)
+        assert session.root_cause == ""
+
+    def test_root_cause_round_trips_to_dict(self):
+        session = TaskSession(parent_issue_id=42, root_cause="identical_failures")
+        d = session.to_dict()
+        assert d["root_cause"] == "identical_failures"
+
+    def test_root_cause_round_trips_from_dict(self):
+        session = TaskSession.from_dict(
+            {"parent_issue_id": 1, "state": "detected", "root_cause": "budget_exceeded"}
+        )
+        assert session.root_cause == "budget_exceeded"
+
+    def test_root_cause_defaults_in_from_dict_when_absent(self):
+        session = TaskSession.from_dict({"parent_issue_id": 1, "state": "detected"})
+        assert session.root_cause == ""
+
+
+class TestEscalateRootCause:
+    """Tests for SPEC-4: _escalate accepts optional root_cause parameter."""
+
+    def test_escalate_without_root_cause_leaves_empty(self):
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        profile = MagicMock()
+        orch = _make_orch(session, profile=profile)
+        verdict = ValidationVerdict(verdict="FAIL", confidence=0.1, summary="bad")
+        orch._escalate(verdict)
+        assert session.state == TaskSessionState.FAILED
+        assert session.root_cause == ""
+
+    def test_escalate_with_root_cause_stores_it(self):
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        profile = MagicMock()
+        orch = _make_orch(session, profile=profile)
+        verdict = ValidationVerdict(verdict="FAIL", confidence=0.1, summary="bad")
+        orch._escalate(verdict, root_cause="identical_failures")
+        assert session.state == TaskSessionState.FAILED
+        assert session.root_cause == "identical_failures"
+
+    def test_escalate_with_budget_exceeded_root_cause(self):
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        profile = MagicMock()
+        orch = _make_orch(session, profile=profile)
+        verdict = ValidationVerdict(
+            verdict="FAIL", confidence=0.0, summary="over budget"
+        )
+        orch._escalate(verdict, root_cause="budget_exceeded")
+        assert session.state == TaskSessionState.FAILED
+        assert session.root_cause == "budget_exceeded"
+
+
+class TestStallDetection:
+    """Tests for SPEC-1 and SPEC-2: stall detection in _run_agent_monolithic."""
+
+    def _make_fail_vr(self, failures=None):
+        from golem.verifier import VerificationResult
+
+        return VerificationResult(
+            passed=False,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=False,
+            pytest_output="1 failed",
+            failures=failures or ["test_x.py::test_foo"],
+            duration_s=1.0,
+        )
+
+    def _make_orch_with_mocks(self, session):
+        profile = MagicMock()
+        profile.task_source.get_task_description.return_value = "desc"
+        profile.prompt_provider.format.return_value = "prompt"
+        profile.tool_provider.servers_for_subject.return_value = []
+        return _make_orch(session, profile=profile)
+
+    async def test_identical_failures_abort_before_retry(self):
+        """SPEC-1: identical non-empty failures cause FAILED with root_cause='identical_failures'."""
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        orch = self._make_orch_with_mocks(session)
+
+        fail_vr = self._make_fail_vr(failures=["test_x.py::test_foo"])
+        from golem.verifier import VerificationResult
+
+        orch._last_verification = VerificationResult(
+            passed=False,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=False,
+            pytest_output="1 failed",
+            failures=["test_x.py::test_foo"],
+            duration_s=1.0,
+        )
+
+        deps = TestRunAgentMonolithic()._mock_deps()
+        with (
+            deps["resolve"],
+            deps["invoke"],
+            deps["preflight"],
+            deps["write_prompt"],
+            deps["write_trace"],
+            patch("golem.orchestrator.run_verification", return_value=fail_vr),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch("golem.orchestrator.delete_checkpoint"),
+            patch.object(orch, "_write_report"),
+            patch.object(orch, "_record_run"),
+        ):
+            await orch._run_agent_monolithic()
+
+        assert session.state == TaskSessionState.FAILED
+        assert session.root_cause == "identical_failures"
+
+    async def test_identical_failures_empty_does_not_abort(self):
+        """SPEC-1: empty failures list should NOT trigger identical-failure guard."""
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        orch = self._make_orch_with_mocks(session)
+        orch._retry_agent = AsyncMock()
+
+        from golem.verifier import VerificationResult
+
+        fail_vr = VerificationResult(
+            passed=False,
+            black_ok=False,
+            black_output="reformat",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="",
+            failures=[],
+            duration_s=1.0,
+        )
+        orch._last_verification = VerificationResult(
+            passed=False,
+            black_ok=False,
+            black_output="reformat",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="",
+            failures=[],
+            duration_s=1.0,
+        )
+
+        deps = TestRunAgentMonolithic()._mock_deps()
+        with (
+            deps["resolve"],
+            deps["invoke"],
+            deps["preflight"],
+            deps["write_prompt"],
+            deps["write_trace"],
+            deps["commit"],
+            patch("golem.orchestrator.run_verification", return_value=fail_vr),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch("golem.orchestrator.delete_checkpoint"),
+            patch.object(orch, "_write_report"),
+            patch.object(orch, "_record_run"),
+        ):
+            await orch._run_agent_monolithic()
+
+        orch._retry_agent.assert_awaited_once()
+        assert session.root_cause != "identical_failures"
+
+    async def test_different_failures_triggers_normal_retry(self):
+        """SPEC-5: when failures differ, normal retry path runs."""
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        orch = self._make_orch_with_mocks(session)
+        orch._retry_agent = AsyncMock()
+
+        fail_vr = self._make_fail_vr(failures=["test_x.py::test_bar"])
+
+        from golem.verifier import VerificationResult
+
+        orch._last_verification = VerificationResult(
+            passed=False,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=False,
+            pytest_output="1 failed",
+            failures=["test_x.py::test_foo"],
+            duration_s=1.0,
+        )
+
+        deps = TestRunAgentMonolithic()._mock_deps()
+        with (
+            deps["resolve"],
+            deps["invoke"],
+            deps["preflight"],
+            deps["write_prompt"],
+            deps["write_trace"],
+            deps["commit"],
+            patch("golem.orchestrator.run_verification", return_value=fail_vr),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch("golem.orchestrator.delete_checkpoint"),
+            patch.object(orch, "_write_report"),
+            patch.object(orch, "_record_run"),
+        ):
+            await orch._run_agent_monolithic()
+
+        orch._retry_agent.assert_awaited_once()
+        assert session.root_cause != "identical_failures"
+
+    async def test_no_last_verification_triggers_normal_retry(self):
+        """SPEC-5: when _last_verification is None, normal retry runs."""
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        orch = self._make_orch_with_mocks(session)
+        orch._retry_agent = AsyncMock()
+
+        fail_vr = self._make_fail_vr(failures=["test_x.py::test_foo"])
+        assert orch._last_verification is None
+
+        deps = TestRunAgentMonolithic()._mock_deps()
+        with (
+            deps["resolve"],
+            deps["invoke"],
+            deps["preflight"],
+            deps["write_prompt"],
+            deps["write_trace"],
+            deps["commit"],
+            patch("golem.orchestrator.run_verification", return_value=fail_vr),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch("golem.orchestrator.delete_checkpoint"),
+            patch.object(orch, "_write_report"),
+            patch.object(orch, "_record_run"),
+        ):
+            await orch._run_agent_monolithic()
+
+        orch._retry_agent.assert_awaited_once()
+        assert session.root_cause == ""
+
+    async def test_cost_exceeded_aborts_before_retry(self):
+        """SPEC-2: when total_cost_usd >= budget_usd, abort with root_cause='budget_exceeded'."""
+        session = TaskSession(
+            parent_issue_id=42,
+            parent_subject="Fix",
+            budget_usd=10.0,
+        )
+        orch = self._make_orch_with_mocks(session)
+
+        fail_vr = self._make_fail_vr(failures=["test_x.py::test_baz"])
+        assert orch._last_verification is None
+
+        # invoke returns cost_usd=15.0 so total_cost_usd exceeds budget_usd=10.0
+        deps = TestRunAgentMonolithic()._mock_deps()
+        with (
+            deps["resolve"],
+            deps["preflight"],
+            deps["write_prompt"],
+            deps["write_trace"],
+            patch(
+                "golem.orchestrator.invoke_cli_monitored",
+                return_value=CLIResult(
+                    output={"result": "done"},
+                    cost_usd=15.0,
+                    trace_events=[],
+                ),
+            ),
+            patch("golem.orchestrator.run_verification", return_value=fail_vr),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch("golem.orchestrator.delete_checkpoint"),
+            patch.object(orch, "_write_report"),
+            patch.object(orch, "_record_run"),
+        ):
+            await orch._run_agent_monolithic()
+
+        assert session.state == TaskSessionState.FAILED
+        assert session.root_cause == "budget_exceeded"
+
+    async def test_cost_within_budget_does_not_abort(self):
+        """SPEC-2: cost below budget does not trigger budget guard."""
+        session = TaskSession(
+            parent_issue_id=42,
+            parent_subject="Fix",
+            budget_usd=10.0,
+        )
+        orch = self._make_orch_with_mocks(session)
+        orch._retry_agent = AsyncMock()
+
+        fail_vr = self._make_fail_vr(failures=["test_x.py::test_baz"])
+
+        deps = TestRunAgentMonolithic()._mock_deps()
+        with (
+            deps["resolve"],
+            deps["invoke"],
+            deps["preflight"],
+            deps["write_prompt"],
+            deps["write_trace"],
+            deps["commit"],
+            patch("golem.orchestrator.run_verification", return_value=fail_vr),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch("golem.orchestrator.delete_checkpoint"),
+            patch.object(orch, "_write_report"),
+            patch.object(orch, "_record_run"),
+        ):
+            await orch._run_agent_monolithic()
+
+        orch._retry_agent.assert_awaited_once()
+        assert session.root_cause != "budget_exceeded"
