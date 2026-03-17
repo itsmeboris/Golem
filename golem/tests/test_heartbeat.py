@@ -139,6 +139,59 @@ class TestDedupMemory:
         assert "github:missing" not in mgr._dedup_memory
 
 
+class TestGetClaimedIssueIds:
+    @pytest.mark.parametrize(
+        "verdict",
+        ["submitted", "candidate", "promoted"],
+    )
+    def test_returns_active_verdict_issue_ids(self, tmp_path, verdict):
+        """IDs from submitted/candidate/promoted entries are returned."""
+        mgr = _make_manager(tmp_path)
+        mgr.record_dedup("github:40", verdict, task_id=100)
+        ids = mgr.get_claimed_issue_ids()
+        assert ids == {40}
+
+    def test_returns_multiple_active_ids(self, tmp_path):
+        """All three active verdicts contribute IDs when present together."""
+        mgr = _make_manager(tmp_path)
+        mgr.record_dedup("github:40", "submitted", task_id=100)
+        mgr.record_dedup("github:41", "candidate")
+        mgr.record_dedup("github:42", "promoted")
+        ids = mgr.get_claimed_issue_ids()
+        assert ids == {40, 41, 42}
+
+    @pytest.mark.parametrize(
+        "verdict",
+        ["completed", "failed", "not_automatable"],
+    )
+    def test_excludes_terminal_verdicts(self, tmp_path, verdict):
+        """Terminal verdicts are not returned."""
+        mgr = _make_manager(tmp_path)
+        mgr.record_dedup("github:40", verdict)
+        ids = mgr.get_claimed_issue_ids()
+        assert ids == set()
+
+    def test_excludes_improvement_keys(self, tmp_path):
+        """improvement: keys are internal, not GH issue IDs."""
+        mgr = _make_manager(tmp_path)
+        mgr.record_dedup("improvement:coverage-gap-1", "submitted", task_id=200)
+        ids = mgr.get_claimed_issue_ids()
+        assert ids == set()
+
+    def test_handles_non_numeric_ids(self, tmp_path):
+        """Non-numeric IDs after ':' are silently skipped."""
+        mgr = _make_manager(tmp_path)
+        mgr.record_dedup("github:abc", "submitted")
+        ids = mgr.get_claimed_issue_ids()
+        assert ids == set()
+
+    def test_empty_dedup_memory(self, tmp_path):
+        """Empty dedup memory returns empty set."""
+        mgr = _make_manager(tmp_path)
+        ids = mgr.get_claimed_issue_ids()
+        assert ids == set()
+
+
 class TestInflightTracking:
     def test_can_submit_when_under_max(self, tmp_path):
         mgr = _make_manager(tmp_path, heartbeat_max_inflight=1)

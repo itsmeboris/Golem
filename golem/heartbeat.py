@@ -191,6 +191,26 @@ class HeartbeatManager:
         for key in to_remove:
             del self._dedup_memory[key]
 
+    def get_claimed_issue_ids(self) -> set[int]:
+        """Return GH issue IDs with active heartbeat claims.
+
+        Extracts numeric IDs from dedup keys like ``"github:40"`` where the
+        verdict is still active (submitted, candidate, or promoted).
+        """
+        active_verdicts = {"submitted", "candidate", "promoted"}
+        ids: set[int] = set()
+        for key, entry in self._dedup_memory.items():
+            if entry.get("verdict") not in active_verdicts:
+                continue
+            parts = key.split(":", 1)
+            if len(parts) != 2 or parts[0] == "improvement":
+                continue
+            try:
+                ids.add(int(parts[1]))
+            except ValueError:
+                pass
+        return ids
+
     # -- Inflight -------------------------------------------------------------
 
     def can_submit(self) -> bool:

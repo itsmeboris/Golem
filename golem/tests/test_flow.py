@@ -104,6 +104,62 @@ class TestPollNoProjects:
         assert not flow.poll_new_items()
 
 
+class TestPollHeartbeatDedup:
+    def test_heartbeat_claimed_issue_is_excluded(self, monkeypatch, tmp_path):
+        """Issues claimed by heartbeat are skipped in poll_new_items."""
+        from unittest.mock import MagicMock
+
+        flow = _make_flow(monkeypatch, tmp_path)
+
+        # Set up a heartbeat mock that claims issue 55
+        mock_heartbeat = MagicMock()
+        mock_heartbeat.get_claimed_issue_ids.return_value = {55}
+        flow._heartbeat = mock_heartbeat
+
+        # Mock poll_tasks to return issue 55
+        flow._profile.task_source.poll_tasks = MagicMock(
+            return_value=[{"id": 55, "subject": "Claimed by heartbeat"}]
+        )
+
+        result = flow.poll_new_items()
+        assert result == []
+
+    def test_unclaimed_issue_is_included_when_heartbeat_present(
+        self, monkeypatch, tmp_path
+    ):
+        """Issues NOT claimed by heartbeat are returned normally."""
+        from unittest.mock import MagicMock
+
+        flow = _make_flow(monkeypatch, tmp_path)
+
+        # Heartbeat claims issue 55 only
+        mock_heartbeat = MagicMock()
+        mock_heartbeat.get_claimed_issue_ids.return_value = {55}
+        flow._heartbeat = mock_heartbeat
+
+        # poll_tasks returns issue 99, which is NOT claimed
+        flow._profile.task_source.poll_tasks = MagicMock(
+            return_value=[{"id": 99, "subject": "Not claimed"}]
+        )
+
+        result = flow.poll_new_items()
+        assert result == [{"issue_id": 99, "subject": "Not claimed"}]
+
+    def test_no_heartbeat_does_not_break_poll(self, monkeypatch, tmp_path):
+        """When heartbeat is None, poll_new_items works without errors."""
+        from unittest.mock import MagicMock
+
+        flow = _make_flow(monkeypatch, tmp_path, heartbeat_enabled=False)
+        assert flow._heartbeat is None
+
+        flow._profile.task_source.poll_tasks = MagicMock(
+            return_value=[{"id": 77, "subject": "Normal issue"}]
+        )
+
+        result = flow.poll_new_items()
+        assert result == [{"issue_id": 77, "subject": "Normal issue"}]
+
+
 class TestOnItemSuccess:
     def test_on_item_success_is_noop(self, monkeypatch, tmp_path):
         flow = _make_flow(monkeypatch, tmp_path)

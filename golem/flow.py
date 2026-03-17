@@ -218,10 +218,21 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             timeout=self._task_config.http_timeout,
         )
 
+        heartbeat_ids = (
+            self._heartbeat.get_claimed_issue_ids()
+            if self._heartbeat is not None
+            else set()
+        )
+
         new_items = []
         for issue in issues:
             iid = issue.get("id")
-            if iid and iid not in self._sessions and iid not in self._processed_ids:
+            if (
+                iid
+                and iid not in self._sessions
+                and iid not in self._processed_ids
+                and iid not in heartbeat_ids
+            ):
                 new_items.append(
                     {
                         "issue_id": iid,
