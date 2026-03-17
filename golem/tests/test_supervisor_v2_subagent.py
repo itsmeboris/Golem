@@ -1247,7 +1247,6 @@ class TestClarityGate:
 
     @pytest.mark.asyncio
     async def test_clarity_too_low_raises(self):
-        from golem.clarity import check_clarity as _real  # noqa: F401
         from golem.errors import TaskExecutionError
 
         cfg = _make_config(

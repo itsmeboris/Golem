@@ -8,7 +8,6 @@ import yaml
 
 try:
     import httpx
-    from fastapi import FastAPI
 
     HAS_HTTPX = True
 except ImportError:

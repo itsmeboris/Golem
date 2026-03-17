@@ -1,7 +1,6 @@
 """Tests for SIGHUP-based daemon reload mechanism."""
 
 import asyncio
-import os
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
