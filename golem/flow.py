@@ -384,6 +384,10 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         for sid, session in list(self._sessions.items()):
             if session.state != TaskSessionState.FAILED:
                 continue
+            # Sessions created via submit_task() use millisecond-timestamp IDs
+            # that are not valid issue-tracker numbers — skip them.
+            if session.execution_mode:
+                continue
             try:
                 comments = self._profile.task_source.get_task_comments(
                     sid, since=session.updated_at

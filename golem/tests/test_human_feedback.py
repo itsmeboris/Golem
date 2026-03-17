@@ -356,6 +356,25 @@ class TestCheckHumanFeedback:
         flow._check_human_feedback()
         assert session.state == TaskSessionState.FAILED
 
+    @pytest.mark.parametrize("mode", ["prompt", "issue"])
+    def test_skips_submitted_sessions(self, monkeypatch, tmp_path, mode):
+        """Sessions from submit_task() use timestamp IDs, not issue numbers."""
+        flow = _make_flow(monkeypatch, tmp_path)
+        session = TaskSession(
+            parent_issue_id=1773705576784,
+            state=TaskSessionState.FAILED,
+            updated_at="2026-03-01T00:00:00Z",
+            execution_mode=mode,
+        )
+        flow._sessions[1773705576784] = session
+        mock_comments = MagicMock()
+        flow._profile.task_source.get_task_comments = mock_comments
+
+        flow._check_human_feedback()
+
+        assert session.state == TaskSessionState.FAILED
+        mock_comments.assert_not_called()
+
     def test_handles_exception_gracefully(self, monkeypatch, tmp_path):
         flow = _make_flow(monkeypatch, tmp_path)
         session = TaskSession(

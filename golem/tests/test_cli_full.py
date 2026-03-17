@@ -2,6 +2,7 @@
 """Tests for golem.cli — full coverage."""
 
 import asyncio
+import contextlib
 import json
 import signal
 import time
@@ -1817,6 +1818,35 @@ class TestStartDashboardServerAsync:
             await task
         except asyncio.CancelledError:
             pass
+
+    async def test_cancellation_signals_graceful_exit(self):
+        """Cancelling the dashboard task sets server.should_exit."""
+        mock_app = MagicMock()
+        mock_server = MagicMock()
+        mock_server.should_exit = False
+
+        async def _hang():
+            await asyncio.Event().wait()
+
+        mock_server.serve = _hang
+
+        with (
+            patch("uvicorn.Config", return_value=MagicMock()),
+            patch("uvicorn.Server", return_value=mock_server),
+            patch("fastapi.FastAPI", return_value=mock_app),
+            patch("golem.core.dashboard.mount_dashboard"),
+            patch("golem.core.control_api.control_router", MagicMock()),
+            patch("socket.getfqdn", return_value="test.local"),
+        ):
+            from golem.cli import _start_dashboard_server
+
+            task = await _start_dashboard_server(8080)
+
+        await asyncio.sleep(0)  # let the task start
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+        assert mock_server.should_exit is True
 
     async def test_with_live_state_file(self):
         mock_app = MagicMock()

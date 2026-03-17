@@ -439,7 +439,14 @@ async def _start_dashboard_server(
         app.include_router(health_router)
     uvi_config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="info")
     server = uvicorn.Server(uvi_config)
-    task = asyncio.create_task(server.serve())
+
+    async def _serve_gracefully() -> None:
+        try:
+            await server.serve()
+        except asyncio.CancelledError:
+            server.should_exit = True
+
+    task = asyncio.create_task(_serve_gracefully())
     hostname = socket.getfqdn()
     print(f"Dashboard at http://{hostname}:{port}/dashboard")
     return task
