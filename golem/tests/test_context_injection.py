@@ -8,8 +8,6 @@ import pytest
 
 from golem.context_injection import (
     _MAX_CONTEXT_BYTES,
-    _ROLE_CONTEXT_DIR,
-    _VALID_ROLES,
     _find_and_read,
     build_role_context_section,
     build_system_prompt,

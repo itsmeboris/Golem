@@ -2,10 +2,7 @@
 """Tests for golem.instinct_store — Instinct dataclass and InstinctStore."""
 
 import json
-import os
-import tempfile
 from datetime import date
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest

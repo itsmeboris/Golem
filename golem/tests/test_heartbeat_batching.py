@@ -1,6 +1,5 @@
 """Tests for heartbeat Tier 2 batching — _group_candidates, category validation, batch submission."""
 
-import asyncio
 from unittest.mock import MagicMock, patch
 
 import pytest

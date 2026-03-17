@@ -10,7 +10,6 @@ from unittest.mock import patch
 
 import pytest
 
-import golem.core.dashboard as _dashboard_module
 from golem.core.dashboard import _sse_event_stream, mount_dashboard
 
 # ---------------------------------------------------------------------------

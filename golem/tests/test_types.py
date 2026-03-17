@@ -8,8 +8,6 @@ the TypedDict contract — no tautological dict construction.
 import dataclasses
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from golem.config_editor import FieldInfo, FieldMeta, get_config_by_category
 from golem.core.config import Config
 from golem.core.live_state import LiveState

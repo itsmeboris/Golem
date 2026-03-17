@@ -2,9 +2,7 @@
 
 import os
 import signal
-import tempfile
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 import yaml
@@ -20,7 +18,7 @@ from golem.config_editor import (
     signal_daemon_reload,
     update_config,
 )
-from golem.core.config import Config, GolemFlowConfig, load_config
+from golem.core.config import Config
 
 
 class TestFieldMeta:

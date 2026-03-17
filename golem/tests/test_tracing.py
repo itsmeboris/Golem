@@ -2,10 +2,7 @@
 
 import importlib
 import sys
-from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 
 class TestGetTracerWithOtel:

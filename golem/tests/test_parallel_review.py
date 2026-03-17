@@ -9,7 +9,6 @@ import pytest
 
 from golem.core.config import GolemFlowConfig
 from golem.parallel_review import (
-    AggregatedReview,
     ReviewerRole,
     ReviewFinding,
     ReviewResult,

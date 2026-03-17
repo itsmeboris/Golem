@@ -1,7 +1,5 @@
 """Tests for golem.config_tui — interactive config TUI."""
 
-from unittest.mock import MagicMock, patch
-
 import pytest
 
 from golem.config_tui import (

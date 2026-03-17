@@ -1,7 +1,5 @@
 """Tests for cost analytics module."""
 
-from unittest.mock import MagicMock
-
 import pytest
 
 from golem.cost_analytics import (

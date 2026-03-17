@@ -1593,8 +1593,6 @@ class TestHeartbeatIntegration:
 
     def test_live_property_returns_live_state(self, monkeypatch, tmp_path):
         """live property returns LiveState.get() result."""
-        from golem.core.live_state import LiveState
-
         flow = _make_flow(monkeypatch, tmp_path)
         mock_live = MagicMock()
         monkeypatch.setattr("golem.flow.LiveState.get", lambda: mock_live)

@@ -1,7 +1,7 @@
 """Tests for MCP scope, KeywordToolProvider, and max_mcp_servers config."""
 
 import logging
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 

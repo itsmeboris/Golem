@@ -1,11 +1,10 @@
 """Tests for golem.self_update — SelfUpdateManager."""
 
 import asyncio
-import json
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 

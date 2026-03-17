@@ -939,7 +939,6 @@ def test_merge_result_has_timestamp():
 # ---------------------------------------------------------------------------
 
 
-import time
 from collections import deque
 
 

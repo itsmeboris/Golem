@@ -2390,8 +2390,6 @@ class TestFixLoopCostGuard:
 
     async def test_cost_guard_logs_when_triggered(self, _patches):
         """_fix_loop logs when cost guard stops the loop."""
-        import logging
-
         config = _make_config(
             validator_fix_depth=3,
             resume_on_partial=True,

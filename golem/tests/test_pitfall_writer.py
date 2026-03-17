@@ -1,7 +1,6 @@
 """Tests for golem.pitfall_writer — full coverage."""
 
 from datetime import date
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest

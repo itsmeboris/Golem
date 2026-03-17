@@ -2,7 +2,6 @@
 
 import asyncio
 import os
-import signal
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 

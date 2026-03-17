@@ -1,8 +1,6 @@
 # pylint: disable=too-few-public-methods
 """Tests for Task 6 plumbing: _touch_merge_sentinel, merge_queue param threading."""
 
-import asyncio
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
