@@ -189,7 +189,90 @@ class TestRunVerification:
     def test_all_three_run_even_if_first_fails(self, mock_run):
         mock_run.return_value = MagicMock(returncode=1, stdout="error", stderr="")
         _ = run_verification("/tmp/workdir")
-        assert mock_run.call_count == 3  # all three still run
+        assert (
+            mock_run.call_count == 4
+        )  # black + pylint errors-only + pylint dead-code + pytest
+
+    @patch("golem.verifier.subprocess.run")
+    def test_deadcode_pylint_fails(self, mock_run):
+        """When dead-code pylint returns non-zero, pylint_ok is False."""
+
+        def side_effect(*args, **_kwargs):
+            cmd = args[0]
+            if "pytest" in cmd:
+                return MagicMock(
+                    returncode=0, stdout="10 passed\nTOTAL 100 0 100%", stderr=""
+                )
+            if "black" in cmd:
+                return MagicMock(returncode=0, stdout="", stderr="")
+            # pylint calls: first (--errors-only) passes, second (dead-code) fails
+            if "--errors-only" in cmd:
+                return MagicMock(returncode=0, stdout="", stderr="")
+            if "--enable=W0611,W0612,W0101" in cmd:
+                return MagicMock(
+                    returncode=1,
+                    stdout="W0611: Unused import os (unused-import)",
+                    stderr="",
+                )
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        mock_run.side_effect = side_effect
+        result = run_verification("/tmp/workdir")
+        assert result.pylint_ok is False
+        assert result.passed is False
+        assert result.black_ok is True
+        assert result.pytest_ok is True
+
+    @patch("golem.verifier.subprocess.run")
+    def test_deadcode_pylint_output_combined(self, mock_run):
+        """When dead-code pylint fails, output contains both error and dead-code sections."""
+
+        def side_effect(*args, **_kwargs):
+            cmd = args[0]
+            if "pytest" in cmd:
+                return MagicMock(
+                    returncode=0, stdout="5 passed\nTOTAL 100 0 100%", stderr=""
+                )
+            if "black" in cmd:
+                return MagicMock(returncode=0, stdout="", stderr="")
+            if "--errors-only" in cmd:
+                return MagicMock(returncode=0, stdout="errors-only output", stderr="")
+            if "--enable=W0611,W0612,W0101" in cmd:
+                return MagicMock(
+                    returncode=1,
+                    stdout="W0611: Unused import os (unused-import)",
+                    stderr="",
+                )
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        mock_run.side_effect = side_effect
+        result = run_verification("/tmp/workdir")
+        assert result.pylint_ok is False
+        assert "dead-code warnings" in result.pylint_output
+        assert "W0611" in result.pylint_output
+
+    @patch("golem.verifier.subprocess.run")
+    def test_all_pass_includes_deadcode_check(self, mock_run):
+        """When all checks pass, 4 subprocess calls are made (black + 2 pylint + pytest)."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="64 passed in 1.01s\nTOTAL    1000    0   100%\n",
+            stderr="",
+        )
+        result = run_verification("/tmp/workdir")
+        assert result.passed is True
+        assert result.pylint_ok is True
+        assert mock_run.call_count == 4
+        # Verify both pylint invocations are present
+        all_cmds = [call.args[0] for call in mock_run.call_args_list]
+        pylint_cmds = [cmd for cmd in all_cmds if "pylint" in cmd]
+        assert len(pylint_cmds) == 2
+        errors_only_cmds = [cmd for cmd in pylint_cmds if "--errors-only" in cmd]
+        deadcode_cmds = [
+            cmd for cmd in pylint_cmds if "--enable=W0611,W0612,W0101" in cmd
+        ]
+        assert len(errors_only_cmds) == 1
+        assert len(deadcode_cmds) == 1
 
     @patch("golem.verifier.subprocess.run")
     def test_timeout_handled(self, mock_run):

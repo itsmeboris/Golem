@@ -187,6 +187,19 @@ else
     printf "${YELLOW}pylint: skipped (no Python changes)${NC}\n"
 fi
 
+# --- pylint dead-code ---
+printf "${BOLD}=== pre-push: pylint dead-code ===${NC}\n"
+if [[ $run_pylint -eq 1 ]]; then
+    if ! "$PYTHON" -m pylint --disable=all --enable=W0611,W0612,W0101 "${lint_targets[@]}" 2>/dev/null; then
+        printf "${RED}pylint dead-code: warnings found${NC}\n"
+        failed=1
+    else
+        printf "${GREEN}pylint dead-code: ok${NC}\n"
+    fi
+else
+    printf "${YELLOW}pylint dead-code: skipped (no Python changes)${NC}\n"
+fi
+
 # --- pytest ---
 printf "${BOLD}=== pre-push: pytest + coverage ===${NC}\n"
 if [[ "${AGENT_WORKTREE:-}" == "1" ]]; then

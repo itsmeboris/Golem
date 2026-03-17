@@ -381,6 +381,16 @@ def run_verification(work_dir: str, *, timeout: int = 300) -> VerificationResult
     pylint_ok, pylint_output = _run_cmd(
         ["pylint", "--errors-only", "golem/"], work_dir, timeout
     )
+    deadcode_ok, deadcode_output = _run_cmd(
+        ["pylint", "--disable=all", "--enable=W0611,W0612,W0101", "golem/"],
+        work_dir,
+        timeout,
+    )
+    if not deadcode_ok:
+        pylint_ok = False
+        pylint_output = (
+            pylint_output + "\n--- dead-code warnings ---\n" + deadcode_output
+        )
     cov_json_path = Path(work_dir) / "coverage.json"
     pytest_ok, pytest_output = _run_cmd(
         [
