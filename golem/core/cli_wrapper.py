@@ -647,6 +647,9 @@ def _parse_stream_output(stdout: str) -> tuple[dict, list[dict]]:
         except json.JSONDecodeError:
             logger.debug("Skipping non-JSON line: %s", line)
             continue
+        if not isinstance(event, dict):
+            logger.debug("Skipping non-object JSON line: %s", type(event).__name__)
+            continue
         traces.append(event)
         if event.get("type") == "result":
             result_event = event
@@ -793,6 +796,8 @@ def _invoke_cli_verbose(prompt: str, config: CLIConfig) -> CLIResult:
                         event = json.loads(line)
                     except json.JSONDecodeError:
                         logger.debug("Skipping non-JSON line: %s", line)
+                        continue
+                    if not isinstance(event, dict):
                         continue
 
                     collected["traces"].append(event)
@@ -1007,6 +1012,12 @@ def invoke_cli_monitored(
                         event = json.loads(line)
                     except json.JSONDecodeError:
                         logger.debug("Skipping non-JSON line: %s", line)
+                        continue
+                    if not isinstance(event, dict):
+                        logger.debug(
+                            "Skipping non-object JSON line: %s",
+                            type(event).__name__,
+                        )
                         continue
 
                     collected["traces"].append(event)

@@ -1105,6 +1105,27 @@ class TestInvokeCliVerbose:
         assert result.output["result"] == "ok"
         assert len(result.trace_events) == 1
 
+    def test_skips_non_dict_json_lines(self):
+        """JSON array lines from stdout are skipped without crashing."""
+        lines = [
+            "[1, 2, 3]\n",
+            json.dumps({"type": "result", "result": "ok", "cost_usd": 0.1}) + "\n",
+        ]
+        proc = self._make_streaming_proc(lines, returncode=0)
+
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._get_subprocess_env",
+                return_value=({}, "/tmp/sandbox", lambda: None),
+            ),
+            patch("golem.core.cli_wrapper._StreamPrinter"),
+        ):
+            result = _invoke_cli_verbose("test", CLIConfig())
+
+        assert result.output["result"] == "ok"
+        assert all(isinstance(t, dict) for t in result.trace_events)
+
 
 class TestInvokeCliRaw:
     def test_success(self):
@@ -1503,6 +1524,25 @@ class TestInvokeCliMonitored:
             invoke_cli_monitored("test", CLIConfig())
 
         cleanup.assert_called_once()
+
+    def test_skips_non_dict_json_lines(self):
+        """JSON array lines from stdout are skipped without crashing."""
+        lines = [
+            '[{"type": "text"}]\n',
+            json.dumps({"type": "result", "result": "ok", "cost_usd": 0.1}) + "\n",
+        ]
+        proc = self._make_streaming_proc(lines)
+
+        with (
+            patch("subprocess.Popen", return_value=proc),
+            patch(
+                "golem.core.cli_wrapper._get_subprocess_env",
+                return_value=({}, "/tmp/sandbox", lambda: None),
+            ),
+        ):
+            result = invoke_cli_monitored("test", CLIConfig(), callback=None)
+
+        assert result.output["result"] == "ok"
 
 
 class TestParseStreamOutputEdgeCases:

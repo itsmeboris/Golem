@@ -212,6 +212,17 @@ class TestParseStreamOutput:
         assert data["type"] == "result"
         assert len(traces) == 1
 
+    def test_skips_json_array_lines(self):
+        """A JSONL line that decodes to a list should be skipped, not crash."""
+        stdout = (
+            '[{"type": "text"}]\n'
+            '{"type": "result", "cost_usd": 0.1, "result": "ok"}\n'
+        )
+        data, traces = _parse_stream_output(stdout)
+        assert data["type"] == "result"
+        # Only the dict event should be in traces, not the array
+        assert all(isinstance(t, dict) for t in traces)
+
 
 class TestExtractErrorFromStreamOutput:
     def test_filters_init_events(self):

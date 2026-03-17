@@ -61,19 +61,45 @@ def run_ast_analysis(
                 check=False,
             )
             if result.stdout.strip():
-                for line in result.stdout.strip().splitlines():
-                    try:
-                        match = json.loads(line)
-                        filepath = match.get("file", "unknown")
-                        line_num = (
-                            match.get("range", {}).get("start", {}).get("line", "?")
-                        )
-                        message = match.get("message", rule_file.stem)
-                        concerns.append(f"AST: {message} in {filepath}:{line_num}")
-                    except json.JSONDecodeError as exc:
-                        logger.debug("ast-grep output not valid JSON: %s", exc)
-                        continue
+                matches = _parse_sg_output(result.stdout)
+                for match in matches:
+                    filepath = match.get("file", "unknown")
+                    line_num = match.get("range", {}).get("start", {}).get("line", "?")
+                    message = match.get("message", rule_file.stem)
+                    concerns.append(f"AST: {message} in {filepath}:{line_num}")
         except (subprocess.SubprocessError, OSError) as exc:
             logger.debug("ast-grep rule %s failed: %s", rule_file.name, exc)
 
     return concerns
+
+
+def _parse_sg_output(stdout: str) -> list[dict]:
+    """Parse ast-grep --json output (JSON array) into a list of match dicts.
+
+    Tries full JSON array parse first, then falls back to line-by-line JSONL.
+    """
+    stripped = stdout.strip()
+    if not stripped:
+        return []
+
+    # ast-grep outputs a JSON array
+    try:
+        parsed = json.loads(stripped)
+        if isinstance(parsed, list):
+            return [m for m in parsed if isinstance(m, dict)]
+        if isinstance(parsed, dict):
+            return [parsed]
+        return []
+    except json.JSONDecodeError:
+        pass
+
+    # Fallback: try line-by-line JSONL
+    matches: list[dict] = []
+    for line in stripped.splitlines():
+        try:
+            obj = json.loads(line)
+            if isinstance(obj, dict):
+                matches.append(obj)
+        except json.JSONDecodeError:
+            continue
+    return matches
