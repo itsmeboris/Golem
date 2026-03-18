@@ -17,7 +17,6 @@ from golem.validation import (
     _read_types_py,
     check_doc_relevance,
     get_git_diff,
-    has_uncommitted_changes,
     run_validation,
     scan_diff_antipatterns,
 )
@@ -54,29 +53,6 @@ class TestValidationVerdict:
         )
         assert v.files_to_fix == ["src/main.py", "src/utils.py"]
         assert v.test_failures == ["test_foo failed: AssertionError"]
-
-
-class TestHasUncommittedChanges:
-    def test_empty_work_dir(self):
-        assert has_uncommitted_changes("") is False
-
-    @patch("golem.validation.subprocess.run")
-    def test_with_changes(self, mock_run):
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout=" M file.py\n"
-        )
-        assert has_uncommitted_changes("/some/dir") is True
-
-    @patch("golem.validation.subprocess.run")
-    def test_no_changes(self, mock_run):
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout=""
-        )
-        assert has_uncommitted_changes("/some/dir") is False
-
-    @patch("golem.validation.subprocess.run", side_effect=OSError("nope"))
-    def test_error_returns_false(self, _):
-        assert has_uncommitted_changes("/bad/dir") is False
 
 
 class TestGetGitDiff:

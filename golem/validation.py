@@ -11,7 +11,6 @@ Key exports:
   concerns, files_to_fix, test_failures, task_type, and cost_usd.
 - ``run_validation`` — main entry point; runs the validation agent and returns
   a ``ValidationVerdict``.
-- ``has_uncommitted_changes`` — checks whether a git working tree has changes.
 - ``get_git_diff`` — returns a formatted git diff for inclusion in prompts.
 """
 
@@ -55,25 +54,6 @@ class ValidationVerdict:
 # ---------------------------------------------------------------------------
 # Git helpers
 # ---------------------------------------------------------------------------
-
-
-def has_uncommitted_changes(work_dir: str) -> bool:
-    """Return True if there are uncommitted changes in *work_dir*."""
-    if not work_dir:
-        return False
-    try:
-        result = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=work_dir,
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-        return bool(result.stdout.strip())
-    except (subprocess.SubprocessError, OSError) as exc:
-        logger.debug("git status check failed: %s", exc)
-        return False
 
 
 def _find_merge_base(work_dir: str) -> str:
@@ -180,30 +160,6 @@ def get_git_diff(work_dir: str) -> str:
     except (subprocess.SubprocessError, OSError) as exc:
         logger.warning("git diff failed: %s", exc)
         return "(git diff unavailable)"
-
-
-# ---------------------------------------------------------------------------
-# Reproduction test detection
-# ---------------------------------------------------------------------------
-
-_NEW_TEST_RE = re.compile(r"^\+\s*def (test_\w+)", re.MULTILINE)
-_TEST_FILE_RE = re.compile(r"^\+\+\+ b/.*/test_\w+\.py", re.MULTILINE)
-
-
-def detect_reproduction_test(diff_text: str) -> bool:
-    """Check whether a diff adds at least one new test function in a test file.
-
-    Returns True if the diff contains a new ``def test_*`` line within a
-    file matching ``*/test_*.py``. This is a lightweight heuristic — the
-    reviewer performs deeper analysis.
-    """
-    if not diff_text:
-        return False
-    # Check if any test file was modified
-    if not _TEST_FILE_RE.search(diff_text):
-        return False
-    # Check if a new test function was added
-    return bool(_NEW_TEST_RE.search(diff_text))
 
 
 # ---------------------------------------------------------------------------
