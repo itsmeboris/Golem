@@ -815,11 +815,11 @@ class TestStreamingCallbackWiring:
         profile.tool_provider.servers_for_subject.return_value = []
         orch = _make_orch(session, profile=profile)
 
-        captured_cb = None
+        _captured_cb = None
 
         def _capture_cli(prompt, config, callback=None):
-            nonlocal captured_cb
-            captured_cb = callback
+            nonlocal _captured_cb
+            _captured_cb = callback
             # Simulate the CLI firing events via the callback
             if callback:
                 callback(

@@ -242,7 +242,7 @@ class LogNotifier:
     def notify_escalated(  # pylint: disable=unused-argument
         self,
         task_id: int | str,
-        subject: str,
+        _subject: str,
         verdict: str,
         summary: str,
         **kwargs: Any,
@@ -296,7 +296,7 @@ class NullToolProvider:
         return []
 
     def servers_for_subject(  # pylint: disable=unused-argument
-        self, subject: str, *, role: str = ""
+        self, _subject: str, *, role: str = ""
     ) -> list[str]:
         """Return an empty server list (no MCP tools)."""
         return []

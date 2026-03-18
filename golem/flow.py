@@ -253,7 +253,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         return f"golem-{issue_id}-{timestamp}"
 
-    def on_item_success(self, item_id: Any) -> None:
+    def on_item_success(self, _item_id: Any) -> None:
         pass  # Session tracking handles dedup
 
     # -- WebhookableFlow interface --------------------------------------------
