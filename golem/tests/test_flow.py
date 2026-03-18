@@ -465,7 +465,7 @@ class TestRunSession:
 
         from golem.orchestrator import TaskOrchestrator
 
-        async def crashing_tick(self_orch):
+        async def crashing_tick(_self_orch):
             raise RuntimeError("orchestrator boom")
 
         monkeypatch.setattr(TaskOrchestrator, "tick", crashing_tick)
@@ -502,7 +502,7 @@ class TestRunSession:
 
         from golem.orchestrator import TaskOrchestrator
 
-        async def cancelling_tick(self_orch):
+        async def cancelling_tick(_self_orch):
             raise asyncio.CancelledError()
 
         monkeypatch.setattr(TaskOrchestrator, "tick", cancelling_tick)

@@ -106,7 +106,7 @@ class TestInfraRetryInRunSession:
 
         from golem.orchestrator import TaskOrchestrator
 
-        async def always_infra(self_orch):
+        async def always_infra(_self_orch):
             raise InfrastructureError("stuck")
 
         monkeypatch.setattr(TaskOrchestrator, "tick", always_infra)

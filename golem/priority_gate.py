@@ -52,7 +52,7 @@ class _Slot:
             raise
         return self
 
-    async def __aexit__(self, *exc):
+    async def __aexit__(self, *_exc):
         async with self._gate._lock:
             if self._gate._waiters:
                 _, _, event = heapq.heappop(self._gate._waiters)

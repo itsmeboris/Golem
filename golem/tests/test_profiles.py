@@ -1289,7 +1289,7 @@ class TestSlackClient:
         from golem.core.slack import SlackClient
         import requests as _req
 
-        def mock_post(*_args, **kwargs):
+        def mock_post(*_args, **_kwargs):
             raise _req.ConnectionError("refused")
 
         import golem.core.slack as slack_mod

@@ -151,7 +151,7 @@ class TestLoadConfig:
             "flows:\n  golem:\n    projects: [test]\n", encoding="utf-8"
         )
 
-        def mock_dotenv(path):
+        def mock_dotenv(_path):
             raise PermissionError("no access")
 
         monkeypatch.setattr("golem.core.config.load_dotenv", mock_dotenv)

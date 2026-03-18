@@ -169,7 +169,7 @@ class TestBaseFlowTypedConfig:
             def name(self) -> str:
                 return "dummy"
 
-            async def handle(self, event):
+            async def handle(self, _event):
                 pass
 
         cfg = Config()
@@ -186,7 +186,7 @@ class TestBaseFlowTypedConfig:
             def name(self) -> str:
                 return "dummy"
 
-            async def handle(self, event):
+            async def handle(self, _event):
                 pass
 
         cfg = Config()

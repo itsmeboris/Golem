@@ -26,7 +26,7 @@ except ImportError:
 class _NoOpSpan:
     """Minimal span substitute that accepts attribute writes without effect."""
 
-    def set_attribute(self, key: str, value: Any) -> None:  # noqa: ARG002
+    def set_attribute(self, _key: str, _value: Any) -> None:
         """Accept attribute writes silently."""
 
 

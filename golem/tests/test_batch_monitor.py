@@ -251,7 +251,7 @@ class TestBatchMonitorUpdateEdgeCases:
 
         save_path = tmp_path / "batches.json"
 
-        def fail_replace(src, dst):
+        def fail_replace(_src, _dst):
             raise OSError("disk full")
 
         monkeypatch.setattr("os.replace", fail_replace)
@@ -271,7 +271,7 @@ class TestBatchMonitorUpdateEdgeCases:
 
         save_path = tmp_path / "batches.json"
 
-        def fail_write(fd, data):
+        def fail_write(_fd, _data):
             raise OSError("write failed")
 
         monkeypatch.setattr("os.write", fail_write)
@@ -285,10 +285,10 @@ class TestBatchMonitorUpdateEdgeCases:
 
         save_path = tmp_path / "batches.json"
 
-        def fail_replace(src, dst):
+        def fail_replace(_src, _dst):
             raise OSError("disk full")
 
-        def fail_unlink(path):
+        def fail_unlink(_path):
             raise OSError("unlink failed")
 
         monkeypatch.setattr("os.replace", fail_replace)
@@ -305,10 +305,10 @@ class TestBatchMonitorUpdateEdgeCases:
 
         save_path = tmp_path / "batches.json"
 
-        def fail_replace(src, dst):
+        def fail_replace(_src, _dst):
             raise OSError("disk full")
 
-        def fail_unlink(path):
+        def fail_unlink(_path):
             raise OSError("unlink failed")
 
         monkeypatch.setattr("os.replace", fail_replace)

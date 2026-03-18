@@ -353,7 +353,7 @@ class TestCmdBatchStatus:
 
         monkeypatch.setattr("golem.core.config.load_config", lambda _cfg=None: Config())
 
-        def raise_http_error(*a, **kw):
+        def raise_http_error(*_a, **_kw):
             raise urllib.error.HTTPError(
                 None, 404, "Not Found", {}, MagicMock(read=lambda: b"nope")
             )
@@ -372,7 +372,7 @@ class TestCmdBatchStatus:
 
         monkeypatch.setattr("golem.core.config.load_config", lambda _cfg=None: Config())
 
-        def raise_url_error(*a, **kw):
+        def raise_url_error(*_a, **_kw):
             raise urllib.error.URLError("Connection refused")
 
         monkeypatch.setattr(urllib.request, "urlopen", raise_url_error)
@@ -428,7 +428,7 @@ class TestCmdBatchList:
 
         monkeypatch.setattr("golem.core.config.load_config", lambda _cfg=None: Config())
 
-        def raise_http_error(*a, **kw):
+        def raise_http_error(*_a, **_kw):
             raise urllib.error.HTTPError(
                 None, 500, "Error", {}, MagicMock(read=lambda: b"err")
             )
@@ -447,7 +447,7 @@ class TestCmdBatchList:
 
         monkeypatch.setattr("golem.core.config.load_config", lambda _cfg=None: Config())
 
-        def raise_url_error(*a, **kw):
+        def raise_url_error(*_a, **_kw):
             raise urllib.error.URLError("Connection refused")
 
         monkeypatch.setattr(urllib.request, "urlopen", raise_url_error)
@@ -769,7 +769,7 @@ class TestCmdBatchSubmit:
         )
         monkeypatch.setattr("golem.cli._ensure_daemon", lambda *a, **kw: None)
 
-        def raise_http_error(*a, **kw):
+        def raise_http_error(*_a, **_kw):
             raise urllib.error.HTTPError(
                 None, 400, "Bad Request", {}, MagicMock(read=lambda: b"bad")
             )
@@ -794,7 +794,7 @@ class TestCmdBatchSubmit:
         )
         monkeypatch.setattr("golem.cli._ensure_daemon", lambda *a, **kw: None)
 
-        def raise_url_error(*a, **kw):
+        def raise_url_error(*_a, **_kw):
             raise urllib.error.URLError("Connection refused")
 
         monkeypatch.setattr(urllib.request, "urlopen", raise_url_error)
