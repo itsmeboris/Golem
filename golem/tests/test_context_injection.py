@@ -550,7 +550,7 @@ class TestSupervisorRoleContextInjection:
         # Capture kwargs so tests can inspect what was passed to format()
         captured = {}
 
-        def fake_format(name, **kwargs):
+        def fake_format(_name, **kwargs):
             captured.update(kwargs)
             # Return a simple string that includes the role_contexts value
             return kwargs.get("role_contexts", "")

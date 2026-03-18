@@ -894,7 +894,7 @@ class TestStreamingCallbackWiring:
     async def test_callback_streams_events(self):
         captured_cb = None
 
-        def _capture_cli(prompt, config, callback=None):
+        def _capture_cli(_prompt, _config, callback=None):
             nonlocal captured_cb
             captured_cb = callback
             if callback:
@@ -1177,7 +1177,7 @@ class TestVerifiedRef:
         )
         create_calls = []
 
-        def fake_create(base, iid, start_point=None):
+        def fake_create(_base, iid, start_point=None):
             create_calls.append(start_point)
             return f"/wt/{iid}"
 

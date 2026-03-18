@@ -946,7 +946,7 @@ class TestTier2:
         mgr = _make_manager(tmp_path)
         calls = []
 
-        def mock_run(cmd, **kwargs):
+        def mock_run(cmd, **_kwargs):
             calls.append(cmd)
             if cmd[0] == "git":
                 return MagicMock(returncode=0, stdout="def456\n")
@@ -974,7 +974,7 @@ class TestTier2:
         mgr = _make_manager(tmp_path)
         call_count = [0]
 
-        def mock_run(cmd, **kwargs):
+        def mock_run(_cmd, **_kwargs):
             call_count[0] += 1
             if call_count[0] == 1:
                 return MagicMock(returncode=0, stdout="abc123\n")
@@ -1054,7 +1054,7 @@ class TestTier2:
         }
         calls = []
 
-        def mock_run(cmd, **kwargs):
+        def mock_run(cmd, **_kwargs):
             calls.append(cmd[0])
             if cmd[0] == "git":
                 return MagicMock(returncode=0, stdout="abc123\n")
@@ -1076,7 +1076,7 @@ class TestTier2:
         }
         calls = []
 
-        def mock_run(cmd, **kwargs):
+        def mock_run(cmd, **_kwargs):
             calls.append(cmd[0])
             if cmd[0] == "git":
                 return MagicMock(returncode=0, stdout="abc123\n")
@@ -1099,7 +1099,7 @@ class TestTier2:
             "uncovered_modules": ["golem/old.py"],
         }
 
-        def mock_run(cmd, **kwargs):
+        def mock_run(cmd, **_kwargs):
             if cmd[0] == "git":
                 return MagicMock(returncode=0, stdout="abc123\n")
             return MagicMock(returncode=0, stdout="golem/new.py  95%\n")

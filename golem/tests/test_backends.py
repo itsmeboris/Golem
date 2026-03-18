@@ -57,13 +57,13 @@ class TestRedmineStateBackend:
 
 class TestRedmineTaskSource:
     @patch("golem.poller.get_agent_tasks", return_value=[{"id": 1}])
-    def test_poll_tasks(self, mock_poll):
+    def test_poll_tasks(self, _mock_poll):
         source = RedmineTaskSource()
         result = source.poll_tasks(["proj"], "[AGENT]")
         assert len(result) == 1
 
     @patch("golem.poller.get_issue_subject", return_value="Subject")
-    def test_get_task_subject(self, mock_subj):
+    def test_get_task_subject(self, _mock_subj):
         source = RedmineTaskSource()
         assert source.get_task_subject(42) == "Subject"
 
@@ -86,13 +86,13 @@ class TestRedmineTaskSource:
         assert source.get_task_description(42) == ""
 
     @patch("golem.poller.get_child_issues", return_value=[])
-    def test_get_child_tasks(self, mock_children):
+    def test_get_child_tasks(self, _mock_children):
         source = RedmineTaskSource()
         assert source.get_child_tasks(42) == []
 
     @patch("golem.backends.redmine._request_with_retry")
     @patch("golem.backends.redmine._get_parent_issue_info", return_value=("proj", 1))
-    def test_create_child_task(self, mock_info, mock_req):
+    def test_create_child_task(self, _mock_info, mock_req):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"issue": {"id": 100}}
         mock_resp.raise_for_status = MagicMock()
@@ -220,7 +220,7 @@ class TestUpdateRedmineIssue:
 
         call_count = [0]
 
-        def side_effect(*args, **kwargs):
+        def side_effect(*_args, **_kwargs):
             call_count[0] += 1
             if call_count[0] == 1:
                 return put_resp
@@ -243,7 +243,7 @@ class TestUpdateRedmineIssue:
 
         call_count = [0]
 
-        def side_effect(*args, **kwargs):
+        def side_effect(*_args, **_kwargs):
             call_count[0] += 1
             if call_count[0] == 1:
                 return put_resp

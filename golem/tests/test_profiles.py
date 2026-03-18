@@ -1249,7 +1249,7 @@ class TestSlackClient:
     def test_send_message_success(self, monkeypatch):
         from golem.core.slack import SlackClient
 
-        def mock_post(*_args, **kwargs):
+        def mock_post(*_args, **_kwargs):
             resp = MagicMock()
             resp.status_code = 200
             return resp
@@ -1270,7 +1270,7 @@ class TestSlackClient:
     def test_send_message_http_error(self, monkeypatch):
         from golem.core.slack import SlackClient
 
-        def mock_post(*_args, **kwargs):
+        def mock_post(*_args, **_kwargs):
             resp = MagicMock()
             resp.status_code = 403
             resp.text = "invalid_token"

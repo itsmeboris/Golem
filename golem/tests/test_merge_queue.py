@@ -167,7 +167,7 @@ class TestProcessAll:
     )
     @patch("golem.merge_queue.get_changed_files", return_value=[])
     async def test_priority_sorting(
-        self, _gcf, mock_miw, _ff, _rg, _vm, queue, tmp_path
+        self, _gcf, _mock_miw, _ff, _rg, _vm, queue, tmp_path
     ):
         low = MergeEntry(
             session_id=10,
@@ -915,7 +915,7 @@ class TestPostMergeVerification:
         success_result.returncode = 0
         success_result.stderr = ""
 
-        def side_effect(args, **kwargs):
+        def side_effect(args, **_kwargs):
             if args[:2] == ["worktree", "add"]:
                 return fail_result
             return success_result

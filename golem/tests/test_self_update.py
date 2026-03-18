@@ -531,7 +531,7 @@ class TestVerifyInWorktree:
         """Worktree remove is called even when verification raises."""
         call_count = [0]
 
-        def side_effect(cmd, **kwargs):
+        def side_effect(cmd, **_kwargs):
             call_count[0] += 1
             if "add" in cmd:
                 return MagicMock(returncode=0)
@@ -553,7 +553,7 @@ class TestVerifyInWorktree:
         mock_vr = MagicMock(passed=True)
         run_calls = []
 
-        def side_effect(cmd, **kwargs):
+        def side_effect(cmd, **_kwargs):
             run_calls.append(cmd)
             if "remove" in cmd:
                 raise OSError("cannot remove")

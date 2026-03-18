@@ -99,7 +99,7 @@ class TestGetGitDiff:
 
     @patch("golem.validation.subprocess.run")
     def test_with_uncommitted_changes(self, mock_run):
-        def side_effect(args, **kwargs):
+        def side_effect(args, **_kwargs):
             if "--stat" in args and "HEAD" in args:
                 return subprocess.CompletedProcess(
                     args=args, returncode=0, stdout=" file.py | 3 +++"
@@ -120,7 +120,7 @@ class TestGetGitDiff:
     def test_preserves_large_diff(self, mock_run):
         big_diff = "+" * 50_000
 
-        def side_effect(args, **kwargs):
+        def side_effect(args, **_kwargs):
             if "--stat" in args and "HEAD" in args:
                 return subprocess.CompletedProcess(
                     args=args, returncode=0, stdout=" file.py | 1000 +++"
@@ -633,7 +633,7 @@ class TestFindMergeBase:
 
     @patch("golem.validation.subprocess.run")
     def test_falls_back_to_master(self, mock_run):
-        def side_effect(args, **kwargs):
+        def side_effect(args, **_kwargs):
             if "main" in args:
                 return subprocess.CompletedProcess(args=args, returncode=1, stdout="")
             return subprocess.CompletedProcess(
@@ -660,7 +660,7 @@ class TestGetBranchDiff:
     def test_full_branch_diff(self, mock_run):
         from golem.validation import _get_branch_diff
 
-        def side_effect(args, **kwargs):
+        def side_effect(args, **_kwargs):
             if "merge-base" in args:
                 return subprocess.CompletedProcess(
                     args=args, returncode=0, stdout="abc123\n"
@@ -694,7 +694,7 @@ class TestGetBranchDiff:
     def test_no_stat_changes(self, mock_run):
         from golem.validation import _get_branch_diff
 
-        def side_effect(args, **kwargs):
+        def side_effect(args, **_kwargs):
             if "merge-base" in args:
                 return subprocess.CompletedProcess(
                     args=args, returncode=0, stdout="abc123\n"
@@ -710,7 +710,7 @@ class TestGetBranchDiff:
 
         big_diff = "+" * 50000
 
-        def side_effect(args, **kwargs):
+        def side_effect(args, **_kwargs):
             if "merge-base" in args:
                 return subprocess.CompletedProcess(
                     args=args, returncode=0, stdout="abc\n"
@@ -737,7 +737,7 @@ class TestGetBranchDiff:
 class TestGetGitDiffWithBranchSection:
     @patch("golem.validation.subprocess.run")
     def test_appends_branch_section(self, mock_run):
-        def side_effect(args, **kwargs):
+        def side_effect(args, **_kwargs):
             joined = " ".join(args)
             if "--stat" in args and "HEAD" in args and ".." not in joined:
                 stdout = ""

@@ -89,7 +89,7 @@ class TestVerificationResult:
     def test_partial_failure_computed(self, mock_run):
         """run_verification computes passed=False when pylint fails."""
 
-        def side_effect(cmd, **kw):
+        def side_effect(cmd, **_kw):
             if "pylint" in cmd:
                 return MagicMock(returncode=1, stdout="E0001: syntax error", stderr="")
             return MagicMock(

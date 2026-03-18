@@ -592,7 +592,7 @@ class TestCheckDaemonStatus:
 
     @patch("golem.core.dashboard.os.kill", side_effect=OSError)
     @patch("golem.core.dashboard.read_pid")
-    def test_pid_stale(self, mock_read_pid, mock_kill):
+    def test_pid_stale(self, mock_read_pid, _mock_kill):
         mock_read_pid.return_value = 99999
         label, running = _check_daemon_status()
         assert not running
@@ -898,7 +898,7 @@ class TestFormatStatusText:
     @patch("golem.core.dashboard.read_live_snapshot")
     @patch("golem.core.dashboard.read_runs")
     def test_history_uses_format_duration(
-        self, mock_runs, mock_snap, mock_daemon, mock_sessions
+        self, mock_runs, mock_snap, _mock_daemon, _mock_sessions
     ):
         mock_runs.return_value = [
             {
@@ -1208,7 +1208,7 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         app = MagicMock()
         routes: dict = {}
 
-        def capture_route(path, **kwargs):
+        def capture_route(path, **_kwargs):
             def decorator(fn):
                 routes[path] = fn
                 return fn
@@ -1238,7 +1238,7 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         app = MagicMock()
         routes: dict = {}
 
-        def capture_route(path, **kwargs):
+        def capture_route(path, **_kwargs):
             def decorator(fn):
                 routes[path] = fn
                 return fn
@@ -1500,7 +1500,7 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         app = MagicMock()
         routes: dict = {}
 
-        def capture_route(path, **kwargs):
+        def capture_route(path, **_kwargs):
             def decorator(fn):
                 routes[path] = fn
                 return fn
@@ -1537,7 +1537,7 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         app = MagicMock()
         routes: dict = {}
 
-        def capture_route(path, **kwargs):
+        def capture_route(path, **_kwargs):
             def decorator(fn):
                 routes[path] = fn
                 return fn
@@ -1560,7 +1560,7 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         app = MagicMock()
         routes: dict = {}
 
-        def capture_route(path, **kwargs):
+        def capture_route(path, **_kwargs):
             def decorator(fn):
                 routes[path] = fn
                 return fn
@@ -1640,7 +1640,7 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         app = MagicMock()
         routes: dict = {}
 
-        def capture(path, **kw):
+        def capture(path, **_kw):
             def dec(fn):
                 routes[path] = fn
                 return fn
@@ -1733,7 +1733,7 @@ class TestCostAnalyticsEndpoint:
         app = MagicMock()
         routes: dict = {}
 
-        def capture_route(path, **kwargs):
+        def capture_route(path, **_kwargs):
             def decorator(fn):
                 routes[path] = fn
                 return fn
@@ -2048,7 +2048,7 @@ class TestApiTraceParsedHTTP:
         app = MagicMock()
         routes: dict = {}
 
-        def capture_route(path, **kwargs):
+        def capture_route(path, **_kwargs):
             def decorator(fn):
                 routes[path] = fn
                 return fn
@@ -2120,7 +2120,7 @@ class TestApiTraceParsedHTTP:
 
         captured_args: list = []
 
-        def fake_read_and_parse(event_id, since_event=0):
+        def fake_read_and_parse(_event_id, since_event=0):
             captured_args.append(since_event)
             return {"phases": [], "totals": {}}
 

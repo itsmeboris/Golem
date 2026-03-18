@@ -368,7 +368,7 @@ class TestSpawnSessionTask:
         )
         flow._sessions[50] = session
 
-        async def fake_run(sid):
+        async def fake_run(_sid):
             pass
 
         monkeypatch.setattr(flow, "_run_session", fake_run)

@@ -139,7 +139,7 @@ class TestConfigList:
 
 
 class TestConfigInteractive:
-    def test_interactive_falls_back_on_missing_import(self, tmp_path, capsys):
+    def test_interactive_falls_back_on_missing_import(self, tmp_path):
         cfg = {"flows": {"golem": {}}}
         p = tmp_path / "config.yaml"
         with open(p, "w") as f:

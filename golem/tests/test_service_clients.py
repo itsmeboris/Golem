@@ -59,7 +59,7 @@ class TestRequestWithRetry:
         mock_sleep.assert_called_once()
 
     @patch("golem.core.service_clients.time.sleep")
-    def test_retry_on_connection_error(self, mock_sleep):
+    def test_retry_on_connection_error(self, _mock_sleep):
         resp_ok = MagicMock()
         resp_ok.status_code = 200
         mock_method = MagicMock(side_effect=[requests.ConnectionError("fail"), resp_ok])

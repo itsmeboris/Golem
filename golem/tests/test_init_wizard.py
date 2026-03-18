@@ -385,7 +385,7 @@ class TestCmdInitHandler:
         output = tmp_path / "config.yaml"
         args = SimpleNamespace(output=str(output), defaults=True)
 
-        def fake_wizard(path, use_defaults):
+        def fake_wizard(_path, use_defaults):
             assert use_defaults is True
             return 0
 

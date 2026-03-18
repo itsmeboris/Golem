@@ -281,7 +281,7 @@ class TestBatchEndpoints503WhenNoFlow:
 
 
 class TestCmdBatchNoSubcommand:
-    def test_cmd_batch_no_subcommand(self, monkeypatch, tmp_path):
+    def test_cmd_batch_no_subcommand(self, monkeypatch):
         from golem.cli import cmd_batch
 
         # Provide a minimal config so load_config doesn't touch real files
@@ -330,7 +330,7 @@ class TestCmdBatchStatus:
         ).encode()
         captured_req = {}
 
-        def mock_urlopen(req, **kw):
+        def mock_urlopen(req, **_kw):
             captured_req["headers"] = dict(req.headers)
             mock_resp = MagicMock()
             mock_resp.read.return_value = response_data
@@ -837,7 +837,7 @@ class TestCmdBatchSubmit:
         out = capsys.readouterr().out
         assert "grp-yaml" in out
 
-    def test_submit_unknown_extension_tries_json(self, monkeypatch, tmp_path, capsys):
+    def test_submit_unknown_extension_tries_json(self, monkeypatch, tmp_path):
         import urllib.request
 
         from golem.cli import cmd_batch

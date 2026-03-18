@@ -80,7 +80,7 @@ class TestHandleMergeAgent:
         flow = _make_flow(monkeypatch, tmp_path)
         captured = {}
 
-        def fake_run_merge_agent(base_dir, issue_id, agent_diff, **kwargs):
+        def fake_run_merge_agent(_base_dir, _issue_id, _agent_diff, **kwargs):
             captured.update(kwargs)
             return ReconciliationResult(resolved=False, explanation="test")
 
@@ -248,7 +248,7 @@ class TestRetryDeferredMerges:
         session.base_work_dir = str(tmp_path / "repo")
         flow._sessions[42] = session
 
-        def fake_run_git(args, cwd):
+        def fake_run_git(_args, **_kwargs):
             result = MagicMock()
             result.returncode = 0
             result.stdout = "abc123\n"
@@ -304,7 +304,7 @@ class TestRetryDeferredMerges:
         session.base_work_dir = str(tmp_path / "repo")
         flow._sessions[42] = session
 
-        def fake_run_git(args, cwd):
+        def fake_run_git(_args, **_kwargs):
             result = MagicMock()
             result.returncode = 0
             result.stdout = "abc123"
@@ -359,7 +359,7 @@ class TestRetryDeferredMerges:
         session.merge_retry_count = 0
         flow._sessions[44] = session
 
-        def fake_run_git(args, cwd):
+        def fake_run_git(_args, **_kwargs):
             result = MagicMock()
             result.returncode = 0
             result.stdout = "abc123"
@@ -396,7 +396,7 @@ class TestRetryDeferredMerges:
         session.merge_retry_count = 2  # one away from limit of 3
         flow._sessions[45] = session
 
-        def fake_run_git(args, cwd):
+        def fake_run_git(_args, **_kwargs):
             result = MagicMock()
             result.returncode = 0
             result.stdout = "abc123"
@@ -439,7 +439,7 @@ class TestRetryDeferredMerges:
         session.merge_retry_count = 2
         flow._sessions[46] = session
 
-        def fake_run_git(args, cwd):
+        def fake_run_git(_args, **_kwargs):
             result = MagicMock()
             result.returncode = 0
             result.stdout = "deadbeef\n"
@@ -474,7 +474,7 @@ class TestRetryDeferredMerges:
         flow._sessions[50] = session
 
         # rev-parse --verify returns non-zero (branch doesn't exist)
-        def fake_run_git(args, cwd):
+        def fake_run_git(args, **_kwargs):
             result = MagicMock()
             if args[:2] == ["rev-parse", "--verify"]:
                 result.returncode = 1
@@ -515,7 +515,7 @@ class TestRetryDeferredMerges:
         flow._sessions[51] = session
 
         # Branch exists but ff fails
-        def fake_run_git(args, cwd):
+        def fake_run_git(_args, **_kwargs):
             result = MagicMock()
             result.returncode = 0
             result.stdout = "abc123"

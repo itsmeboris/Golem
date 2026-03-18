@@ -220,7 +220,7 @@ class TestMakeEventHandler:
 class TestSaveCliSession:
     @patch("golem.cli.save_sessions")
     @patch("golem.cli.load_sessions", return_value={})
-    def test_merges_session(self, mock_load, mock_save):
+    def test_merges_session(self, _mock_load, mock_save):
         session = TaskSession(parent_issue_id=42)
         _save_cli_session(session)
         mock_save.assert_called_once()
@@ -231,7 +231,7 @@ class TestSaveCliSession:
 class TestCmdRun:
     @patch("golem.cli.run_issue", return_value=True)
     @patch("golem.cli.load_config")
-    def test_with_issue_id(self, mock_config, mock_run):
+    def test_with_issue_id(self, _mock_config, mock_run):
         args = SimpleNamespace(
             parent_id=123,
             config=None,
@@ -247,7 +247,7 @@ class TestCmdRun:
         mock_run.assert_called_once()
 
     @patch("golem.cli.load_config")
-    def test_no_id_no_prompt(self, mock_config, capsys):
+    def test_no_id_no_prompt(self, _mock_config):
         args = SimpleNamespace(
             parent_id=None,
             config=None,
@@ -259,7 +259,7 @@ class TestCmdRun:
 
     @patch("golem.cli.run_issue", return_value=True)
     @patch("golem.cli.load_config")
-    def test_dry_run(self, mock_config, mock_run):
+    def test_dry_run(self, _mock_config, _mock_run):
         args = SimpleNamespace(
             parent_id=42,
             config=None,
@@ -301,7 +301,7 @@ class TestCmdRun:
     @patch("golem.cli._ensure_daemon")
     @patch("golem.cli.load_config")
     def test_cwd_passed_to_daemon_via_prompt(
-        self, mock_config, mock_ensure, mock_submit
+        self, mock_config, _mock_ensure, mock_submit
     ):
         mock_config.return_value.dashboard.port = 8080
         mock_config.return_value.daemon = DaemonConfig()
@@ -325,7 +325,7 @@ class TestCmdRun:
     @patch("golem.cli._ensure_daemon")
     @patch("golem.cli.load_config")
     def test_cwd_passed_to_daemon_via_file(
-        self, mock_config, mock_ensure, mock_submit, tmp_path
+        self, mock_config, _mock_ensure, mock_submit, tmp_path
     ):
         mock_config.return_value.dashboard.port = 8080
         mock_config.return_value.daemon = DaemonConfig()
@@ -384,7 +384,7 @@ class TestSubmitToDaemonApiKey:
     @patch("golem.cli._submit_to_daemon", return_value={"task_id": 7})
     @patch("golem.cli._ensure_daemon")
     @patch("golem.cli.load_config")
-    def test_api_key_passed_from_config(self, mock_config, mock_ensure, mock_submit):
+    def test_api_key_passed_from_config(self, mock_config, _mock_ensure, mock_submit):
         mock_config.return_value.dashboard.port = 8081
         mock_config.return_value.dashboard.api_key = "my-secret"
         mock_config.return_value.daemon = DaemonConfig()
@@ -406,7 +406,7 @@ class TestSubmitToDaemonApiKey:
     @patch("golem.cli._submit_to_daemon", return_value={"task_id": 8})
     @patch("golem.cli._ensure_daemon")
     @patch("golem.cli.load_config")
-    def test_empty_api_key_not_sent(self, mock_config, mock_ensure, mock_submit):
+    def test_empty_api_key_not_sent(self, mock_config, _mock_ensure, mock_submit):
         mock_config.return_value.dashboard.port = 8081
         mock_config.return_value.dashboard.api_key = ""
         mock_config.return_value.daemon = DaemonConfig()
@@ -429,7 +429,7 @@ class TestSubmitToDaemonApiKey:
 class TestCmdPoll:
     @patch("golem.cli.poll_for_agent_issues", return_value=[])
     @patch("golem.cli.load_config")
-    def test_no_issues(self, mock_config, mock_poll):
+    def test_no_issues(self, _mock_config, _mock_poll):
         args = SimpleNamespace(config=None, dry=False, run=False)
         result = cmd_poll(args)
         assert result == 0
@@ -446,7 +446,7 @@ class TestCmdPoll:
     @patch("golem.cli.run_issue", return_value=True)
     @patch("golem.cli.poll_for_agent_issues")
     @patch("golem.cli.load_config")
-    def test_run_mode(self, mock_config, mock_poll, mock_run):
+    def test_run_mode(self, _mock_config, mock_poll, _mock_run):
         mock_poll.return_value = [{"id": 1, "subject": "Task"}]
         args = SimpleNamespace(config=None, dry=False, run=True)
         result = cmd_poll(args)
@@ -480,7 +480,7 @@ class TestCmdStop:
     @patch("golem.cli._pid_from_health", return_value=None)
     @patch("golem.cli.load_config")
     @patch("golem.cli.read_pid", return_value=None)
-    def test_no_pid_file(self, _read, _cfg, _health, capsys):
+    def test_no_pid_file(self, _read, _cfg, _health):
         _cfg.return_value = MagicMock(dashboard=MagicMock(port=8081))
         args = SimpleNamespace(dashboard=False, pid_file=None, force=False, config=None)
         result = cmd_stop(args)
@@ -489,7 +489,7 @@ class TestCmdStop:
     @patch("golem.cli.remove_pid")
     @patch("os.kill", side_effect=OSError("not running"))
     @patch("golem.cli.read_pid", return_value=12345)
-    def test_stale_pid(self, _, __, mock_remove, capsys):
+    def test_stale_pid(self, _, __, mock_remove):
         args = SimpleNamespace(dashboard=False, pid_file=None, force=False)
         result = cmd_stop(args)
         assert result == 0
@@ -497,7 +497,7 @@ class TestCmdStop:
 
 
 class TestMainArgparse:
-    def test_no_command(self, capsys):
+    def test_no_command(self):
         with patch("sys.argv", ["golem"]):
             result = main()
         assert result == 1
@@ -510,7 +510,7 @@ class TestMainArgparse:
         mock_run.assert_called_once()
 
     @patch("golem.cli.cmd_poll", return_value=0)
-    def test_poll_command(self, mock_poll):
+    def test_poll_command(self, _mock_poll):
         with patch("sys.argv", ["golem", "poll"]):
             result = main()
         assert result == 0

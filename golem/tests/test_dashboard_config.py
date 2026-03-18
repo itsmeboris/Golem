@@ -199,7 +199,7 @@ class TestWireControlApiNewParams:
         wire_control_api(config_path=str(cfg_path))
         assert control_api._config_path == str(cfg_path)
 
-    def test_reload_event_stored(self, tmp_path):
+    def test_reload_event_stored(self):
         from golem.core import control_api
 
         ev = asyncio.Event()

@@ -19,59 +19,59 @@ class TestTaskStatus:
 
 
 class DummyTaskSource:
-    def poll_tasks(self, projects, detection_tag, timeout=30):
+    def poll_tasks(self, _projects, _detection_tag, _timeout=30):
         return []
 
-    def get_task_description(self, task_id):
+    def get_task_description(self, _task_id):
         return ""
 
-    def get_child_tasks(self, parent_id):
+    def get_child_tasks(self, _parent_id):
         return []
 
-    def create_child_task(self, parent_id, subject, description):
+    def create_child_task(self, _parent_id, _subject, _description):
         return None
 
-    def get_task_subject(self, task_id):
+    def get_task_subject(self, _task_id):
         return ""
 
-    def get_task_comments(self, task_id, *, since=""):
+    def get_task_comments(self, _task_id, *, _since=""):
         return []
 
-    def poll_untagged_tasks(self, projects, exclude_tag, limit=20, timeout=30):
+    def poll_untagged_tasks(self, _projects, _exclude_tag, _limit=20, _timeout=30):
         return []
 
 
 class DummyStateBackend:
-    def update_status(self, task_id, status):
+    def update_status(self, _task_id, _status):
         return True
 
-    def post_comment(self, task_id, text):
+    def post_comment(self, _task_id, _text):
         return True
 
-    def update_progress(self, task_id, percent):
+    def update_progress(self, _task_id, _percent):
         return True
 
 
 class DummyNotifier:
-    def notify_started(self, task_id, subject):
+    def notify_started(self, _task_id, _subject):
         pass
 
-    def notify_completed(self, task_id, subject, **kwargs):
+    def notify_completed(self, _task_id, _subject, **_kwargs):
         pass
 
-    def notify_failed(self, task_id, subject, reason, **kwargs):
+    def notify_failed(self, _task_id, _subject, _reason, **_kwargs):
         pass
 
-    def notify_escalated(self, task_id, subject, verdict, summary, **kwargs):
+    def notify_escalated(self, _task_id, _subject, _verdict, _summary, **_kwargs):
         pass
 
-    def notify_batch_submitted(self, group_id, task_count):
+    def notify_batch_submitted(self, _group_id, _task_count):
         pass
 
-    def notify_batch_completed(self, group_id, status, **kwargs):
+    def notify_batch_completed(self, _group_id, _status, **_kwargs):
         pass
 
-    def notify_health_alert(self, alert_type, message, **kwargs):
+    def notify_health_alert(self, _alert_type, _message, **_kwargs):
         pass
 
 
@@ -79,12 +79,12 @@ class DummyToolProvider:
     def base_servers(self):
         return []
 
-    def servers_for_subject(self, subject, *, role: str = ""):
+    def servers_for_subject(self, _subject, *, role: str = ""):
         return []
 
 
 class DummyPromptProvider:
-    def format(self, template_name, **kwargs):
+    def format(self, _template_name, **_kwargs):
         return ""
 
 

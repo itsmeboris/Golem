@@ -118,7 +118,7 @@ class TestCommitChanges:
 
     @patch("golem.committer._run_git")
     def test_successful_commit(self, mock_git):
-        def side_effect(args, cwd, timeout=30):
+        def side_effect(args, **_kwargs):
             if args == ["status", "--porcelain"]:
                 return subprocess.CompletedProcess(
                     args=args, returncode=0, stdout=" M file.py\n"
@@ -140,7 +140,7 @@ class TestCommitChanges:
 
     @patch("golem.committer._run_git")
     def test_add_failure(self, mock_git):
-        def side_effect(args, cwd, timeout=30):
+        def side_effect(args, **_kwargs):
             if args == ["status", "--porcelain"]:
                 return subprocess.CompletedProcess(
                     args=args, returncode=0, stdout=" M file.py\n"
@@ -160,7 +160,7 @@ class TestCommitChanges:
     def test_commit_failure_resets(self, mock_git):
         calls = []
 
-        def side_effect(args, cwd, timeout=30):
+        def side_effect(args, **_kwargs):
             calls.append(args)
             if args == ["status", "--porcelain"]:
                 return subprocess.CompletedProcess(

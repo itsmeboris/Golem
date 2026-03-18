@@ -1136,7 +1136,7 @@ class TestOrchestratorInstinctIntegration:
     @patch("golem.orchestrator.update_agents_md_from_instincts")
     @patch("golem.orchestrator.extract_pitfalls")
     def test_extract_and_write_pitfalls_no_pitfalls_still_prunes(
-        self, mock_extract, mock_update_from_instincts
+        self, mock_extract, _mock_update_from_instincts
     ):
         """_extract_and_write_pitfalls calls prune() even with no new pitfalls."""
         from golem.orchestrator import TaskSession

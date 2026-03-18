@@ -114,14 +114,18 @@ class TestMergeQueueOnStateChange:
 
 
 class TestStartDashboardServerMergeQueueParam:
-    async def test_passes_merge_queue_to_mount_dashboard(self, tmp_path):
+    async def test_passes_merge_queue_to_mount_dashboard(self):
         """_start_dashboard_server passes merge_queue to mount_dashboard."""
         from golem.cli import _start_dashboard_server
 
         captured = {}
 
         def fake_mount(
-            app, _config_snapshot=None, live_state_file=None, merge_queue=None, **kwargs
+            _app,
+            _config_snapshot=None,
+            _live_state_file=None,
+            merge_queue=None,
+            **_kwargs,
         ):
             captured["merge_queue"] = merge_queue
 
@@ -148,14 +152,18 @@ class TestStartDashboardServerMergeQueueParam:
 
         assert captured["merge_queue"] is mq
 
-    async def test_default_none_merge_queue(self, tmp_path):
+    async def test_default_none_merge_queue(self):
         """_start_dashboard_server defaults merge_queue to None."""
         from golem.cli import _start_dashboard_server
 
         captured = {}
 
         def fake_mount(
-            app, _config_snapshot=None, live_state_file=None, merge_queue=None, **kwargs
+            _app,
+            _config_snapshot=None,
+            _live_state_file=None,
+            merge_queue=None,
+            **_kwargs,
         ):
             captured["merge_queue"] = merge_queue
 
@@ -187,7 +195,7 @@ class TestStartDashboardServerMergeQueueParam:
 
 
 class TestMountDashboardMergeQueueParam:
-    def test_accepts_merge_queue_param(self, tmp_path):
+    def test_accepts_merge_queue_param(self):
         """mount_dashboard accepts a merge_queue parameter without error."""
         from golem.core.dashboard import mount_dashboard
 
@@ -197,7 +205,7 @@ class TestMountDashboardMergeQueueParam:
         # Should not raise
         mount_dashboard(app, merge_queue=mq)
 
-    def test_default_none_merge_queue(self, tmp_path):
+    def test_default_none_merge_queue(self):
         """mount_dashboard default merge_queue is None."""
         from golem.core.dashboard import mount_dashboard
         import inspect

@@ -807,7 +807,7 @@ class TestStreamingTraceWriter:
 class TestStreamingCallbackWiring:
     """Verify the _streaming_callback inner function is exercised."""
 
-    async def test_monolithic_callback_streams_events(self, tmp_path):
+    async def test_monolithic_callback_streams_events(self):
         session = TaskSession(parent_issue_id=99, parent_subject="CB test")
         profile = MagicMock()
         profile.task_source.get_task_description.return_value = "desc"
@@ -817,7 +817,7 @@ class TestStreamingCallbackWiring:
 
         _captured_cb = None
 
-        def _capture_cli(prompt, config, callback=None):
+        def _capture_cli(_prompt, _config, callback=None):
             nonlocal _captured_cb
             _captured_cb = callback
             # Simulate the CLI firing events via the callback
@@ -1034,7 +1034,7 @@ class TestCommitAndComplete:
     @patch("golem.orchestrator.update_agents_md_from_instincts")
     @patch("golem.orchestrator.extract_pitfalls")
     async def test_pitfall_extraction_error_non_fatal(
-        self, mock_extract, mock_update_from_instincts
+        self, mock_extract, _mock_update_from_instincts
     ):
         """Pitfall extraction errors don't fail the completion."""
         mock_extract.side_effect = Exception("disk full")

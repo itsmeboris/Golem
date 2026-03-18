@@ -73,9 +73,9 @@ class TestRunIssue:
     def test_full_run_completed(
         self,
         mock_profile,
-        mock_header,
+        _mock_header,
         mock_save,
-        mock_printer,
+        _mock_printer,
         mock_orch_cls,
         mock_asyncio,
     ):
@@ -125,7 +125,7 @@ class TestRunIssue:
 
     @patch("golem.cli._print_run_header")
     @patch("golem.cli._get_profile")
-    def test_dry_run(self, mock_profile, mock_header, capsys):
+    def test_dry_run(self, mock_profile, _mock_header, capsys):
         profile = MagicMock()
         profile.task_source.get_task_subject.return_value = "task"
         mock_profile.return_value = profile
@@ -146,9 +146,9 @@ class TestRunIssue:
     @patch("golem.cli._print_run_header")
     def test_mcp_enable_override(
         self,
-        mock_header,
+        _mock_header,
         mock_save,
-        mock_printer,
+        _mock_printer,
         mock_orch_cls,
         mock_asyncio,
     ):
@@ -187,9 +187,9 @@ class TestRunIssue:
     @patch("golem.cli._print_run_header")
     def test_mcp_disable_override(
         self,
-        mock_header,
+        _mock_header,
         mock_save,
-        mock_printer,
+        _mock_printer,
         mock_orch_cls,
         mock_asyncio,
     ):
@@ -232,9 +232,9 @@ class TestRunIssue:
     def test_failed_session(
         self,
         mock_profile,
-        mock_header,
+        _mock_header,
         mock_save,
-        mock_printer,
+        _mock_printer,
         mock_orch_cls,
         mock_asyncio,
     ):
@@ -290,9 +290,9 @@ class TestRunIssueOnProgress:
     def test_on_progress_callback(  # pylint: disable=too-many-locals
         self,
         mock_profile,
-        mock_header,
-        mock_save,
-        mock_printer,
+        _mock_header,
+        _mock_save,
+        _mock_printer,
         mock_orch_cls,
         mock_asyncio,
         capsys,
@@ -352,9 +352,9 @@ class TestRunIssueOnProgress:
     def test_on_progress_error_milestone(  # pylint: disable=too-many-locals
         self,
         mock_profile,
-        mock_header,
-        mock_save,
-        mock_printer,
+        _mock_header,
+        _mock_save,
+        _mock_printer,
         mock_orch_cls,
         mock_asyncio,
         capsys,
@@ -408,9 +408,9 @@ class TestRunIssueOnProgress:
     def test_on_progress_save_failure(
         self,
         mock_profile,
-        mock_header,
+        _mock_header,
         mock_save,
-        mock_printer,
+        _mock_printer,
         mock_orch_cls,
         mock_asyncio,
     ):
@@ -571,11 +571,11 @@ class TestRunDaemon:
 
         tick_task = asyncio.ensure_future(asyncio.sleep(100))
 
-        def fake_manage(cfg, tasks, reload_event=None):
+        def fake_manage(_cfg, tasks, reload_event=None):
             tasks.append(tick_task)
             return mock_flow
 
-        async def fake_dash(*a, **kw):
+        async def fake_dash(*_a, **_kw):
             return asyncio.ensure_future(asyncio.sleep(100)), MagicMock()
 
         with (
@@ -610,11 +610,11 @@ class TestRunDaemon:
         mock_flow = MagicMock()
         mock_flow._self_update = None
 
-        def fake_manage(cfg, tasks, reload_event=None):
+        def fake_manage(_cfg, tasks, reload_event=None):
             tasks.append(asyncio.ensure_future(asyncio.sleep(100)))
             return mock_flow
 
-        async def fake_dash(*a, **kw):
+        async def fake_dash(*_a, **_kw):
             return asyncio.ensure_future(asyncio.sleep(100)), MagicMock()
 
         signal_handlers = {}
@@ -660,11 +660,11 @@ class TestRunDaemon:
         mock_self_update = MagicMock()
         mock_flow._self_update = mock_self_update
 
-        def fake_manage(cfg, tasks, reload_event=None):
+        def fake_manage(_cfg, tasks, reload_event=None):
             tasks.append(asyncio.ensure_future(asyncio.sleep(100)))
             return mock_flow
 
-        async def fake_dash(*a, **kw):
+        async def fake_dash(*_a, **_kw):
             return asyncio.ensure_future(asyncio.sleep(100)), MagicMock()
 
         with (
@@ -702,11 +702,11 @@ class TestRunDaemon:
         mock_flow = MagicMock()
         mock_flow._self_update = None
 
-        def fake_manage(cfg, tasks, reload_event=None):
+        def fake_manage(_cfg, tasks, reload_event=None):
             tasks.append(asyncio.ensure_future(asyncio.sleep(100)))
             return mock_flow
 
-        async def fake_dash(*a, **kw):
+        async def fake_dash(*_a, **_kw):
             return asyncio.ensure_future(asyncio.sleep(100)), MagicMock()
 
         created_tasks = []
@@ -767,7 +767,7 @@ class TestCmdRunPrompt:
     @patch("golem.cli._submit_to_daemon", return_value=None)
     @patch("golem.cli._ensure_daemon")
     @patch("golem.cli.load_config")
-    def test_prompt_submit_failure(self, mock_config, mock_ensure, mock_submit):
+    def test_prompt_submit_failure(self, mock_config, _mock_ensure, _mock_submit):
         cfg = mock_config.return_value
         cfg.dashboard.port = 8082
         args = SimpleNamespace(
@@ -788,7 +788,7 @@ class TestCmdRunPrompt:
     )
     @patch("golem.cli._ensure_daemon")
     @patch("golem.cli.load_config")
-    def test_prompt_with_subject(self, mock_config, mock_ensure, mock_submit):
+    def test_prompt_with_subject(self, mock_config, _mock_ensure, mock_submit):
         cfg = mock_config.return_value
         cfg.dashboard.port = 8082
         args = SimpleNamespace(
@@ -811,7 +811,7 @@ class TestCmdRunPromptDirect:
         return_value={"task_id": 42, "status": "submitted"},
     )
     @patch("golem.cli._ensure_daemon")
-    def test_direct_call(self, mock_ensure, mock_submit):
+    def test_direct_call(self, _mock_ensure, mock_submit):
         args = SimpleNamespace(subject="", config=None)
         config = MagicMock()
         config.dashboard.port = 8082
@@ -821,7 +821,7 @@ class TestCmdRunPromptDirect:
 
     @patch("golem.cli._submit_to_daemon", return_value=None)
     @patch("golem.cli._ensure_daemon")
-    def test_failure(self, mock_ensure, mock_submit):
+    def test_failure(self, _mock_ensure, _mock_submit):
         args = SimpleNamespace(subject="", config=None)
         config = MagicMock()
         config.dashboard.port = 8082
@@ -902,7 +902,7 @@ class TestEnsureDaemon:
     @patch("golem.cli._daemon_health", side_effect=[False, False, True])
     @patch("golem.cli.read_pid", return_value=None)
     @patch("golem.cli.time.sleep")
-    def test_starts_daemon(self, mock_sleep, mock_pid, mock_health, tmp_path):
+    def test_starts_daemon(self, _mock_sleep, _mock_pid, _mock_health, tmp_path):
         with (
             patch("golem.cli.DATA_DIR", tmp_path),
             patch("subprocess.Popen") as mock_popen,
@@ -975,7 +975,7 @@ class TestCmdRunFile:
         return_value={"task_id": 1, "status": "submitted"},
     )
     @patch("golem.cli._ensure_daemon")
-    def test_reads_file_and_submits(self, mock_ensure, mock_submit, tmp_path):
+    def test_reads_file_and_submits(self, _mock_ensure, mock_submit, tmp_path):
         prompt_file = tmp_path / "plan.md"
         prompt_file.write_text("Do this important thing")
 
@@ -1011,7 +1011,7 @@ class TestCmdRunFile:
 class TestCmdRunFileViaCmdRun:
     @patch("golem.cli._cmd_run_file", return_value=0)
     @patch("golem.cli.load_config")
-    def test_file_flag_routes_to_file_handler(self, mock_config, mock_file):
+    def test_file_flag_routes_to_file_handler(self, _mock_config, mock_file):
         args = SimpleNamespace(
             parent_id=None,
             config=None,
@@ -1032,7 +1032,7 @@ class TestEnsureDaemonEdgeCases:
     @patch("os.kill")
     @patch("golem.cli.time.sleep")
     def test_pid_exists_but_health_fails(
-        self, mock_sleep, mock_kill, mock_pid, mock_health, tmp_path, capsys
+        self, _mock_sleep, _mock_kill, _mock_pid, _mock_health, tmp_path, capsys
     ):
         with (
             patch("golem.cli.DATA_DIR", tmp_path),
@@ -1053,13 +1053,12 @@ class TestEnsureDaemonEdgeCases:
     @patch("golem.cli.time.sleep")
     def test_stale_pid_removed_before_start(
         self,
-        mock_sleep,
+        _mock_sleep,
         mock_remove,
-        mock_kill,
-        mock_pid,
-        mock_health,
+        _mock_kill,
+        _mock_pid,
+        _mock_health,
         tmp_path,
-        capsys,
     ):
         with (
             patch("golem.cli.DATA_DIR", tmp_path),
@@ -1075,7 +1074,7 @@ class TestEnsureDaemonEdgeCases:
     @patch("golem.cli._daemon_health", side_effect=[False, False, True])
     @patch("golem.cli.read_pid", return_value=None)
     @patch("golem.cli.time.sleep")
-    def test_with_config_path(self, mock_sleep, mock_pid, mock_health, tmp_path):
+    def test_with_config_path(self, _mock_sleep, _mock_pid, _mock_health, tmp_path):
         with (
             patch("golem.cli.DATA_DIR", tmp_path),
             patch("subprocess.Popen") as mock_popen,
@@ -1129,7 +1128,7 @@ class TestCmdPollRunBranch:
     @patch("golem.cli.run_issue", return_value=True)
     @patch("golem.cli.poll_for_agent_issues")
     @patch("golem.cli.load_config")
-    def test_run_executes_all(self, mock_config, mock_poll, mock_run, mock_print):
+    def test_run_executes_all(self, _mock_config, mock_poll, mock_run, _mock_print):
         mock_poll.return_value = [
             {"id": 1, "subject": "T1"},
             {"id": 2, "subject": "T2"},
@@ -1143,7 +1142,7 @@ class TestCmdPollRunBranch:
     @patch("golem.cli.run_issue", side_effect=[True, False])
     @patch("golem.cli.poll_for_agent_issues")
     @patch("golem.cli.load_config")
-    def test_partial_failure(self, mock_config, mock_poll, mock_run, mock_print):
+    def test_partial_failure(self, _mock_config, mock_poll, _mock_run, _mock_print):
         mock_poll.return_value = [
             {"id": 1, "subject": "T1"},
             {"id": 2, "subject": "T2"},
@@ -1154,7 +1153,7 @@ class TestCmdPollRunBranch:
 
     @patch("golem.cli.poll_for_agent_issues")
     @patch("golem.cli.load_config")
-    def test_no_run_no_dry(self, mock_config, mock_poll):
+    def test_no_run_no_dry(self, _mock_config, mock_poll):
         mock_poll.return_value = [{"id": 1, "subject": "T1"}]
         args = SimpleNamespace(config=None, dry=False, run=False)
         result = cmd_poll(args)
@@ -1170,8 +1169,8 @@ class TestCmdDaemon:
     @patch("golem.cli.load_config")
     def test_foreground_mode(
         self,
-        mock_config,
-        mock_read_pid,
+        _mock_config,
+        _mock_read_pid,
         mock_remove,
         mock_write,
         mock_tee,
@@ -1197,7 +1196,7 @@ class TestCmdDaemon:
     @patch("golem.cli.read_pid", return_value=9999)
     @patch("golem.cli.load_config")
     def test_stale_pid_removed(
-        self, mock_config, mock_read_pid, mock_remove, mock_kill
+        self, _mock_config, _mock_read_pid, mock_remove, _mock_kill
     ):
         args = SimpleNamespace(
             config=None,
@@ -1219,7 +1218,7 @@ class TestCmdDaemon:
     @patch("os.kill")
     @patch("golem.cli.read_pid", return_value=9999)
     @patch("golem.cli.load_config")
-    def test_already_running(self, mock_config, mock_read_pid, mock_kill, capsys):
+    def test_already_running(self, _mock_config, _mock_read_pid, _mock_kill, capsys):
         args = SimpleNamespace(
             config=None,
             log_dir=None,
@@ -1238,7 +1237,7 @@ class TestCmdDaemon:
     @patch("golem.cli.remove_pid")
     @patch("golem.cli.load_config")
     def test_own_pid_skips_already_running(
-        self, mock_config, mock_remove, mock_write, mock_asyncio, mock_tee, tmp_path
+        self, _mock_config, _mock_remove, mock_write, mock_asyncio, mock_tee, tmp_path
     ):
         """After os.execv the PID file contains our own PID — should NOT abort."""
         own_pid = os.getpid()
@@ -1265,13 +1264,13 @@ class TestCmdDaemon:
     @patch("golem.cli.load_config")
     def test_background_mode(
         self,
-        mock_config,
-        mock_read_pid,
+        _mock_config,
+        _mock_read_pid,
         mock_remove,
         mock_write,
         mock_asyncio,
         mock_daemonize,
-        mock_symlink,
+        _mock_symlink,
         tmp_path,
     ):
         mock_asyncio.run.return_value = 0
@@ -1293,18 +1292,18 @@ class TestCmdDaemon:
 class TestWaitForExit:
     @patch("time.sleep")
     @patch("os.kill", side_effect=OSError)
-    def test_exits_immediately(self, mock_kill, mock_sleep):
+    def test_exits_immediately(self, _mock_kill, _mock_sleep):
         assert _wait_for_exit(123, 5) is True
 
     @patch("time.sleep")
     @patch("os.kill")
-    def test_never_exits(self, mock_kill, mock_sleep):
+    def test_never_exits(self, _mock_kill, mock_sleep):
         assert _wait_for_exit(123, 3) is False
         assert mock_sleep.call_count == 3
 
     @patch("time.sleep")
     @patch("os.kill", side_effect=[None, OSError])
-    def test_exits_after_one_tick(self, mock_kill, mock_sleep):
+    def test_exits_after_one_tick(self, _mock_kill, mock_sleep):
         assert _wait_for_exit(123, 5) is True
         assert mock_sleep.call_count == 2
 
@@ -1314,7 +1313,9 @@ class TestCmdStopSignalPaths:
     @patch("golem.cli.remove_pid")
     @patch("os.kill")
     @patch("golem.cli.read_pid", return_value=5555)
-    def test_graceful_stop(self, mock_read, mock_kill, mock_remove, mock_wait, capsys):
+    def test_graceful_stop(
+        self, _mock_read, mock_kill, _mock_remove, _mock_wait, capsys
+    ):
         mock_kill_calls = []
 
         def track_kill(pid, sig):
@@ -1332,7 +1333,7 @@ class TestCmdStopSignalPaths:
     @patch("golem.cli.remove_pid")
     @patch("os.kill")
     @patch("golem.cli.read_pid", return_value=5555)
-    def test_force_stop(self, mock_read, mock_kill, mock_remove, mock_wait, capsys):
+    def test_force_stop(self, _mock_read, mock_kill, _mock_remove, _mock_wait, capsys):
         mock_kill.side_effect = lambda pid, sig: None
         args = SimpleNamespace(dashboard=False, pid_file=None, force=True)
         result = cmd_stop(args)
@@ -1343,8 +1344,8 @@ class TestCmdStopSignalPaths:
     @patch("golem.cli.remove_pid")
     @patch("os.kill")
     @patch("golem.cli.read_pid", return_value=5555)
-    def test_kill_fails(self, mock_read, mock_kill, mock_remove, capsys):
-        def side(pid, sig):
+    def test_kill_fails(self, _mock_read, mock_kill, _mock_remove, capsys):
+        def side(_pid, sig):
             if sig == 0:
                 return
             raise OSError("permission denied")
@@ -1362,7 +1363,7 @@ class TestCmdStopSignalPaths:
     @patch("os.kill")
     @patch("golem.cli.read_pid", return_value=5555)
     def test_escalate_to_sigkill(
-        self, mock_read, mock_kill, mock_remove, mock_wait, capsys
+        self, _mock_read, mock_kill, _mock_remove, _mock_wait, capsys
     ):
         mock_kill.side_effect = lambda pid, sig: None
         args = SimpleNamespace(dashboard=False, pid_file=None, force=False)
@@ -1376,7 +1377,9 @@ class TestCmdStopSignalPaths:
     @patch("golem.cli.remove_pid")
     @patch("os.kill")
     @patch("golem.cli.read_pid", return_value=5555)
-    def test_did_not_exit(self, mock_read, mock_kill, mock_remove, mock_wait, capsys):
+    def test_did_not_exit(
+        self, _mock_read, mock_kill, _mock_remove, _mock_wait, capsys
+    ):
         mock_kill.side_effect = lambda pid, sig: None
         args = SimpleNamespace(dashboard=False, pid_file=None, force=False)
         result = cmd_stop(args)
@@ -1389,11 +1392,11 @@ class TestCmdStopSignalPaths:
     @patch("os.kill")
     @patch("golem.cli.read_pid", return_value=5555)
     def test_sigkill_fails_oserror(
-        self, mock_read, mock_kill, mock_remove, mock_wait, capsys
+        self, _mock_read, mock_kill, _mock_remove, _mock_wait
     ):
         call_count = [0]
 
-        def side(pid, sig):
+        def side(_pid, sig):
             call_count[0] += 1
             if sig == 0:
                 return
@@ -1411,12 +1414,12 @@ class TestCmdStopSignalPaths:
     @patch("os.kill")
     @patch("golem.cli.read_pid", return_value=5555)
     def test_sigkill_fails_oserror_logs_debug(
-        self, mock_read, mock_kill, mock_remove, mock_wait, caplog
+        self, _mock_read, mock_kill, _mock_remove, _mock_wait, caplog
     ):
         """SIGKILL failure is logged at debug level."""
         import logging
 
-        def side(pid, sig):
+        def side(_pid, sig):
             if sig == 0:
                 return
             if sig == signal.SIGKILL:
@@ -1438,7 +1441,9 @@ class TestCmdStopSignalPaths:
     @patch("golem.cli.remove_pid")
     @patch("os.kill")
     @patch("golem.cli.read_pid", return_value=5555)
-    def test_dashboard_stop(self, mock_read, mock_kill, mock_remove, mock_wait, capsys):
+    def test_dashboard_stop(
+        self, _mock_read, mock_kill, _mock_remove, _mock_wait, capsys
+    ):
         mock_kill.side_effect = lambda pid, sig: None
         args = SimpleNamespace(dashboard=True, pid_file=None, force=False)
         result = cmd_stop(args)
@@ -1454,12 +1459,12 @@ class TestCmdStopSignalPaths:
     @patch("golem.cli.read_pid", return_value=None)
     def test_stop_falls_back_to_health_endpoint(
         self,
-        mock_read,
+        _mock_read,
         mock_cfg,
-        mock_health,
+        _mock_health,
         mock_kill,
-        mock_remove,
-        mock_wait,
+        _mock_remove,
+        _mock_wait,
         capsys,
     ):
         mock_cfg.return_value = MagicMock(dashboard=MagicMock(port=8081))
@@ -1473,7 +1478,9 @@ class TestCmdStopSignalPaths:
     @patch("golem.cli._pid_from_health", return_value=None)
     @patch("golem.cli.load_config")
     @patch("golem.cli.read_pid", return_value=None)
-    def test_stop_no_pid_file_no_health(self, mock_read, mock_cfg, mock_health, capsys):
+    def test_stop_no_pid_file_no_health(
+        self, _mock_read, mock_cfg, _mock_health, capsys
+    ):
         mock_cfg.return_value = MagicMock(dashboard=MagicMock(port=8081))
         args = SimpleNamespace(dashboard=False, pid_file=None, force=False, config=None)
         result = cmd_stop(args)
@@ -1482,7 +1489,7 @@ class TestCmdStopSignalPaths:
         assert "PID file" in err
 
     @patch("golem.cli.read_pid", return_value=None)
-    def test_dashboard_stop_no_health_fallback(self, mock_read, capsys):
+    def test_dashboard_stop_no_health_fallback(self, _mock_read):
         """Dashboard stop does not attempt health endpoint fallback."""
         args = SimpleNamespace(dashboard=True, pid_file=None, force=False)
         result = cmd_stop(args)
@@ -1491,7 +1498,7 @@ class TestCmdStopSignalPaths:
 
 class TestCmdStatus:
     @patch("golem.core.dashboard.format_status_text", return_value="Status OK")
-    def test_basic(self, mock_format, capsys):
+    def test_basic(self, _mock_format, capsys):
         args = SimpleNamespace(hours=24, config=None)
         result = cmd_status(args)
         assert result == 0
@@ -1499,7 +1506,7 @@ class TestCmdStatus:
         assert "Status OK" in out
 
     @patch("golem.core.dashboard.format_status_text", return_value="48h status")
-    def test_custom_hours(self, mock_format, capsys):
+    def test_custom_hours(self, mock_format):
         args = SimpleNamespace(hours=48, config=None)
         cmd_status(args)
         mock_format.assert_called_once_with(since_hours=48, flow="golem")
@@ -1515,7 +1522,7 @@ class TestCmdStatus:
         assert "Task #5 detail" in capsys.readouterr().out
 
     @patch("golem.core.dashboard.format_status_text", return_value="watch output")
-    def test_watch_mode(self, mock_format, capsys):
+    def test_watch_mode(self, _mock_format, capsys):
         """Watch mode prints with ANSI clear, then exits on KeyboardInterrupt."""
         with patch("time.sleep", side_effect=KeyboardInterrupt):
             args = SimpleNamespace(hours=24, task=None, watch=2.0, config=None)
@@ -1526,7 +1533,7 @@ class TestCmdStatus:
         assert "\033[2J\033[H" in out
 
     @patch("golem.core.dashboard.format_status_text", return_value="clamp test")
-    def test_watch_clamps_interval(self, mock_format, capsys):
+    def test_watch_clamps_interval(self, _mock_format):
         """Watch interval is clamped to minimum 0.5s."""
         with patch("time.sleep", side_effect=KeyboardInterrupt) as mock_sleep:
             args = SimpleNamespace(hours=24, task=None, watch=0.1, config=None)
@@ -1544,7 +1551,7 @@ class TestCmdDashboard:
         assert "FastAPI" in err
 
     @patch("golem.cli.FASTAPI_AVAILABLE", True)
-    def test_runs_dashboard(self, capsys):
+    def test_runs_dashboard(self):
         cfg = MagicMock()
         cfg.dashboard.port = 9090
 
@@ -1567,7 +1574,7 @@ class TestCmdDashboard:
         mock_uvi.assert_called_once()
 
     @patch("golem.cli.FASTAPI_AVAILABLE", True)
-    def test_config_load_failure(self, capsys):
+    def test_config_load_failure(self):
         mock_app = MagicMock()
         mock_uvi = MagicMock()
 
@@ -1587,7 +1594,7 @@ class TestCmdDashboard:
         assert mock_uvi.call_args[1]["port"] == 8888
 
     @patch("golem.cli.FASTAPI_AVAILABLE", True)
-    def test_control_router_none(self, capsys):
+    def test_control_router_none(self):
         cfg = MagicMock()
         cfg.dashboard.port = 9090
 
@@ -1619,19 +1626,19 @@ class TestMainArgparseExtended:
         mock_daemon.assert_called_once()
 
     @patch("golem.cli.cmd_stop", return_value=0)
-    def test_stop_command(self, mock_stop):
+    def test_stop_command(self, _mock_stop):
         with patch("sys.argv", ["golem", "stop"]):
             result = main()
         assert result == 0
 
     @patch("golem.cli.cmd_status", return_value=0)
-    def test_status_command(self, mock_status):
+    def test_status_command(self, _mock_status):
         with patch("sys.argv", ["golem", "status"]):
             result = main()
         assert result == 0
 
     @patch("golem.cli.cmd_dashboard", return_value=0)
-    def test_dashboard_command(self, mock_dash):
+    def test_dashboard_command(self, _mock_dash):
         with patch("sys.argv", ["golem", "dashboard"]):
             result = main()
         assert result == 0
@@ -1857,8 +1864,8 @@ class TestRunIssueOnEvent:
     def test_on_event_forwards_to_printer(
         self,
         mock_profile,
-        mock_header,
-        mock_save,
+        _mock_header,
+        _mock_save,
         mock_printer_cls,
         mock_orch_cls,
         mock_asyncio,

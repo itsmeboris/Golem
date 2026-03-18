@@ -297,7 +297,7 @@ class TestPrepareWorkDir:
             sentinel_file = target / "sentinel.txt"
             sentinel_file.write_text("x")
 
-            def side_effect(cwd_path, created):
+            def side_effect(_cwd_path, created):
                 created.append(sentinel_file)
 
             mock_claude.side_effect = side_effect
@@ -323,7 +323,7 @@ class TestPrepareWorkDirCleanup:
             patch("golem.core.cli_wrapper._copy_claude_dir") as mock_cd,
         ):
 
-            def populate(cwd_path, created):
+            def populate(_cwd_path, created):
                 created.append(created_dir)
                 created.append(created_file)
 
@@ -348,7 +348,7 @@ class TestPrepareWorkDirCleanup:
             patch("golem.core.cli_wrapper._copy_claude_dir") as mock_cd,
         ):
 
-            def populate(cwd_path, created):
+            def populate(_cwd_path, created):
                 created.append(created_dir)
 
             mock_cd.side_effect = populate
@@ -370,7 +370,7 @@ class TestPrepareWorkDirCleanup:
             bad_path = MagicMock(spec=Path)
             bad_path.is_symlink.side_effect = OSError("broken")
 
-            def populate(cwd_path, created):
+            def populate(_cwd_path, created):
                 created.append(bad_path)
 
             mock_cd.side_effect = populate
@@ -393,7 +393,7 @@ class TestPrepareWorkDirCleanup:
             patch("golem.core.cli_wrapper._copy_claude_dir") as mock_cd,
         ):
 
-            def populate(cwd_path, created):
+            def populate(_cwd_path, created):
                 created.append(link)
 
             mock_cd.side_effect = populate

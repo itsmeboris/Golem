@@ -143,7 +143,7 @@ def run_config_tui(config_path: Path) -> int:  # pragma: no cover
         event.app.exit(0)
 
     @kb.add("s")
-    def _save(event):
+    def _save(_event):
         if state.editing:
             return
         if not state.unsaved_changes:
@@ -164,7 +164,7 @@ def run_config_tui(config_path: Path) -> int:  # pragma: no cover
         state.categories = new_state.categories
 
     @kb.add("left")
-    def _left(event):
+    def _left(_event):
         if state.editing:
             return
         fi = state.current_field
@@ -182,7 +182,7 @@ def run_config_tui(config_path: Path) -> int:  # pragma: no cover
             state.current_field_index = 0
 
     @kb.add("right")
-    def _right(event):
+    def _right(_event):
         if state.editing:
             return
         fi = state.current_field
@@ -200,21 +200,21 @@ def run_config_tui(config_path: Path) -> int:  # pragma: no cover
             state.current_field_index = 0
 
     @kb.add("up")
-    def _up(event):
+    def _up(_event):
         if state.editing:
             return
         if state.current_field_index > 0:
             state.current_field_index -= 1
 
     @kb.add("down")
-    def _down(event):
+    def _down(_event):
         if state.editing:
             return
         if state.current_field_index < len(state.current_fields) - 1:
             state.current_field_index += 1
 
     @kb.add("tab")
-    def _tab_next(event):
+    def _tab_next(_event):
         if state.editing:
             return
         state.current_category_index = (state.current_category_index + 1) % len(
@@ -223,7 +223,7 @@ def run_config_tui(config_path: Path) -> int:  # pragma: no cover
         state.current_field_index = 0
 
     @kb.add("s-tab")
-    def _tab_prev(event):
+    def _tab_prev(_event):
         if state.editing:
             return
         state.current_category_index = (state.current_category_index - 1) % len(
@@ -232,7 +232,7 @@ def run_config_tui(config_path: Path) -> int:  # pragma: no cover
         state.current_field_index = 0
 
     @kb.add("enter")
-    def _enter(event):
+    def _enter(_event):
         fi = state.current_field
         if fi is None:
             return
@@ -246,7 +246,7 @@ def run_config_tui(config_path: Path) -> int:  # pragma: no cover
             state.edit_buffer = str(fi.value) if fi.value is not None else ""
 
     @kb.add("escape")
-    def _escape(event):
+    def _escape(_event):
         if state.editing:
             state.editing = False
             state.edit_buffer = ""

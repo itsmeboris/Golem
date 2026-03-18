@@ -342,7 +342,7 @@ class TestBuildPromptEnhancedReview:
         profile = MagicMock()
         profile.task_source.get_task_description.return_value = "description"
 
-        def _format(template, **kwargs):
+        def _format(_template, **kwargs):
             if captured_kwargs is not None:
                 captured_kwargs.update(kwargs)
             return kwargs.get("enhanced_review_section", "") + " prompt text"

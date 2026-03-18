@@ -342,7 +342,7 @@ class TestGitHubStateBackend:
     @patch("golem.backends.github.subprocess.run")
     def test_update_status_add_label_fails(self, mock_run):
         # remove-label calls succeed, add-label fails
-        def side_effect(cmd, **kwargs):
+        def side_effect(cmd, **_kwargs):
             if "--add-label" in cmd:
                 return MagicMock(returncode=1, stdout="", stderr="label err")
             return MagicMock(returncode=0, stdout="", stderr="")
@@ -353,7 +353,7 @@ class TestGitHubStateBackend:
 
     @patch("golem.backends.github.subprocess.run")
     def test_update_status_add_label_os_error(self, mock_run):
-        def side_effect(cmd, **kwargs):
+        def side_effect(cmd, **_kwargs):
             if "--add-label" in cmd:
                 raise OSError("gh not found")
             return MagicMock(returncode=0, stdout="", stderr="")
@@ -366,7 +366,7 @@ class TestGitHubStateBackend:
     def test_update_status_remove_label_os_error(self, mock_run):
         """OSError during remove-label is silently caught."""
 
-        def side_effect(cmd, **kwargs):
+        def side_effect(cmd, **_kwargs):
             if "--remove-label" in cmd:
                 raise OSError("fail")
             return MagicMock(returncode=0, stdout="", stderr="")
@@ -379,7 +379,7 @@ class TestGitHubStateBackend:
     def test_update_status_remove_label_nonzero_returncode(self, mock_run):
         """Non-zero returncode from remove-label is non-fatal; add-label still executes."""
 
-        def side_effect(cmd, **kwargs):
+        def side_effect(cmd, **_kwargs):
             if "--remove-label" in cmd:
                 return MagicMock(returncode=1, stdout="", stderr="label not found")
             return MagicMock(returncode=0, stdout="", stderr="")
@@ -409,7 +409,7 @@ class TestGitHubStateBackend:
     def test_update_status_closed_close_fails(self, mock_run):
         """If issue close OSError, label is still attempted."""
 
-        def side_effect(cmd, **kwargs):
+        def side_effect(cmd, **_kwargs):
             if "close" in cmd:
                 raise OSError("fail")
             return MagicMock(returncode=0, stdout="", stderr="")
@@ -423,7 +423,7 @@ class TestGitHubStateBackend:
     def test_update_status_closed_close_nonzero_returncode(self, mock_run):
         """Non-zero returncode from gh issue close is logged but non-fatal."""
 
-        def side_effect(cmd, **kwargs):
+        def side_effect(cmd, **_kwargs):
             if "close" in cmd:
                 return MagicMock(returncode=1, stdout="", stderr="already closed")
             return MagicMock(returncode=0, stdout="", stderr="")
@@ -449,7 +449,7 @@ class TestGitHubStateBackend:
     def test_update_status_in_progress_reopen_fails(self, mock_run):
         """If issue reopen OSError, label is still attempted."""
 
-        def side_effect(cmd, **kwargs):
+        def side_effect(cmd, **_kwargs):
             if "reopen" in cmd:
                 raise OSError("fail")
             return MagicMock(returncode=0, stdout="", stderr="")
@@ -463,7 +463,7 @@ class TestGitHubStateBackend:
     def test_update_status_in_progress_reopen_nonzero_returncode(self, mock_run):
         """Non-zero returncode from gh issue reopen is logged but non-fatal."""
 
-        def side_effect(cmd, **kwargs):
+        def side_effect(cmd, **_kwargs):
             if "reopen" in cmd:
                 return MagicMock(returncode=1, stdout="", stderr="already open")
             return MagicMock(returncode=0, stdout="", stderr="")
@@ -882,7 +882,7 @@ class TestUpdateStatusClosedVerification:
         """OSError during verification is handled gracefully."""
         call_count = [0]
 
-        def side_effect(cmd, **kwargs):
+        def side_effect(_cmd, **_kwargs):
             call_count[0] += 1
             if call_count[0] == 1:  # close
                 return MagicMock(returncode=0, stdout="", stderr="")

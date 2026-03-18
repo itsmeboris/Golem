@@ -134,7 +134,7 @@ async def test_sse_emits_merge_queue_update(tmp_path):
     assert any("merge_queue_update" in e for e in events)
 
 
-async def test_sse_merge_queue_sentinel_oserror_init(tmp_path):
+async def test_sse_merge_queue_sentinel_oserror_init():
     """SSE init survives OSError when reading sentinel mtime (lines 499-500)."""
     # Build a mock sentinel that reports exists()=True but stat() raises OSError.
     mock_sentinel = MagicMock(spec=Path)
@@ -159,7 +159,7 @@ async def test_sse_merge_queue_sentinel_oserror_init(tmp_path):
     assert isinstance(events, list)
 
 
-async def test_sse_merge_queue_sentinel_oserror_poll(tmp_path):
+async def test_sse_merge_queue_sentinel_oserror_poll():
     """SSE poll loop survives OSError when reading sentinel mtime (lines 535-536)."""
     # First call (init): stat succeeds.  Second call (poll): stat raises OSError.
     mock_sentinel = MagicMock(spec=Path)

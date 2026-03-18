@@ -79,7 +79,7 @@ class TestCreateWorktree:
     def test_raises_on_failure(self, tmp_path, monkeypatch):
         """Worktree creation raises RuntimeError when git command fails."""
 
-        def mock_run_git(args, cwd, timeout=30):
+        def mock_run_git(args, **_kwargs):
             result = MagicMock()
             if "worktree" in args and "add" in args:
                 result.returncode = 128
@@ -174,7 +174,7 @@ class TestCleanupWorktreeImplFallback:
 
         calls = []
 
-        def mock_run_git(args, cwd, timeout=30):
+        def mock_run_git(args, **_kwargs):
             calls.append(args)
             result = MagicMock()
             result.returncode = 1 if "remove" in args else 0
@@ -205,7 +205,7 @@ class TestGetChangedFiles:
     def test_returns_empty_on_failure(self, monkeypatch, tmp_path):
         from golem.worktree_manager import get_changed_files
 
-        def mock_run_git(args, cwd, timeout=30):
+        def mock_run_git(args, **_kwargs):
             result = MagicMock()
             if args[0] == "diff":
                 result.returncode = 1
@@ -335,7 +335,7 @@ class TestGetAgentDiff:
         cleanup_worktree(str(git_repo), wt_path)
 
     def test_returns_empty_on_failure(self, monkeypatch, tmp_path):
-        def mock_run_git(args, cwd, timeout=30):
+        def mock_run_git(args, **_kwargs):
             result = MagicMock()
             if args[0] == "diff":
                 result.returncode = 1
@@ -532,7 +532,7 @@ class TestMergeInWorktree:
         # User's dirty file still there, untouched
         assert (git_repo / "user_wip.py").read_text() == "user work in progress\n"
 
-    def test_missing_branch_returns_error(self, git_repo, tmp_path):
+    def test_missing_branch_returns_error(self, git_repo):
         """Non-existent agent branch returns error."""
         from golem.worktree_manager import merge_in_worktree
 
@@ -640,7 +640,7 @@ class TestMergeInWorktreeEdgeCases:
 
 
 class TestFastForwardIfSafe:
-    def test_clean_ff(self, git_repo, tmp_path):
+    def test_clean_ff(self, git_repo):
         """Fast-forward succeeds when working tree is clean."""
         from golem.worktree_manager import fast_forward_if_safe
 
@@ -656,7 +656,7 @@ class TestFastForwardIfSafe:
         assert reason == ""
         assert (git_repo / "new.py").exists()
 
-    def test_dirty_non_overlapping_ff(self, git_repo, tmp_path):
+    def test_dirty_non_overlapping_ff(self, git_repo):
         """FF succeeds when dirty files don't overlap with merge."""
         from golem.worktree_manager import fast_forward_if_safe
 
@@ -674,7 +674,7 @@ class TestFastForwardIfSafe:
         # User's file still there
         assert (git_repo / "user_wip.txt").read_text() == "wip"
 
-    def test_dirty_overlapping_defers(self, git_repo, tmp_path):
+    def test_dirty_overlapping_defers(self, git_repo):
         """FF deferred when dirty files overlap with merge."""
         from golem.worktree_manager import fast_forward_if_safe
 
@@ -693,7 +693,7 @@ class TestFastForwardIfSafe:
         # README still has user's version
         assert (git_repo / "README.md").read_text() == "user edits\n"
 
-    def test_diverged_branches_not_ff(self, git_repo, tmp_path):
+    def test_diverged_branches_not_ff(self, git_repo):
         """FF fails when branches have diverged (not fast-forwardable)."""
         from golem.worktree_manager import fast_forward_if_safe
 
@@ -717,7 +717,7 @@ class TestFastForwardIfSafe:
         """Generic ff-only failure with unexpected error message."""
         from golem.worktree_manager import fast_forward_if_safe
 
-        def mock_run_git(args, cwd, timeout=30):
+        def mock_run_git(_args, **_kwargs):
             result = MagicMock()
             result.returncode = 1
             result.stdout = ""

@@ -397,7 +397,7 @@ class TestCheckHumanFeedback:
 
 
 class TestTickHumanReview:
-    async def test_tick_dispatches_human_review(self, monkeypatch):
+    async def test_tick_dispatches_human_review(self):
         from golem.orchestrator import TaskOrchestrator
 
         session = TaskSession(

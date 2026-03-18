@@ -144,7 +144,7 @@ class TestAnalyticsEndpoint:
         app = MagicMock()
         routes: dict = {}
 
-        def capture_route(path, **kwargs):
+        def capture_route(path, **_kwargs):
             def decorator(fn):
                 routes[path] = fn
                 return fn
