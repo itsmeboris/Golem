@@ -11,7 +11,6 @@ import pytest
 
 from golem.types import MutationResultDict, VerificationResultDict
 from golem.verifier import (
-    CoverageDelta,
     MutationResult,
     SurvivedMutant,
     VerificationResult,
