@@ -1,8 +1,6 @@
 # pylint: disable=too-few-public-methods,redefined-outer-name
 """Tests for the /api/events SSE endpoint in golem.core.dashboard."""
 
-from __future__ import annotations
-
 import asyncio
 import json
 from pathlib import Path

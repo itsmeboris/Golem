@@ -5,8 +5,6 @@ Tests require external HTTP stack and are excluded from the default pytest run.
 Run with: pytest -m integration
 """
 
-from __future__ import annotations
-
 from unittest.mock import MagicMock
 
 import pytest

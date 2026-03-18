@@ -1,7 +1,5 @@
 """Tests for the GitHub Issues backend (golem.backends.github)."""
 
-from __future__ import annotations
-
 import json
 import logging
 from unittest.mock import MagicMock, call, patch

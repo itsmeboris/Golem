@@ -1,8 +1,6 @@
 # pylint: disable=too-few-public-methods
 """Tests for golem.init_wizard — interactive config wizard."""
 
-from __future__ import annotations
-
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 

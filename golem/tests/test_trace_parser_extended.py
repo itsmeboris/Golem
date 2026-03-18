@@ -1,8 +1,6 @@
 # pylint: disable=too-few-public-methods
 """Extended tests for golem.trace_parser — fallback inference and edge cases."""
 
-from __future__ import annotations
-
 from golem.trace_parser import (
     _extract_thinking_blocks,
     _parse_issues,
