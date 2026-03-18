@@ -395,3 +395,123 @@ class TestCancelArgparse:
         mock_cancel.assert_called_once()
         args = mock_cancel.call_args[0][0]
         assert args.task_id == 12345
+
+
+# ---------------------------------------------------------------------------
+# CLI: golem clear-failed
+# ---------------------------------------------------------------------------
+
+
+class TestCmdClearFailedSuccess:
+    @patch("golem.cli.load_config")
+    def test_prints_cleared_ids(self, mock_config, capsys):
+        from golem.cli import cmd_clear_failed
+
+        mock_config.return_value = MagicMock()
+        mock_config.return_value.dashboard.port = 8082
+
+        response_body = json.dumps({"ok": True, "cleared": [1, 5]}).encode()
+
+        mock_resp = MagicMock()
+        mock_resp.status = 200
+        mock_resp.read.return_value = response_body
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
+
+        args = SimpleNamespace(config=None)
+
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            result = cmd_clear_failed(args)
+
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "Cleared 2 failed tasks: [1, 5]" in out
+
+
+class TestCmdClearFailedNone:
+    @patch("golem.cli.load_config")
+    def test_prints_nothing_to_clear(self, mock_config, capsys):
+        from golem.cli import cmd_clear_failed
+
+        mock_config.return_value = MagicMock()
+        mock_config.return_value.dashboard.port = 8082
+
+        response_body = json.dumps({"ok": True, "cleared": []}).encode()
+
+        mock_resp = MagicMock()
+        mock_resp.status = 200
+        mock_resp.read.return_value = response_body
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
+
+        args = SimpleNamespace(config=None)
+
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            result = cmd_clear_failed(args)
+
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "No failed tasks to clear." in out
+
+
+class TestCmdClearFailedHttpError:
+    @patch("golem.cli.load_config")
+    def test_prints_error_on_http_error(self, mock_config, capsys):
+        import urllib.error
+
+        from golem.cli import cmd_clear_failed
+
+        mock_config.return_value = MagicMock()
+        mock_config.return_value.dashboard.port = 8082
+
+        exc = urllib.error.HTTPError(
+            url="http://localhost/api/sessions/clear-failed",
+            code=503,
+            msg="Service Unavailable",
+            hdrs={},
+            fp=None,
+        )
+        exc.read = MagicMock(return_value=b'{"detail": "Daemon not ready"}')
+
+        args = SimpleNamespace(config=None)
+
+        with patch("urllib.request.urlopen", side_effect=exc):
+            result = cmd_clear_failed(args)
+
+        assert result == 1
+        err = capsys.readouterr().err
+        assert "503" in err
+
+
+class TestCmdClearFailedConnectionError:
+    @patch("golem.cli.load_config")
+    def test_prints_error_on_connection_failure(self, mock_config, capsys):
+        import urllib.error
+
+        from golem.cli import cmd_clear_failed
+
+        mock_config.return_value = MagicMock()
+        mock_config.return_value.dashboard.port = 8082
+
+        args = SimpleNamespace(config=None)
+
+        with patch(
+            "urllib.request.urlopen",
+            side_effect=urllib.error.URLError("Connection refused"),
+        ):
+            result = cmd_clear_failed(args)
+
+        assert result == 1
+        err = capsys.readouterr().err
+        assert "Cannot reach daemon" in err
+
+
+class TestClearFailedArgparse:
+    @patch("golem.cli.cmd_clear_failed", return_value=0)
+    def test_clear_failed_command_parsed(self, mock_cmd):
+        from golem.cli import main
+
+        with patch("sys.argv", ["golem", "clear-failed"]):
+            result = main()
+        assert result == 0
+        mock_cmd.assert_called_once()

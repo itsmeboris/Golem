@@ -864,6 +864,31 @@ def cmd_cancel(args) -> int:
         return 1
 
 
+def cmd_clear_failed(args) -> int:
+    """Handler for the 'clear-failed' subcommand — remove all failed tasks."""
+    config = load_config(getattr(args, "config", None))
+    port = config.dashboard.port if config.dashboard else DashboardConfig.port
+
+    url = f"http://127.0.0.1:{port}/api/sessions/clear-failed"
+    req = urllib.request.Request(url, data=b"", method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            cleared = data.get("cleared", [])
+            if cleared:
+                print(f"Cleared {len(cleared)} failed tasks: {cleared}")
+            else:
+                print("No failed tasks to clear.")
+            return 0
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        print(f"Clear failed ({exc.code}): {body}", file=sys.stderr)
+        return 1
+    except (urllib.error.URLError, OSError) as exc:
+        print(f"Cannot reach daemon: {exc}", file=sys.stderr)
+        return 1
+
+
 def cmd_status(args) -> int:
     """Handler for the 'status' subcommand — show recent run history."""
     from .core.dashboard import format_status_text, format_task_detail_text
@@ -1115,6 +1140,10 @@ def _build_parser() -> argparse.ArgumentParser:
     cancel_p = sub.add_parser("cancel", help="Cancel a running task")
     cancel_p.add_argument("task_id", type=int, help="Task ID to cancel")
     cancel_p.set_defaults(func=cmd_cancel)
+
+    # clear-failed
+    cf_p = sub.add_parser("clear-failed", help="Remove all failed tasks")
+    cf_p.set_defaults(func=cmd_clear_failed)
 
     # stop
     stop_p = sub.add_parser("stop", help="Stop agent daemon")
