@@ -640,7 +640,7 @@ class TestCallHaiku:
         mgr = _make_manager(tmp_path)
         mock_result = CLIResult(output={"result": "{}"}, cost_usd=0.0)
         with patch("golem.heartbeat.invoke_cli", return_value=mock_result):
-            _result = await mgr._call_haiku("prompt", "data")
+            await mgr._call_haiku("prompt", "data")
 
         assert mgr._daily_spend_usd == 0.0
 

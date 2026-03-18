@@ -256,9 +256,7 @@ class TestRetryDeferredMerges:
             return result
 
         with (
-            patch(
-                "golem.flow.fast_forward_if_safe", return_value=(True, "")
-            ) as _mock_ff,
+            patch("golem.flow.fast_forward_if_safe", return_value=(True, "")),
             patch("golem.flow._run_git", side_effect=fake_run_git) as mock_git,
         ):
             await flow._retry_deferred_merges()

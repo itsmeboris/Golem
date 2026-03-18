@@ -583,7 +583,7 @@ class TestRunDaemon:
             patch("golem.cli._manage_golem_tick", side_effect=fake_manage),
             patch("golem.cli._start_dashboard_server", side_effect=fake_dash),
             patch("golem.cli.config_to_snapshot", return_value={}, create=True),
-            patch("golem.cli.wire_control_api") as _mock_wire,
+            patch("golem.cli.wire_control_api"),
         ):
             mock_live = MagicMock()
             mock_ls.get.return_value = mock_live
