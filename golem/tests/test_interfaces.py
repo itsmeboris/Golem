@@ -79,7 +79,9 @@ class DummyToolProvider:
     def base_servers(self):
         return []
 
-    def servers_for_subject(self, _subject, *, role: str = ""):
+    def servers_for_subject(
+        self, _subject, *, role: str = ""
+    ):  # pylint: disable=unused-argument
         return []
 
 

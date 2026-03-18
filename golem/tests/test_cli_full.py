@@ -571,7 +571,7 @@ class TestRunDaemon:
 
         tick_task = asyncio.ensure_future(asyncio.sleep(100))
 
-        def fake_manage(_cfg, tasks, reload_event=None):
+        def fake_manage(_cfg, tasks, **_kwargs):
             tasks.append(tick_task)
             return mock_flow
 
@@ -610,7 +610,7 @@ class TestRunDaemon:
         mock_flow = MagicMock()
         mock_flow._self_update = None
 
-        def fake_manage(_cfg, tasks, reload_event=None):
+        def fake_manage(_cfg, tasks, **_kwargs):
             tasks.append(asyncio.ensure_future(asyncio.sleep(100)))
             return mock_flow
 
@@ -660,7 +660,7 @@ class TestRunDaemon:
         mock_self_update = MagicMock()
         mock_flow._self_update = mock_self_update
 
-        def fake_manage(_cfg, tasks, reload_event=None):
+        def fake_manage(_cfg, tasks, **_kwargs):
             tasks.append(asyncio.ensure_future(asyncio.sleep(100)))
             return mock_flow
 
@@ -702,7 +702,7 @@ class TestRunDaemon:
         mock_flow = MagicMock()
         mock_flow._self_update = None
 
-        def fake_manage(_cfg, tasks, reload_event=None):
+        def fake_manage(_cfg, tasks, **_kwargs):
             tasks.append(asyncio.ensure_future(asyncio.sleep(100)))
             return mock_flow
 

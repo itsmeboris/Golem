@@ -254,7 +254,7 @@ class LogNotifier:
         """Log a batch-submitted notification."""
         logger.info("NOTIFY: Batch %s submitted (%d tasks)", group_id, task_count)
 
-    def notify_batch_completed(
+    def notify_batch_completed(  # pylint: disable=unused-argument
         self,
         group_id: str,
         status: str,
@@ -295,6 +295,8 @@ class NullToolProvider:
         """Return an empty server list."""
         return []
 
-    def servers_for_subject(self, _subject: str, *, role: str = "") -> list[str]:
+    def servers_for_subject(
+        self, _subject: str, *, role: str = ""
+    ) -> list[str]:  # pylint: disable=unused-argument
         """Return an empty server list (no MCP tools)."""
         return []
