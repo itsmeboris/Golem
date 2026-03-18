@@ -951,7 +951,7 @@ class TaskOrchestrator:
         start: float,
         tracker: TaskEventTracker,
         result: CLIResult | None,
-        prompt: str,
+        _prompt: str,
     ) -> None:
         """Handle exception from the pipeline — persist state and notify."""
         elapsed = time.time() - start

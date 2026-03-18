@@ -33,7 +33,7 @@ class _NoOpSpan:
 class _NoOpTracer:
     """Minimal tracer substitute returned when otel is unavailable."""
 
-    def start_as_current_span(self, name: str, **kwargs: Any) -> Any:
+    def start_as_current_span(self, _name: str, **_kwargs: Any) -> Any:
         """Return a context manager that yields a _NoOpSpan."""
         return _noop_span_cm()
 

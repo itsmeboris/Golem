@@ -585,7 +585,7 @@ async def _sse_event_stream():
 
 def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
     app: Any,
-    config_snapshot: dict | None = None,
+    config_snapshot: dict | None = None,  # pylint: disable=unused-argument
     live_state_file: Path | None = None,
     merge_queue: Any = None,
     heartbeat: Any = None,

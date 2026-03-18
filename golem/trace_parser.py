@@ -327,7 +327,9 @@ def _build_subagent_dict(
     }
 
 
-def _trim_text_to_phase(text: str, phase_name: str, next_phase_name: str | None) -> str:
+def _trim_text_to_phase(
+    text: str, phase_name: str, _next_phase_name: str | None
+) -> str:
     """Extract only the portion of *text* belonging to *phase_name*.
 
     When multiple ``## Phase:`` markers appear in the same text block, this

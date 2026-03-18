@@ -627,7 +627,7 @@ def _pid_from_health(port: int, timeout: int = 3) -> int | None:
         return None
 
 
-def _ensure_daemon(args, config, port: int, daemon_cfg=None) -> None:
+def _ensure_daemon(args, _config, port: int, daemon_cfg=None) -> None:
     """Make sure the daemon is running; start it in background if not."""
     if daemon_cfg is None:
         daemon_cfg = DaemonConfig()

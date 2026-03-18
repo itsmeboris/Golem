@@ -159,7 +159,7 @@ class MergeQueue:
                 "changed_files": list(e.changed_files),
             }
 
-        def _history_dict(e: MergeEntry, r: MergeResult) -> MergeHistoryEntryDict:
+        def _history_dict(_e: MergeEntry, r: MergeResult) -> MergeHistoryEntryDict:
             return {
                 "session_id": r.session_id,
                 "success": r.success,

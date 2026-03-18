@@ -897,7 +897,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         prompt: str,
         subject: str = "",
         work_dir: str = "",
-        mcp: bool | None = None,
+        _mcp: bool | None = None,
         issue_mode: bool = False,
     ) -> dict[str, Any]:
         """Write a submission file and immediately create + spawn a session.
