@@ -1408,17 +1408,20 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
     async def test_shared_css(self, handlers):
         with patch.object(_FileCache, "read", return_value="body { }"):
             resp = await handlers["/dashboard/shared.css"]()
-        assert resp.body is not None
+        assert resp.media_type == "text/css"
+        assert b"body { }" in resp.body
 
     async def test_shared_js(self, handlers):
         with patch.object(_FileCache, "read", return_value="console.log(1)"):
             resp = await handlers["/dashboard/shared.js"]()
-        assert resp.body is not None
+        assert resp.media_type == "application/javascript"
+        assert b"console.log(1)" in resp.body
 
     async def test_task_css(self, handlers):
         with patch.object(_FileCache, "read", return_value=".wf-table { }"):
             resp = await handlers["/dashboard/task.css"]()
-        assert resp.body is not None
+        assert resp.media_type == "text/css"
+        assert b".wf-table { }" in resp.body
 
     async def test_task_api_js(self, handlers):
         with patch.object(_FileCache, "read", return_value="const S={}"):

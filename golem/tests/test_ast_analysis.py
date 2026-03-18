@@ -45,7 +45,7 @@ class TestAstAnalysis:
         with patch("golem.ast_analysis.is_ast_grep_available", return_value=True):
             with patch("subprocess.run", return_value=mock_proc):
                 result = run_ast_analysis("/tmp/fake", ["golem/foo.py"])
-                assert len(result) >= 1
+                assert len(result) == 1
                 assert "unused import" in result[0] or "golem/foo.py" in result[0]
 
     def test_returns_empty_on_no_matches(self):

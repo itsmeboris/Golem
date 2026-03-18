@@ -102,18 +102,19 @@ def scan_shared_state_patterns(root: Path) -> list[dict]:
     for js_file in sorted(root.rglob("*.js")):
         try:
             source = js_file.read_text(encoding="utf-8")
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             logger.warning("Cannot read file: %s", js_file)
             continue
 
-        findings.extend(_scan_file(js_file, source))
+        findings.extend(_scan_file(js_file, source, root))
 
     return findings
 
 
-def _scan_file(js_file: Path, source: str) -> list[dict]:
+def _scan_file(js_file: Path, source: str, root: Path | None = None) -> list[dict]:
     """Scan a single JS file and return findings."""
     lines = source.splitlines()
+    rel_path = str(js_file.relative_to(root)) if root else str(js_file)
 
     # Phase 1 — find top-level let declarations
     top_level_lets = _find_top_level_lets(lines)
@@ -139,7 +140,7 @@ def _scan_file(js_file: Path, source: str) -> list[dict]:
                     continue
                 findings.append(
                     {
-                        "file": str(js_file.resolve()),
+                        "file": rel_path,
                         "line": lineno_1,
                         "variable": var,
                         "message": (
@@ -164,7 +165,7 @@ def _find_top_level_lets(lines: list[str]) -> list[str]:
         close_count = stripped.count("}")
 
         if depth == 0:
-            m = _LET_DECL_RE.match(line)
+            m = _LET_DECL_RE.match(stripped)
             if m:
                 names.extend(_extract_let_names(m.group(1)))
 
@@ -194,7 +195,7 @@ def _find_async_ranges(lines: list[str]) -> list[tuple[int, int]]:
         close_count = stripped.count("}")
 
         # Check if this line opens an async context
-        if _ASYNC_CONTEXT_RE.search(line):
+        if _ASYNC_CONTEXT_RE.search(stripped):
             # The block starts at the opening brace found on/after this line
             # Record depth after any opening braces on this very line
             block_start_depth = depth + open_count

@@ -203,10 +203,10 @@ class TestScanPollingPatterns:
         assert len(result) == 1
         entry = result[0]
         assert set(entry.keys()) == {"file", "line", "pattern", "message"}
-        assert isinstance(entry["file"], str)
-        assert isinstance(entry["line"], int)
-        assert entry["pattern"] in {"setInterval", "setTimeout"}
-        assert isinstance(entry["message"], str)
+        assert entry["file"] == "poll.js"
+        assert entry["line"] == 1
+        assert entry["pattern"] == "setInterval"
+        assert "concurrency guard" in entry["message"]
 
     def test_non_utf8_file_skipped_gracefully(self, tmp_path):
         """Files that cannot be decoded as UTF-8 are skipped without crashing."""

@@ -1,6 +1,5 @@
 """Tests for the JS shared-state lint scanner."""
 
-import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -65,11 +64,9 @@ class TestResultSchema:
         assert len(results) == 1
         finding = results[0]
         assert set(finding.keys()) == {"file", "line", "variable", "message"}
-        assert isinstance(finding["file"], str)
-        assert os.path.isabs(finding["file"])
-        assert isinstance(finding["line"], int)
+        assert finding["file"] == "test.js"
+        assert finding["line"] == 2
         assert finding["variable"] == "x"
-        assert isinstance(finding["message"], str)
         assert "x" in finding["message"]
 
 

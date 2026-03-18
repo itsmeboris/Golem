@@ -50,7 +50,7 @@ def scan_innerhtml_patterns(root: Path) -> list[dict]:
         relative = str(js_file.relative_to(root))
         try:
             content = js_file.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
+        except (UnicodeDecodeError, OSError):
             logger.warning("Skipping non-UTF-8 file: %s", js_file)
             continue
         lines = content.splitlines()

@@ -1136,7 +1136,8 @@ class TestCmdPollRunBranch:
         args = SimpleNamespace(config=None, dry=False, run=True)
         result = cmd_poll(args)
         assert result == 0
-        assert mock_run.call_count == 2
+        called_ids = [call.args[0] for call in mock_run.call_args_list]
+        assert called_ids == [1, 2]
 
     @patch("golem.cli.print_results")
     @patch("golem.cli.run_issue", side_effect=[True, False])
