@@ -266,13 +266,11 @@ class LogNotifier:
     ) -> None:
         """Log a batch-completed notification."""
         logger.info(
-            "NOTIFY: Batch %s %s (%d tasks, cost=$%.2f, duration=%.1fs, verdict=%s)",
+            "NOTIFY: Batch %s %s (%d tasks, cost=$%.2f)",
             group_id,
             status,
             task_count,
             total_cost_usd,
-            total_duration_s,
-            validation_verdict or "none",
         )
 
     def notify_health_alert(

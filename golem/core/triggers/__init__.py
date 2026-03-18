@@ -1,4 +1,6 @@
-"""Minimal trigger support for the agent."""
+"""Minimal trigger support — only base types needed by the agent."""
+
+from .base import TriggerEvent  # noqa: F401
 
 # Provide FASTAPI_AVAILABLE without pulling in heavy webhook dependencies.
 try:

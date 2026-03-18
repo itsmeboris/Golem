@@ -4,10 +4,7 @@ Computes cost-specific aggregate statistics: cost over time, cost by verdict,
 cost per retry bucket, and budget utilization from task sessions.
 """
 
-from __future__ import annotations
-
 import logging
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
