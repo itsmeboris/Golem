@@ -254,7 +254,7 @@ class LogNotifier:
         """Log a batch-submitted notification."""
         logger.info("NOTIFY: Batch %s submitted (%d tasks)", group_id, task_count)
 
-    def notify_batch_completed(  # pylint: disable=unused-argument
+    def notify_batch_completed(
         self,
         group_id: str,
         status: str,
@@ -266,11 +266,13 @@ class LogNotifier:
     ) -> None:
         """Log a batch-completed notification."""
         logger.info(
-            "NOTIFY: Batch %s %s (%d tasks, cost=$%.2f)",
+            "NOTIFY: Batch %s %s (%d tasks, cost=$%.2f, duration=%.1fs, verdict=%s)",
             group_id,
             status,
             task_count,
             total_cost_usd,
+            total_duration_s,
+            validation_verdict or "none",
         )
 
     def notify_health_alert(
@@ -295,8 +297,6 @@ class NullToolProvider:
         """Return an empty server list."""
         return []
 
-    def servers_for_subject(
-        self, _subject: str, *, role: str = ""
-    ) -> list[str]:  # pylint: disable=unused-argument
+    def servers_for_subject(self, _subject: str, *, role: str = "") -> list[str]:
         """Return an empty server list (no MCP tools)."""
         return []

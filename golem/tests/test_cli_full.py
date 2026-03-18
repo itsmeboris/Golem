@@ -571,7 +571,7 @@ class TestRunDaemon:
 
         tick_task = asyncio.ensure_future(asyncio.sleep(100))
 
-        def fake_manage(_cfg, tasks, **_kwargs):
+        def fake_manage(_cfg, tasks, **_kw):
             tasks.append(tick_task)
             return mock_flow
 
@@ -583,7 +583,7 @@ class TestRunDaemon:
             patch("golem.cli._manage_golem_tick", side_effect=fake_manage),
             patch("golem.cli._start_dashboard_server", side_effect=fake_dash),
             patch("golem.cli.config_to_snapshot", return_value={}, create=True),
-            patch("golem.cli.wire_control_api"),
+            patch("golem.cli.wire_control_api") as _mock_wire,
         ):
             mock_live = MagicMock()
             mock_ls.get.return_value = mock_live
@@ -610,7 +610,7 @@ class TestRunDaemon:
         mock_flow = MagicMock()
         mock_flow._self_update = None
 
-        def fake_manage(_cfg, tasks, **_kwargs):
+        def fake_manage(_cfg, tasks, **_kw):
             tasks.append(asyncio.ensure_future(asyncio.sleep(100)))
             return mock_flow
 
@@ -660,7 +660,7 @@ class TestRunDaemon:
         mock_self_update = MagicMock()
         mock_flow._self_update = mock_self_update
 
-        def fake_manage(_cfg, tasks, **_kwargs):
+        def fake_manage(_cfg, tasks, **_kw):
             tasks.append(asyncio.ensure_future(asyncio.sleep(100)))
             return mock_flow
 
@@ -702,7 +702,7 @@ class TestRunDaemon:
         mock_flow = MagicMock()
         mock_flow._self_update = None
 
-        def fake_manage(_cfg, tasks, **_kwargs):
+        def fake_manage(_cfg, tasks, **_kw):
             tasks.append(asyncio.ensure_future(asyncio.sleep(100)))
             return mock_flow
 
