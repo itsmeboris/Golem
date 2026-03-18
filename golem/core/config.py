@@ -111,6 +111,9 @@ class GolemFlowConfig(FlowConfig):
     heartbeat_batch_size: int = 5  # max items per Tier 2 batch submission
     heartbeat_tier1_every_n: int = 3
     heartbeat_dedup_ttl_days: int = 30
+    heartbeat_not_automatable_ttl_days: int = 7
+    heartbeat_category_failure_threshold: int = 3
+    heartbeat_category_cooldown_hours: int = 6
     heartbeat_max_ticks: int = 0  # 0 = unlimited
     heartbeat_max_duration_seconds: int = 0  # 0 = unlimited
     # Self-update — daemon monitors its own repo for changes (opt-in)

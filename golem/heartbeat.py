@@ -10,6 +10,7 @@ read from ``GolemFlowConfig`` (read-only at runtime).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -144,6 +145,10 @@ class HeartbeatManager:
         self._tier2_completions_since_tier1: int = 0
         self._tier1_owed: bool = False
 
+        # Category-level circuit breaker
+        self._category_failures: dict[str, int] = {}
+        self._category_cooldown_until: dict[str, str] = {}
+
     # -- Budget ---------------------------------------------------------------
 
     def budget_allows(self) -> bool:
@@ -177,14 +182,22 @@ class HeartbeatManager:
         }
 
     def _prune_dedup(self) -> None:
-        """Remove dedup entries older than TTL."""
-        ttl_seconds = self._config.heartbeat_dedup_ttl_days * _24H
-        cutoff = time.time() - ttl_seconds
+        """Remove dedup entries older than TTL.
+
+        ``not_automatable`` entries use a shorter TTL so GH issues get
+        re-evaluated as Golem's capabilities improve.
+        """
+        default_ttl = self._config.heartbeat_dedup_ttl_days * _24H
+        na_ttl = self._config.heartbeat_not_automatable_ttl_days * _24H
+        now = time.time()
         to_remove = []
         for key, entry in self._dedup_memory.items():
             try:
                 evaluated = datetime.fromisoformat(entry["evaluated_at"])
-                if evaluated.timestamp() < cutoff:
+                ttl = (
+                    na_ttl if entry.get("verdict") == "not_automatable" else default_ttl
+                )
+                if evaluated.timestamp() < now - ttl:
                     to_remove.append(key)
             except (KeyError, ValueError):
                 to_remove.append(key)
@@ -248,13 +261,41 @@ class HeartbeatManager:
         if task_id not in self._inflight_task_ids:
             return
         self._inflight_task_ids.remove(task_id)
-        # Update dedup entries that reference this task
-        for entry in self._dedup_memory.values():
+
+        # Collect categories from dedup entries for this task
+        task_categories: set[str] = set()
+        for key, entry in self._dedup_memory.items():
             if entry.get("task_id") == task_id:
                 entry["verdict"] = "completed" if success else "failed"
+                task_categories.add(self._extract_category_from_id(key))
+        task_categories.discard("")
+
         logger.info(
             "Heartbeat task #%d %s", task_id, "completed" if success else "failed"
         )
+
+        # Category circuit breaker
+        for cat in task_categories:
+            if success:
+                self._category_failures.pop(cat, None)
+                self._category_cooldown_until.pop(cat, None)
+            else:
+                count = self._category_failures.get(cat, 0) + 1
+                self._category_failures[cat] = count
+                threshold = self._config.heartbeat_category_failure_threshold
+                if count >= threshold:
+                    cooldown_h = self._config.heartbeat_category_cooldown_hours
+                    until = datetime.now(timezone.utc).timestamp() + cooldown_h * 3600
+                    until_iso = datetime.fromtimestamp(
+                        until, tz=timezone.utc
+                    ).isoformat()
+                    self._category_cooldown_until[cat] = until_iso
+                    logger.warning(
+                        "Category %r hit %d failures — cooldown until %s",
+                        cat,
+                        count,
+                        until_iso,
+                    )
 
         # Tier 1 promotion counter — count Tier 2 successes
         if success:
@@ -274,6 +315,22 @@ class HeartbeatManager:
                         "Tier 1 promotion owed after %d Tier 2 completions",
                         self._tier2_completions_since_tier1,
                     )
+
+    def is_category_cooled_down(self, category: str) -> bool:
+        """Return True if *category* is in a failure cooldown period."""
+        until_iso = self._category_cooldown_until.get(category)
+        if not until_iso:
+            return False
+        try:
+            until_ts = datetime.fromisoformat(until_iso).timestamp()
+        except ValueError:
+            return False
+        if time.time() >= until_ts:
+            # Cooldown expired — clear state
+            self._category_cooldown_until.pop(category, None)
+            self._category_failures.pop(category, None)
+            return False
+        return True
 
     def reconcile_inflight(self, active_session_ids: set[int]) -> None:
         """Remove inflight IDs not present in active sessions (startup recovery)."""
@@ -303,6 +360,8 @@ class HeartbeatManager:
             "candidates": self._candidates,
             "tier2_completions_since_tier1": self._tier2_completions_since_tier1,
             "tier1_owed": self._tier1_owed,
+            "category_failures": self._category_failures,
+            "category_cooldown_until": self._category_cooldown_until,
         }
         self._state_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
@@ -334,6 +393,8 @@ class HeartbeatManager:
             "tier2_completions_since_tier1", 0
         )
         self._tier1_owed = data.get("tier1_owed", False)
+        self._category_failures = data.get("category_failures", {})
+        self._category_cooldown_until = data.get("category_cooldown_until", {})
 
     # -- Idle detection -------------------------------------------------------
 
@@ -479,13 +540,24 @@ class HeartbeatManager:
             logger.debug("Haiku response not valid JSON: %.200s", text)
             return text
 
+    _DEFAULT_CONFIDENCE_FLOORS: dict[str, float] = {
+        "small": 0.5,
+        "medium": 0.6,
+        "large": 0.7,
+    }
+
     def _validate_candidates(
-        self, raw: Any, valid_complexities: tuple[str, ...] = ("small", "medium")
+        self,
+        raw: Any,
+        valid_complexities: tuple[str, ...] = ("small", "medium", "large"),
+        confidence_floors: dict[str, float] | None = None,
     ) -> list[HeartbeatCandidateDict]:
         """Validate and filter Haiku response per the output contract."""
         if not isinstance(raw, dict) or "candidates" not in raw:
             logger.warning("Haiku returned invalid response structure")
             return []
+
+        floors = confidence_floors or self._DEFAULT_CONFIDENCE_FLOORS
 
         valid = []
         for c in raw["candidates"]:
@@ -517,7 +589,8 @@ class HeartbeatManager:
                 continue
             c["category"] = category.lower()
 
-            if conf >= 0.7:
+            min_conf = floors.get(complexity, 0.7)
+            if conf >= min_conf:
                 valid.append(c)
 
         return sorted(valid, key=lambda x: x["confidence"], reverse=True)
@@ -613,8 +686,20 @@ class HeartbeatManager:
             indent=2,
         )
         prompt = (
-            "For each issue below, assess whether it can be completed autonomously "
-            "by a coding agent. Respond with JSON matching this schema:\n"
+            "You are triaging issues for Golem, an autonomous coding agent that can:\n"
+            "- Read and modify any file in the codebase\n"
+            "- Run the full test suite (pytest with 100% coverage gate)\n"
+            "- Run linters (black, pylint)\n"
+            "- Make multi-file changes across the project\n"
+            "- Create new modules and test files\n"
+            "- Work with Python, JavaScript, HTML/CSS, shell scripts\n\n"
+            "Be generous in assessing automatability. If an issue can be decomposed "
+            "into concrete code changes, mark it automatable even if it requires "
+            "significant work. Only mark not_automatable if the issue requires human "
+            "judgment that cannot be derived from the codebase (UX design decisions, "
+            "unspecified business requirements, external service integration without "
+            "docs).\n\n"
+            "Respond with JSON matching this schema:\n"
             '{"candidates": [{"id": "' + backend + ':<number>", "automatable": bool, '
             '"confidence": float (0-1), "complexity": "small"|"medium"|"large", '
             '"reason": "..."}]}'
@@ -665,18 +750,27 @@ class HeartbeatManager:
             indent=2,
         )
         prompt = (
-            "For each issue below, assess whether it can be completed autonomously "
-            "by a coding agent. Respond with JSON matching this schema:\n"
+            "You are triaging issues for Golem, an autonomous coding agent that can:\n"
+            "- Read and modify any file in the codebase\n"
+            "- Run the full test suite (pytest with 100% coverage gate)\n"
+            "- Run linters (black, pylint)\n"
+            "- Make multi-file changes across the project\n"
+            "- Create new modules and test files\n"
+            "- Work with Python, JavaScript, HTML/CSS, shell scripts\n\n"
+            "Be generous in assessing automatability. If an issue can be decomposed "
+            "into concrete code changes, mark it automatable even if it requires "
+            "significant work. Only mark not_automatable if the issue requires human "
+            "judgment that cannot be derived from the codebase (UX design decisions, "
+            "unspecified business requirements, external service integration without "
+            "docs).\n\n"
+            "Respond with JSON matching this schema:\n"
             '{"candidates": [{"id": "' + backend + ':<number>", "automatable": bool, '
             '"confidence": float (0-1), "complexity": "small"|"medium"|"large", '
             '"reason": "..."}]}'
         )
 
         response = await self._call_haiku(prompt, issues_json)
-        # Accept all complexities for promoted scan
-        candidates = self._validate_candidates(
-            response, valid_complexities=("small", "medium", "large")
-        )
+        candidates = self._validate_candidates(response)
 
         # Only record candidates in dedup — NOT rejects
         for c in candidates:
@@ -686,8 +780,17 @@ class HeartbeatManager:
 
     # -- Tier 2 scanners (deterministic) --------------------------------------
 
-    def _scan_todos(self) -> list[str]:
-        """Find files with new TODO/FIXME since last scan via git log."""
+    @staticmethod
+    def _content_hash(text: str) -> str:
+        """Return a 12-char hex hash of *text* for stable dedup keys."""
+        return hashlib.sha256(text.encode()).hexdigest()[:12]
+
+    def _scan_todos(self) -> list[tuple[str, str]]:
+        """Find files with new TODO/FIXME since last scan via git log.
+
+        Returns ``[(content_hash, description), ...]`` with stable keys
+        derived from the finding content rather than Haiku-invented names.
+        """
         import subprocess
 
         work_dir = self._config.default_work_dir or None
@@ -712,14 +815,24 @@ class HeartbeatManager:
             )
             if result.returncode != 0:
                 return []
-            files = [f.strip() for f in result.stdout.strip().split("\n") if f.strip()]
-            return list(set(files))
+            files = sorted(
+                set(f.strip() for f in result.stdout.strip().split("\n") if f.strip())
+            )
+            findings = []
+            for f in files:
+                key = f"todo:{self._content_hash(f)}"
+                if not self.is_deduped(key):
+                    findings.append((key, f"TODO/FIXME found in: {f}"))
+            return findings
         except (OSError, subprocess.TimeoutExpired) as exc:
             logger.debug("git diff-tree scan failed: %s", exc)
             return []
 
-    def _scan_coverage(self) -> list[str]:
-        """Return uncovered modules. Uses cached results keyed by HEAD hash."""
+    def _scan_coverage(self) -> list[tuple[str, str]]:
+        """Return uncovered modules. Uses cached results keyed by HEAD hash.
+
+        Returns ``[(content_hash, description), ...]`` with stable keys.
+        """
         import subprocess
 
         work_dir = self._config.default_work_dir or None
@@ -739,62 +852,68 @@ class HeartbeatManager:
         cached_hash = self._coverage_cache.get("commit_hash", "")
         cached_at = self._coverage_cache.get("ran_at", "")
 
+        uncovered: list[str] | None = None
         # Use cache if same commit and ran within the last hour
         if cached_hash == head and cached_at:
             try:
                 ran_ts = datetime.fromisoformat(cached_at).timestamp()
                 if time.time() - ran_ts < 3600:
-                    return self._coverage_cache.get("uncovered_modules", [])
+                    uncovered = self._coverage_cache.get("uncovered_modules", [])
             except ValueError as exc:
                 logger.debug("Invalid cached timestamp, re-running coverage: %s", exc)
 
-        # Run pytest --cov with timeout
-        try:
-            result = subprocess.run(
-                [
-                    "pytest",
-                    "golem/tests/",
-                    "--cov=golem",
-                    "--cov-report=term-missing",
-                    "-q",
-                    "--no-header",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=300,
-                check=False,
-                cwd=work_dir,
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            logger.warning("Tier 2: coverage scan timed out")
-            return []
+        if uncovered is None:
+            # Run pytest --cov with timeout
+            try:
+                result = subprocess.run(
+                    [
+                        "pytest",
+                        "golem/tests/",
+                        "--cov=golem",
+                        "--cov-report=term-missing",
+                        "-q",
+                        "--no-header",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                    check=False,
+                    cwd=work_dir,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                logger.warning("Tier 2: coverage scan timed out")
+                return []
 
-        # Parse output for modules below 100%
-        uncovered = []
-        for line in result.stdout.split("\n"):
-            if "%" in line and "100%" not in line:
-                parts = line.split()
-                if parts and parts[0].startswith("golem/"):
-                    uncovered.append(parts[0])
+            # Parse output for modules below 100%
+            uncovered = []
+            for line in result.stdout.split("\n"):
+                if "%" in line and "100%" not in line:
+                    parts = line.split()
+                    if parts and parts[0].startswith("golem/"):
+                        uncovered.append(parts[0])
 
-        self._coverage_cache = {
-            "commit_hash": head,
-            "ran_at": datetime.now(timezone.utc).isoformat(),
-            "uncovered_modules": uncovered,
-        }
-        return uncovered
+            self._coverage_cache = {
+                "commit_hash": head,
+                "ran_at": datetime.now(timezone.utc).isoformat(),
+                "uncovered_modules": uncovered,
+            }
 
-    def _scan_pitfalls(self) -> list[str]:
+        # Filter through dedup and return keyed findings
+        findings = []
+        for mod in uncovered:
+            key = f"coverage:{self._content_hash(mod)}"
+            if not self.is_deduped(key):
+                findings.append((key, f"Module below 100% coverage: {mod}"))
+        return findings
+
+    def _scan_pitfalls(self) -> list[tuple[str, str]]:
         """Parse AGENTS.md for antipattern entries under '## Recurring Antipatterns'.
 
         Real entries look like:
           - **Empty exception handler**: description <!-- seen:4 last:2026-03-15 -->
 
-        We match lines that start with ``- `` after the heading and contain
-        the ``<!-- seen:N last:DATE -->`` marker.
+        Returns ``[(content_hash, description), ...]`` with stable keys.
         """
-        import hashlib
-        import re
 
         work_dir = self._config.default_work_dir or "."
         agents_path = Path(work_dir) / "AGENTS.md"
@@ -807,7 +926,7 @@ class HeartbeatManager:
             logger.debug("Failed to read AGENTS.md: %s", exc)
             return []
 
-        pitfalls = []
+        pitfalls: list[tuple[str, str]] = []
         in_section = False
         for line in content.split("\n"):
             stripped = line.strip()
@@ -819,11 +938,11 @@ class HeartbeatManager:
             if not in_section:
                 continue
             if stripped.startswith("- ") and "<!-- seen:" in stripped:
-                key = f"pitfall:{hashlib.sha256(stripped.encode()).hexdigest()[:12]}"
+                key = f"pitfall:{self._content_hash(stripped)}"
                 if not self.is_deduped(key):
                     # Strip the HTML comment marker for the Haiku prompt
                     clean = re.sub(r"\s*<!--.*?-->", "", stripped)
-                    pitfalls.append(clean)
+                    pitfalls.append((key, f"Unresolved pitfall: {clean}"))
         return pitfalls
 
     # -- Tier 2 ---------------------------------------------------------------
@@ -834,34 +953,39 @@ class HeartbeatManager:
         coverage = self._scan_coverage()
         pitfalls = self._scan_pitfalls()
 
-        if not todos and not coverage and not pitfalls:
+        # All scanners now return (key, description) tuples
+        all_findings: list[tuple[str, str]] = [*todos, *coverage, *pitfalls]
+        if not all_findings:
             return []
 
         if not self.budget_allows():
             return []
 
-        findings = []
-        for f in todos:
-            findings.append(f"TODO/FIXME found in: {f}")
-        for m in coverage:
-            findings.append(f"Module below 100% coverage: {m}")
-        for p in pitfalls:
-            findings.append(f"Unresolved pitfall: {p}")
+        # Build keyed findings list for Haiku, including stable content hashes
+        keyed_findings = [{"key": key, "finding": desc} for key, desc in all_findings]
 
         prompt = (
             "Rank these improvement opportunities by impact and estimated effort. "
             "For each, assess if a coding agent can complete it autonomously.\n"
             "Respond with JSON matching this schema:\n"
-            '{"candidates": [{"id": "improvement:<category>:<name>", '
+            '{"candidates": [{"id": "<key from input>", '
             '"category": "<category>", "automatable": bool, '
             '"confidence": float (0-1), "complexity": "small"|"medium"|"large", '
             '"reason": "..."}]}\n'
-            "IMPORTANT: Always include the 'category' field (e.g. 'error-handling', "
+            "IMPORTANT: Use the exact 'key' from the input as the 'id' field. "
+            "Always include the 'category' field (e.g. 'error-handling', "
             "'reliability', 'coverage', 'dead-code'). This is used for batching."
         )
 
-        response = await self._call_haiku(prompt, json.dumps(findings, indent=2))
-        return self._validate_candidates(response)
+        response = await self._call_haiku(prompt, json.dumps(keyed_findings, indent=2))
+        candidates = self._validate_candidates(response)
+
+        # Filter out candidates whose category is in cooldown
+        return [
+            c
+            for c in candidates
+            if not self.is_category_cooled_down(c.get("category", ""))
+        ]
 
     async def _run_heartbeat_tick(self) -> None:
         """Execute one heartbeat cycle: promotion -> Tier 1 -> Tier 2 -> submit."""

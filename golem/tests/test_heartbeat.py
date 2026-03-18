@@ -456,23 +456,39 @@ class TestValidateCandidates:
         assert len(result) == 1
         assert result[0]["id"] == "github:2"
 
-    def test_filters_low_confidence(self, tmp_path):
+    def test_filters_low_confidence_per_complexity(self, tmp_path):
+        """Tiered confidence floors: small=0.5, medium=0.6, large=0.7."""
         mgr = _make_manager(tmp_path)
+        # 0.49 is below the small floor of 0.5
         raw = {
             "candidates": [
                 {
                     "id": "github:1",
                     "automatable": True,
-                    "confidence": 0.5,
+                    "confidence": 0.49,
                     "complexity": "small",
-                    "reason": "Low",
+                    "reason": "Too low for small",
                 },
             ]
         }
-        result = mgr._validate_candidates(raw)
-        assert result == []
+        assert mgr._validate_candidates(raw) == []
+        # 0.5 is exactly at the small floor — should pass
+        raw["candidates"][0]["confidence"] = 0.5
+        assert len(mgr._validate_candidates(raw)) == 1
+        # 0.59 is below the medium floor of 0.6
+        raw["candidates"][0]["confidence"] = 0.59
+        raw["candidates"][0]["complexity"] = "medium"
+        assert mgr._validate_candidates(raw) == []
+        # 0.69 is below the large floor of 0.7
+        raw["candidates"][0]["confidence"] = 0.69
+        raw["candidates"][0]["complexity"] = "large"
+        assert mgr._validate_candidates(raw) == []
+        # 0.7 is exactly at the large floor — should pass
+        raw["candidates"][0]["confidence"] = 0.7
+        assert len(mgr._validate_candidates(raw)) == 1
 
-    def test_filters_large_complexity(self, tmp_path):
+    def test_accepts_all_complexities_by_default(self, tmp_path):
+        """All complexities are accepted by default (small, medium, large)."""
         mgr = _make_manager(tmp_path)
         raw = {
             "candidates": [
@@ -486,6 +502,24 @@ class TestValidateCandidates:
             ]
         }
         result = mgr._validate_candidates(raw)
+        assert len(result) == 1
+        assert result[0]["complexity"] == "large"
+
+    def test_filters_complexity_when_restricted(self, tmp_path):
+        """When valid_complexities is restricted, filtered complexities are rejected."""
+        mgr = _make_manager(tmp_path)
+        raw = {
+            "candidates": [
+                {
+                    "id": "github:1",
+                    "automatable": True,
+                    "confidence": 0.9,
+                    "complexity": "large",
+                    "reason": "Big",
+                },
+            ]
+        }
+        result = mgr._validate_candidates(raw, valid_complexities=("small", "medium"))
         assert result == []
 
     def test_clamps_confidence(self, tmp_path):
@@ -834,10 +868,11 @@ class TestTier2:
         haiku_response = {
             "candidates": [
                 {
-                    "id": "improvement:todo:heartbeat.py",
+                    "id": "todo:abc123def456",
                     "automatable": True,
                     "confidence": 0.8,
                     "complexity": "small",
+                    "category": "todo",
                     "reason": "New TODO needs implementation",
                 },
             ]
@@ -846,7 +881,9 @@ class TestTier2:
         with patch.object(
             mgr,
             "_scan_todos",
-            return_value=["golem/heartbeat.py: TODO: add retry logic"],
+            return_value=[
+                ("todo:abc123def456", "TODO/FIXME found in: golem/heartbeat.py")
+            ],
         ):
             with patch.object(mgr, "_scan_coverage", return_value=[]):
                 with patch.object(mgr, "_scan_pitfalls", return_value=[]):
@@ -854,7 +891,7 @@ class TestTier2:
                         candidates = await mgr._run_tier2()
 
         assert len(candidates) == 1
-        assert candidates[0]["id"] == "improvement:todo:heartbeat.py"
+        assert candidates[0]["id"] == "todo:abc123def456"
 
     async def test_tier2_no_findings_returns_empty(self, tmp_path):
         mgr = _make_manager(tmp_path)
@@ -872,7 +909,9 @@ class TestTier2:
         mgr._daily_spend_usd = 0.01  # exhausted
         mgr._flow = MagicMock()
 
-        with patch.object(mgr, "_scan_todos", return_value=["golem/foo.py"]):
+        with patch.object(
+            mgr, "_scan_todos", return_value=[("todo:abc123", "TODO in golem/foo.py")]
+        ):
             with patch.object(mgr, "_scan_coverage", return_value=[]):
                 with patch.object(mgr, "_scan_pitfalls", return_value=[]):
                     with patch.object(mgr, "_call_haiku") as mock_haiku:
@@ -890,7 +929,9 @@ class TestTier2:
                 stdout="golem/heartbeat.py\ngolem/flow.py\n",
             )
             result = mgr._scan_todos()
-        assert "golem/heartbeat.py" in result
+        # Returns (key, description) tuples
+        descriptions = [desc for _, desc in result]
+        assert any("golem/heartbeat.py" in d for d in descriptions)
         # Verify --since uses last_scan_at
         call_args = mock_run.call_args[0][0]
         assert any("2026-03-14" in str(a) for a in call_args)
@@ -938,7 +979,9 @@ class TestTier2:
             # Return the same commit hash
             mock_run.return_value = MagicMock(returncode=0, stdout="abc123\n")
             result = mgr._scan_coverage()
-        assert result == ["golem/flow.py"]
+        # Returns (key, description) tuples
+        assert len(result) == 1
+        assert any("golem/flow.py" in desc for _, desc in result)
         # pytest should NOT have been called (cache hit)
         assert mock_run.call_count == 1  # only git rev-parse
 
@@ -959,7 +1002,8 @@ class TestTier2:
         with patch("subprocess.run", side_effect=mock_run):
             result = mgr._scan_coverage()
 
-        assert result == ["golem/flow.py"]
+        assert len(result) == 1
+        assert any("golem/flow.py" in desc for _, desc in result)
         assert len(calls) == 2  # git rev-parse + pytest
 
     def test_scan_coverage_handles_git_failure(self, tmp_path):
@@ -998,8 +1042,10 @@ class TestTier2:
         )
         result = mgr._scan_pitfalls()
         assert len(result) == 2
-        assert "Empty exception handler" in result[0]
-        assert "<!-- seen:" not in result[0]  # marker stripped
+        # Returns (key, description) tuples
+        _, desc = result[0]
+        assert "Empty exception handler" in desc
+        assert "<!-- seen:" not in desc  # marker stripped
 
     def test_scan_pitfalls_no_agents_md(self, tmp_path):
         mgr = _make_manager(tmp_path, default_work_dir=str(tmp_path))
@@ -1063,7 +1109,8 @@ class TestTier2:
         with patch("subprocess.run", side_effect=mock_run):
             result = mgr._scan_coverage()
 
-        assert result == ["golem/new.py"]
+        assert len(result) == 1
+        assert any("golem/new.py" in desc for _, desc in result)
         assert len(calls) == 2  # re-ran pytest despite same commit
 
     def test_scan_coverage_invalid_cache_time(self, tmp_path):
@@ -1085,7 +1132,8 @@ class TestTier2:
         with patch("subprocess.run", side_effect=mock_run):
             result = mgr._scan_coverage()
 
-        assert result == ["golem/new.py"]
+        assert len(result) == 1
+        assert any("golem/new.py" in desc for _, desc in result)
         assert len(calls) == 2
 
     def test_scan_coverage_invalid_cache_time_logs_debug(self, tmp_path, caplog):
@@ -1407,12 +1455,21 @@ class TestTier2CoverageAndPitfallFindings:
 
         with patch.object(mgr, "_scan_todos", return_value=[]):
             with patch.object(
-                mgr, "_scan_coverage", return_value=["golem/utils.py (85%)"]
+                mgr,
+                "_scan_coverage",
+                return_value=[
+                    ("coverage:abc123", "Module below 100% coverage: golem/utils.py")
+                ],
             ):
                 with patch.object(
                     mgr,
                     "_scan_pitfalls",
-                    return_value=["Avoid mocking internals"],
+                    return_value=[
+                        (
+                            "pitfall:def456",
+                            "Unresolved pitfall: Avoid mocking internals",
+                        )
+                    ],
                 ):
                     with patch.object(
                         mgr, "_call_haiku", return_value=haiku_response
@@ -1986,6 +2043,207 @@ class TestTrigger:
                 pass
 
         assert loop_iterated.is_set(), "loop never iterated without trigger event"
+
+
+class TestCategoryCircuitBreaker:
+    """Tests for category-level failure cooldown."""
+
+    def test_on_failure_increments_category_counter(self, tmp_path):
+        mgr = _make_manager(tmp_path)
+        mgr._inflight_task_ids = [100]
+        mgr._dedup_memory["improvement:dead-code:foo"] = {
+            "evaluated_at": "2026-03-18T00:00:00Z",
+            "verdict": "submitted",
+            "task_id": 100,
+        }
+        mgr.on_task_completed(100, success=False)
+        assert mgr._category_failures.get("dead-code") == 1
+
+    def test_on_success_resets_category_counter(self, tmp_path):
+        mgr = _make_manager(tmp_path)
+        mgr._category_failures["dead-code"] = 2
+        mgr._inflight_task_ids = [100]
+        mgr._dedup_memory["improvement:dead-code:bar"] = {
+            "evaluated_at": "2026-03-18T00:00:00Z",
+            "verdict": "submitted",
+            "task_id": 100,
+        }
+        mgr.on_task_completed(100, success=True)
+        assert "dead-code" not in mgr._category_failures
+
+    def test_threshold_triggers_cooldown(self, tmp_path):
+        mgr = _make_manager(
+            tmp_path,
+            heartbeat_category_failure_threshold=2,
+            heartbeat_category_cooldown_hours=6,
+        )
+        # Simulate 2 consecutive failures
+        for task_id in (100, 101):
+            mgr._inflight_task_ids.append(task_id)
+            mgr._dedup_memory[f"improvement:dead-code:fail{task_id}"] = {
+                "evaluated_at": "2026-03-18T00:00:00Z",
+                "verdict": "submitted",
+                "task_id": task_id,
+            }
+            mgr.on_task_completed(task_id, success=False)
+
+        assert mgr.is_category_cooled_down("dead-code") is True
+        assert mgr.is_category_cooled_down("coverage") is False
+
+    def test_cooldown_expires(self, tmp_path):
+        from datetime import datetime, timezone
+
+        mgr = _make_manager(tmp_path)
+        # Set cooldown to 1 second ago
+        past = datetime.now(timezone.utc).timestamp() - 1
+        from datetime import datetime as dt
+
+        mgr._category_cooldown_until["dead-code"] = dt.fromtimestamp(
+            past, tz=timezone.utc
+        ).isoformat()
+        mgr._category_failures["dead-code"] = 5
+
+        assert mgr.is_category_cooled_down("dead-code") is False
+        # State should be cleaned up
+        assert "dead-code" not in mgr._category_cooldown_until
+        assert "dead-code" not in mgr._category_failures
+
+    def test_cooldown_invalid_timestamp_returns_false(self, tmp_path):
+        mgr = _make_manager(tmp_path)
+        mgr._category_cooldown_until["dead-code"] = "not-a-date"
+        assert mgr.is_category_cooled_down("dead-code") is False
+
+    def test_circuit_breaker_persisted_in_state(self, tmp_path):
+        mgr = _make_manager(tmp_path)
+        mgr._category_failures = {"dead-code": 2}
+        mgr._category_cooldown_until = {"dead-code": "2026-03-19T00:00:00Z"}
+        mgr.save_state()
+
+        mgr2 = _make_manager(tmp_path)
+        mgr2.load_state()
+        assert mgr2._category_failures == {"dead-code": 2}
+        assert mgr2._category_cooldown_until == {"dead-code": "2026-03-19T00:00:00Z"}
+
+    async def test_tier2_filters_cooled_down_categories(self, tmp_path):
+        """Tier 2 candidates in a cooled-down category are filtered out."""
+        mgr = _make_manager(tmp_path)
+        mgr._flow = MagicMock()
+        mgr._category_cooldown_until["dead-code"] = "2099-01-01T00:00:00Z"
+
+        haiku_response = {
+            "candidates": [
+                {
+                    "id": "todo:abc123",
+                    "automatable": True,
+                    "confidence": 0.9,
+                    "complexity": "small",
+                    "category": "dead-code",
+                    "reason": "Remove dead code",
+                },
+            ]
+        }
+
+        with patch.object(
+            mgr, "_scan_todos", return_value=[("todo:abc123", "TODO in foo")]
+        ):
+            with patch.object(mgr, "_scan_coverage", return_value=[]):
+                with patch.object(mgr, "_scan_pitfalls", return_value=[]):
+                    with patch.object(mgr, "_call_haiku", return_value=haiku_response):
+                        candidates = await mgr._run_tier2()
+
+        assert candidates == []
+
+
+class TestNotAutomatableTTL:
+    """Tests for shorter TTL on not_automatable dedup entries."""
+
+    def test_not_automatable_pruned_at_shorter_ttl(self, tmp_path):
+        """not_automatable entries expire after heartbeat_not_automatable_ttl_days."""
+        from datetime import datetime, timezone, timedelta
+
+        mgr = _make_manager(
+            tmp_path,
+            heartbeat_dedup_ttl_days=30,
+            heartbeat_not_automatable_ttl_days=7,
+        )
+        old = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+        mgr._dedup_memory["github:42"] = {
+            "evaluated_at": old,
+            "verdict": "not_automatable",
+        }
+        mgr._dedup_memory["github:43"] = {
+            "evaluated_at": old,
+            "verdict": "completed",
+        }
+        mgr._prune_dedup()
+        # not_automatable should be pruned (10 > 7 days)
+        assert "github:42" not in mgr._dedup_memory
+        # completed should still be there (10 < 30 days)
+        assert "github:43" in mgr._dedup_memory
+
+    def test_fresh_not_automatable_kept(self, tmp_path):
+        from datetime import datetime, timezone, timedelta
+
+        mgr = _make_manager(
+            tmp_path,
+            heartbeat_not_automatable_ttl_days=7,
+        )
+        recent = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
+        mgr._dedup_memory["github:42"] = {
+            "evaluated_at": recent,
+            "verdict": "not_automatable",
+        }
+        mgr._prune_dedup()
+        assert "github:42" in mgr._dedup_memory
+
+
+class TestContentHashing:
+    """Tests for stable content-based dedup keys in scanners."""
+
+    def test_content_hash_deterministic(self, tmp_path):
+        mgr = _make_manager(tmp_path)
+        h1 = mgr._content_hash("golem/flow.py")
+        h2 = mgr._content_hash("golem/flow.py")
+        assert h1 == h2
+        assert len(h1) == 12
+
+    def test_scan_todos_returns_keyed_tuples(self, tmp_path):
+        mgr = _make_manager(tmp_path)
+        mgr._last_scan_at = "2026-03-14T00:00:00Z"
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="golem/foo.py\n")
+            result = mgr._scan_todos()
+        assert len(result) == 1
+        key, desc = result[0]
+        assert key.startswith("todo:")
+        assert "golem/foo.py" in desc
+
+    def test_scan_todos_filters_deduped(self, tmp_path):
+        mgr = _make_manager(tmp_path)
+        mgr._last_scan_at = "2026-03-14T00:00:00Z"
+        # Pre-dedup the expected key
+        expected_key = f"todo:{mgr._content_hash('golem/foo.py')}"
+        mgr.record_dedup(expected_key, "failed")
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="golem/foo.py\n")
+            result = mgr._scan_todos()
+        assert result == []
+
+    def test_scan_coverage_filters_deduped(self, tmp_path):
+        mgr = _make_manager(tmp_path)
+        expected_key = f"coverage:{mgr._content_hash('golem/flow.py')}"
+        mgr.record_dedup(expected_key, "completed")
+
+        mgr._coverage_cache = {
+            "commit_hash": "abc123",
+            "ran_at": "2099-01-01T00:00:00Z",
+            "uncovered_modules": ["golem/flow.py"],
+        }
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="abc123\n")
+            result = mgr._scan_coverage()
+        assert result == []
 
 
 class TestSnapshotNextTick:
