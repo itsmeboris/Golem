@@ -79,7 +79,7 @@ class TestCreateWorktree:
     def test_raises_on_failure(self, tmp_path, monkeypatch):
         """Worktree creation raises RuntimeError when git command fails."""
 
-        def mock_run_git(args, cwd, timeout=30):  # pylint: disable=unused-argument
+        def mock_run_git(args, cwd, timeout=30):
             result = MagicMock()
             if "worktree" in args and "add" in args:
                 result.returncode = 128

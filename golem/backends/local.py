@@ -215,7 +215,7 @@ class LogNotifier:
         """Log a task-started notification."""
         logger.info("NOTIFY: Task %s started: %s", task_id, subject)
 
-    def notify_completed(  # pylint: disable=unused-argument
+    def notify_completed(
         self,
         task_id: int | str,
         subject: str,
@@ -229,23 +229,23 @@ class LogNotifier:
             kwargs.get("cost_usd", 0.0),
         )
 
-    def notify_failed(  # pylint: disable=unused-argument
+    def notify_failed(
         self,
         task_id: int | str,
         subject: str,
         reason: str,
-        **kwargs: Any,
+        **_kwargs: Any,
     ) -> None:
         """Log a task-failed notification."""
         logger.info("NOTIFY: Task %s failed: %s — %s", task_id, subject, reason)
 
-    def notify_escalated(  # pylint: disable=unused-argument
+    def notify_escalated(
         self,
         task_id: int | str,
         _subject: str,
         verdict: str,
         summary: str,
-        **kwargs: Any,
+        **_kwargs: Any,
     ) -> None:
         """Log a task-escalated notification."""
         logger.info("NOTIFY: Task %s escalated (%s): %s", task_id, verdict, summary)
@@ -254,7 +254,7 @@ class LogNotifier:
         """Log a batch-submitted notification."""
         logger.info("NOTIFY: Batch %s submitted (%d tasks)", group_id, task_count)
 
-    def notify_batch_completed(  # pylint: disable=unused-argument
+    def notify_batch_completed(
         self,
         group_id: str,
         status: str,
@@ -295,8 +295,6 @@ class NullToolProvider:
         """Return an empty server list."""
         return []
 
-    def servers_for_subject(  # pylint: disable=unused-argument
-        self, _subject: str, *, role: str = ""
-    ) -> list[str]:
+    def servers_for_subject(self, _subject: str, *, role: str = "") -> list[str]:
         """Return an empty server list (no MCP tools)."""
         return []

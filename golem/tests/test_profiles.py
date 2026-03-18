@@ -1125,13 +1125,13 @@ class TestRedmineBackendMocked:
         put_calls = []
         get_calls = []
 
-        def mock_put(*args, **kwargs):  # pylint: disable=unused-argument
+        def mock_put(*args, **kwargs):
             put_calls.append((args, kwargs))
             resp = MagicMock()
             resp.raise_for_status = MagicMock()
             return resp
 
-        def mock_get(*args, **kwargs):  # pylint: disable=unused-argument
+        def mock_get(*args, **kwargs):
             get_calls.append((args, kwargs))
             resp = MagicMock()
             resp.raise_for_status = MagicMock()
@@ -1154,7 +1154,7 @@ class TestRedmineBackendMocked:
 
         put_calls = []
 
-        def mock_put(*args, **kwargs):  # pylint: disable=unused-argument
+        def mock_put(*args, **kwargs):
             put_calls.append((args, kwargs))
             resp = MagicMock()
             resp.raise_for_status = MagicMock()
