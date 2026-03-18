@@ -2,8 +2,6 @@
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from golem.heartbeat import HeartbeatManager
 from golem.core.config import GolemFlowConfig
 
@@ -272,7 +270,6 @@ class TestValidateCandidatesCategory:
 
 
 class TestTier2BatchSubmission:
-    @pytest.mark.asyncio
     async def test_tier2_submits_batch(self, tmp_path):
         mgr = _make_manager(tmp_path, heartbeat_batch_size=5)
         mock_flow = MagicMock()
@@ -311,7 +308,6 @@ class TestTier2BatchSubmission:
         assert "batch:" in subject
         assert "2 items" in subject
 
-    @pytest.mark.asyncio
     async def test_tier2_batch_dedups_all(self, tmp_path):
         mgr = _make_manager(tmp_path, heartbeat_batch_size=5)
         mock_flow = MagicMock()
@@ -350,7 +346,6 @@ class TestTier2BatchSubmission:
         assert "improvement:eh:b" in mgr._dedup_memory
         assert mgr._dedup_memory["improvement:eh:a"]["task_id"] == 999
 
-    @pytest.mark.asyncio
     async def test_tier2_prompt_lists_items(self, tmp_path):
         mgr = _make_manager(tmp_path, heartbeat_batch_size=5)
         mock_flow = MagicMock()
@@ -389,7 +384,6 @@ class TestTier2BatchSubmission:
         assert "Fix A" in prompt
         assert "Fix B" in prompt
 
-    @pytest.mark.asyncio
     async def test_tier1_still_single(self, tmp_path):
         mgr = _make_manager(tmp_path, heartbeat_batch_size=5)
         mock_flow = MagicMock()
@@ -416,7 +410,6 @@ class TestTier2BatchSubmission:
         assert "batch:" not in subject
         assert "[HEARTBEAT]" in subject
 
-    @pytest.mark.asyncio
     async def test_tier2_empty_batch_goes_idle(self, tmp_path):
         mgr = _make_manager(tmp_path, heartbeat_batch_size=5)
         mock_flow = MagicMock()
@@ -439,7 +432,6 @@ class TestTier2BatchSubmission:
         mock_flow.submit_task.assert_not_called()
         assert mgr._state == "idle"
 
-    @pytest.mark.asyncio
     async def test_batch_submit_bad_task_id(self, tmp_path):
         mgr = _make_manager(tmp_path, heartbeat_batch_size=5)
         mock_flow = MagicMock()
@@ -467,7 +459,6 @@ class TestTier2BatchSubmission:
         assert mgr._inflight_task_ids == []
         assert mgr._state == "idle"
 
-    @pytest.mark.asyncio
     async def test_batch_submit_exception(self, tmp_path):
         mgr = _make_manager(tmp_path, heartbeat_batch_size=5)
         mock_flow = MagicMock()

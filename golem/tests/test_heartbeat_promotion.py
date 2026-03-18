@@ -3,8 +3,6 @@
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from golem.heartbeat import HeartbeatManager
 from golem.core.config import GolemFlowConfig
 
@@ -167,7 +165,6 @@ class TestTier1PromotionCounter:
 
 
 class TestRunTier1Promoted:
-    @pytest.mark.asyncio
     async def test_accepts_large_complexity(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mock_flow = MagicMock()
@@ -194,7 +191,6 @@ class TestRunTier1Promoted:
         assert len(candidates) == 1
         assert candidates[0]["complexity"] == "large"
 
-    @pytest.mark.asyncio
     async def test_does_not_dedup_non_candidates(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mock_flow = MagicMock()
@@ -229,7 +225,6 @@ class TestRunTier1Promoted:
         assert "github:42" in mgr._dedup_memory
         assert "github:43" not in mgr._dedup_memory
 
-    @pytest.mark.asyncio
     async def test_returns_empty_when_no_issues(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mock_flow = MagicMock()
@@ -239,7 +234,6 @@ class TestRunTier1Promoted:
         candidates = await mgr._run_tier1_promoted()
         assert candidates == []
 
-    @pytest.mark.asyncio
     async def test_handles_backend_exception(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mock_flow = MagicMock()
@@ -249,7 +243,6 @@ class TestRunTier1Promoted:
         candidates = await mgr._run_tier1_promoted()
         assert candidates == []
 
-    @pytest.mark.asyncio
     async def test_respects_budget(self, tmp_path):
         mgr = _make_manager(tmp_path, heartbeat_daily_budget_usd=0.01)
         mgr._daily_spend_usd = 0.01
@@ -265,7 +258,6 @@ class TestRunTier1Promoted:
         mock_haiku.assert_not_called()
         assert candidates == []
 
-    @pytest.mark.asyncio
     async def test_skips_deduped_issues(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mgr._dedup_memory["github:42"] = {
@@ -283,7 +275,6 @@ class TestRunTier1Promoted:
 
 
 class TestTier1PromotionTick:
-    @pytest.mark.asyncio
     async def test_owed_tick_runs_promoted_scan(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mgr._tier1_owed = True
@@ -315,7 +306,6 @@ class TestTier1PromotionTick:
         assert mgr._tier1_owed is False
         assert mgr._tier2_completions_since_tier1 == 0
 
-    @pytest.mark.asyncio
     async def test_owed_tick_promoted_not_in_inflight(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mgr._tier1_owed = True
@@ -343,7 +333,6 @@ class TestTier1PromotionTick:
 
         assert 999 not in mgr._inflight_task_ids
 
-    @pytest.mark.asyncio
     async def test_owed_tick_records_promoted_in_dedup(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mgr._tier1_owed = True
@@ -371,7 +360,6 @@ class TestTier1PromotionTick:
 
         assert mgr._dedup_memory["github:42"]["verdict"] == "promoted"
 
-    @pytest.mark.asyncio
     async def test_owed_tick_no_candidates_continues_tier2(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mgr._tier1_owed = True
@@ -403,7 +391,6 @@ class TestTier1PromotionTick:
         assert mock_flow.submit_task.called
         assert mgr._tier1_owed is True
 
-    @pytest.mark.asyncio
     async def test_owed_tick_skips_normal_tier1(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mgr._tier1_owed = True
@@ -417,7 +404,6 @@ class TestTier1PromotionTick:
 
         mock_t1.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_not_owed_runs_normal_flow(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mgr._tier1_owed = False
@@ -431,7 +417,6 @@ class TestTier1PromotionTick:
 
         mock_promoted.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_submit_promoted_exception_does_not_crash(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mgr._tier1_owed = True

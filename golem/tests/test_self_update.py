@@ -94,7 +94,6 @@ class TestStateManagement:
 
 
 class TestPollCycle:
-    @pytest.mark.asyncio
     async def test_no_new_commits(self, manager):
         with (
             patch.object(manager, "_fetch", return_value=True),
@@ -104,12 +103,10 @@ class TestPollCycle:
             await manager._check_for_updates()
         assert manager._last_review_verdict == ""
 
-    @pytest.mark.asyncio
     async def test_fetch_failure_skips(self, manager):
         with patch.object(manager, "_fetch", return_value=False):
             await manager._check_for_updates()
 
-    @pytest.mark.asyncio
     async def test_merged_only_rejects_force_push(self, manager):
         with (
             patch.object(manager, "_fetch", return_value=True),
@@ -120,7 +117,6 @@ class TestPollCycle:
             await manager._check_for_updates()
         assert manager._last_review_verdict == ""
 
-    @pytest.mark.asyncio
     async def test_any_commit_accepts_force_push(self, manager, config):
         config.self_update_strategy = "any_commit"
         with (
@@ -135,7 +131,6 @@ class TestPollCycle:
             await manager._check_for_updates()
         assert manager._last_review_verdict == "REJECT"
 
-    @pytest.mark.asyncio
     async def test_empty_remote_sha_skips(self, manager):
         """When remote SHA is empty string, skip update."""
         with (
@@ -147,7 +142,6 @@ class TestPollCycle:
             await manager._check_for_updates()
         mock_review.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_empty_diff_skips_review(self, manager):
         """When diff is empty, skip review."""
         with (
@@ -164,7 +158,6 @@ class TestPollCycle:
 
 
 class TestReviewGate:
-    @pytest.mark.asyncio
     async def test_accept_proceeds_to_verification(self, manager):
         with (
             patch.object(manager, "_fetch", return_value=True),
@@ -181,7 +174,6 @@ class TestReviewGate:
             await manager._check_for_updates()
         mock_verify.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_reject_skips_verification(self, manager):
         with (
             patch.object(manager, "_fetch", return_value=True),
@@ -200,7 +192,6 @@ class TestReviewGate:
 
 
 class TestVerificationGate:
-    @pytest.mark.asyncio
     async def test_verification_pass_triggers_reload(self, manager):
         reload_event = asyncio.Event()
         manager._reload_event = reload_event
@@ -218,7 +209,6 @@ class TestVerificationGate:
         assert reload_event.is_set()
         assert manager._verified_sha == "bbb"
 
-    @pytest.mark.asyncio
     async def test_verification_fail_no_reload(self, manager):
         reload_event = asyncio.Event()
         manager._reload_event = reload_event
@@ -235,7 +225,6 @@ class TestVerificationGate:
             await manager._check_for_updates()
         assert not reload_event.is_set()
 
-    @pytest.mark.asyncio
     async def test_verification_pass_no_reload_event(self, manager):
         """When reload_event is None, no error even after verification passes."""
         manager._reload_event = None
@@ -321,7 +310,6 @@ class TestCrashLoopDetection:
 
 
 class TestApplyUpdate:
-    @pytest.mark.asyncio
     async def test_merged_only_uses_ff_merge(self, manager):
         manager._verified_sha = "abc123"
         manager._config.self_update_strategy = "merged_only"
@@ -332,7 +320,6 @@ class TestApplyUpdate:
         cmd = mock_run.call_args[0][0]
         assert cmd == ["git", "merge", "--ff-only", "abc123"]
 
-    @pytest.mark.asyncio
     async def test_any_commit_uses_hard_reset(self, manager):
         manager._verified_sha = "abc123"
         manager._config.self_update_strategy = "any_commit"
@@ -342,7 +329,6 @@ class TestApplyUpdate:
         cmd = mock_run.call_args[0][0]
         assert cmd == ["git", "reset", "--hard", "abc123"]
 
-    @pytest.mark.asyncio
     async def test_failure_clears_verified_sha(self, manager):
         manager._verified_sha = "abc123"
         with patch(
@@ -352,14 +338,12 @@ class TestApplyUpdate:
             await manager.apply_update()
         assert manager._verified_sha is None
 
-    @pytest.mark.asyncio
     async def test_no_op_without_verified_sha(self, manager):
         manager._verified_sha = None
         with patch("golem.self_update.subprocess.run") as mock_run:
             await manager.apply_update()
         mock_run.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_apply_saves_state(self, manager, state_dir):
         """apply_update saves state with last_update_sha after success."""
         manager._verified_sha = "abc123"
@@ -464,7 +448,6 @@ class TestGitHelpers:
 
 
 class TestReviewMethod:
-    @pytest.mark.asyncio
     async def test_accept_response(self, manager):
         with patch.object(
             manager, "_run_review_agent", return_value="ACCEPT\nLooks good"
@@ -473,7 +456,6 @@ class TestReviewMethod:
         assert verdict == "ACCEPT"
         assert reasoning == "Looks good"
 
-    @pytest.mark.asyncio
     async def test_reject_response(self, manager):
         with patch.object(
             manager, "_run_review_agent", return_value="REJECT\nToo risky"
@@ -482,14 +464,12 @@ class TestReviewMethod:
         assert verdict == "REJECT"
         assert reasoning == "Too risky"
 
-    @pytest.mark.asyncio
     async def test_ambiguous_response(self, manager):
         with patch.object(manager, "_run_review_agent", return_value="MAYBE\nUnclear"):
             verdict, reasoning = await manager._review("diff", "log")
         assert verdict == "REJECT"
         assert "Ambiguous" in reasoning
 
-    @pytest.mark.asyncio
     async def test_response_without_reasoning(self, manager):
         """Single-line response without reasoning returns empty string."""
         with patch.object(manager, "_run_review_agent", return_value="ACCEPT"):
@@ -497,7 +477,6 @@ class TestReviewMethod:
         assert verdict == "ACCEPT"
         assert reasoning == ""
 
-    @pytest.mark.asyncio
     async def test_agent_exception(self, manager):
         with patch.object(
             manager, "_run_review_agent", side_effect=RuntimeError("connection failed")
@@ -520,7 +499,6 @@ class TestReviewMethod:
 
 
 class TestVerifyInWorktree:
-    @pytest.mark.asyncio
     async def test_success(self, manager):
         mock_vr = MagicMock(passed=True)
         with (
@@ -531,7 +509,6 @@ class TestVerifyInWorktree:
             result = await manager._verify_in_worktree("abc123")
         assert result is True
 
-    @pytest.mark.asyncio
     async def test_failure_returns_false(self, manager):
         mock_vr = MagicMock(passed=False)
         with (
@@ -542,7 +519,6 @@ class TestVerifyInWorktree:
             result = await manager._verify_in_worktree("abc123")
         assert result is False
 
-    @pytest.mark.asyncio
     async def test_exception_returns_false(self, manager):
         with patch(
             "golem.self_update.subprocess.run",
@@ -551,7 +527,6 @@ class TestVerifyInWorktree:
             result = await manager._verify_in_worktree("abc123")
         assert result is False
 
-    @pytest.mark.asyncio
     async def test_worktree_cleanup_on_exception(self, manager):
         """Worktree remove is called even when verification raises."""
         call_count = [0]
@@ -573,7 +548,6 @@ class TestVerifyInWorktree:
             result = await manager._verify_in_worktree("abc123")
         assert result is False
 
-    @pytest.mark.asyncio
     async def test_worktree_cleanup_exception_ignored(self, manager):
         """Exception in worktree removal does not propagate."""
         mock_vr = MagicMock(passed=True)
@@ -594,7 +568,6 @@ class TestVerifyInWorktree:
 
 
 class TestLifecycle:
-    @pytest.mark.asyncio
     async def test_start_creates_task(self, manager):
         with (
             patch.object(manager, "_update_loop", new=AsyncMock()) as _mock_loop,
@@ -604,7 +577,6 @@ class TestLifecycle:
             manager.start()
         mock_ct.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_stop_cancels_task(self, manager):
         mock_task = MagicMock()
         mock_task.done.return_value = False
@@ -612,7 +584,6 @@ class TestLifecycle:
         manager.stop()
         mock_task.cancel.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_stop_does_not_cancel_done_task(self, manager):
         mock_task = MagicMock()
         mock_task.done.return_value = True
@@ -620,7 +591,6 @@ class TestLifecycle:
         manager.stop()
         mock_task.cancel.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_stop_with_no_task(self, manager):
         manager._task = None
         manager.stop()  # should not raise
@@ -641,7 +611,6 @@ class TestLifecycle:
 
 
 class TestUpdateLoop:
-    @pytest.mark.asyncio
     async def test_loop_cancels_on_cancelled_error(self, manager):
         """_update_loop breaks cleanly on CancelledError."""
         call_count = [0]
@@ -654,7 +623,6 @@ class TestUpdateLoop:
             await manager._update_loop()
         assert call_count[0] == 1
 
-    @pytest.mark.asyncio
     async def test_loop_continues_on_exception(self, manager):
         """_update_loop catches generic exceptions and continues."""
         call_count = [0]

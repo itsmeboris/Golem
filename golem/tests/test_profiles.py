@@ -745,7 +745,6 @@ class TestFlowWithProfile:
         assert len(items) == 1
         assert items[0]["subject"] == "[AGENT] Local task"
 
-    @pytest.mark.asyncio
     async def test_handle_uses_profile_notifier(self, monkeypatch, tmp_path):
         """When handling an event, the profile's notifier is called."""
         from golem.core.triggers.base import TriggerEvent

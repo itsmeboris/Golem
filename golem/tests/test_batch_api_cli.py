@@ -225,7 +225,6 @@ def _wire_batch_deps():
     reason="FastAPI not installed",
 )
 class TestGetBatchEndpoint:
-    @pytest.mark.asyncio
     async def test_get_batch_endpoint_returns_batch(self, _wire_batch_deps):
         from golem.core.control_api import get_batch
 
@@ -234,7 +233,6 @@ class TestGetBatchEndpoint:
         assert result["batch"]["group_id"] == "grp-api"
         assert result["batch"]["task_ids"] == [1, 2]
 
-    @pytest.mark.asyncio
     async def test_get_batch_endpoint_404_for_unknown(self, _wire_batch_deps):
         from golem.core.control_api import get_batch
 
@@ -248,7 +246,6 @@ class TestGetBatchEndpoint:
     reason="FastAPI not installed",
 )
 class TestListBatchesEndpoint:
-    @pytest.mark.asyncio
     async def test_list_batches_endpoint(self, _wire_batch_deps):
         from golem.core.control_api import list_batches
 
@@ -268,7 +265,6 @@ class TestListBatchesEndpoint:
     reason="FastAPI not installed",
 )
 class TestBatchEndpoints503WhenNoFlow:
-    @pytest.mark.asyncio
     async def test_get_batch_503_when_no_flow(self):
         from golem.core.control_api import get_batch
 
@@ -276,7 +272,6 @@ class TestBatchEndpoints503WhenNoFlow:
         with pytest.raises(Exception, match="Daemon not ready"):
             await get_batch("any-group")
 
-    @pytest.mark.asyncio
     async def test_list_batches_503_when_no_flow(self):
         from golem.core.control_api import list_batches
 

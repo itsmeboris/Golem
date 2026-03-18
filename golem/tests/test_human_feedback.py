@@ -397,7 +397,6 @@ class TestCheckHumanFeedback:
 
 
 class TestTickHumanReview:
-    @pytest.mark.asyncio
     async def test_tick_dispatches_human_review(self, monkeypatch):
         from golem.orchestrator import TaskOrchestrator
 

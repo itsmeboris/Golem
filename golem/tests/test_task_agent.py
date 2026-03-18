@@ -865,7 +865,6 @@ class TestGolemFlow:
         flow = self._make_flow(monkeypatch, tmp_path)
         assert flow.mcp_servers == []
 
-    @pytest.mark.asyncio
     async def test_handle_creates_session(self, monkeypatch, tmp_path):
         flow = self._make_flow(monkeypatch, tmp_path)
         event = TriggerEvent(
@@ -880,7 +879,6 @@ class TestGolemFlow:
         assert result.data.get("session_created") is True
         assert 999 in flow._sessions
 
-    @pytest.mark.asyncio
     async def test_handle_skips_duplicate(self, monkeypatch, tmp_path):
         flow = self._make_flow(monkeypatch, tmp_path)
         event = TriggerEvent(

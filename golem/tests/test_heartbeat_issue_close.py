@@ -2,8 +2,6 @@
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from golem.heartbeat import HeartbeatManager
 from golem.core.config import GolemFlowConfig
 
@@ -37,7 +35,6 @@ def _get_submit_kwargs(mock_flow: MagicMock) -> dict:
 
 
 class TestSubmitTaskIssueMode:
-    @pytest.mark.asyncio
     async def test_tier1_submit_passes_issue_mode(self, tmp_path):
         """Tier 1 single submission passes issue_mode=True."""
         mgr = _make_manager(tmp_path)
@@ -65,7 +62,6 @@ class TestSubmitTaskIssueMode:
         call_kwargs = _get_submit_kwargs(mock_flow)
         assert call_kwargs.get("issue_mode") is True
 
-    @pytest.mark.asyncio
     async def test_tier2_submit_does_not_pass_issue_mode(self, tmp_path):
         """Tier 2 batch submission does NOT pass issue_mode."""
         mgr = _make_manager(tmp_path)
@@ -96,7 +92,6 @@ class TestSubmitTaskIssueMode:
             "issue_mode" not in call_kwargs or call_kwargs.get("issue_mode") is not True
         )
 
-    @pytest.mark.asyncio
     async def test_promoted_submit_passes_issue_mode(self, tmp_path):
         """Promoted Tier 1 submission passes issue_mode=True."""
         mgr = _make_manager(tmp_path)

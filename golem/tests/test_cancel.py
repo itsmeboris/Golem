@@ -222,7 +222,6 @@ def _wire_cancel_deps():
     reason="FastAPI not installed",
 )
 class TestCancelEndpointSuccess:
-    @pytest.mark.asyncio
     async def test_cancel_returns_ok(self, _wire_cancel_deps):
         from golem.core.control_api import cancel_task
 
@@ -238,7 +237,6 @@ class TestCancelEndpointSuccess:
     reason="FastAPI not installed",
 )
 class TestCancelEndpoint404:
-    @pytest.mark.asyncio
     async def test_not_found(self, _wire_cancel_deps):
         from golem.core.control_api import cancel_task
 
@@ -255,7 +253,6 @@ class TestCancelEndpoint404:
     reason="FastAPI not installed",
 )
 class TestCancelEndpoint409:
-    @pytest.mark.asyncio
     async def test_terminal_state(self, _wire_cancel_deps):
         from golem.core.control_api import cancel_task
 
@@ -272,7 +269,6 @@ class TestCancelEndpoint409:
     reason="FastAPI not installed",
 )
 class TestCancelEndpoint503:
-    @pytest.mark.asyncio
     async def test_no_golem_flow(self, _wire_cancel_deps):
         from golem.core.control_api import cancel_task
 

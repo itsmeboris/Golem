@@ -386,7 +386,6 @@ class TestExternalTaskDetection:
 
 
 class TestAsyncLoop:
-    @pytest.mark.asyncio
     async def test_start_and_stop(self, tmp_path):
         mgr = _make_manager(tmp_path, heartbeat_interval_seconds=1)
         mock_flow = MagicMock()
@@ -399,7 +398,6 @@ class TestAsyncLoop:
         mgr.stop()
         assert mgr._state == "idle"
 
-    @pytest.mark.asyncio
     async def test_stop_persists_state(self, tmp_path):
         mgr = _make_manager(tmp_path, heartbeat_interval_seconds=1)
         mock_flow = MagicMock()
@@ -413,14 +411,12 @@ class TestAsyncLoop:
         data = json.loads((tmp_path / "heartbeat_state.json").read_text())
         assert data["daily_spend_usd"] == 0.42
 
-    @pytest.mark.asyncio
     async def test_stop_when_not_started(self, tmp_path):
         """Stopping without starting should not raise."""
         mgr = _make_manager(tmp_path)
         mgr.stop()  # Should not raise
         assert mgr._state == "idle"
 
-    @pytest.mark.asyncio
     async def test_loop_handles_exception(self, tmp_path):
         """Loop continues after non-CancelledError exceptions."""
         mgr = _make_manager(tmp_path, heartbeat_interval_seconds=0)
@@ -600,7 +596,6 @@ class TestStripMarkdownJson:
 
 
 class TestCallHaiku:
-    @pytest.mark.asyncio
     async def test_call_haiku_tracks_spend(self, tmp_path):
         from golem.core.cli_wrapper import CLIResult
 
@@ -615,7 +610,6 @@ class TestCallHaiku:
         assert mgr._daily_spend_usd == pytest.approx(0.001)
         assert result == {"candidates": []}
 
-    @pytest.mark.asyncio
     async def test_call_haiku_handles_non_json(self, tmp_path):
         from golem.core.cli_wrapper import CLIResult
 
@@ -629,7 +623,6 @@ class TestCallHaiku:
 
         assert result == "not json"
 
-    @pytest.mark.asyncio
     async def test_call_haiku_handles_empty_result(self, tmp_path):
         from golem.core.cli_wrapper import CLIResult
 
@@ -640,7 +633,6 @@ class TestCallHaiku:
 
         assert result == ""
 
-    @pytest.mark.asyncio
     async def test_call_haiku_zero_cost(self, tmp_path):
         """Spend is recorded even when cost is zero."""
         from golem.core.cli_wrapper import CLIResult
@@ -652,7 +644,6 @@ class TestCallHaiku:
 
         assert mgr._daily_spend_usd == 0.0
 
-    @pytest.mark.asyncio
     async def test_call_haiku_cli_error(self, tmp_path):
         """Returns empty string when CLI call fails."""
         from golem.core.cli_wrapper import CLIError
@@ -667,7 +658,6 @@ class TestCallHaiku:
         assert result == ""
         assert mgr._daily_spend_usd == 0.0
 
-    @pytest.mark.asyncio
     async def test_call_haiku_strips_markdown_fence(self, tmp_path):
         """Haiku responses wrapped in ```json fences are parsed correctly."""
         from golem.core.cli_wrapper import CLIResult
@@ -682,7 +672,6 @@ class TestCallHaiku:
 
 
 class TestTier1:
-    @pytest.mark.asyncio
     async def test_tier1_calls_backend_and_haiku(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mock_flow = MagicMock()
@@ -718,7 +707,6 @@ class TestTier1:
         assert candidates[0]["id"] == "github:42"
         assert candidates[0]["confidence"] == 0.9
 
-    @pytest.mark.asyncio
     async def test_tier1_skips_deduped_issues(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mgr._dedup_memory["github:42"] = {
@@ -737,7 +725,6 @@ class TestTier1:
         mock_haiku.assert_not_called()  # no new issues to evaluate
         assert candidates == []
 
-    @pytest.mark.asyncio
     async def test_tier1_handles_malformed_haiku_response(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mock_flow = MagicMock()
@@ -751,7 +738,6 @@ class TestTier1:
 
         assert candidates == []
 
-    @pytest.mark.asyncio
     async def test_tier1_clamps_confidence(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mock_flow = MagicMock()
@@ -777,7 +763,6 @@ class TestTier1:
 
         assert candidates[0]["confidence"] == 1.0
 
-    @pytest.mark.asyncio
     async def test_tier1_records_all_in_dedup(self, tmp_path):
         """All evaluated issues go into dedup, not just candidates."""
         mgr = _make_manager(tmp_path)
@@ -815,7 +800,6 @@ class TestTier1:
         assert mgr._dedup_memory["github:42"]["verdict"] == "candidate"
         assert mgr._dedup_memory["github:43"]["verdict"] == "not_automatable"
 
-    @pytest.mark.asyncio
     async def test_tier1_handles_backend_exception(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mock_flow = MagicMock()
@@ -825,7 +809,6 @@ class TestTier1:
         candidates = await mgr._run_tier1()
         assert candidates == []
 
-    @pytest.mark.asyncio
     async def test_tier1_respects_budget(self, tmp_path):
         mgr = _make_manager(tmp_path, heartbeat_daily_budget_usd=0.01)
         mgr._daily_spend_usd = 0.01  # budget exhausted
@@ -843,7 +826,6 @@ class TestTier1:
 
 
 class TestTier2:
-    @pytest.mark.asyncio
     async def test_tier2_todo_scan(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mgr._flow = MagicMock()
@@ -874,7 +856,6 @@ class TestTier2:
         assert len(candidates) == 1
         assert candidates[0]["id"] == "improvement:todo:heartbeat.py"
 
-    @pytest.mark.asyncio
     async def test_tier2_no_findings_returns_empty(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mgr._flow = MagicMock()
@@ -886,7 +867,6 @@ class TestTier2:
 
         assert candidates == []
 
-    @pytest.mark.asyncio
     async def test_tier2_respects_budget(self, tmp_path):
         mgr = _make_manager(tmp_path, heartbeat_daily_budget_usd=0.01)
         mgr._daily_spend_usd = 0.01  # exhausted
@@ -1135,7 +1115,6 @@ class TestTier2:
 
 
 class TestHeartbeatTick:
-    @pytest.mark.asyncio
     async def test_tick_runs_tier1_first(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mock_flow = MagicMock()
@@ -1162,7 +1141,6 @@ class TestHeartbeatTick:
         mock_t2.assert_not_called()  # Tier 1 found work, skip Tier 2
         mock_flow.submit_task.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_tick_falls_through_to_tier2(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mock_flow = MagicMock()
@@ -1188,7 +1166,6 @@ class TestHeartbeatTick:
 
         mock_flow.submit_task.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_tick_does_nothing_when_no_candidates(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mock_flow = MagicMock()
@@ -1200,7 +1177,6 @@ class TestHeartbeatTick:
 
         mock_flow.submit_task.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_tick_respects_inflight_limit(self, tmp_path):
         mgr = _make_manager(tmp_path, heartbeat_max_inflight=1)
         mgr._inflight_task_ids = [111]  # already at max
@@ -1218,7 +1194,6 @@ class TestHeartbeatTick:
 
         mock_flow.submit_task.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_tick_tags_submission_with_heartbeat(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mock_flow = MagicMock()
@@ -1246,7 +1221,6 @@ class TestHeartbeatTick:
         subject = call_kwargs.kwargs.get("subject", "")
         assert "[HEARTBEAT]" in subject
 
-    @pytest.mark.asyncio
     async def test_tick_adds_task_to_inflight(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mock_flow = MagicMock()
@@ -1271,7 +1245,6 @@ class TestHeartbeatTick:
 
         assert 999 in mgr._inflight_task_ids
 
-    @pytest.mark.asyncio
     async def test_tick_saves_state_after_submission(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mock_flow = MagicMock()
@@ -1296,7 +1269,6 @@ class TestHeartbeatTick:
 
         assert (tmp_path / "heartbeat_state.json").exists()
 
-    @pytest.mark.asyncio
     async def test_tick_handles_submit_exception(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mock_flow = MagicMock()
@@ -1321,7 +1293,6 @@ class TestHeartbeatTick:
 
         assert mgr._state == "idle"
 
-    @pytest.mark.asyncio
     async def test_tick_saves_state_when_no_candidates(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mock_flow = MagicMock()
@@ -1333,7 +1304,6 @@ class TestHeartbeatTick:
 
         assert (tmp_path / "heartbeat_state.json").exists()
 
-    @pytest.mark.asyncio
     async def test_tick_updates_last_scan_metadata(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mock_flow = MagicMock()
@@ -1349,7 +1319,6 @@ class TestHeartbeatTick:
 class TestHeartbeatLoopBranches:
     """Cover the remaining branches in _heartbeat_loop."""
 
-    @pytest.mark.asyncio
     async def test_loop_budget_exhausted_state(self, tmp_path):
         """When budget is exhausted, loop sets state to budget_exhausted."""
         mgr = _make_manager(tmp_path, heartbeat_interval_seconds=0)
@@ -1362,7 +1331,6 @@ class TestHeartbeatLoopBranches:
         assert mgr._state == "budget_exhausted"
         mgr.stop()
 
-    @pytest.mark.asyncio
     async def test_loop_idle_below_threshold(self, tmp_path):
         """When idle but below threshold, loop sets state to idle."""
         mgr = _make_manager(
@@ -1420,7 +1388,6 @@ class TestHeartbeatLoopBranches:
 class TestTier2CoverageAndPitfallFindings:
     """Cover lines where coverage and pitfall findings are formatted."""
 
-    @pytest.mark.asyncio
     async def test_tier2_with_coverage_and_pitfall_findings(self, tmp_path):
         """Tier 2 formats coverage and pitfall findings for Haiku prompt."""
         mgr = _make_manager(tmp_path)
@@ -1885,7 +1852,6 @@ class TestOnTaskCompletedCoercion:
 class TestHeartbeatTickTaskIdCoercion:
     """Integration tests for _coerce_task_id in _run_heartbeat_tick()."""
 
-    @pytest.mark.asyncio
     async def test_tick_coerces_string_task_id(self, tmp_path, caplog):
         """submit_task returning a string task_id is coerced to int."""
         import logging
@@ -1915,7 +1881,6 @@ class TestHeartbeatTickTaskIdCoercion:
         assert 999 in mgr._inflight_task_ids
         assert any("999" in r.message for r in caplog.records)
 
-    @pytest.mark.asyncio
     async def test_tick_drops_non_integer_task_id(self, tmp_path):
         """submit_task returning an unconvertible task_id logs error and goes idle."""
         mgr = _make_manager(tmp_path)
@@ -1955,7 +1920,6 @@ class TestTrigger:
         mgr = _make_manager(tmp_path)
         assert mgr.trigger() is False
 
-    @pytest.mark.asyncio
     async def test_trigger_after_start_returns_true(self, tmp_path):
         """trigger() returns True and sets event after start."""
         mgr = _make_manager(tmp_path, heartbeat_interval_seconds=999)

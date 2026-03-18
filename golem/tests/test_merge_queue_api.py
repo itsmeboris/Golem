@@ -4,7 +4,6 @@ import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -62,7 +61,6 @@ def test_get_merge_queue_returns_snapshot():
     mq.snapshot.assert_called_once()
 
 
-@pytest.mark.asyncio
 async def test_post_retry_success():
     """POST /api/merge-queue/retry/{id} re-enqueues and returns ok."""
     from golem.merge_queue import MergeEntry
@@ -103,7 +101,6 @@ def test_post_retry_offline():
     assert resp.status_code == 503
 
 
-@pytest.mark.asyncio
 async def test_sse_emits_merge_queue_update(tmp_path):
     """SSE stream emits merge_queue_update when sentinel file changes.
 
@@ -137,7 +134,6 @@ async def test_sse_emits_merge_queue_update(tmp_path):
     assert any("merge_queue_update" in e for e in events)
 
 
-@pytest.mark.asyncio
 async def test_sse_merge_queue_sentinel_oserror_init(tmp_path):
     """SSE init survives OSError when reading sentinel mtime (lines 499-500)."""
     # Build a mock sentinel that reports exists()=True but stat() raises OSError.
@@ -163,7 +159,6 @@ async def test_sse_merge_queue_sentinel_oserror_init(tmp_path):
     assert isinstance(events, list)
 
 
-@pytest.mark.asyncio
 async def test_sse_merge_queue_sentinel_oserror_poll(tmp_path):
     """SSE poll loop survives OSError when reading sentinel mtime (lines 535-536)."""
     # First call (init): stat succeeds.  Second call (poll): stat raises OSError.

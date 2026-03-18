@@ -1227,14 +1227,12 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
                 )
         return routes
 
-    @pytest.mark.asyncio
     async def test_api_ping(self, handlers):
         resp = await handlers["/api/ping"]()
         data = json.loads(resp.body)
         assert data["status"] == "ok"
         assert isinstance(data["timestamp"], int)
 
-    @pytest.mark.asyncio
     async def test_api_live_with_file(self):
         """When live_state_file is set, it reads from disk."""
         app = MagicMock()
@@ -1262,7 +1260,6 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         body = json.loads(resp.body)
         assert body["active_count"] == 0
 
-    @pytest.mark.asyncio
     async def test_api_live_without_file(self, handlers):
         """When live_state_file is None, uses LiveState singleton."""
         with patch("golem.core.dashboard.LiveState") as mock_ls:
@@ -1271,7 +1268,6 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         body = json.loads(resp.body)
         assert body["active_count"] == 1
 
-    @pytest.mark.asyncio
     async def test_api_sessions(self, handlers):
         with patch(
             "golem.core.dashboard._read_sessions",
@@ -1281,7 +1277,6 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         body = json.loads(resp.body)
         assert "1" in body["sessions"]
 
-    @pytest.mark.asyncio
     async def test_api_sessions_error(self, handlers):
         with patch(
             "golem.core.dashboard._read_sessions",
@@ -1291,7 +1286,6 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         body = json.loads(resp.body)
         assert body == {"sessions": {}}
 
-    @pytest.mark.asyncio
     async def test_api_sessions_during_shutdown(self, handlers):
         """api_sessions returns empty data when executor is shut down."""
         old = _dashboard_module._shutting_down
@@ -1307,7 +1301,6 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         finally:
             _dashboard_module._shutting_down = old
 
-    @pytest.mark.asyncio
     async def test_api_logs(self, handlers):
         with patch(
             "golem.core.dashboard._read_log_tail",
@@ -1317,7 +1310,6 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         body = json.loads(resp.body)
         assert body["lines"] == ["hi"]
 
-    @pytest.mark.asyncio
     async def test_api_trace_found(self, handlers, tmp_path):
         trace_path = tmp_path / "trace.jsonl"
         trace_path.write_text(
@@ -1333,7 +1325,6 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         assert body["event_id"] == "golem-1"
         assert len(body["sections"]) == 1
 
-    @pytest.mark.asyncio
     async def test_api_trace_not_found(self, handlers):
         with patch(
             "golem.core.dashboard._resolve_paths",
@@ -1342,7 +1333,6 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             resp = await handlers["/api/trace/{event_id:path}"]("golem-999")
         assert resp.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_api_prompt_found(self, handlers, tmp_path):
         prompt_path = tmp_path / "prompt.txt"
         prompt_path.write_text("Do the thing", encoding="utf-8")
@@ -1354,7 +1344,6 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         body = json.loads(resp.body)
         assert body["prompt"] == "Do the thing"
 
-    @pytest.mark.asyncio
     async def test_api_prompt_not_found(self, handlers):
         with patch(
             "golem.core.dashboard._resolve_paths",
@@ -1363,7 +1352,6 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             resp = await handlers["/api/prompt/{event_id:path}"]("golem-1")
         assert resp.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_api_report_found(self, handlers, tmp_path):
         report_path = tmp_path / "report.md"
         report_path.write_text("# Report\nAll good", encoding="utf-8")
@@ -1375,7 +1363,6 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         body = json.loads(resp.body)
         assert body["markdown"] == "# Report\nAll good"
 
-    @pytest.mark.asyncio
     async def test_api_report_not_found(self, handlers):
         with patch(
             "golem.core.dashboard._resolve_paths",
@@ -1384,7 +1371,6 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             resp = await handlers["/api/report/{event_id:path}"]("golem-1")
         assert resp.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_api_trace_terminal_found(self, handlers, tmp_path):
         trace_path = tmp_path / "trace.jsonl"
         trace_path.write_text(
@@ -1401,7 +1387,6 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         assert "events" in body
         assert "stats" in body
 
-    @pytest.mark.asyncio
     async def test_api_trace_terminal_not_found(self, handlers):
         with patch(
             "golem.core.dashboard._resolve_paths",
@@ -1410,49 +1395,41 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             resp = await handlers["/api/trace-terminal/{event_id:path}"]("golem-1")
         assert resp.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_dashboard_html(self, handlers):
         with patch.object(_FileCache, "read", return_value="<html>dash</html>"):
             resp = await handlers["/dashboard"]()
         assert b"dash" in resp.body
 
-    @pytest.mark.asyncio
     async def test_admin_html(self, handlers):
         with patch.object(_FileCache, "read", return_value="<html>admin</html>"):
             resp = await handlers["/dashboard/admin"]()
         assert b"admin" in resp.body
 
-    @pytest.mark.asyncio
     async def test_shared_css(self, handlers):
         with patch.object(_FileCache, "read", return_value="body { }"):
             resp = await handlers["/dashboard/shared.css"]()
         assert resp.body is not None
 
-    @pytest.mark.asyncio
     async def test_shared_js(self, handlers):
         with patch.object(_FileCache, "read", return_value="console.log(1)"):
             resp = await handlers["/dashboard/shared.js"]()
         assert resp.body is not None
 
-    @pytest.mark.asyncio
     async def test_task_css(self, handlers):
         with patch.object(_FileCache, "read", return_value=".wf-table { }"):
             resp = await handlers["/dashboard/task.css"]()
         assert resp.body is not None
 
-    @pytest.mark.asyncio
     async def test_task_api_js(self, handlers):
         with patch.object(_FileCache, "read", return_value="const S={}"):
             resp = await handlers["/dashboard/task_api.js"]()
         assert resp.media_type == "application/javascript"
 
-    @pytest.mark.asyncio
     async def test_task_timeline_js(self, handlers):
         with patch.object(_FileCache, "read", return_value="function renderDetail(){}"):
             resp = await handlers["/dashboard/task_timeline.js"]()
         assert resp.media_type == "application/javascript"
 
-    @pytest.mark.asyncio
     async def test_task_overview_js(self, handlers):
         with patch.object(
             _FileCache, "read", return_value="function renderOverview(){}"
@@ -1460,13 +1437,11 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             resp = await handlers["/dashboard/task_overview.js"]()
         assert resp.media_type == "application/javascript"
 
-    @pytest.mark.asyncio
     async def test_task_live_js(self, handlers):
         with patch.object(_FileCache, "read", return_value="function startPolling(){}"):
             resp = await handlers["/dashboard/task_live.js"]()
         assert resp.media_type == "application/javascript"
 
-    @pytest.mark.asyncio
     async def test_heartbeat_widget_js(self, handlers):
         with patch.object(
             _FileCache, "read", return_value="function renderHeartbeatChip(){}"
@@ -1474,13 +1449,11 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             resp = await handlers["/dashboard/heartbeat_widget.js"]()
         assert resp.media_type == "application/javascript"
 
-    @pytest.mark.asyncio
     async def test_elk_js(self, handlers):
         with patch.object(_FileCache, "read", return_value="var ELK={}"):
             resp = await handlers["/dashboard/elk.js"]()
         assert resp.media_type == "application/javascript"
 
-    @pytest.mark.asyncio
     async def test_merge_queue_js(self, handlers):
         with patch.object(
             _FileCache, "read", return_value="function renderMergeQueue(){}"
@@ -1488,13 +1461,11 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             resp = await handlers["/dashboard/merge_queue.js"]()
         assert resp.media_type == "application/javascript"
 
-    @pytest.mark.asyncio
     async def test_merge_queue_css(self, handlers):
         with patch.object(_FileCache, "read", return_value=".mq-view{}"):
             resp = await handlers["/dashboard/merge_queue.css"]()
         assert resp.media_type == "text/css"
 
-    @pytest.mark.asyncio
     async def test_config_tab_js(self, handlers):
         with patch.object(
             _FileCache, "read", return_value="function initConfigTab(){}"
@@ -1502,7 +1473,6 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             resp = await handlers["/dashboard/config_tab.js"]()
         assert resp.media_type == "application/javascript"
 
-    @pytest.mark.asyncio
     async def test_config_tab_css(self, handlers):
         with patch.object(_FileCache, "read", return_value=".config-container{}"):
             resp = await handlers["/dashboard/config_tab.css"]()
@@ -1517,7 +1487,6 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         assert "config_tab.js" in body, "Missing config_tab.js script tag"
         assert "config_tab.css" in body, "Missing config_tab.css link tag"
 
-    @pytest.mark.asyncio
     async def test_api_heartbeat_disabled(self, handlers):
         """When heartbeat is None, returns disabled stub."""
         resp = await handlers["/api/heartbeat"]()
@@ -1526,7 +1495,6 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         assert resp["daily_spend_usd"] == 0.0
         assert resp["next_tick_seconds"] == 0
 
-    @pytest.mark.asyncio
     async def test_api_heartbeat_enabled(self):
         """When heartbeat is provided, returns its snapshot."""
         app = MagicMock()
@@ -1564,7 +1532,6 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         assert resp["state"] == "idle"
         mock_hb.snapshot.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_api_heartbeat_trigger_disabled(self):
         """POST /api/heartbeat/trigger returns error when heartbeat is None."""
         app = MagicMock()
@@ -1588,7 +1555,6 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         resp = await routes["/api/heartbeat/trigger"]()
         assert resp["ok"] is False
 
-    @pytest.mark.asyncio
     async def test_api_heartbeat_trigger_enabled(self):
         """POST /api/heartbeat/trigger calls trigger() on heartbeat."""
         app = MagicMock()
@@ -1669,7 +1635,6 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
 
     # --- shutdown-guard tests for _safe_to_thread returning None ---
 
-    @pytest.mark.asyncio
     async def test_api_live_shutdown(self):
         """api_live returns empty when _safe_to_thread returns None."""
         app = MagicMock()
@@ -1693,26 +1658,22 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             resp = await routes["/api/live"]()
         assert json.loads(resp.body) == {}
 
-    @pytest.mark.asyncio
     async def test_api_logs_shutdown(self, handlers):
         with patch("golem.core.dashboard._safe_to_thread", return_value=None):
             resp = await handlers["/api/logs"](lines=200)
         body = json.loads(resp.body)
         assert body == {"lines": [], "file": "", "total_lines": 0}
 
-    @pytest.mark.asyncio
     async def test_api_analytics_shutdown(self, handlers):
         with patch("golem.core.dashboard._safe_to_thread", return_value=None):
             resp = await handlers["/api/analytics"]()
         assert json.loads(resp.body) == {}
 
-    @pytest.mark.asyncio
     async def test_api_analytics_by_prompt_shutdown(self, handlers):
         with patch("golem.core.dashboard._safe_to_thread", return_value=None):
             resp = await handlers["/api/analytics/by-prompt"]()
         assert json.loads(resp.body) == {}
 
-    @pytest.mark.asyncio
     async def test_api_trace_shutdown(self, handlers, tmp_path):
         trace_path = tmp_path / "trace.jsonl"
         trace_path.write_text("{}\n", encoding="utf-8")
@@ -1724,7 +1685,6 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
                 resp = await handlers["/api/trace/{event_id:path}"]("golem-1")
         assert json.loads(resp.body) == {}
 
-    @pytest.mark.asyncio
     async def test_api_prompt_shutdown(self, handlers, tmp_path):
         prompt_path = tmp_path / "prompt.txt"
         prompt_path.write_text("x", encoding="utf-8")
@@ -1736,7 +1696,6 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
                 resp = await handlers["/api/prompt/{event_id:path}"]("golem-1")
         assert json.loads(resp.body) == {}
 
-    @pytest.mark.asyncio
     async def test_api_report_shutdown(self, handlers, tmp_path):
         report_path = tmp_path / "report.md"
         report_path.write_text("x", encoding="utf-8")
@@ -1748,7 +1707,6 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
                 resp = await handlers["/api/report/{event_id:path}"]("golem-1")
         assert json.loads(resp.body) == {}
 
-    @pytest.mark.asyncio
     async def test_api_trace_terminal_shutdown(self, handlers, tmp_path):
         trace_path = tmp_path / "trace.jsonl"
         trace_path.write_text("{}\n", encoding="utf-8")
@@ -1797,7 +1755,6 @@ class TestCostAnalyticsEndpoint:
     def test_route_is_registered(self, handlers):
         assert "/api/cost-analytics" in handlers
 
-    @pytest.mark.asyncio
     async def test_returns_expected_keys(self, handlers):
         with patch(
             "golem.core.dashboard.read_runs",
@@ -1825,7 +1782,6 @@ class TestCostAnalyticsEndpoint:
         ):
             assert key in body, f"Missing key: {key}"
 
-    @pytest.mark.asyncio
     async def test_returns_json_response(self, handlers):
         with patch(
             "golem.core.dashboard.read_runs",
@@ -1839,7 +1795,6 @@ class TestCostAnalyticsEndpoint:
         body = json.loads(resp.body)
         assert isinstance(body, dict)
 
-    @pytest.mark.asyncio
     async def test_shutdown_returns_empty(self, handlers):
         with patch("golem.core.dashboard._safe_to_thread", return_value=None):
             resp = await handlers["/api/cost-analytics"]()
@@ -2116,7 +2071,6 @@ class TestApiTraceParsedHTTP:
         """Clear the parsed trace cache after each test."""
         _dashboard_module._parsed_trace_cache.clear()
 
-    @pytest.mark.asyncio
     async def test_404_for_missing_trace(self, handlers):
         with patch(
             "golem.core.dashboard._read_and_parse_trace",
@@ -2127,7 +2081,6 @@ class TestApiTraceParsedHTTP:
         body = json.loads(resp.body)
         assert "error" in body
 
-    @pytest.mark.asyncio
     async def test_200_with_valid_trace(self, handlers, tmp_path):
         traces = tmp_path / "traces" / "golem"
         traces.mkdir(parents=True)
@@ -2145,7 +2098,6 @@ class TestApiTraceParsedHTTP:
         assert "phases" in body
         assert "totals" in body
 
-    @pytest.mark.asyncio
     async def test_content_type_is_json(self, handlers, tmp_path):
         traces = tmp_path / "traces" / "golem"
         traces.mkdir(parents=True)
@@ -2160,7 +2112,6 @@ class TestApiTraceParsedHTTP:
 
         assert "application/json" in resp.media_type
 
-    @pytest.mark.asyncio
     async def test_since_event_query_param(self, handlers, tmp_path):
         traces = tmp_path / "traces" / "golem"
         traces.mkdir(parents=True)

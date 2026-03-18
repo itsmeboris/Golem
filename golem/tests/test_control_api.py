@@ -248,7 +248,6 @@ def _make_request(headers=_SENTINEL, query_params=None, json_data=None):
     reason="FastAPI not installed",
 )
 class TestFlowStopEndpoint:
-    @pytest.mark.asyncio
     async def test_stop_flows(self, _wire_deps):
         from golem.core.control_api import flow_stop
 
@@ -257,7 +256,6 @@ class TestFlowStopEndpoint:
         assert result["ok"] is True
         assert result["results"]["golem"] == "stopped"
 
-    @pytest.mark.asyncio
     async def test_stop_with_tick_loop(self, _wire_deps):
         from golem.core.control_api import flow_stop
 
@@ -269,7 +267,6 @@ class TestFlowStopEndpoint:
         result = await flow_stop(req)
         assert result["results"]["golem"] == "stopped"
 
-    @pytest.mark.asyncio
     async def test_stop_not_running(self, _wire_deps):
         from golem.core.control_api import flow_stop
 
@@ -284,7 +281,6 @@ class TestFlowStopEndpoint:
     reason="FastAPI not installed",
 )
 class TestFlowStartEndpoint:
-    @pytest.mark.asyncio
     async def test_start_flows(self, _wire_deps):
         from golem.core.control_api import flow_start
 
@@ -293,7 +289,6 @@ class TestFlowStartEndpoint:
         assert result["ok"] is True
         assert result["results"]["golem"] == "started"
 
-    @pytest.mark.asyncio
     async def test_start_already_running(self, _wire_deps):
         from golem.core.control_api import flow_start
 
@@ -308,7 +303,6 @@ class TestFlowStartEndpoint:
     reason="FastAPI not installed",
 )
 class TestFlowStatusEndpoint:
-    @pytest.mark.asyncio
     async def test_status_all(self, _wire_deps):
         from golem.core.control_api import flow_status
 
@@ -318,7 +312,6 @@ class TestFlowStatusEndpoint:
         assert result["ok"] is True
         assert "golem" in result["flows"]
 
-    @pytest.mark.asyncio
     async def test_status_filter(self, _wire_deps):
         from golem.core.control_api import flow_status
 
@@ -327,7 +320,6 @@ class TestFlowStatusEndpoint:
         result = await flow_status(req)
         assert "golem" not in result["flows"]
 
-    @pytest.mark.asyncio
     async def test_status_no_trigger(self, _wire_deps):
         from golem.core.control_api import flow_status
 
@@ -343,7 +335,6 @@ class TestFlowStatusEndpoint:
     reason="FastAPI not installed",
 )
 class TestHealthEndpoint:
-    @pytest.mark.asyncio
     async def test_health(self, _wire_deps):
         from golem.core.control_api import health_check
 
@@ -358,7 +349,6 @@ class TestHealthEndpoint:
     reason="FastAPI not installed",
 )
 class TestSubmitEndpoint:
-    @pytest.mark.asyncio
     async def test_submit_with_prompt(self, _wire_deps):
         from golem.core.control_api import submit_task
 
@@ -367,7 +357,6 @@ class TestSubmitEndpoint:
         assert result["ok"] is True
         assert result["task_id"] == 42
 
-    @pytest.mark.asyncio
     async def test_submit_with_file(self, _wire_deps, tmp_path):
         from golem.core.control_api import submit_task
 
@@ -377,7 +366,6 @@ class TestSubmitEndpoint:
         result = await submit_task(req)
         assert result["ok"] is True
 
-    @pytest.mark.asyncio
     async def test_submit_file_not_found(self, _wire_deps):
         from golem.core.control_api import submit_task
 
@@ -385,7 +373,6 @@ class TestSubmitEndpoint:
         with pytest.raises(Exception, match="File not found"):
             await submit_task(req)
 
-    @pytest.mark.asyncio
     async def test_submit_no_prompt_or_file(self, _wire_deps):
         from golem.core.control_api import submit_task
 
@@ -393,7 +380,6 @@ class TestSubmitEndpoint:
         with pytest.raises(Exception, match="required"):
             await submit_task(req)
 
-    @pytest.mark.asyncio
     async def test_submit_no_golem_flow(self, _wire_deps):
         from golem.core.control_api import submit_task
 
@@ -402,7 +388,6 @@ class TestSubmitEndpoint:
         with pytest.raises(Exception, match="not ready"):
             await submit_task(req)
 
-    @pytest.mark.asyncio
     async def test_submit_malformed_json(self, _wire_deps):
         from golem.core.control_api import submit_task
 
@@ -411,7 +396,6 @@ class TestSubmitEndpoint:
         with pytest.raises(Exception, match="Invalid JSON"):
             await submit_task(req)
 
-    @pytest.mark.asyncio
     async def test_submit_value_error_json(self, _wire_deps):
         from golem.core.control_api import submit_task
 
@@ -420,7 +404,6 @@ class TestSubmitEndpoint:
         with pytest.raises(Exception, match="Invalid JSON"):
             await submit_task(req)
 
-    @pytest.mark.asyncio
     async def test_submit_internal_error(self, _wire_deps):
         from golem.core.control_api import submit_task
 
@@ -437,7 +420,6 @@ class TestSubmitEndpoint:
     reason="FastAPI not installed",
 )
 class TestBatchSubmitEndpoint:
-    @pytest.mark.asyncio
     async def test_submit_batch(self, _wire_deps):
         from golem.core.control_api import submit_batch
 
@@ -460,7 +442,6 @@ class TestBatchSubmitEndpoint:
         assert result["group_id"] == "grp-1"
         assert len(result["tasks"]) == 2
 
-    @pytest.mark.asyncio
     async def test_submit_batch_no_tasks(self, _wire_deps):
         from golem.core.control_api import submit_batch
 
@@ -468,7 +449,6 @@ class TestBatchSubmitEndpoint:
         with pytest.raises(Exception, match="required"):
             await submit_batch(req)
 
-    @pytest.mark.asyncio
     async def test_submit_batch_empty_list(self, _wire_deps):
         from golem.core.control_api import submit_batch
 
@@ -476,7 +456,6 @@ class TestBatchSubmitEndpoint:
         with pytest.raises(Exception, match="required"):
             await submit_batch(req)
 
-    @pytest.mark.asyncio
     async def test_submit_batch_no_golem_flow(self, _wire_deps):
         from golem.core.control_api import submit_batch
 
@@ -485,7 +464,6 @@ class TestBatchSubmitEndpoint:
         with pytest.raises(Exception, match="not ready"):
             await submit_batch(req)
 
-    @pytest.mark.asyncio
     async def test_submit_batch_malformed_json(self, _wire_deps):
         from golem.core.control_api import submit_batch
 
@@ -494,7 +472,6 @@ class TestBatchSubmitEndpoint:
         with pytest.raises(Exception, match="Invalid JSON"):
             await submit_batch(req)
 
-    @pytest.mark.asyncio
     async def test_submit_batch_value_error_json(self, _wire_deps):
         from golem.core.control_api import submit_batch
 
@@ -503,7 +480,6 @@ class TestBatchSubmitEndpoint:
         with pytest.raises(Exception, match="Invalid JSON"):
             await submit_batch(req)
 
-    @pytest.mark.asyncio
     async def test_submit_batch_missing_prompt(self, _wire_deps):
         from golem.core.control_api import submit_batch
 
@@ -511,7 +487,6 @@ class TestBatchSubmitEndpoint:
         with pytest.raises(Exception, match="index 0.*missing.*prompt"):
             await submit_batch(req)
 
-    @pytest.mark.asyncio
     async def test_submit_batch_empty_prompt(self, _wire_deps):
         from golem.core.control_api import submit_batch
 
@@ -519,7 +494,6 @@ class TestBatchSubmitEndpoint:
         with pytest.raises(Exception, match="index 0.*missing.*prompt"):
             await submit_batch(req)
 
-    @pytest.mark.asyncio
     async def test_submit_batch_non_string_prompt(self, _wire_deps):
         from golem.core.control_api import submit_batch
 
@@ -527,7 +501,6 @@ class TestBatchSubmitEndpoint:
         with pytest.raises(Exception, match="index 0.*missing.*prompt"):
             await submit_batch(req)
 
-    @pytest.mark.asyncio
     async def test_submit_batch_non_dict_task(self, _wire_deps):
         from golem.core.control_api import submit_batch
 
@@ -535,7 +508,6 @@ class TestBatchSubmitEndpoint:
         with pytest.raises(Exception, match="index 0.*missing.*prompt"):
             await submit_batch(req)
 
-    @pytest.mark.asyncio
     async def test_submit_batch_depends_on_forward_ref(self, _wire_deps):
         from golem.core.control_api import submit_batch
 
@@ -547,7 +519,6 @@ class TestBatchSubmitEndpoint:
         with pytest.raises(Exception, match="index 0.*invalid depends_on.*1"):
             await submit_batch(req)
 
-    @pytest.mark.asyncio
     async def test_submit_batch_depends_on_self(self, _wire_deps):
         from golem.core.control_api import submit_batch
 
@@ -559,7 +530,6 @@ class TestBatchSubmitEndpoint:
         with pytest.raises(Exception, match="index 1.*invalid depends_on.*1"):
             await submit_batch(req)
 
-    @pytest.mark.asyncio
     async def test_submit_batch_depends_on_negative(self, _wire_deps):
         from golem.core.control_api import submit_batch
 
@@ -568,7 +538,6 @@ class TestBatchSubmitEndpoint:
         with pytest.raises(Exception, match="index 0.*invalid depends_on.*-1"):
             await submit_batch(req)
 
-    @pytest.mark.asyncio
     async def test_submit_batch_depends_on_unknown_key(self, _wire_deps):
         from golem.core.control_api import submit_batch
 
@@ -582,7 +551,6 @@ class TestBatchSubmitEndpoint:
         ):
             await submit_batch(req)
 
-    @pytest.mark.asyncio
     async def test_submit_batch_depends_on_non_int_non_str(self, _wire_deps):
         from golem.core.control_api import submit_batch
 
@@ -594,7 +562,6 @@ class TestBatchSubmitEndpoint:
         with pytest.raises(Exception, match="index 1.*invalid depends_on"):
             await submit_batch(req)
 
-    @pytest.mark.asyncio
     async def test_submit_batch_depends_on_out_of_range(self, _wire_deps):
         from golem.core.control_api import submit_batch
 
@@ -606,7 +573,6 @@ class TestBatchSubmitEndpoint:
         with pytest.raises(Exception, match="index 1.*invalid depends_on.*99"):
             await submit_batch(req)
 
-    @pytest.mark.asyncio
     async def test_submit_batch_internal_error(self, _wire_deps):
         from golem.core.control_api import submit_batch
 
@@ -618,7 +584,6 @@ class TestBatchSubmitEndpoint:
         with pytest.raises(Exception, match="Internal server error"):
             await submit_batch(req)
 
-    @pytest.mark.asyncio
     async def test_submit_batch_valid_depends_on(self, _wire_deps):
         from golem.core.control_api import submit_batch
 
@@ -642,7 +607,6 @@ class TestBatchSubmitEndpoint:
         assert result["ok"] is True
         assert len(result["tasks"]) == 3
 
-    @pytest.mark.asyncio
     async def test_submit_batch_valid_key_depends_on(self, _wire_deps):
         from golem.core.control_api import submit_batch
 
@@ -677,7 +641,6 @@ class TestBatchSubmitEndpoint:
     reason="FastAPI not installed",
 )
 class TestGetSessionEndpoint:
-    @pytest.mark.asyncio
     async def test_session_found(self, _wire_deps):
         from golem.core.control_api import get_session
 
@@ -694,7 +657,6 @@ class TestGetSessionEndpoint:
         assert result["session"]["parent_issue_id"] == 42
         assert result["session"]["total_cost_usd"] == 1.23
 
-    @pytest.mark.asyncio
     async def test_session_not_found(self, _wire_deps):
         from golem.core.control_api import get_session
 
@@ -702,7 +664,6 @@ class TestGetSessionEndpoint:
         with pytest.raises(Exception, match="No session found"):
             await get_session(999)
 
-    @pytest.mark.asyncio
     async def test_session_no_golem_flow(self, _wire_deps):
         from golem.core.control_api import get_session
 
@@ -737,7 +698,6 @@ def _wire_deps_with_api_key():
     reason="FastAPI not installed",
 )
 class TestSubmitApiKeyAuth:
-    @pytest.mark.asyncio
     async def test_submit_rejects_missing_key(self, _wire_deps_with_api_key):
         from golem.core.control_api import submit_task
 
@@ -749,7 +709,6 @@ class TestSubmitApiKeyAuth:
         with pytest.raises(Exception, match="Invalid or missing API key"):
             await submit_task(req)
 
-    @pytest.mark.asyncio
     async def test_submit_rejects_wrong_key(self, _wire_deps_with_api_key):
         from golem.core.control_api import submit_task
 
@@ -760,7 +719,6 @@ class TestSubmitApiKeyAuth:
         with pytest.raises(Exception, match="Invalid or missing API key"):
             await submit_task(req)
 
-    @pytest.mark.asyncio
     async def test_submit_accepts_valid_bearer(self, _wire_deps_with_api_key):
         from golem.core.control_api import submit_task
 
@@ -771,7 +729,6 @@ class TestSubmitApiKeyAuth:
         result = await submit_task(req)
         assert result["ok"] is True
 
-    @pytest.mark.asyncio
     async def test_submit_accepts_valid_query_param(self, _wire_deps_with_api_key):
         from golem.core.control_api import submit_task
 
@@ -783,7 +740,6 @@ class TestSubmitApiKeyAuth:
         result = await submit_task(req)
         assert result["ok"] is True
 
-    @pytest.mark.asyncio
     async def test_batch_rejects_missing_key(self, _wire_deps_with_api_key):
         from golem.core.control_api import submit_batch
 
@@ -795,7 +751,6 @@ class TestSubmitApiKeyAuth:
         with pytest.raises(Exception, match="Invalid or missing API key"):
             await submit_batch(req)
 
-    @pytest.mark.asyncio
     async def test_batch_rejects_wrong_key(self, _wire_deps_with_api_key):
         from golem.core.control_api import submit_batch
 
@@ -806,7 +761,6 @@ class TestSubmitApiKeyAuth:
         with pytest.raises(Exception, match="Invalid or missing API key"):
             await submit_batch(req)
 
-    @pytest.mark.asyncio
     async def test_batch_accepts_valid_bearer(self, _wire_deps_with_api_key):
         from golem.core.control_api import submit_batch
 
@@ -823,7 +777,6 @@ class TestSubmitApiKeyAuth:
     reason="FastAPI not installed",
 )
 class TestSubmitNoApiKey:
-    @pytest.mark.asyncio
     async def test_submit_open_when_no_key(self, _wire_deps):
         from golem.core.control_api import submit_task
 
@@ -832,7 +785,6 @@ class TestSubmitNoApiKey:
         result = await submit_task(req)
         assert result["ok"] is True
 
-    @pytest.mark.asyncio
     async def test_batch_open_when_no_key(self, _wire_deps):
         from golem.core.control_api import submit_batch
 
@@ -858,7 +810,6 @@ class TestSubmitNoApiKey:
     reason="FastAPI not installed",
 )
 class TestCancelEndpoint:
-    @pytest.mark.asyncio
     async def test_cancel_success(self, _wire_deps):
         from golem.core.control_api import cancel_task
 
@@ -868,7 +819,6 @@ class TestCancelEndpoint:
         assert result["ok"] is True
         gf.cancel_session.assert_called_once_with(42)
 
-    @pytest.mark.asyncio
     async def test_cancel_not_found(self, _wire_deps):
         from golem.core.control_api import cancel_task
 
@@ -878,7 +828,6 @@ class TestCancelEndpoint:
             await cancel_task(task_id=99)
         assert exc_info.value.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_cancel_not_cancelable(self, _wire_deps):
         from golem.core.control_api import cancel_task
 
@@ -890,7 +839,6 @@ class TestCancelEndpoint:
             await cancel_task(task_id=42)
         assert exc_info.value.status_code == 409
 
-    @pytest.mark.asyncio
     async def test_cancel_no_flow(self):
         from golem.core.control_api import cancel_task
 
@@ -910,7 +858,6 @@ class TestCancelEndpoint:
     reason="FastAPI not installed",
 )
 class TestClearFailedEndpoint:
-    @pytest.mark.asyncio
     async def test_clear_failed_success(self, _wire_deps):
         from golem.core.control_api import clear_failed_sessions
 
@@ -921,7 +868,6 @@ class TestClearFailedEndpoint:
         assert result["cleared"] == [1, 5]
         gf.clear_failed_sessions.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_clear_failed_no_flow(self):
         from golem.core.control_api import clear_failed_sessions
 
@@ -941,7 +887,6 @@ class TestClearFailedEndpoint:
     reason="FastAPI not installed",
 )
 class TestBatchEndpoints:
-    @pytest.mark.asyncio
     async def test_get_batch_success(self, _wire_deps):
         from golem.core.control_api import get_batch
 
@@ -952,7 +897,6 @@ class TestBatchEndpoints:
         assert result["batch"]["id"] == "b1"
         gf.get_batch.assert_called_once_with("b1")
 
-    @pytest.mark.asyncio
     async def test_get_batch_not_found(self, _wire_deps):
         from golem.core.control_api import get_batch
 
@@ -962,7 +906,6 @@ class TestBatchEndpoints:
             await get_batch(group_id="nope")
         assert exc_info.value.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_get_batch_no_flow(self):
         from golem.core.control_api import get_batch
 
@@ -971,7 +914,6 @@ class TestBatchEndpoints:
             await get_batch(group_id="b1")
         assert exc_info.value.status_code == 503
 
-    @pytest.mark.asyncio
     async def test_list_batches_success(self, _wire_deps):
         from golem.core.control_api import list_batches
 
@@ -981,7 +923,6 @@ class TestBatchEndpoints:
         assert result["ok"] is True
         assert len(result["batches"]) == 2
 
-    @pytest.mark.asyncio
     async def test_list_batches_no_flow(self):
         from golem.core.control_api import list_batches
 

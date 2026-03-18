@@ -6,7 +6,6 @@ import json
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
-import pytest
 
 from golem.core.config import Config, GolemFlowConfig
 from golem.core.triggers.base import TriggerEvent
@@ -1651,7 +1650,6 @@ class TestSelfUpdateWiring:
         assert flow._self_update is not None
         assert flow._self_update._reload_event is event
 
-    @pytest.mark.asyncio
     async def test_start_tick_loop_starts_self_update(self, monkeypatch, tmp_path):
         """start_tick_loop calls self_update.start() when self_update is present."""
         flow = _make_flow(monkeypatch, tmp_path, self_update_enabled=True)
@@ -1680,7 +1678,6 @@ class TestSelfUpdateWiring:
         flow.stop_tick_loop()
         mock_self_update.stop.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_no_self_update_start_when_none(self, monkeypatch, tmp_path):
         """start_tick_loop does not fail when self_update is None."""
         flow = _make_flow(monkeypatch, tmp_path, self_update_enabled=False)

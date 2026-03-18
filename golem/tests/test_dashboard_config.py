@@ -80,7 +80,6 @@ def config_app_with_reload(tmp_path):
 
 @pytest.mark.skipif(not HAS_HTTPX, reason="httpx not installed")
 class TestConfigGetEndpoint:
-    @pytest.mark.asyncio
     async def test_returns_categories(self, config_app):
         async with _make_client(config_app) as client:
             resp = await client.get(
@@ -91,7 +90,6 @@ class TestConfigGetEndpoint:
         assert "models" in data
         assert "dashboard" in data
 
-    @pytest.mark.asyncio
     async def test_sensitive_fields_redacted(self, config_app):
         async with _make_client(config_app) as client:
             resp = await client.get(
@@ -102,13 +100,11 @@ class TestConfigGetEndpoint:
             if field_info["meta"]["sensitive"]:
                 assert field_info["value"] == "***"
 
-    @pytest.mark.asyncio
     async def test_requires_admin(self, config_app):
         async with _make_client(config_app) as client:
             resp = await client.get("/api/config")
         assert resp.status_code == 401
 
-    @pytest.mark.asyncio
     async def test_field_has_expected_keys(self, config_app):
         async with _make_client(config_app) as client:
             resp = await client.get(
@@ -134,13 +130,11 @@ class TestConfigGetEndpoint:
 
 @pytest.mark.skipif(not HAS_HTTPX, reason="httpx not installed")
 class TestConfigOpenAccess:
-    @pytest.mark.asyncio
     async def test_get_open_when_no_token(self, config_app_no_token):
         async with _make_client(config_app_no_token) as client:
             resp = await client.get("/api/config")
         assert resp.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_post_open_when_no_token(self, config_app_no_token):
         async with _make_client(config_app_no_token) as client:
             resp = await client.post(
@@ -152,7 +146,6 @@ class TestConfigOpenAccess:
 
 @pytest.mark.skipif(not HAS_HTTPX, reason="httpx not installed")
 class TestConfigUpdateEndpoint:
-    @pytest.mark.asyncio
     async def test_valid_update(self, config_app):
         async with _make_client(config_app) as client:
             resp = await client.post(
@@ -163,7 +156,6 @@ class TestConfigUpdateEndpoint:
         assert resp.status_code == 200
         assert resp.json()["success"] is True
 
-    @pytest.mark.asyncio
     async def test_invalid_update(self, config_app):
         async with _make_client(config_app) as client:
             resp = await client.post(
@@ -175,7 +167,6 @@ class TestConfigUpdateEndpoint:
         assert data["success"] is False
         assert len(data["errors"]) > 0
 
-    @pytest.mark.asyncio
     async def test_requires_admin(self, config_app):
         async with _make_client(config_app) as client:
             resp = await client.post(
@@ -183,7 +174,6 @@ class TestConfigUpdateEndpoint:
             )
         assert resp.status_code == 401
 
-    @pytest.mark.asyncio
     async def test_deferred_reload_sets_event(self, config_app_with_reload):
         app, reload_event = config_app_with_reload
         assert not reload_event.is_set()
@@ -236,7 +226,6 @@ class TestSelfUpdateEndpoint:
         yield app
         _ctrl._self_update_manager = saved
 
-    @pytest.mark.asyncio
     async def test_disabled(self, self_update_app):
         """Returns {enabled: false} when no manager is wired."""
         wire_control_api(admin_token="test-token", self_update_manager=None)
@@ -245,7 +234,6 @@ class TestSelfUpdateEndpoint:
         assert resp.status_code == 200
         assert resp.json()["enabled"] is False
 
-    @pytest.mark.asyncio
     async def test_with_manager(self, self_update_app):
         """Returns snapshot dict when a manager is wired."""
         mock_mgr = MagicMock()
@@ -266,7 +254,6 @@ class TestSelfUpdateEndpoint:
         # Clean up
         wire_control_api(admin_token="test-token", self_update_manager=None)
 
-    @pytest.mark.asyncio
     async def test_no_auth_required(self, self_update_app):
         """Endpoint does not require an admin token — it is read-only status info."""
         wire_control_api(admin_token="super-secret", self_update_manager=None)

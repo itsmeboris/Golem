@@ -45,7 +45,6 @@ def app_and_paths(tmp_path):
 class TestApiEventsRoute:
     """Verify the /api/events endpoint is wired up correctly."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_with_event_stream_content_type(self, app_and_paths):
         """GET /api/events returns HTTP 200 with text/event-stream content-type."""
         import httpx
@@ -79,7 +78,6 @@ class TestApiEventsRoute:
 class TestSseEventStreamHeartbeat:
     """Verify heartbeat events are emitted after 15 iterations."""
 
-    @pytest.mark.asyncio
     async def test_heartbeat_emitted_after_15_iterations(self, tmp_path):
         """After 15 sleep cycles with no file changes, a heartbeat is yielded."""
         sessions_file = tmp_path / "sessions.json"
@@ -116,7 +114,6 @@ class TestSseEventStreamHeartbeat:
 class TestSseEventStreamSessionUpdate:
     """Verify session_update events are emitted on sessions file mtime change."""
 
-    @pytest.mark.asyncio
     async def test_session_file_mtime_change_triggers_event(self, tmp_path):
         """Changing the sessions file mtime causes a session_update event."""
         sessions_file = tmp_path / "sessions.json"
@@ -180,7 +177,6 @@ class TestSseEventStreamSessionUpdate:
 class TestSseEventStreamTraceUpdate:
     """Verify trace_update events are emitted when .jsonl files change."""
 
-    @pytest.mark.asyncio
     async def test_new_trace_file_triggers_event(self, tmp_path):
         """A new .jsonl trace file triggers a trace_update with the file stem."""
         traces_dir = tmp_path / "traces" / "golem"
@@ -225,7 +221,6 @@ class TestSseEventStreamTraceUpdate:
         assert parsed["type"] == "trace_update"
         assert parsed["event_id"] == "golem-99-20260101"
 
-    @pytest.mark.asyncio
     async def test_modified_trace_file_triggers_event(self, tmp_path):
         """Modifying an existing .jsonl trace file triggers a trace_update."""
         traces_dir = tmp_path / "traces" / "golem"
@@ -290,7 +285,6 @@ class TestSseEventStreamTraceUpdate:
 class TestSseEventStreamOsError:
     """Verify OSError exceptions during stat() are handled gracefully."""
 
-    @pytest.mark.asyncio
     async def test_oserror_on_sessions_file_stat_during_init(self, tmp_path):
         """OSError from the explicit sessions stat() during init is handled."""
         sessions_file = tmp_path / "sessions.json"
@@ -333,7 +327,6 @@ class TestSseEventStreamOsError:
         # No crash; no session_update events because mtime was never captured
         assert not any("session_update" in e for e in events)
 
-    @pytest.mark.asyncio
     async def test_oserror_on_trace_file_stat_during_init(self, tmp_path):
         """OSError from trace file stat() during init is silently skipped."""
         traces_dir = tmp_path / "traces" / "golem"
@@ -370,7 +363,6 @@ class TestSseEventStreamOsError:
         # No crash; no trace_update from the file that raised OSError
         assert not any("trace_update" in e for e in events)
 
-    @pytest.mark.asyncio
     async def test_oserror_on_sessions_file_stat_during_loop(self, tmp_path):
         """OSError from sessions file stat() during the poll loop is handled."""
         sessions_file = tmp_path / "sessions.json"
@@ -423,7 +415,6 @@ class TestSseEventStreamOsError:
         # No crash; OSError during loop is caught, no session_update emitted
         assert not any("session_update" in e for e in events)
 
-    @pytest.mark.asyncio
     async def test_oserror_on_trace_file_stat_during_loop(self, tmp_path):
         """OSError from trace file stat() during the poll loop causes skip."""
         traces_dir = tmp_path / "traces" / "golem"

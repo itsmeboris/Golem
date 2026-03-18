@@ -159,11 +159,9 @@ class TestAnalyticsEndpoint:
                 mount_dashboard(app, config_snapshot={}, live_state_file=None)
         return routes
 
-    @pytest.mark.asyncio
     async def test_api_analytics_endpoint_exists(self, handlers):
         assert "/api/analytics" in handlers
 
-    @pytest.mark.asyncio
     async def test_api_analytics_returns_json(self, handlers):
         with patch(
             "golem.core.dashboard.read_runs",
@@ -176,11 +174,9 @@ class TestAnalyticsEndpoint:
         assert body["total_tasks"] == 1
         assert body["pass_rate"] == 1.0
 
-    @pytest.mark.asyncio
     async def test_api_analytics_by_prompt_endpoint_exists(self, handlers):
         assert "/api/analytics/by-prompt" in handlers
 
-    @pytest.mark.asyncio
     async def test_api_analytics_by_prompt_returns_json(self, handlers):
         with patch(
             "golem.core.dashboard.read_runs",

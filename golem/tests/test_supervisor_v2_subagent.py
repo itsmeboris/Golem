@@ -582,7 +582,6 @@ class TestRetryWithResume:
 
 
 class TestCommitAndComplete:
-    @pytest.mark.asyncio
     async def test_merge_ready_set_when_worktree(self):
         """Supervisor sets merge_ready instead of merging inline."""
         session = TaskSession(parent_issue_id=42, parent_subject="Test")
@@ -606,7 +605,6 @@ class TestCommitAndComplete:
         assert session.base_work_dir == "/repo"
         assert session.state == TaskSessionState.COMPLETED
 
-    @pytest.mark.asyncio
     async def test_no_merge_ready_without_worktree(self):
         session = TaskSession(parent_issue_id=42, parent_subject="Test")
         config = _make_config(auto_commit=True)
@@ -626,7 +624,6 @@ class TestCommitAndComplete:
         assert session.merge_ready is False
         assert session.commit_sha == "abc"
 
-    @pytest.mark.asyncio
     async def test_commit_error_does_not_set_merge_ready(self):
         session = TaskSession(parent_issue_id=42, parent_subject="Test")
         config = _make_config(auto_commit=True)
@@ -646,7 +643,6 @@ class TestCommitAndComplete:
         assert session.merge_ready is False
         assert session.state == TaskSessionState.FAILED
 
-    @pytest.mark.asyncio
     async def test_no_changes_skips_merge(self):
         """When commit_changes reports no changes, merge_ready stays False."""
         session = TaskSession(parent_issue_id=42, parent_subject="Test")
@@ -669,7 +665,6 @@ class TestCommitAndComplete:
         assert session.state == TaskSessionState.COMPLETED
         assert not session.errors
 
-    @pytest.mark.asyncio
     async def test_no_auto_commit(self):
         session = TaskSession(parent_issue_id=42, parent_subject="Test")
         config = _make_config(auto_commit=False)
@@ -1085,7 +1080,6 @@ class TestCheckpointHelpers:
 class TestPreflightSupervisor:
     """Cover preflight verification failure branches in _setup_work_dir."""
 
-    @pytest.mark.asyncio
     async def test_preflight_all_checks_fail(self):
         from golem.errors import InfrastructureError
 
@@ -1113,7 +1107,6 @@ class TestPreflightSupervisor:
 class TestVerifiedRef:
     """Cover verified_ref fallback and on_verified_ref callback."""
 
-    @pytest.mark.asyncio
     async def test_initial_worktree_always_uses_head(self):
         """Initial worktree creation always uses HEAD (no start_point)."""
         cfg = _make_config(
@@ -1136,7 +1129,6 @@ class TestVerifiedRef:
             await sup._setup_work_dir(42, "desc")
             mock_wt.assert_called_once_with("/repo", 42)
 
-    @pytest.mark.asyncio
     async def test_on_verified_ref_called_on_preflight_pass(self):
         """on_verified_ref callback fires with HEAD SHA after pre-flight passes."""
         cfg = _make_config(
@@ -1165,7 +1157,6 @@ class TestVerifiedRef:
             await sup._setup_work_dir(42, "desc")
             callback.assert_called_once_with("deadbeef")
 
-    @pytest.mark.asyncio
     async def test_preflight_fail_falls_back_to_verified_ref(self):
         """Pre-flight failure with verified_ref recreates worktree from verified_ref."""
         cfg = _make_config(
@@ -1213,7 +1204,6 @@ class TestVerifiedRef:
             mock_cleanup.assert_called_once()
             assert work_dir == "/wt/42"
 
-    @pytest.mark.asyncio
     async def test_preflight_fail_no_verified_ref_raises(self):
         """Pre-flight failure without verified_ref still raises InfrastructureError."""
         from golem.errors import InfrastructureError
@@ -1245,7 +1235,6 @@ class TestVerifiedRef:
 class TestClarityGate:
     """Cover the clarity check failure path in _execute_phases."""
 
-    @pytest.mark.asyncio
     async def test_clarity_too_low_raises(self):
         from golem.errors import TaskExecutionError
 
@@ -1311,7 +1300,6 @@ class TestExtractPitfalls:
             count = sup._extract_pitfalls()
             assert count == 0
 
-    @pytest.mark.asyncio
     async def test_run_post_task_learning_happy(self):
         session = TaskSession(parent_issue_id=42, parent_subject="Test")
         sup = _make_supervisor(session=session)
@@ -1321,7 +1309,6 @@ class TestExtractPitfalls:
         assert any("Running post-task learning" in e for e in events)
         assert any("3 pitfall(s)" in e for e in events)
 
-    @pytest.mark.asyncio
     async def test_run_post_task_learning_no_pitfalls(self):
         session = TaskSession(parent_issue_id=42, parent_subject="Test")
         sup = _make_supervisor(session=session)
@@ -1330,7 +1317,6 @@ class TestExtractPitfalls:
         events = [e["summary"] for e in session.event_log]
         assert any("no new pitfalls" in e for e in events)
 
-    @pytest.mark.asyncio
     async def test_run_post_task_learning_catches_error(self):
         session = TaskSession(parent_issue_id=42, parent_subject="Test")
         sup = _make_supervisor(session=session)
@@ -1344,7 +1330,6 @@ class TestExtractPitfalls:
 class TestEnsembleRetryBranch:
     """Cover the not-yet-implemented ensemble retry branch."""
 
-    @pytest.mark.asyncio
     async def test_ensemble_eligible_escalates(self):
         cfg = _make_config(
             ensemble_on_second_retry=True,
@@ -2048,7 +2033,6 @@ class TestCreatePullRequestAfterCommit:
         ):
             yield
 
-    @pytest.mark.asyncio
     async def test_create_pr_called_after_commit(self, _base_patches):
         """create_pull_request is called when backend supports it and commit succeeded."""
         profile = _make_profile()
@@ -2085,7 +2069,6 @@ class TestCreatePullRequestAfterCommit:
             body=profile.state_backend.create_pull_request.call_args[1]["body"],
         )
 
-    @pytest.mark.asyncio
     async def test_pr_url_included_in_completion_comment(self, _base_patches):
         """PR URL is appended to the completion comment."""
         profile = _make_profile()
@@ -2120,7 +2103,6 @@ class TestCreatePullRequestAfterCommit:
         comment_text = comment_call[0][1]
         assert "https://github.com/org/repo/pull/7" in comment_text
 
-    @pytest.mark.asyncio
     async def test_pr_event_emitted_when_pr_url_returned(self, _base_patches):
         """An event is emitted with the PR URL when creation succeeds."""
         profile = _make_profile()
@@ -2153,7 +2135,6 @@ class TestCreatePullRequestAfterCommit:
         event_summaries = [e["summary"] for e in session.event_log]
         assert any("Created PR:" in s for s in event_summaries)
 
-    @pytest.mark.asyncio
     async def test_create_pr_not_called_when_backend_lacks_method(self, _base_patches):
         """create_pull_request is not called when backend doesn't have the method."""
         profile = _make_profile()
@@ -2176,7 +2157,6 @@ class TestCreatePullRequestAfterCommit:
 
         assert session.state == TaskSessionState.COMPLETED
 
-    @pytest.mark.asyncio
     async def test_create_pr_not_called_when_no_commit(self, _base_patches):
         """create_pull_request is not called when there was nothing to commit."""
         profile = _make_profile()
@@ -2199,7 +2179,6 @@ class TestCreatePullRequestAfterCommit:
 
         profile.state_backend.create_pull_request.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_create_pr_failure_is_non_fatal(self, _base_patches):
         """create_pull_request failure does not block pipeline completion."""
         profile = _make_profile()
@@ -2236,7 +2215,6 @@ class TestCreatePullRequestAfterCommit:
         comment_text = comment_call[0][1]
         assert "PR:" not in comment_text
 
-    @pytest.mark.asyncio
     async def test_no_pr_note_in_comment_when_pr_url_empty(self, _base_patches):
         """When create_pull_request returns empty string, comment has no PR note."""
         profile = _make_profile()
