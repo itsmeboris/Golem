@@ -151,17 +151,6 @@ class TestBatchStatusUpdatesOnCompletion:
 # API endpoint tests
 # ---------------------------------------------------------------------------
 
-_SENTINEL = object()
-
-
-def _make_request(headers=_SENTINEL, query_params=None, json_data=None):
-    """Build a mock Request with the given attributes."""
-    req = AsyncMock()
-    req.headers = {"authorization": "Bearer tok"} if headers is _SENTINEL else headers
-    req.query_params = query_params or {}
-    req.json = AsyncMock(return_value=json_data or {})
-    return req
-
 
 @pytest.fixture()
 def _wire_batch_deps():
