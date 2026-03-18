@@ -205,7 +205,7 @@ def client(tmp_path):
         patch("golem.core.dashboard._LOG_DIR", logs),
         patch("golem.core.dashboard._SESSIONS_FILE", sessions_file),
     ):
-        mount_dashboard(app, config_snapshot={"model": "test"})
+        mount_dashboard(app, _config_snapshot={"model": "test"})
         with TestClient(app) as tc:
             yield tc
 

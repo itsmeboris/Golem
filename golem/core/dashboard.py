@@ -585,14 +585,14 @@ async def _sse_event_stream():
 
 def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
     app: Any,
-    config_snapshot: dict | None = None,  # pylint: disable=unused-argument
+    _config_snapshot: dict | None = None,
     live_state_file: Path | None = None,
     merge_queue: Any = None,
     heartbeat: Any = None,
 ) -> None:
     """Register /dashboard and API routes on *app*.
 
-    *config_snapshot* is accepted for backwards compatibility but no longer
+    *_config_snapshot* is accepted for backwards compatibility but no longer
     used.  Config data is served by the control API router instead.
 
     *live_state_file*, when set, makes ``/api/live`` read from a JSON file

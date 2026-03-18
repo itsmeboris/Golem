@@ -59,7 +59,7 @@ async def app_client():
     )
 
     app = FastAPI(title="Golem Dashboard")
-    mount_dashboard(app, config_snapshot={}, live_state_file=None)
+    mount_dashboard(app, _config_snapshot={}, live_state_file=None)
     if control_router is not None:
         app.include_router(control_router)
     if health_router is not None:

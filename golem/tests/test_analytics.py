@@ -156,7 +156,7 @@ class TestAnalyticsEndpoint:
             with patch(
                 "golem.core.dashboard.Query", lambda default=None, **kw: default
             ):
-                mount_dashboard(app, config_snapshot={}, live_state_file=None)
+                mount_dashboard(app, _config_snapshot={}, live_state_file=None)
         return routes
 
     async def test_api_analytics_endpoint_exists(self, handlers):

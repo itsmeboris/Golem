@@ -1195,7 +1195,7 @@ class TestMountDashboard:
         app = MagicMock()
         with patch("golem.core.dashboard.FASTAPI_AVAILABLE", True):
             with patch("golem.core.dashboard.Query"):
-                mount_dashboard(app, config_snapshot={"model": "opus"})
+                mount_dashboard(app, _config_snapshot={"model": "opus"})
         assert app.get.call_count >= 5  # pylint: disable=no-member
 
 
@@ -1222,7 +1222,7 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             ):
                 mount_dashboard(
                     app,
-                    config_snapshot={"model": "test"},
+                    _config_snapshot={"model": "test"},
                     live_state_file=None,
                 )
         return routes
@@ -1747,7 +1747,7 @@ class TestCostAnalyticsEndpoint:
             ):
                 mount_dashboard(
                     app,
-                    config_snapshot={"model": "test"},
+                    _config_snapshot={"model": "test"},
                     live_state_file=None,
                 )
         return routes
@@ -2060,7 +2060,7 @@ class TestApiTraceParsedHTTP:
             with patch(
                 "golem.core.dashboard.Query", lambda default=None, **kw: default
             ):
-                mount_dashboard(app, config_snapshot={"model": "test"})
+                mount_dashboard(app, _config_snapshot={"model": "test"})
         return routes
 
     def setup_method(self):

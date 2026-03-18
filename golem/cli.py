@@ -426,7 +426,7 @@ async def _start_dashboard_server(
     app = FastAPI(title="Golem Dashboard")
     mount_dashboard(
         app,
-        config_snapshot=config_snapshot,
+        _config_snapshot=config_snapshot,
         live_state_file=live_state_file,
         merge_queue=merge_queue,
         heartbeat=heartbeat,
