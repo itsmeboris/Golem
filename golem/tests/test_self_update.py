@@ -570,7 +570,7 @@ class TestVerifyInWorktree:
 class TestLifecycle:
     async def test_start_creates_task(self, manager):
         with (
-            patch.object(manager, "_update_loop", new=AsyncMock()) as _mock_loop,
+            patch.object(manager, "_update_loop", new=AsyncMock()),
             patch("golem.self_update.asyncio.create_task") as mock_ct,
         ):
             mock_ct.return_value = MagicMock()
