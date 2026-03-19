@@ -2,13 +2,19 @@
 
 import logging
 import re
-from typing import Any
+from typing import Any, TypeGuard
+
+from golem.types import McpToolDict
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
+
+_REQUIRED_FIELDS: frozenset[str] = (
+    McpToolDict.__required_keys__  # pylint: disable=no-member
+)
 
 _NAME_RE = r"^[a-zA-Z][a-zA-Z0-9_]{0,63}$"
 _NAME_PATTERN = re.compile(_NAME_RE)
@@ -27,7 +33,7 @@ _VALID_ACCESS_LEVELS_STR = ", ".join(sorted(_VALID_ACCESS_LEVELS))
 
 MCP_TOOL_SCHEMA: dict[str, Any] = {
     "type": "object",
-    "required": ["name", "description", "inputSchema"],
+    "required": sorted(_REQUIRED_FIELDS),
     "properties": {
         "name": {
             "type": "string",
@@ -99,7 +105,7 @@ def validate_tool_schema(tool: dict[str, Any]) -> list[str]:
     # ------------------------------------------------------------------
     # Required fields
     # ------------------------------------------------------------------
-    for field in ("name", "description", "inputSchema"):
+    for field in _REQUIRED_FIELDS:
         if field not in tool:
             violations.append(f"missing required field: {field!r}")
 
@@ -193,3 +199,8 @@ def validate_tool_schema(tool: dict[str, Any]) -> list[str]:
 
     logger.debug("validate_tool_schema found %s violation(s)", len(violations))
     return violations
+
+
+def is_valid_mcp_tool(tool: dict[str, Any]) -> TypeGuard[McpToolDict]:
+    """Type-guard wrapper: True when *tool* passes MCP schema validation."""
+    return not validate_tool_schema(tool)

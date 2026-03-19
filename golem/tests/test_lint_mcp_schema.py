@@ -2,7 +2,12 @@
 
 import pytest
 
-from golem.lint.mcp_schema import MCP_TOOL_SCHEMA, validate_tool_schema
+from golem.lint.mcp_schema import (
+    MCP_TOOL_SCHEMA,
+    _REQUIRED_FIELDS,
+    is_valid_mcp_tool,
+    validate_tool_schema,
+)
 from golem.types import McpInputSchemaDict, McpToolDict, ToolPermissionDict
 
 
@@ -460,3 +465,42 @@ class TestValidateToolSchemaPermissions:
             assert (
                 valid_access in access_violation
             ), f"Expected {valid_access!r} in violation message: {access_violation!r}"
+
+
+class TestRequiredFieldsConstant:
+    def test_required_fields_derived_from_typed_dict(self):
+        assert _REQUIRED_FIELDS == {"name", "description", "inputSchema"}
+
+    def test_mcp_tool_schema_required_built_from_constant(self):
+        assert set(MCP_TOOL_SCHEMA["required"]) == {
+            "name",
+            "description",
+            "inputSchema",
+        }
+
+
+class TestIsValidMcpTool:
+    def test_valid_tool_returns_true(self):
+        tool = _valid_tool()
+        assert is_valid_mcp_tool(tool) is True
+
+    @pytest.mark.parametrize(
+        "bad_tool",
+        [
+            {
+                "description": "no name",
+                "inputSchema": {"type": "object", "properties": {}},
+            },
+            {"name": "no_desc", "inputSchema": {"type": "object", "properties": {}}},
+            {"name": "no_schema", "description": "missing inputSchema"},
+            "not a dict",
+        ],
+        ids=[
+            "missing_name",
+            "missing_description",
+            "missing_inputSchema",
+            "non_dict",
+        ],
+    )
+    def test_invalid_tool_returns_false(self, bad_tool):
+        assert is_valid_mcp_tool(bad_tool) is False
