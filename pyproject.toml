@@ -49,6 +49,8 @@ dev = [
     "pylint>=3.0",
     "httpx>=0.24",
     "mutmut>=2.0",
+    "pyflakes>=3.0",
+    "vulture>=2.0",
 ]
 
 [project.urls]

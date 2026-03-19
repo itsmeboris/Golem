@@ -1,0 +1,20 @@
+repos:
+  - repo: local
+    hooks:
+      - id: pylint-dead-code
+        name: pylint dead-code (W0611, W0612, W0101)
+        entry: python3 -m pylint --disable=all --enable=W0611,W0612,W0101
+        language: system
+        types: [python]
+        files: ^golem/
+      - id: pyflakes
+        name: pyflakes (unused imports/variables)
+        entry: python3 scripts/pyflakes_noqa.py golem/
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: vulture
+        name: vulture (dead code detection)
+        entry: python3 -m vulture golem/ vulture_whitelist.py --min-confidence 80
+        language: system
+        pass_filenames: false

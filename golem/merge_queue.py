@@ -140,7 +140,7 @@ class MergeQueue:
         if self._on_state_change:
             self._on_state_change()
 
-    def snapshot(self) -> "MergeQueueSnapshotDict":
+    def snapshot(self) -> "MergeQueueSnapshotDict":  # noqa: F821
         """Serialize current queue state for the dashboard API."""
         from .types import (
             MergeEntryDict,

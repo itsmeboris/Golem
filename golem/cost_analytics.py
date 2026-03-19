@@ -32,7 +32,7 @@ def _retry_bucket(retry_count: int) -> str:
 
 def compute_cost_analytics(
     runs: list[dict],
-    sessions: "dict[int, Any] | None" = None,
+    sessions: "dict[int, Any] | None" = None,  # noqa: F821
 ) -> dict:
     """Compute cost analytics from run records and optional task sessions.
 
@@ -155,7 +155,9 @@ def compute_cost_analytics(
     }
 
 
-def _compute_budget_utilization(sessions: "dict[int, Any] | None") -> "dict | None":
+def _compute_budget_utilization(
+    sessions: "dict[int, Any] | None",  # noqa: F821
+) -> "dict | None":
     """Compute budget utilization from terminal-state task sessions.
 
     Only COMPLETED and FAILED sessions are included.

@@ -403,4 +403,4 @@ def test_regex_matching_parametrized(
     if should_match:
         assert len(result) == 1, f"Expected violation for pattern {schema_pattern!r}"
     else:
-        assert result == [], f"Expected no violation for pattern mismatch"
+        assert result == [], f"Expected no violation for pattern mismatch"  # noqa: F541

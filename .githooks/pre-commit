@@ -1,0 +1,75 @@
+#!/bin/bash
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# Use python3 if available, fall back to python
+PYTHON="$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)"
+if [[ -z "$PYTHON" ]]; then
+    echo "pre-commit: no python interpreter found, skipping checks" >&2
+    exit 0
+fi
+
+# ── colours ──────────────────────────────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+# ── 1. Skip in agent worktrees ───────────────────────────────────────
+if [[ "${AGENT_WORKTREE:-}" == "1" ]]; then
+    printf "${YELLOW}pre-commit: skipped (agent worktree — validated by supervisor)${NC}\n"
+    exit 0
+fi
+
+# ── 2. Collect staged Python files under golem/ ──────────────────────
+staged_py=()
+while IFS= read -r f; do
+    if [[ "$f" =~ ^golem/ && "$f" =~ \.py$ ]]; then
+        staged_py+=("$f")
+    fi
+done < <(git diff --cached --name-only --diff-filter=d 2>/dev/null || true)
+
+# ── 3. Skip if no Python files staged ───────────────────────────────
+if [[ ${#staged_py[@]} -eq 0 ]]; then
+    printf "${YELLOW}pre-commit: no staged Python files under golem/ — skipping dead-code check${NC}\n"
+    exit 0
+fi
+
+failed=0
+
+# ── 4. Run pylint dead-code check ───────────────────────────────────
+printf "${BOLD}=== pre-commit: pylint dead-code ===${NC}\n"
+if ! "$PYTHON" -m pylint --disable=all --enable=W0611,W0612,W0101 "${staged_py[@]}" 2>/dev/null; then
+    printf "${RED}pylint dead-code: warnings found in staged files${NC}\n"
+    printf "Fix unused imports/variables before committing.\n"
+    failed=1
+else
+    printf "${GREEN}pylint dead-code: ok${NC}\n"
+fi
+
+# ── 5. Run pyflakes check ────────────────────────────────────────────
+printf "${BOLD}=== pre-commit: pyflakes ===${NC}\n"
+if ! "$PYTHON" scripts/pyflakes_noqa.py golem/; then
+    printf "${RED}pyflakes: unused imports/variables found${NC}\n"
+    printf "Fix dead code before committing.\n"
+    failed=1
+else
+    printf "${GREEN}pyflakes: ok${NC}\n"
+fi
+
+# ── 6. Run vulture dead-code check ──────────────────────────────────
+printf "${BOLD}=== pre-commit: vulture ===${NC}\n"
+if ! "$PYTHON" -m vulture golem/ vulture_whitelist.py --min-confidence 80; then
+    printf "${RED}vulture: dead code detected${NC}\n"
+    printf "Remove unused code before committing.\n"
+    failed=1
+else
+    printf "${GREEN}vulture: ok${NC}\n"
+fi
+
+if [[ "$failed" -ne 0 ]]; then
+    exit 1
+fi

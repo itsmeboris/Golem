@@ -14,11 +14,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install black pylint
+      - run: pip install black pylint pyflakes vulture
       - run: black --check golem/
       - run: pip install -e .
       - run: pylint --errors-only golem/
       - run: pylint --disable=all --enable=W0611,W0612,W0101 golem/
+      - run: python3 scripts/pyflakes_noqa.py golem/
+      - run: python3 -m vulture golem/ vulture_whitelist.py --min-confidence 80
 
   test:
     runs-on: ubuntu-latest
