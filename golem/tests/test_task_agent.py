@@ -909,6 +909,48 @@ class TestGolemFlow:
         assert len(items) == 2
         assert items[0]["issue_id"] == 100
 
+    def test_poll_new_items_redetects_reopened_completed_issue(
+        self, monkeypatch, tmp_path
+    ):
+        """A completed issue that reappears in poll (still open) was reopened."""
+        flow = self._make_flow(monkeypatch, tmp_path)
+        # Issue 100 was previously completed
+        flow._sessions[100] = TaskSession(
+            parent_issue_id=100, state=TaskSessionState.COMPLETED
+        )
+        flow._processed_ids.add(100)
+
+        # But GitHub returns it as open (user reopened with new scope)
+        fake_issues = [{"id": 100, "subject": "[AGENT] Reopened task"}]
+        monkeypatch.setattr(
+            flow._profile.task_source,
+            "poll_tasks",
+            lambda *a, **kw: fake_issues,
+        )
+        items = flow.poll_new_items()
+        assert len(items) == 1
+        assert items[0]["issue_id"] == 100
+        # Session and processed state should be cleared for this issue
+        assert 100 not in flow._processed_ids
+
+    def test_poll_new_items_does_not_redetect_running_session(
+        self, monkeypatch, tmp_path
+    ):
+        """A RUNNING session should NOT be re-detected even if poll returns it."""
+        flow = self._make_flow(monkeypatch, tmp_path)
+        flow._sessions[100] = TaskSession(
+            parent_issue_id=100, state=TaskSessionState.RUNNING
+        )
+
+        fake_issues = [{"id": 100, "subject": "[AGENT] Task 1"}]
+        monkeypatch.setattr(
+            flow._profile.task_source,
+            "poll_tasks",
+            lambda *a, **kw: fake_issues,
+        )
+        items = flow.poll_new_items()
+        assert len(items) == 0
+
     def test_generate_event_id(self, monkeypatch, tmp_path):
         flow = self._make_flow(monkeypatch, tmp_path)
         eid = flow.generate_event_id({"issue_id": 100})

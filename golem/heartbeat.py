@@ -1138,9 +1138,18 @@ class HeartbeatManager:
         )
 
         try:
-            self._flow.submit_task(prompt=prompt, subject=subject, issue_mode=True)
-            # NOT added to inflight — runs as normal Golem task
-            self.record_dedup(candidate["id"], "promoted")
+            result = self._flow.submit_task(
+                prompt=prompt, subject=subject, issue_mode=True
+            )
+            task_id = _coerce_task_id(result["task_id"])
+            if task_id is None:
+                logger.error(
+                    "submit_task returned non-integer task_id: %r",
+                    result["task_id"],
+                )
+                return
+            self._inflight_task_ids.append(task_id)
+            self.record_dedup(candidate["id"], "promoted", task_id=task_id)
             self._tier1_owed = False
             self._tier2_completions_since_tier1 = 0
             logger.info(

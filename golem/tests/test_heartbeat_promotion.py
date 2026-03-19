@@ -306,7 +306,7 @@ class TestTier1PromotionTick:
         assert mgr._tier1_owed is False
         assert mgr._tier2_completions_since_tier1 == 0
 
-    async def test_owed_tick_promoted_not_in_inflight(self, tmp_path):
+    async def test_owed_tick_promoted_tracked_in_inflight(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mgr._tier1_owed = True
         mgr._tier2_completions_since_tier1 = 3
@@ -331,7 +331,7 @@ class TestTier1PromotionTick:
             with patch.object(mgr, "_run_tier2", return_value=[]):
                 await mgr._run_heartbeat_tick()
 
-        assert 999 not in mgr._inflight_task_ids
+        assert 999 in mgr._inflight_task_ids
 
     async def test_owed_tick_records_promoted_in_dedup(self, tmp_path):
         mgr = _make_manager(tmp_path)
@@ -444,3 +444,105 @@ class TestTier1PromotionTick:
 
         # Flag NOT cleared on failure
         assert mgr._tier1_owed is True
+
+
+class TestPromotedTaskTracking:
+    """Promoted tasks must store task_id and track via inflight so
+    on_task_completed() can transition the verdict."""
+
+    async def test_submit_promoted_stores_task_id_in_dedup(self, tmp_path):
+        mgr = _make_manager(tmp_path)
+        mock_flow = MagicMock()
+        mock_flow.submit_task.return_value = {"task_id": 777, "status": "submitted"}
+        mgr._flow = mock_flow
+
+        candidate = {
+            "id": "github:50",
+            "category": "github",
+            "subject": "Feature X",
+            "body": "desc",
+            "automatable": True,
+            "confidence": 0.9,
+            "complexity": "small",
+            "reason": "Useful",
+        }
+        mgr._submit_promoted(candidate)
+
+        entry = mgr._dedup_memory["github:50"]
+        assert entry["verdict"] == "promoted"
+        assert entry["task_id"] == 777
+
+    async def test_submit_promoted_adds_to_inflight(self, tmp_path):
+        mgr = _make_manager(tmp_path)
+        mock_flow = MagicMock()
+        mock_flow.submit_task.return_value = {"task_id": 777, "status": "submitted"}
+        mgr._flow = mock_flow
+
+        candidate = {
+            "id": "github:50",
+            "category": "github",
+            "subject": "Feature X",
+            "body": "desc",
+            "automatable": True,
+            "confidence": 0.9,
+            "complexity": "small",
+            "reason": "Useful",
+        }
+        mgr._submit_promoted(candidate)
+
+        assert 777 in mgr._inflight_task_ids
+
+    async def test_on_task_completed_transitions_promoted_verdict(self, tmp_path):
+        mgr = _make_manager(tmp_path)
+        mgr._inflight_task_ids = [777]
+        mgr._dedup_memory["github:50"] = {
+            "evaluated_at": "2026-03-17T00:00:00+00:00",
+            "verdict": "promoted",
+            "task_id": 777,
+        }
+
+        mgr.on_task_completed(777, success=True)
+
+        assert mgr._dedup_memory["github:50"]["verdict"] == "completed"
+        assert 777 not in mgr._inflight_task_ids
+
+    async def test_submit_promoted_returns_early_on_invalid_task_id(self, tmp_path):
+        mgr = _make_manager(tmp_path)
+        mock_flow = MagicMock()
+        mock_flow.submit_task.return_value = {
+            "task_id": "not-an-int",
+            "status": "submitted",
+        }
+        mgr._flow = mock_flow
+        mgr._tier1_owed = True
+
+        candidate = {
+            "id": "github:50",
+            "category": "github",
+            "subject": "Feature X",
+            "body": "desc",
+            "automatable": True,
+            "confidence": 0.9,
+            "complexity": "small",
+            "reason": "Useful",
+        }
+        mgr._submit_promoted(candidate)
+
+        assert "github:50" not in mgr._dedup_memory
+        assert mgr._inflight_task_ids == []
+        # tier1_owed not cleared on failure
+        assert mgr._tier1_owed is True
+
+    async def test_on_task_completed_transitions_promoted_to_failed(self, tmp_path):
+        mgr = _make_manager(tmp_path)
+        mgr._inflight_task_ids = [777]
+        mgr._dedup_memory["github:50"] = {
+            "evaluated_at": "2026-03-17T00:00:00+00:00",
+            "verdict": "promoted",
+            "task_id": 777,
+        }
+
+        mgr.on_task_completed(777, success=False)
+
+        assert mgr._dedup_memory["github:50"]["verdict"] == "failed"
+        assert 777 not in mgr._inflight_task_ids

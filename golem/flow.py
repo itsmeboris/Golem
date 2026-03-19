@@ -231,6 +231,15 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             else set()
         )
 
+        # Detect reopened issues: poll_tasks only returns open issues, so
+        # any completed session that reappears was reopened with new scope.
+        polled_ids = {issue.get("id") for issue in issues}
+        reopened = self._processed_ids & polled_ids
+        for iid in reopened:
+            logger.info("Issue #%d was reopened — allowing re-detection", iid)
+            self._processed_ids.discard(iid)
+            self._sessions.pop(iid, None)
+
         new_items = []
         for issue in issues:
             iid = issue.get("id")
