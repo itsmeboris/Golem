@@ -10,6 +10,17 @@ from dataclasses import dataclass, field
 
 logger = logging.getLogger("golem.parallel_review")
 
+__all__ = [
+    "ReviewerRole",
+    "ReviewFinding",
+    "ReviewResult",
+    "AggregatedReview",
+    "default_reviewers",
+    "enhanced_reviewers",
+    "roles_from_config",
+    "aggregate_reviews",
+]
+
 
 class ReviewerRole(enum.Enum):
     """Specialized reviewer roles for multi-perspective review."""

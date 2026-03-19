@@ -15,10 +15,6 @@ ADAPTIVE_CARD_VERSION = "1.4"
 CARD_CONTENT_TYPE = "application/vnd.microsoft.card.adaptive"
 
 
-class TeamsClientError(Exception):
-    """Raised when a Teams webhook operation fails unrecoverably."""
-
-
 class TeamsClient:
     """HTTP client for posting Adaptive Cards to Teams Incoming Webhooks."""
 

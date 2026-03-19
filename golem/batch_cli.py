@@ -52,7 +52,7 @@ def _color_verdict(text: str, verdict: str, *, enabled: bool) -> str:
     return text
 
 
-def batch_api_get(port: int, path: str, api_key: str = "") -> dict | None:
+def _batch_api_get(port: int, path: str, api_key: str = "") -> dict | None:
     """GET a batch API endpoint. Returns parsed JSON or None on error."""
     url = f"http://127.0.0.1:{port}{path}"
     headers: dict[str, str] = {}
@@ -260,7 +260,7 @@ def _print_submit_result(result: dict, input_tasks: list) -> None:
 
 
 # ---------------------------------------------------------------------------
-# cmd_batch_submit
+# _cmd_batch_submit
 # ---------------------------------------------------------------------------
 
 
@@ -285,7 +285,7 @@ def _post_batch(port: int, payload: dict, api_key: str, timeout: int) -> dict | 
         return None
 
 
-def cmd_batch_submit(args: argparse.Namespace, config: Any) -> int:
+def _cmd_batch_submit(args: argparse.Namespace, config: Any) -> int:
     """Submit a batch of tasks from a JSON or YAML file."""
     from .cli import _ensure_daemon  # pylint: disable=import-outside-toplevel
     from .core.config import DashboardConfig  # pylint: disable=import-outside-toplevel
@@ -326,10 +326,10 @@ def cmd_batch(args: argparse.Namespace) -> int:
     batch_cmd = getattr(args, "batch_command", None)
 
     if batch_cmd == "submit":
-        return cmd_batch_submit(args, config)
+        return _cmd_batch_submit(args, config)
 
     if batch_cmd == "status":
-        data = batch_api_get(port, f"/api/batch/{args.group_id}", api_key=api_key)
+        data = _batch_api_get(port, f"/api/batch/{args.group_id}", api_key=api_key)
         if data is None:
             return 1
         format_batch_status(data.get("batch", {}))
@@ -343,7 +343,7 @@ def cmd_batch(args: argparse.Namespace) -> int:
 
 
 def _cmd_batch_list(port: int, api_key: str) -> int:
-    data = batch_api_get(port, "/api/batches", api_key=api_key)
+    data = _batch_api_get(port, "/api/batches", api_key=api_key)
     if data is None:
         return 1
     batches = data.get("batches", [])

@@ -10,10 +10,6 @@ from .defaults import POST_TIMEOUT
 logger = logging.getLogger("golem.core.slack")
 
 
-class SlackClientError(Exception):
-    """Raised when a Slack webhook operation fails unrecoverably."""
-
-
 class SlackClient:
     """HTTP client for posting Block Kit messages to Slack Incoming Webhooks."""
 

@@ -17,6 +17,8 @@ except ImportError:
     trace = None  # type: ignore[assignment]
     _OTEL_AVAILABLE = False
 
+__all__ = ["get_tracer", "start_span"]
+
 
 # ---------------------------------------------------------------------------
 # No-op helpers used when opentelemetry is not installed

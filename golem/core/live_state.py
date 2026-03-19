@@ -23,7 +23,7 @@ DEFAULT_LIVE_STATE_FILE = (
 
 
 @dataclass
-class ActiveTask:
+class _ActiveTask:
     """A task currently being processed or waiting in queue."""
 
     event_id: str
@@ -34,7 +34,7 @@ class ActiveTask:
 
 
 @dataclass
-class CompletedTask:
+class _CompletedTask:
     """A recently finished task kept for the live feed."""
 
     event_id: str
@@ -74,9 +74,9 @@ class LiveState:
     _lock = threading.Lock()
 
     def __init__(self):
-        self._active: dict[str, ActiveTask] = {}
+        self._active: dict[str, _ActiveTask] = {}
         self._queue: dict[str, float] = {}
-        self._recent: list[CompletedTask] = []
+        self._recent: list[_CompletedTask] = []
         self._mu = threading.Lock()
         self._max_recent = (
             50  # ring buffer size for the dashboard's recent-completions feed
@@ -122,7 +122,7 @@ class LiveState:
     def enqueue(self, event_id: str, flow: str, model: str) -> None:
         """Register a new task in the 'preparing' phase (prefetch/prompt)."""
         with self._mu:
-            self._active[event_id] = ActiveTask(
+            self._active[event_id] = _ActiveTask(
                 event_id=event_id,
                 flow=flow,
                 model=model,
@@ -165,7 +165,7 @@ class LiveState:
             task = self._active.pop(event_id, None)
             if task:
                 self._recent.append(
-                    CompletedTask(
+                    _CompletedTask(
                         event_id=task.event_id,
                         flow=task.flow,
                         model=task.model,
@@ -189,7 +189,7 @@ class LiveState:
             now = time.time()
             for task in self._active.values():
                 self._recent.append(
-                    CompletedTask(
+                    _CompletedTask(
                         event_id=task.event_id,
                         flow=task.flow,
                         model=task.model,

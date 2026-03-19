@@ -300,3 +300,14 @@ class TestCheckUnusedExportsSyntaxError:
         names = {v["name"] for v in violations}
         # good_fn is unused and should be flagged
         assert "good_fn" in names
+
+
+class TestRealCodebaseHasZeroViolations:
+    def test_check_unused_exports_zero_violations_on_real_codebase(self):
+        """SPEC-5: check_unused_exports on the real golem package returns 0 violations."""
+        golem_root = Path(__file__).resolve().parent.parent
+        violations = check_unused_exports(golem_root)
+        violation_messages = [v["message"] for v in violations]
+        assert violations == [], "Unexpected unused exports:\n" + "\n".join(
+            violation_messages
+        )
