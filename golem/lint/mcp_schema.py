@@ -31,6 +31,23 @@ MCP_TOOL_SCHEMA: dict = {
                 "properties": {"type": "object"},
             },
         },
+        "permissions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["resource", "access"],
+                "properties": {
+                    "resource": {
+                        "type": "string",
+                        "enum": ["filesystem", "network", "ui", "process"],
+                    },
+                    "access": {
+                        "type": "string",
+                        "enum": ["read", "write", "execute"],
+                    },
+                },
+            },
+        },
     },
     "additionalProperties": True,
 }
@@ -40,6 +57,12 @@ MCP_TOOL_SCHEMA: dict = {
 # ---------------------------------------------------------------------------
 
 _NAME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]{0,63}$")
+
+_VALID_RESOURCES = frozenset({"filesystem", "network", "ui", "process"})
+_VALID_ACCESS_LEVELS = frozenset({"read", "write", "execute"})
+
+_VALID_RESOURCES_STR = ", ".join(sorted(_VALID_RESOURCES))
+_VALID_ACCESS_LEVELS_STR = ", ".join(sorted(_VALID_ACCESS_LEVELS))
 
 _INJECTION_PATTERNS = [
     re.compile(p, re.IGNORECASE)
@@ -128,6 +151,38 @@ def validate_tool_schema(tool: dict) -> list[str]:
                 violations.append("inputSchema is missing required field 'properties'")
             elif not isinstance(schema["properties"], dict):
                 violations.append("inputSchema.properties must be an object/dict")
+
+    # ------------------------------------------------------------------
+    # permissions constraints (optional field)
+    # ------------------------------------------------------------------
+    if "permissions" in tool:
+        perms = tool["permissions"]
+        if not isinstance(perms, list):
+            violations.append("permissions must be a list")
+        else:
+            for idx, entry in enumerate(perms):
+                prefix = f"permissions[{idx}]"
+                if not isinstance(entry, dict):
+                    violations.append(f"{prefix}: entry must be a dict")
+                    continue
+                if "resource" not in entry:
+                    violations.append(f"{prefix}: missing required field 'resource'")
+                else:
+                    resource = entry["resource"]
+                    if resource not in _VALID_RESOURCES:
+                        violations.append(
+                            f"{prefix}: invalid resource {resource!r},"
+                            f" expected one of: {_VALID_RESOURCES_STR}"
+                        )
+                if "access" not in entry:
+                    violations.append(f"{prefix}: missing required field 'access'")
+                else:
+                    access = entry["access"]
+                    if access not in _VALID_ACCESS_LEVELS:
+                        violations.append(
+                            f"{prefix}: invalid access {access!r},"
+                            f" expected one of: {_VALID_ACCESS_LEVELS_STR}"
+                        )
 
     logger.debug("validate_tool_schema found %s violation(s)", len(violations))
     return violations

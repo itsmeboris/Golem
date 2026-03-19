@@ -28,6 +28,7 @@ class TestMcpToolSchema:
             "name",
             "description",
             "inputSchema",
+            "permissions",
         }
 
 
@@ -49,6 +50,22 @@ class TestValidateToolSchemaValid:
                     "additionalProperties": True,
                 }
             ),
+            _valid_tool(permissions=[]),
+            _valid_tool(permissions=[{"resource": "filesystem", "access": "read"}]),
+            _valid_tool(permissions=[{"resource": "network", "access": "write"}]),
+            _valid_tool(permissions=[{"resource": "ui", "access": "execute"}]),
+            _valid_tool(permissions=[{"resource": "process", "access": "read"}]),
+            _valid_tool(
+                permissions=[
+                    {"resource": "filesystem", "access": "read"},
+                    {"resource": "network", "access": "write"},
+                ]
+            ),
+            _valid_tool(
+                permissions=[
+                    {"resource": "filesystem", "access": "read", "extra": "ignored"}
+                ]
+            ),
         ],
         ids=[
             "minimal_valid",
@@ -59,6 +76,13 @@ class TestValidateToolSchemaValid:
             "description_at_1024",
             "extra_field_ignored",
             "additionalProperties_true_with_properties",
+            "permissions_empty_list",
+            "permissions_filesystem_read",
+            "permissions_network_write",
+            "permissions_ui_execute",
+            "permissions_process_read",
+            "permissions_multiple_entries",
+            "permissions_entry_with_extra_keys",
         ],
     )
     def test_valid_tool_returns_empty_list(self, tool):
@@ -213,8 +237,187 @@ class TestValidateToolSchemaMultipleViolations:
         # injection violation for "ignore previous"
         assert any("ignore previous" in v for v in violations)
 
-    def test_all_fields_missing_all_reported(self):
-        violations = validate_tool_schema({})
-        assert any("name" in v for v in violations)
-        assert any("description" in v for v in violations)
-        assert any("inputSchema" in v for v in violations)
+
+class TestValidateToolSchemaPermissions:
+    @pytest.mark.parametrize(
+        "permissions, expected_violation_substring",
+        [
+            ("not_a_list", "permissions must be a list"),
+            (
+                {"resource": "filesystem", "access": "read"},
+                "permissions must be a list",
+            ),
+            (42, "permissions must be a list"),
+            (None, "permissions must be a list"),
+        ],
+        ids=[
+            "permissions_is_string",
+            "permissions_is_dict",
+            "permissions_is_int",
+            "permissions_is_none",
+        ],
+    )
+    def test_permissions_not_a_list_produces_violation(
+        self, permissions, expected_violation_substring
+    ):
+        tool = _valid_tool(permissions=permissions)
+        violations = validate_tool_schema(tool)
+        assert any(
+            expected_violation_substring in v for v in violations
+        ), f"Expected violation containing {expected_violation_substring!r}, got: {violations}"
+
+    @pytest.mark.parametrize(
+        "entry, expected_violation_substring",
+        [
+            ("not_a_dict", "permissions[0]: entry must be a dict"),
+            (42, "permissions[0]: entry must be a dict"),
+            ([], "permissions[0]: entry must be a dict"),
+        ],
+        ids=[
+            "entry_is_string",
+            "entry_is_int",
+            "entry_is_list",
+        ],
+    )
+    def test_permissions_entry_not_a_dict_produces_violation(
+        self, entry, expected_violation_substring
+    ):
+        tool = _valid_tool(permissions=[entry])
+        violations = validate_tool_schema(tool)
+        assert any(
+            expected_violation_substring in v for v in violations
+        ), f"Expected violation containing {expected_violation_substring!r}, got: {violations}"
+
+    @pytest.mark.parametrize(
+        "entry, expected_violation_substring",
+        [
+            (
+                {"access": "read"},
+                "permissions[0]: missing required field 'resource'",
+            ),
+            (
+                {"resource": "filesystem"},
+                "permissions[0]: missing required field 'access'",
+            ),
+            (
+                {},
+                "permissions[0]: missing required field 'resource'",
+            ),
+        ],
+        ids=[
+            "entry_missing_resource",
+            "entry_missing_access",
+            "entry_empty_dict",
+        ],
+    )
+    def test_permissions_entry_missing_fields_produces_violation(
+        self, entry, expected_violation_substring
+    ):
+        tool = _valid_tool(permissions=[entry])
+        violations = validate_tool_schema(tool)
+        assert any(
+            expected_violation_substring in v for v in violations
+        ), f"Expected violation containing {expected_violation_substring!r}, got: {violations}"
+
+    @pytest.mark.parametrize(
+        "resource, expected_violation_substring",
+        [
+            ("disk", "permissions[0]: invalid resource 'disk'"),
+            ("internet", "permissions[0]: invalid resource 'internet'"),
+            ("", "permissions[0]: invalid resource ''"),
+            (42, "permissions[0]: invalid resource"),
+        ],
+        ids=[
+            "invalid_resource_disk",
+            "invalid_resource_internet",
+            "invalid_resource_empty",
+            "invalid_resource_int",
+        ],
+    )
+    def test_permissions_invalid_resource_produces_violation(
+        self, resource, expected_violation_substring
+    ):
+        tool = _valid_tool(permissions=[{"resource": resource, "access": "read"}])
+        violations = validate_tool_schema(tool)
+        assert any(
+            expected_violation_substring in v for v in violations
+        ), f"Expected violation containing {expected_violation_substring!r}, got: {violations}"
+
+    @pytest.mark.parametrize(
+        "access, expected_violation_substring",
+        [
+            ("delete", "permissions[0]: invalid access 'delete'"),
+            ("admin", "permissions[0]: invalid access 'admin'"),
+            ("", "permissions[0]: invalid access ''"),
+            (True, "permissions[0]: invalid access"),
+        ],
+        ids=[
+            "invalid_access_delete",
+            "invalid_access_admin",
+            "invalid_access_empty",
+            "invalid_access_bool",
+        ],
+    )
+    def test_permissions_invalid_access_produces_violation(
+        self, access, expected_violation_substring
+    ):
+        tool = _valid_tool(permissions=[{"resource": "filesystem", "access": access}])
+        violations = validate_tool_schema(tool)
+        assert any(
+            expected_violation_substring in v for v in violations
+        ), f"Expected violation containing {expected_violation_substring!r}, got: {violations}"
+
+    def test_permissions_multiple_entries_one_invalid_reports_correct_index(self):
+        tool = _valid_tool(
+            permissions=[
+                {"resource": "filesystem", "access": "read"},
+                {"resource": "disk", "access": "write"},
+            ]
+        )
+        violations = validate_tool_schema(tool)
+        assert any(
+            "permissions[1]" in v for v in violations
+        ), f"Expected violation referencing permissions[1], got: {violations}"
+        assert not any(
+            "permissions[0]" in v for v in violations
+        ), f"Did not expect violation for permissions[0], got: {violations}"
+
+    def test_permissions_entry_with_both_invalid_resource_and_access_reports_both(self):
+        tool = _valid_tool(permissions=[{"resource": "disk", "access": "delete"}])
+        violations = validate_tool_schema(tool)
+        resource_violations = [v for v in violations if "invalid resource" in v]
+        access_violations = [v for v in violations if "invalid access" in v]
+        assert (
+            len(resource_violations) == 1
+        ), f"Expected 1 resource violation, got: {violations}"
+        assert (
+            len(access_violations) == 1
+        ), f"Expected 1 access violation, got: {violations}"
+
+    def test_empty_dict_entry_reports_both_missing_fields(self):
+        tool = _valid_tool(permissions=[{}])
+        violations = validate_tool_schema(tool)
+        assert any(
+            "missing required field 'resource'" in v for v in violations
+        ), f"Expected resource missing violation, got: {violations}"
+        assert any(
+            "missing required field 'access'" in v for v in violations
+        ), f"Expected access missing violation, got: {violations}"
+
+    def test_violation_message_includes_valid_options_for_resource(self):
+        tool = _valid_tool(permissions=[{"resource": "disk", "access": "read"}])
+        violations = validate_tool_schema(tool)
+        resource_violation = next(v for v in violations if "invalid resource" in v)
+        for valid_resource in ("filesystem", "network", "process", "ui"):
+            assert (
+                valid_resource in resource_violation
+            ), f"Expected {valid_resource!r} in violation message: {resource_violation!r}"
+
+    def test_violation_message_includes_valid_options_for_access(self):
+        tool = _valid_tool(permissions=[{"resource": "filesystem", "access": "delete"}])
+        violations = validate_tool_schema(tool)
+        access_violation = next(v for v in violations if "invalid access" in v)
+        for valid_access in ("execute", "read", "write"):
+            assert (
+                valid_access in access_violation
+            ), f"Expected {valid_access!r} in violation message: {access_violation!r}"

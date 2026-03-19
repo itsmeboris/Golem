@@ -11,6 +11,17 @@ See: docs/plans/2026-03-09-quality-assurance-pipeline-v2-design.md
 from typing import Any, NotRequired, TypedDict
 
 
+class ToolPermissionDict(TypedDict):
+    """A single permission declaration in an MCP tool schema.
+
+    Producers: MCP server tool definitions (external)
+    Consumers: golem/lint/mcp_schema.py validate_tool_schema()
+    """
+
+    resource: str  # "filesystem" | "network" | "ui" | "process"
+    access: str  # "read" | "write" | "execute"
+
+
 class MilestoneDict(TypedDict):
     """A single event-log entry produced by TaskEventTracker.
 
