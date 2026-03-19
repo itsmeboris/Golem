@@ -7,6 +7,20 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+_NAME_RE = r"^[a-zA-Z][a-zA-Z0-9_]{0,63}$"
+_NAME_PATTERN = re.compile(_NAME_RE)
+_NAME_MAX_LENGTH = 64
+_DESCRIPTION_MAX_LENGTH = 1024
+_VALID_RESOURCES: frozenset[str] = frozenset({"filesystem", "network", "ui", "process"})
+_VALID_ACCESS_LEVELS: frozenset[str] = frozenset({"read", "write", "execute"})
+
+_VALID_RESOURCES_STR = ", ".join(sorted(_VALID_RESOURCES))
+_VALID_ACCESS_LEVELS_STR = ", ".join(sorted(_VALID_ACCESS_LEVELS))
+
+# ---------------------------------------------------------------------------
 # JSON Schema (for documentation/export purposes only)
 # Validation is done programmatically below.
 # ---------------------------------------------------------------------------
@@ -17,12 +31,12 @@ MCP_TOOL_SCHEMA: dict[str, Any] = {
     "properties": {
         "name": {
             "type": "string",
-            "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,63}$",
-            "maxLength": 64,
+            "pattern": _NAME_RE,
+            "maxLength": _NAME_MAX_LENGTH,
         },
         "description": {
             "type": "string",
-            "maxLength": 1024,
+            "maxLength": _DESCRIPTION_MAX_LENGTH,
         },
         "inputSchema": {
             "type": "object",
@@ -40,11 +54,11 @@ MCP_TOOL_SCHEMA: dict[str, Any] = {
                 "properties": {
                     "resource": {
                         "type": "string",
-                        "enum": ["filesystem", "network", "ui", "process"],
+                        "enum": sorted(_VALID_RESOURCES),
                     },
                     "access": {
                         "type": "string",
-                        "enum": ["read", "write", "execute"],
+                        "enum": sorted(_VALID_ACCESS_LEVELS),
                     },
                 },
             },
@@ -52,20 +66,6 @@ MCP_TOOL_SCHEMA: dict[str, Any] = {
     },
     "additionalProperties": True,
 }
-
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
-_NAME_PATTERN = re.compile(MCP_TOOL_SCHEMA["properties"]["name"]["pattern"])
-
-_perm_schema = MCP_TOOL_SCHEMA["properties"]["permissions"]["items"]["properties"]
-_VALID_RESOURCES = frozenset(_perm_schema["resource"]["enum"])
-_VALID_ACCESS_LEVELS = frozenset(_perm_schema["access"]["enum"])
-del _perm_schema
-
-_VALID_RESOURCES_STR = ", ".join(sorted(_VALID_RESOURCES))
-_VALID_ACCESS_LEVELS_STR = ", ".join(sorted(_VALID_ACCESS_LEVELS))
 
 _INJECTION_PATTERNS = [
     re.compile(p, re.IGNORECASE)
@@ -124,9 +124,9 @@ def validate_tool_schema(tool: dict[str, Any]) -> list[str]:
         if not isinstance(desc, str):
             violations.append("description must be a string")
         else:
-            if len(desc) > 1024:
+            if len(desc) > _DESCRIPTION_MAX_LENGTH:
                 violations.append(
-                    "description exceeds maximum length of 1024 characters"
+                    f"description exceeds maximum length of {_DESCRIPTION_MAX_LENGTH} characters"
                 )
             for pattern in _INJECTION_PATTERNS:
                 if pattern.search(desc):
