@@ -297,8 +297,7 @@ class NullToolProvider:
         """Return an empty server list."""
         return []
 
-    def servers_for_subject(  # pylint: disable=unused-argument
-        self, _subject: str, *, role: str = ""
-    ) -> list[str]:
+    def servers_for_subject(self, _subject: str, *, role: str = "") -> list[str]:
         """Return an empty server list (no MCP tools)."""
+        del role  # satisfies ToolProvider protocol; local backend has no servers
         return []
