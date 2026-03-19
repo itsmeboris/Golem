@@ -4,7 +4,7 @@ import logging
 import re
 from typing import Any, TypeGuard
 
-from golem.types import McpToolDict
+from golem.types import McpInputSchemaDict, McpToolDict, ToolPermissionDict
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ _VALID_ACCESS_LEVELS_STR = ", ".join(sorted(_VALID_ACCESS_LEVELS))
 
 MCP_TOOL_SCHEMA: dict[str, Any] = {
     "type": "object",
-    "required": ["name", "description", "inputSchema"],
+    "required": sorted(McpToolDict.__required_keys__),  # pylint: disable=no-member
     "properties": {
         "name": {
             "type": "string",
@@ -42,7 +42,9 @@ MCP_TOOL_SCHEMA: dict[str, Any] = {
         },
         "inputSchema": {
             "type": "object",
-            "required": ["type", "properties"],
+            "required": sorted(
+                McpInputSchemaDict.__required_keys__  # pylint: disable=no-member
+            ),
             "properties": {
                 "type": {"type": "string", "const": "object"},
                 "properties": {"type": "object"},
@@ -52,7 +54,9 @@ MCP_TOOL_SCHEMA: dict[str, Any] = {
             "type": "array",
             "items": {
                 "type": "object",
-                "required": ["resource", "access"],
+                "required": sorted(
+                    ToolPermissionDict.__required_keys__  # pylint: disable=no-member
+                ),
                 "properties": {
                     "resource": {
                         "type": "string",
@@ -101,7 +105,7 @@ def validate_tool_schema(tool: dict[str, Any]) -> list[str]:
     # ------------------------------------------------------------------
     # Required fields
     # ------------------------------------------------------------------
-    for field in ("name", "description", "inputSchema"):
+    for field in McpToolDict.__required_keys__:  # pylint: disable=no-member
         if field not in tool:
             violations.append(f"missing required field: {field!r}")
 
@@ -109,7 +113,7 @@ def validate_tool_schema(tool: dict[str, Any]) -> list[str]:
     # name constraints
     # ------------------------------------------------------------------
     if "name" in tool:
-        name: str = tool["name"]
+        name = tool["name"]
         if not isinstance(name, str):
             violations.append("name must be a string")
         elif not _NAME_PATTERN.match(name):
@@ -122,7 +126,7 @@ def validate_tool_schema(tool: dict[str, Any]) -> list[str]:
     # description constraints
     # ------------------------------------------------------------------
     if "description" in tool:
-        desc: str = tool["description"]
+        desc = tool["description"]
         if not isinstance(desc, str):
             violations.append("description must be a string")
         else:
@@ -141,7 +145,7 @@ def validate_tool_schema(tool: dict[str, Any]) -> list[str]:
     # inputSchema constraints
     # ------------------------------------------------------------------
     if "inputSchema" in tool:
-        schema: dict[str, Any] = tool["inputSchema"]
+        schema = tool["inputSchema"]
         if not isinstance(schema, dict):
             violations.append("inputSchema must be an object/dict")
         else:
@@ -161,7 +165,7 @@ def validate_tool_schema(tool: dict[str, Any]) -> list[str]:
     # permissions constraints (optional field)
     # ------------------------------------------------------------------
     if "permissions" in tool:
-        perms: list[Any] = tool["permissions"]
+        perms = tool["permissions"]
         if not isinstance(perms, list):
             violations.append("permissions must be a list")
         else:
@@ -173,7 +177,7 @@ def validate_tool_schema(tool: dict[str, Any]) -> list[str]:
                 if "resource" not in entry:
                     violations.append(f"{prefix}: missing required field 'resource'")
                 else:
-                    resource: str = entry["resource"]
+                    resource = entry["resource"]
                     if not isinstance(resource, str):
                         violations.append(f"{prefix}: resource must be a string")
                     elif resource not in _VALID_RESOURCES:
@@ -184,7 +188,7 @@ def validate_tool_schema(tool: dict[str, Any]) -> list[str]:
                 if "access" not in entry:
                     violations.append(f"{prefix}: missing required field 'access'")
                 else:
-                    access: str = entry["access"]
+                    access = entry["access"]
                     if not isinstance(access, str):
                         violations.append(f"{prefix}: access must be a string")
                     elif access not in _VALID_ACCESS_LEVELS:
