@@ -12,10 +12,6 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-_REQUIRED_FIELDS: frozenset[str] = (
-    McpToolDict.__required_keys__  # pylint: disable=no-member
-)
-
 _NAME_RE = r"^[a-zA-Z][a-zA-Z0-9_]{0,63}$"
 _NAME_PATTERN = re.compile(_NAME_RE)
 _NAME_MAX_LENGTH = 64
@@ -33,7 +29,7 @@ _VALID_ACCESS_LEVELS_STR = ", ".join(sorted(_VALID_ACCESS_LEVELS))
 
 MCP_TOOL_SCHEMA: dict[str, Any] = {
     "type": "object",
-    "required": sorted(_REQUIRED_FIELDS),
+    "required": ["name", "description", "inputSchema"],
     "properties": {
         "name": {
             "type": "string",
@@ -105,7 +101,7 @@ def validate_tool_schema(tool: dict[str, Any]) -> list[str]:
     # ------------------------------------------------------------------
     # Required fields
     # ------------------------------------------------------------------
-    for field in _REQUIRED_FIELDS:
+    for field in ("name", "description", "inputSchema"):
         if field not in tool:
             violations.append(f"missing required field: {field!r}")
 
