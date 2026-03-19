@@ -7,7 +7,7 @@ from golem.lint.mcp_schema import (
     is_valid_mcp_tool,
     validate_tool_schema,
 )
-from golem.types import ToolPermissionDict
+from golem.types import McpToolDict, ToolPermissionDict
 
 
 def _valid_tool(**overrides):
@@ -462,6 +462,40 @@ class TestValidateToolSchemaPermissions:
             assert (
                 valid_access in access_violation
             ), f"Expected {valid_access!r} in violation message: {access_violation!r}"
+
+
+class TestTypeSafetyContracts:
+    def test_validator_checks_all_required_typed_dict_keys(self):
+        """Every key in McpToolDict.__required_keys__ must produce a violation when missing."""
+        for key in McpToolDict.__required_keys__:  # pylint: disable=no-member
+            tool = _valid_tool()
+            del tool[key]
+            violations = validate_tool_schema(tool)
+            assert any(key in v for v in violations), (
+                f"Expected a violation mentioning {key!r} when it is missing, "
+                f"got: {violations}"
+            )
+
+    def test_input_schema_uses_camel_case_per_mcp_protocol(self):
+        """inputSchema (camelCase) is the MCP protocol key — snake_case must not exist."""
+        assert "inputSchema" in McpToolDict.__annotations__
+        assert "input_schema" not in McpToolDict.__annotations__
+
+        tool = _valid_tool()
+        # Replace the camelCase key with snake_case to simulate a common mistake.
+        del tool["inputSchema"]
+        tool["input_schema"] = {"type": "object", "properties": {}}
+        violations = validate_tool_schema(tool)
+        assert any("inputSchema" in v for v in violations), (
+            "Expected a missing-field violation for 'inputSchema' when only "
+            f"'input_schema' is present, got: {violations}"
+        )
+
+    def test_schema_property_keys_equal_typed_dict_annotations(self):
+        """MCP_TOOL_SCHEMA properties must exactly match McpToolDict annotations."""
+        schema_keys = set(MCP_TOOL_SCHEMA["properties"].keys())
+        typed_dict_keys = set(McpToolDict.__annotations__)
+        assert schema_keys == typed_dict_keys
 
 
 class TestIsValidMcpTool:

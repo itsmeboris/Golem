@@ -96,6 +96,10 @@ def validate_tool_schema(tool: dict[str, Any]) -> list[str]:
 
     Returns a list of violation messages.  An empty list means the tool is
     valid.
+
+    Note: ``inputSchema`` uses camelCase per the MCP protocol convention.
+    The snake_case spelling ``input_schema`` is intentionally absent from
+    both :class:`~golem.types.McpToolDict` and this validator.
     """
     if not isinstance(tool, dict):
         return ["tool must be a dict/object"]
