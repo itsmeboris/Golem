@@ -56,10 +56,12 @@ MCP_TOOL_SCHEMA: dict = {
 # Constants
 # ---------------------------------------------------------------------------
 
-_NAME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]{0,63}$")
+_NAME_PATTERN = re.compile(MCP_TOOL_SCHEMA["properties"]["name"]["pattern"])
 
-_VALID_RESOURCES = frozenset({"filesystem", "network", "ui", "process"})
-_VALID_ACCESS_LEVELS = frozenset({"read", "write", "execute"})
+_perm_schema = MCP_TOOL_SCHEMA["properties"]["permissions"]["items"]["properties"]
+_VALID_RESOURCES = frozenset(_perm_schema["resource"]["enum"])
+_VALID_ACCESS_LEVELS = frozenset(_perm_schema["access"]["enum"])
+del _perm_schema
 
 _VALID_RESOURCES_STR = ", ".join(sorted(_VALID_RESOURCES))
 _VALID_ACCESS_LEVELS_STR = ", ".join(sorted(_VALID_ACCESS_LEVELS))
@@ -67,12 +69,12 @@ _VALID_ACCESS_LEVELS_STR = ", ".join(sorted(_VALID_ACCESS_LEVELS))
 _INJECTION_PATTERNS = [
     re.compile(p, re.IGNORECASE)
     for p in [
-        r"ignore previous",
-        r"system:",
+        r"ignore\s+previous\b",
+        r"(?:^|\n)\s*system\s*:",
         r"<\|",
-        r"IMPORTANT:",
-        r"you must",
-        r"override",
+        r"(?:^|\n)\s*IMPORTANT\s*:",
+        r"\byou\s+must\b.*\b(?:comply|obey|follow|ignore)\b",
+        r"\boverride\b.*\b(?:instruction|prompt|rule|setting)s?\b",
     ]
 ]
 
@@ -169,7 +171,9 @@ def validate_tool_schema(tool: dict) -> list[str]:
                     violations.append(f"{prefix}: missing required field 'resource'")
                 else:
                     resource = entry["resource"]
-                    if resource not in _VALID_RESOURCES:
+                    if not isinstance(resource, str):
+                        violations.append(f"{prefix}: resource must be a string")
+                    elif resource not in _VALID_RESOURCES:
                         violations.append(
                             f"{prefix}: invalid resource {resource!r},"
                             f" expected one of: {_VALID_RESOURCES_STR}"
@@ -178,7 +182,9 @@ def validate_tool_schema(tool: dict) -> list[str]:
                     violations.append(f"{prefix}: missing required field 'access'")
                 else:
                     access = entry["access"]
-                    if access not in _VALID_ACCESS_LEVELS:
+                    if not isinstance(access, str):
+                        violations.append(f"{prefix}: access must be a string")
+                    elif access not in _VALID_ACCESS_LEVELS:
                         violations.append(
                             f"{prefix}: invalid access {access!r},"
                             f" expected one of: {_VALID_ACCESS_LEVELS_STR}"

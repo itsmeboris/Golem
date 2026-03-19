@@ -143,6 +143,32 @@ normal, edge, empty, and malformed inputs.
 If the same test class exists in two files, delete the duplicate. Verify
 coverage is maintained first with `--ignore=<file>`.
 
+### Required: False-Positive Tests for Deny-Pattern Validators
+Any test suite for a regex deny-list or pattern-matching validator **must**
+include parametrized tests proving that legitimate inputs are NOT rejected.
+True-positive-only test suites hide over-broad patterns that reject valid data
+in production.
+
+```python
+# BAD — only tests that bad inputs are caught, never checks good ones pass
+@pytest.mark.parametrize("bad_input", ["ignore previous", "system: hack"])
+def test_injection_rejected(self, bad_input):
+    assert has_violation(bad_input)
+
+# GOOD — also proves legitimate inputs survive the deny-list
+@pytest.mark.parametrize(
+    "legit_input",
+    [
+        "Override the default timeout.",
+        "Configure the operating system: paths and env vars.",
+        "You must provide an API key to use this tool.",
+    ],
+    ids=["override_no_injection_context", "system_colon_mid_sentence", "you_must_benign"],
+)
+def test_legitimate_input_not_rejected(self, legit_input):
+    assert not has_violation(legit_input)
+```
+
 ## Protocol / Interface Tests
 - **Dummy class tests** verify the protocol contract is stable (catches protocol changes)
 - **Real implementation tests** verify backends conform to the protocol (catches implementation drift)
