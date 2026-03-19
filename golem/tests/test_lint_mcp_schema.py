@@ -3,7 +3,7 @@
 import pytest
 
 from golem.lint.mcp_schema import MCP_TOOL_SCHEMA, validate_tool_schema
-from golem.types import ToolPermissionDict
+from golem.types import McpInputSchemaDict, McpToolDict, ToolPermissionDict
 
 
 def _valid_tool(**overrides):
@@ -38,6 +38,18 @@ class TestMcpToolSchema:
         )
         typed_dict_keys = set(ToolPermissionDict.__annotations__)
         assert schema_keys == typed_dict_keys
+
+    def test_tool_schema_required_keys_match_typed_dict(self):
+        assert McpToolDict.__required_keys__ == set(  # pylint: disable=no-member
+            MCP_TOOL_SCHEMA["required"]
+        )
+
+    def test_input_schema_keys_match_typed_dict(self):
+        schema_required = set(MCP_TOOL_SCHEMA["properties"]["inputSchema"]["required"])
+        assert (
+            McpInputSchemaDict.__required_keys__  # pylint: disable=no-member
+            == schema_required
+        )
 
 
 class TestValidateToolSchemaValid:

@@ -2,6 +2,7 @@
 
 import logging
 import re
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -10,7 +11,7 @@ logger = logging.getLogger(__name__)
 # Validation is done programmatically below.
 # ---------------------------------------------------------------------------
 
-MCP_TOOL_SCHEMA: dict = {
+MCP_TOOL_SCHEMA: dict[str, Any] = {
     "type": "object",
     "required": ["name", "description", "inputSchema"],
     "properties": {
@@ -84,7 +85,7 @@ _INJECTION_PATTERNS = [
 # ---------------------------------------------------------------------------
 
 
-def validate_tool_schema(tool: dict) -> list[str]:
+def validate_tool_schema(tool: dict[str, Any]) -> list[str]:
     """Validate a tool dict against the MCP tool schema.
 
     Returns a list of violation messages.  An empty list means the tool is
@@ -106,7 +107,7 @@ def validate_tool_schema(tool: dict) -> list[str]:
     # name constraints
     # ------------------------------------------------------------------
     if "name" in tool:
-        name = tool["name"]
+        name: str = tool["name"]
         if not isinstance(name, str):
             violations.append("name must be a string")
         elif not _NAME_PATTERN.match(name):
@@ -119,7 +120,7 @@ def validate_tool_schema(tool: dict) -> list[str]:
     # description constraints
     # ------------------------------------------------------------------
     if "description" in tool:
-        desc = tool["description"]
+        desc: str = tool["description"]
         if not isinstance(desc, str):
             violations.append("description must be a string")
         else:
@@ -138,7 +139,7 @@ def validate_tool_schema(tool: dict) -> list[str]:
     # inputSchema constraints
     # ------------------------------------------------------------------
     if "inputSchema" in tool:
-        schema = tool["inputSchema"]
+        schema: dict[str, Any] = tool["inputSchema"]
         if not isinstance(schema, dict):
             violations.append("inputSchema must be an object/dict")
         else:
@@ -158,7 +159,7 @@ def validate_tool_schema(tool: dict) -> list[str]:
     # permissions constraints (optional field)
     # ------------------------------------------------------------------
     if "permissions" in tool:
-        perms = tool["permissions"]
+        perms: list[Any] = tool["permissions"]
         if not isinstance(perms, list):
             violations.append("permissions must be a list")
         else:
@@ -170,7 +171,7 @@ def validate_tool_schema(tool: dict) -> list[str]:
                 if "resource" not in entry:
                     violations.append(f"{prefix}: missing required field 'resource'")
                 else:
-                    resource = entry["resource"]
+                    resource: str = entry["resource"]
                     if not isinstance(resource, str):
                         violations.append(f"{prefix}: resource must be a string")
                     elif resource not in _VALID_RESOURCES:
@@ -181,7 +182,7 @@ def validate_tool_schema(tool: dict) -> list[str]:
                 if "access" not in entry:
                     violations.append(f"{prefix}: missing required field 'access'")
                 else:
-                    access = entry["access"]
+                    access: str = entry["access"]
                     if not isinstance(access, str):
                         violations.append(f"{prefix}: access must be a string")
                     elif access not in _VALID_ACCESS_LEVELS:

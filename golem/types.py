@@ -22,6 +22,30 @@ class ToolPermissionDict(TypedDict):
     access: str  # "read" | "write" | "execute"
 
 
+class McpInputSchemaDict(TypedDict):
+    """Input schema for an MCP tool definition.
+
+    Producers: MCP server tool definitions (external)
+    Consumers: golem/lint/mcp_schema.py validate_tool_schema()
+    """
+
+    type: str  # must be "object"
+    properties: dict[str, Any]
+
+
+class McpToolDict(TypedDict):
+    """An MCP tool definition to be validated.
+
+    Producers: MCP server tool definitions (external)
+    Consumers: golem/lint/mcp_schema.py validate_tool_schema()
+    """
+
+    name: str
+    description: str
+    inputSchema: McpInputSchemaDict
+    permissions: NotRequired[list[ToolPermissionDict]]
+
+
 class MilestoneDict(TypedDict):
     """A single event-log entry produced by TaskEventTracker.
 
