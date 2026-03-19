@@ -2,7 +2,11 @@
 
 import pytest
 
-from golem.lint.mcp_schema import MCP_TOOL_SCHEMA, is_valid_mcp_tool, validate_tool_schema
+from golem.lint.mcp_schema import (
+    MCP_TOOL_SCHEMA,
+    is_valid_mcp_tool,
+    validate_tool_schema,
+)
 from golem.types import McpInputSchemaDict, McpToolDict, ToolPermissionDict
 
 
