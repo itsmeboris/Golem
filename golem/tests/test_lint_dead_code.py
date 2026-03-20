@@ -8,15 +8,15 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 class TestDeadCodeRegressionChecks:
-    def test_pylint_no_unused_imports_or_variables(self):
-        """SPEC-1: pylint with W0611/W0612/W0101 enabled must exit 0 on golem/."""
+    def test_pylint_no_unused_imports_variables_or_arguments(self):
+        """SPEC-1: pylint with W0611/W0612/W0101/W0613 enabled must exit 0 on golem/."""
         result = subprocess.run(
             [
                 sys.executable,
                 "-m",
                 "pylint",
                 "--disable=all",
-                "--enable=W0611,W0612,W0101",
+                "--enable=W0611,W0612,W0101,W0613",
                 "golem/",
             ],
             cwd=PROJECT_ROOT,
