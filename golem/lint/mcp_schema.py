@@ -22,6 +22,10 @@ _VALID_ACCESS_LEVELS: frozenset[str] = frozenset({"read", "write", "execute"})
 _VALID_RESOURCES_STR = ", ".join(sorted(_VALID_RESOURCES))
 _VALID_ACCESS_LEVELS_STR = ", ".join(sorted(_VALID_ACCESS_LEVELS))
 
+_CAMEL_TO_SNAKE: dict[str, str] = {
+    "inputSchema": "input_schema",
+}
+
 # ---------------------------------------------------------------------------
 # JSON Schema (for documentation/export purposes only)
 # Validation is done programmatically below.
@@ -103,8 +107,8 @@ def validate_tool_schema(tool: object) -> list[str]:
     subsequent field accesses are type-safe.
 
     Note: ``inputSchema`` uses camelCase per the MCP protocol convention.
-    The snake_case spelling ``input_schema`` is intentionally absent from
-    both :class:`~golem.types.McpToolDict` and this validator.
+    If a caller passes the snake_case spelling ``input_schema``, the
+    validator produces a hint directing them to the camelCase form.
     """
     if not isinstance(tool, dict):
         return ["tool must be a dict/object"]
@@ -116,7 +120,14 @@ def validate_tool_schema(tool: object) -> list[str]:
     # ------------------------------------------------------------------
     for field in McpToolDict.__required_keys__:  # pylint: disable=no-member
         if field not in tool:
-            violations.append(f"missing required field: {field!r}")
+            snake_alias = _CAMEL_TO_SNAKE.get(field)
+            if snake_alias and snake_alias in tool:
+                violations.append(
+                    f"missing required field: {field!r}"
+                    f" (found {snake_alias!r} — MCP protocol uses camelCase)"
+                )
+            else:
+                violations.append(f"missing required field: {field!r}")
 
     # ------------------------------------------------------------------
     # name constraints

@@ -491,6 +491,26 @@ class TestTypeSafetyContracts:
             f"'input_schema' is present, got: {violations}"
         )
 
+    def test_snake_case_alias_produces_helpful_violation_message(self):
+        """When input_schema is present instead of inputSchema, violation mentions both."""
+        tool = _valid_tool()
+        del tool["inputSchema"]
+        tool["input_schema"] = {"type": "object", "properties": {}}
+        violations = validate_tool_schema(tool)
+        assert len(violations) == 1
+        msg = violations[0]
+        assert "inputSchema" in msg
+        assert "input_schema" in msg
+        assert "camelCase" in msg
+
+    def test_missing_required_field_without_alias_gives_generic_message(self):
+        """When a required field has no snake_case alias, the generic message is used."""
+        tool = _valid_tool()
+        del tool["name"]
+        violations = validate_tool_schema(tool)
+        assert len(violations) == 1
+        assert violations[0] == "missing required field: 'name'"
+
     def test_schema_property_keys_equal_typed_dict_annotations(self):
         """MCP_TOOL_SCHEMA properties must exactly match McpToolDict annotations."""
         schema_keys = set(MCP_TOOL_SCHEMA["properties"].keys())
