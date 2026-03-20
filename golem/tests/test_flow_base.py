@@ -2,6 +2,8 @@
 """Tests for golem.core.flow_base — trace/prompt helpers and FlowResult."""
 
 import threading
+
+import pytest
 from unittest.mock import MagicMock, patch
 
 from golem.core.flow_base import (
@@ -157,6 +159,69 @@ class TestFlowResult:
         r = FlowResult(success=False, error="boom", actions_taken=["a"])
         assert r.error == "boom"
         assert len(r.actions_taken) == 1
+
+
+class TestPollableFlowOnItemSuccess:
+    """Tests for the base-class implementation of PollableFlow.on_item_success."""
+
+    def test_base_on_item_success_is_noop(self):
+        """Base implementation is a pure hook — calling it does not mutate state."""
+        from golem.core.flow_base import PollableFlow
+
+        class MinimalPollable(PollableFlow):
+            def poll_new_items(self):
+                return [{"id": 1}]
+
+            def generate_event_id(self, item_data):
+                return "id-1"
+
+        flow = MinimalPollable()
+        # Call the base hook; verify the flow remains usable and poll_new_items is unchanged.
+        PollableFlow.on_item_success(flow, 123)
+        assert flow.poll_new_items() == [{"id": 1}]
+
+    @pytest.mark.parametrize("item_id", [0, "abc", None, {"key": "val"}])
+    def test_base_on_item_success_accepts_any_item_id(self, item_id):
+        from golem.core.flow_base import PollableFlow
+
+        class MinimalPollable(PollableFlow):
+            def poll_new_items(self):
+                return []
+
+            def generate_event_id(self, item_data):
+                return "id-1"
+
+        flow = MinimalPollable()
+        # Calling the base hook must not raise; verify poll_new_items is intact.
+        PollableFlow.on_item_success(flow, item_id)
+        assert flow.poll_new_items() == []
+
+
+class TestBaseFlowAfterRun:
+    """Tests for the base-class implementation of BaseFlow.after_run."""
+
+    def test_after_run_returns_none(self):
+        from golem.core.config import Config, FlowConfig
+        from golem.core.flow_base import BaseFlow, FlowResult
+        from golem.core.triggers.base import TriggerEvent
+
+        class MinimalFlow(BaseFlow):
+            @property
+            def name(self):
+                return "minimal"
+
+            async def handle(self, event):
+                return FlowResult(success=True)
+
+        cfg = Config()
+        flow = MinimalFlow(cfg, flow_config=FlowConfig())
+        event = TriggerEvent(flow_name="minimal", event_id="ev-1")
+        flow_result = FlowResult(success=True)
+        # Call the base hook via the class to avoid the override path.
+        # Verify neither event nor result is mutated — base hook is a pure no-op.
+        BaseFlow.after_run(flow, event, flow_result)
+        assert event.flow_name == "minimal"
+        assert flow_result.success is True
 
 
 class TestBaseFlowTypedConfig:

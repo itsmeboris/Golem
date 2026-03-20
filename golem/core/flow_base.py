@@ -138,6 +138,7 @@ class PollableFlow(ABC):
 
     def on_item_success(self, item_id: Any) -> None:
         """Called after successful processing of an item."""
+        del item_id  # hook param; subclasses may use
 
 
 class WebhookableFlow(ABC):
@@ -190,3 +191,4 @@ class BaseFlow(ABC):
 
     def after_run(self, event: TriggerEvent, result: FlowResult) -> None:
         """Called by the dispatcher after handle() completes. Override for post-processing."""
+        del event, result  # hook params; subclasses may use
