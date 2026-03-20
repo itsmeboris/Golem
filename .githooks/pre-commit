@@ -42,7 +42,7 @@ failed=0
 
 # ── 4. Run pylint dead-code check ───────────────────────────────────
 printf "${BOLD}=== pre-commit: pylint dead-code ===${NC}\n"
-if ! "$PYTHON" -m pylint --disable=all --enable=W0611,W0612,W0101 "${staged_py[@]}" 2>/dev/null; then
+if ! "$PYTHON" -m pylint --disable=all --enable=W0611,W0612,W0101,W0613 "${staged_py[@]}" 2>/dev/null; then
     printf "${RED}pylint dead-code: warnings found in staged files${NC}\n"
     printf "Fix unused imports/variables before committing.\n"
     failed=1

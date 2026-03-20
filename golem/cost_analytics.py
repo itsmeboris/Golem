@@ -5,6 +5,7 @@ cost per retry bucket, and budget utilization from task sessions.
 """
 
 import logging
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ def _retry_bucket(retry_count: int) -> str:
 
 def compute_cost_analytics(
     runs: list[dict],
-    sessions: "dict[int, Any] | None" = None,  # noqa: F821
+    sessions: dict[int, Any] | None = None,
 ) -> dict:
     """Compute cost analytics from run records and optional task sessions.
 
@@ -156,8 +157,8 @@ def compute_cost_analytics(
 
 
 def _compute_budget_utilization(
-    sessions: "dict[int, Any] | None",  # noqa: F821
-) -> "dict | None":
+    sessions: dict[int, Any] | None,
+) -> dict | None:
     """Compute budget utilization from terminal-state task sessions.
 
     Only COMPLETED and FAILED sessions are included.
