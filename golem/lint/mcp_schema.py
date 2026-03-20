@@ -91,11 +91,16 @@ _INJECTION_PATTERNS = [
 # ---------------------------------------------------------------------------
 
 
-def validate_tool_schema(tool: dict[str, Any]) -> list[str]:
+def validate_tool_schema(tool: object) -> list[str]:
     """Validate a tool dict against the MCP tool schema.
 
+    Accepts any value, including raw ``.json()`` output from HTTP clients.
     Returns a list of violation messages.  An empty list means the tool is
     valid.
+
+    Non-dict values immediately return ``["tool must be a dict/object"]``.
+    After the isinstance check, mypy narrows ``object`` to ``dict``, so all
+    subsequent field accesses are type-safe.
 
     Note: ``inputSchema`` uses camelCase per the MCP protocol convention.
     The snake_case spelling ``input_schema`` is intentionally absent from
@@ -205,6 +210,11 @@ def validate_tool_schema(tool: dict[str, Any]) -> list[str]:
     return violations
 
 
-def is_valid_mcp_tool(tool: dict[str, Any]) -> TypeGuard[McpToolDict]:
-    """Type-guard wrapper: True when *tool* passes MCP schema validation."""
+def is_valid_mcp_tool(tool: object) -> TypeGuard[McpToolDict]:
+    """Type-guard wrapper: True when *tool* passes MCP schema validation.
+
+    Accepts any value, including raw ``.json()`` output from HTTP clients.
+    When this returns ``True``, type checkers narrow *tool* to
+    :class:`~golem.types.McpToolDict`.
+    """
     return not validate_tool_schema(tool)

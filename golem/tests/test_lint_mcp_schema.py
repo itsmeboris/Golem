@@ -497,6 +497,43 @@ class TestTypeSafetyContracts:
         typed_dict_keys = set(McpToolDict.__annotations__)
         assert schema_keys == typed_dict_keys
 
+    @pytest.mark.parametrize(
+        "api_response,expected_valid",
+        [
+            (
+                {
+                    "name": "my_tool",
+                    "description": "A short description.",
+                    "inputSchema": {"type": "object", "properties": {}},
+                },
+                True,
+            ),
+            ("not a dict", False),
+            (42, False),
+            (None, False),
+            (["list", "not", "dict"], False),
+        ],
+        ids=[
+            "valid_dict",
+            "string_rejected",
+            "int_rejected",
+            "none_rejected",
+            "list_rejected",
+        ],
+    )
+    def test_untyped_api_response_narrowed_by_type_guard(
+        self, api_response, expected_valid
+    ):
+        """is_valid_mcp_tool accepts object (untyped .json() output) and narrows correctly.
+
+        Simulates callers passing raw API response data — valid dicts are accepted
+        and narrowed to McpToolDict; non-dict values are rejected.
+        """
+        # api_response is typed as object here to simulate untyped .json() output
+        untyped: object = api_response
+        result = is_valid_mcp_tool(untyped)
+        assert result is expected_valid
+
 
 class TestIsValidMcpTool:
     def test_valid_tool_returns_true(self):
