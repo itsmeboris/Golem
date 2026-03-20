@@ -232,6 +232,7 @@ class GitHubTaskSource:
         description: str,
     ) -> int | str | None:
         """Not supported for GitHub Issues."""
+        del parent_id, subject, description  # protocol-required
 
     def get_task_comments(
         self, task_id: int | str, *, since: str = ""

@@ -242,12 +242,13 @@ class LogNotifier:
     def notify_escalated(
         self,
         task_id: int | str,
-        _subject: str,
+        subject: str,
         verdict: str,
         summary: str,
         **_kwargs: Any,
     ) -> None:
         """Log a task-escalated notification."""
+        del subject  # protocol-required
         logger.info("NOTIFY: Task %s escalated (%s): %s", task_id, verdict, summary)
 
     def notify_batch_submitted(self, group_id: str, task_count: int) -> None:
@@ -297,7 +298,7 @@ class NullToolProvider:
         """Return an empty server list."""
         return []
 
-    def servers_for_subject(self, _subject: str, *, role: str = "") -> list[str]:
+    def servers_for_subject(self, subject: str, *, role: str = "") -> list[str]:
         """Return an empty server list (no MCP tools)."""
-        del role  # protocol-required
+        del subject, role  # protocol-required
         return []
