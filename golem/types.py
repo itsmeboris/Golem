@@ -272,6 +272,42 @@ class MutationResultDict(TypedDict):
     survived_mutants: list[SurvivedMutantDict]
 
 
+class MutmutSummaryDict(TypedDict):
+    """Summary counts from a mutmut run.
+
+    Producers: verifier.py parse_mutmut_summary()
+    Consumers: verifier.py run_mutation_testing()
+    """
+
+    mutants_total: int
+    killed: int
+    survived: int
+    timeout: int
+    suspicious: int
+    skipped: int
+
+
+class CoverageFileDataDict(TypedDict):
+    """Per-file coverage data from coverage.py JSON output.
+
+    Producers: coverage.py JSON output (external)
+    Consumers: verifier.py parse_coverage_delta()
+    """
+
+    executed_lines: list[int]
+    missing_lines: list[int]
+
+
+class CoverageDataDict(TypedDict):
+    """Top-level coverage.py JSON output structure.
+
+    Producers: coverage.py JSON output (external)
+    Consumers: verifier.py parse_coverage_delta()
+    """
+
+    files: dict[str, CoverageFileDataDict]
+
+
 class MergeEntryDict(TypedDict):
     """Serialized merge queue entry for dashboard API.
 

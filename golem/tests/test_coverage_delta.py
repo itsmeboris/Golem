@@ -3,6 +3,7 @@
 import subprocess
 from unittest.mock import MagicMock, patch
 
+from golem.types import CoverageDataDict, CoverageFileDataDict
 from golem.verifier import CoverageDelta, _get_changed_files, parse_coverage_delta
 
 
@@ -110,6 +111,18 @@ class TestCoverageDeltaSummary:
         assert "60%" in summary
         assert "golem/foo.py" in summary
         assert "[4, 5]" in summary
+
+
+class TestCoverageDataDictContract:
+    def test_coverage_data_dict_structure(self):
+        """CoverageDataDict wraps a dict of CoverageFileDataDict entries keyed by file path."""
+        file_entry: CoverageFileDataDict = {
+            "executed_lines": [1, 2, 3],
+            "missing_lines": [4, 5],
+        }
+        cov_data: CoverageDataDict = {"files": {"golem/foo.py": file_entry}}
+        result = parse_coverage_delta(cov_data, ["golem/foo.py"])
+        assert result.uncovered_lines == {"golem/foo.py": [4, 5]}
 
 
 class TestGetChangedFiles:
