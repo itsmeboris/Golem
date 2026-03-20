@@ -77,7 +77,6 @@ disable = [
     "missing-class-docstring",
     "missing-function-docstring",
     "protected-access",
-    "unused-argument",
     "unnecessary-ellipsis",
     "cyclic-import",
 ]

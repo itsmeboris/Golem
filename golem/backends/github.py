@@ -135,6 +135,7 @@ class GitHubTaskSource:
         timeout: int = 30,
     ) -> list[dict[str, Any]]:
         """List open issues with the given label."""
+        del timeout  # protocol-required; no network timeout needed for gh CLI
         all_tasks: list[dict[str, Any]] = []
         for repo in projects:
             try:
@@ -221,6 +222,7 @@ class GitHubTaskSource:
 
     def get_child_tasks(self, parent_id: int | str) -> list[dict[str, Any]]:
         """GitHub Issues has no native sub-issue support."""
+        del parent_id  # protocol-required
         return []
 
     def create_child_task(
@@ -270,6 +272,7 @@ class GitHubTaskSource:
         timeout: int = 30,
     ) -> list[dict[str, Any]]:
         """Return open issues that do NOT have the exclude_tag label."""
+        del timeout  # protocol-required; no network timeout needed for gh CLI
         all_tasks: list[dict[str, Any]] = []
         for repo in projects:
             try:

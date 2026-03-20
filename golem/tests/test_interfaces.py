@@ -35,6 +35,7 @@ class DummyTaskSource:
         return ""
 
     def get_task_comments(self, _task_id, *, since=""):
+        del since  # protocol-required
         return []
 
     def poll_untagged_tasks(self, _projects, _exclude_tag, _limit=20, _timeout=30):
@@ -80,6 +81,7 @@ class DummyToolProvider:
         return []
 
     def servers_for_subject(self, _subject, *, role: str = ""):
+        del role  # protocol-required
         return []
 
 

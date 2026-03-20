@@ -126,6 +126,7 @@ class RedmineTaskSource:
         timeout: int = 30,
     ) -> list[dict[str, Any]]:
         """Redmine backend does not support untagged issue discovery."""
+        del projects, exclude_tag, limit, timeout  # protocol-required
         return []
 
     def get_task_comments(

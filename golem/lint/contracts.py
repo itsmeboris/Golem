@@ -244,6 +244,7 @@ def _resolve_imports(tree: ast.AST, root: Path | None) -> dict[str, str]:
     Returns:
         Dict mapping local name to ``"module:func"`` registry key.
     """
+    del root  # kept for consistent signature
     import_map: dict[str, str] = {}
 
     for node in ast.walk(tree):
