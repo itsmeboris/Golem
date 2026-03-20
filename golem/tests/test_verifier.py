@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from golem.types import MutationResultDict, VerificationResultDict
+from golem.types import MutationResultDict, MutmutSummaryDict, VerificationResultDict
 from golem.verifier import (
     MutationResult,
     SurvivedMutant,
@@ -792,6 +792,20 @@ class TestParseMutmutSummary:
     def test_parse_mutmut_summary(self, output, expected):
         result = parse_mutmut_summary(output)
         assert result == expected
+
+    def test_parse_mutmut_summary_returns_all_typed_dict_keys(self):
+        """parse_mutmut_summary return value has all keys required by MutmutSummaryDict."""
+        result = parse_mutmut_summary(
+            "\u2838 10/10  \U0001f389 8  \u23f0 0  \U0001f914 0  \U0001f641 2  \U0001f507 0\n"
+        )
+        required = set(MutmutSummaryDict.__required_keys__)  # pylint: disable=no-member
+        assert set(result.keys()) == required
+        assert result["mutants_total"] == 10
+        assert result["killed"] == 8
+        assert result["survived"] == 2
+        assert result["timeout"] == 0
+        assert result["suspicious"] == 0
+        assert result["skipped"] == 0
 
 
 class TestParseMutmutResults:

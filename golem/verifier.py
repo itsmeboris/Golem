@@ -16,7 +16,13 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from golem.types import MutationResultDict, SurvivedMutantDict, VerificationResultDict
+from golem.types import (
+    CoverageDataDict,
+    MutationResultDict,
+    MutmutSummaryDict,
+    SurvivedMutantDict,
+    VerificationResultDict,
+)
 
 logger = logging.getLogger("golem.verifier")
 
@@ -128,7 +134,9 @@ class MutationResult:
         }
 
 
-def parse_coverage_delta(cov_data: dict, changed_files: list[str]) -> CoverageDelta:
+def parse_coverage_delta(
+    cov_data: CoverageDataDict, changed_files: list[str]
+) -> CoverageDelta:
     """Analyze coverage for changed files only."""
     if not changed_files:
         return CoverageDelta(all_covered=True, delta_pct=100.0, uncovered_lines={})
@@ -207,7 +215,7 @@ _MUTMUT_BLOCK_RE = re.compile(
 )
 
 
-def parse_mutmut_summary(output: str) -> dict:
+def parse_mutmut_summary(output: str) -> MutmutSummaryDict:
     """Parse the progress/summary line from mutmut run output.
 
     Returns a dict with keys: mutants_total, killed, survived, timeout,
