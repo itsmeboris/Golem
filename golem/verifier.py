@@ -37,6 +37,7 @@ class VerificationResult:
     coverage_pct: float = 0.0
     duration_s: float = 0.0
     coverage_delta: "CoverageDelta | None" = None
+    mutation_result: "MutationResult | None" = None
 
     def to_dict(self) -> VerificationResultDict:
         """Serialize for JSON persistence."""
@@ -59,6 +60,8 @@ class VerificationResult:
                 "delta_pct": self.coverage_delta.delta_pct,
                 "uncovered_lines": self.coverage_delta.uncovered_lines,
             }
+        if self.mutation_result is not None:
+            result["mutation_result"] = self.mutation_result.to_dict()
         return result
 
 
@@ -412,6 +415,17 @@ def run_verification(work_dir: str, *, timeout: int = 300) -> VerificationResult
     test_count, failures, coverage_pct = _parse_pytest_output(pytest_output)
 
     coverage_delta = _load_coverage_delta(cov_json_path, work_dir)
+
+    mutation_result: MutationResult | None = None
+    if pytest_ok:
+        changed_files = _get_changed_files(work_dir)
+        source_files = [
+            f
+            for f in changed_files
+            if f.endswith(".py") and "/test_" not in f and not f.startswith("test_")
+        ]
+        mutation_result = run_mutation_testing(source_files, work_dir, timeout=timeout)
+
     passed = black_ok and pylint_ok and pytest_ok
 
     logger.info(
@@ -438,4 +452,5 @@ def run_verification(work_dir: str, *, timeout: int = 300) -> VerificationResult
         coverage_pct=coverage_pct,
         duration_s=round(time.time() - start, 2),
         coverage_delta=coverage_delta,
+        mutation_result=mutation_result,
     )

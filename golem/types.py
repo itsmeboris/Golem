@@ -238,6 +238,7 @@ class VerificationResultDict(TypedDict):
     coverage_pct: float
     duration_s: float
     coverage_delta: NotRequired[dict[str, Any]]
+    mutation_result: NotRequired["MutationResultDict"]
 
 
 class SurvivedMutantDict(TypedDict):

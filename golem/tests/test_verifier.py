@@ -396,6 +396,168 @@ class TestRunVerification:
         d = r.to_dict()
         assert "coverage_delta" not in d
 
+    @patch("golem.verifier.subprocess.run")
+    def test_mutation_runs_when_pytest_passes(self, mock_run, tmp_path):
+        """When pytest passes, mutation testing runs with filtered changed files."""
+
+        def side_effect(*args, **_kwargs):
+            cmd = args[0]
+            if "git" in cmd:
+                return MagicMock(
+                    returncode=0,
+                    stdout="golem/verifier.py\ngolem/tests/test_verifier.py\n",
+                    stderr="",
+                )
+            if "mutmut" in cmd:
+                return MagicMock(returncode=0, stdout="", stderr="")
+            return MagicMock(
+                returncode=0,
+                stdout="10 passed\nTOTAL 100 0 100%",
+                stderr="",
+            )
+
+        mock_run.side_effect = side_effect
+        result = run_verification(str(tmp_path))
+        assert result.mutation_result is not None
+        assert result.mutation_result.passed is True
+        assert result.mutation_result.exit_code == 0
+
+    @patch("golem.verifier.subprocess.run")
+    def test_mutation_skipped_when_pytest_fails(self, mock_run):
+        """When pytest fails, mutation testing is skipped and mutation_result is None."""
+
+        def side_effect(*args, **_kwargs):
+            cmd = args[0]
+            if "pytest" in cmd:
+                return MagicMock(
+                    returncode=1,
+                    stdout="1 failed\nTOTAL 100 50 50%",
+                    stderr="",
+                )
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        mock_run.side_effect = side_effect
+        result = run_verification("/tmp/workdir")
+        assert result.mutation_result is None
+        called_tools = {call.args[0][0] for call in mock_run.call_args_list}
+        assert "mutmut" not in called_tools
+
+    @patch("golem.verifier.subprocess.run")
+    def test_mutation_result_in_to_dict(self, mock_run, tmp_path):
+        """to_dict includes mutation_result when mutation testing was executed."""
+
+        def side_effect(*args, **_kwargs):
+            cmd = args[0]
+            if "git" in cmd:
+                return MagicMock(
+                    returncode=0,
+                    stdout="golem/verifier.py\n",
+                    stderr="",
+                )
+            if "mutmut" in cmd:
+                return MagicMock(returncode=0, stdout="", stderr="")
+            return MagicMock(
+                returncode=0,
+                stdout="5 passed\nTOTAL 100 0 100%",
+                stderr="",
+            )
+
+        mock_run.side_effect = side_effect
+        result = run_verification(str(tmp_path))
+        d = result.to_dict()
+        assert "mutation_result" in d
+        assert d["mutation_result"]["passed"] is True
+        assert d["mutation_result"]["exit_code"] == 0
+        assert d["mutation_result"]["survived_mutants"] == []
+
+    def test_mutation_result_absent_in_to_dict(self):
+        """to_dict omits mutation_result when mutation_result is None."""
+        r = VerificationResult(
+            passed=True,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="",
+            test_count=1,
+            failures=[],
+            coverage_pct=100.0,
+            duration_s=1.0,
+        )
+        d = r.to_dict()
+        assert "mutation_result" not in d
+
+    @patch("golem.verifier.subprocess.run")
+    def test_mutation_targets_only_source_files(self, mock_run, tmp_path):
+        """mutation testing is called only with non-test .py files."""
+        mutmut_calls = []
+
+        def side_effect(*args, **_kwargs):
+            cmd = args[0]
+            if "git" in cmd:
+                return MagicMock(
+                    returncode=0,
+                    stdout=(
+                        "golem/verifier.py\n"
+                        "golem/tests/test_verifier.py\n"
+                        "golem/runner.py\n"
+                        "README.md\n"
+                    ),
+                    stderr="",
+                )
+            if "mutmut" in cmd:
+                mutmut_calls.append(cmd)
+                return MagicMock(returncode=0, stdout="", stderr="")
+            return MagicMock(
+                returncode=0,
+                stdout="5 passed\nTOTAL 100 0 100%",
+                stderr="",
+            )
+
+        mock_run.side_effect = side_effect
+        run_verification(str(tmp_path))
+        assert len(mutmut_calls) >= 1
+        paths_arg = next(
+            arg for arg in mutmut_calls[0] if arg.startswith("--paths-to-mutate=")
+        )
+        paths = paths_arg.split("=", 1)[1].split(",")
+        assert "golem/verifier.py" in paths
+        assert "golem/runner.py" in paths
+        assert "golem/tests/test_verifier.py" not in paths
+        assert "README.md" not in paths
+
+    @patch("golem.verifier.subprocess.run")
+    def test_passed_not_affected_by_mutation_failure(self, mock_run, tmp_path):
+        """passed remains True even when mutation testing has survivors."""
+
+        def side_effect(*args, **_kwargs):
+            cmd = args[0]
+            if "git" in cmd:
+                return MagicMock(
+                    returncode=0,
+                    stdout="golem/verifier.py\n",
+                    stderr="",
+                )
+            if "mutmut" in cmd:
+                # Non-zero exit code = survivors
+                return MagicMock(
+                    returncode=1,
+                    stdout="\u2838 10/10  \U0001f389 8  \u23f0 0  \U0001f914 0  \U0001f641 2  \U0001f507 0\n",
+                    stderr="",
+                )
+            return MagicMock(
+                returncode=0,
+                stdout="10 passed\nTOTAL 100 0 100%",
+                stderr="",
+            )
+
+        mock_run.side_effect = side_effect
+        result = run_verification(str(tmp_path))
+        assert result.passed is True
+        assert result.mutation_result is not None
+        assert result.mutation_result.passed is False
+
 
 class TestRunMutationTesting:
     def test_empty_file_paths_returns_early(self):
