@@ -135,7 +135,6 @@ class GitHubTaskSource:
         timeout: int = 30,
     ) -> list[dict[str, Any]]:
         """List open issues with the given label."""
-        del timeout
         all_tasks: list[dict[str, Any]] = []
         for repo in projects:
             try:
@@ -222,7 +221,6 @@ class GitHubTaskSource:
 
     def get_child_tasks(self, parent_id: int | str) -> list[dict[str, Any]]:
         """GitHub Issues has no native sub-issue support."""
-        del parent_id
         return []
 
     def create_child_task(
@@ -232,7 +230,6 @@ class GitHubTaskSource:
         description: str,
     ) -> int | str | None:
         """Not supported for GitHub Issues."""
-        del parent_id, subject, description
 
     def get_task_comments(
         self, task_id: int | str, *, since: str = ""
@@ -273,7 +270,6 @@ class GitHubTaskSource:
         timeout: int = 30,
     ) -> list[dict[str, Any]]:
         """Return open issues that do NOT have the exclude_tag label."""
-        del timeout
         all_tasks: list[dict[str, Any]] = []
         for repo in projects:
             try:

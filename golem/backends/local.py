@@ -44,7 +44,6 @@ class LocalFileTaskSource:
         timeout: int = 30,
     ) -> list[dict[str, Any]]:
         """Scan the tasks directory for files whose subject matches *detection_tag*."""
-        del projects, timeout  # Not used for local files
         if not self._tasks_dir.is_dir():
             logger.warning("Tasks directory does not exist: %s", self._tasks_dir)
             return []
@@ -129,7 +128,6 @@ class LocalFileTaskSource:
         self, task_id: int | str, *, since: str = ""
     ) -> list[dict[str, Any]]:
         """Local backend has no comment support."""
-        del task_id, since
         return []
 
     def poll_untagged_tasks(
@@ -140,7 +138,6 @@ class LocalFileTaskSource:
         timeout: int = 30,
     ) -> list[dict[str, Any]]:
         """Local backend does not support untagged issue discovery."""
-        del projects, exclude_tag, limit, timeout
         return []
 
     def _find_task(self, task_id: str) -> dict[str, Any] | None:
@@ -299,5 +296,4 @@ class NullToolProvider:
 
     def servers_for_subject(self, _subject: str, *, role: str = "") -> list[str]:
         """Return an empty server list (no MCP tools)."""
-        del role  # satisfies ToolProvider protocol; local backend has no servers
         return []

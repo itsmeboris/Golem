@@ -55,7 +55,7 @@ def monitor(config):
 class TestHealthNotifierProtocol:
     def test_notifier_protocol_structural_subtyping(self):
         class MyNotifier:
-            def notify_health_alert(self, _alert_type, _message, *, _details=None):
+            def notify_health_alert(self, _alert_type, _message, *, details=None):
                 pass
 
         assert isinstance(MyNotifier(), HealthNotifier)

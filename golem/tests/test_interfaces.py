@@ -34,7 +34,7 @@ class DummyTaskSource:
     def get_task_subject(self, _task_id):
         return ""
 
-    def get_task_comments(self, _task_id, *, _since=""):
+    def get_task_comments(self, _task_id, *, since=""):
         return []
 
     def poll_untagged_tasks(self, _projects, _exclude_tag, _limit=20, _timeout=30):
