@@ -120,13 +120,13 @@ class RedmineTaskSource:
 
     def poll_untagged_tasks(
         self,
-        projects: list[str],
-        exclude_tag: str,
+        _projects: list[str],
+        _exclude_tag: str,
         limit: int = 20,
-        timeout: int = 30,
+        _timeout: int = 30,
     ) -> list[dict[str, Any]]:
         """Redmine backend does not support untagged issue discovery."""
-        del projects, exclude_tag, limit, timeout  # protocol-required
+        del limit  # protocol-required; callers pass as keyword
         return []
 
     def get_task_comments(

@@ -229,7 +229,7 @@ def _extract_base_type(annotation: str | None) -> str | None:
     return base if base in TYPE_METHODS else None
 
 
-def _resolve_imports(tree: ast.AST, root: Path | None) -> dict[str, str]:
+def _resolve_imports(tree: ast.AST, _root: Path | None) -> dict[str, str]:
     """Map local names to ``module:func`` keys from import statements.
 
     Handles:
@@ -239,12 +239,11 @@ def _resolve_imports(tree: ast.AST, root: Path | None) -> dict[str, str]:
 
     Args:
         tree: Parsed AST of the file being analysed.
-        root: Unused; kept for a consistent signature.
+        _root: Unused; kept for a consistent signature.
 
     Returns:
         Dict mapping local name to ``"module:func"`` registry key.
     """
-    del root  # kept for consistent signature
     import_map: dict[str, str] = {}
 
     for node in ast.walk(tree):

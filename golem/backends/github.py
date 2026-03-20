@@ -135,7 +135,7 @@ class GitHubTaskSource:
         timeout: int = 30,
     ) -> list[dict[str, Any]]:
         """List open issues with the given label."""
-        del timeout  # protocol-required; no network timeout needed for gh CLI
+        del timeout  # protocol-required; callers pass as keyword
         all_tasks: list[dict[str, Any]] = []
         for repo in projects:
             try:
@@ -220,19 +220,17 @@ class GitHubTaskSource:
             logger.warning("Failed to get issue description %s: %s", task_id, exc)
             return ""
 
-    def get_child_tasks(self, parent_id: int | str) -> list[dict[str, Any]]:
+    def get_child_tasks(self, _parent_id: int | str) -> list[dict[str, Any]]:
         """GitHub Issues has no native sub-issue support."""
-        del parent_id  # protocol-required
         return []
 
     def create_child_task(
         self,
-        parent_id: int | str,
-        subject: str,
-        description: str,
+        _parent_id: int | str,
+        _subject: str,
+        _description: str,
     ) -> int | str | None:
         """Not supported for GitHub Issues."""
-        del parent_id, subject, description  # protocol-required
 
     def get_task_comments(
         self, task_id: int | str, *, since: str = ""
@@ -270,10 +268,9 @@ class GitHubTaskSource:
         projects: list[str],
         exclude_tag: str,
         limit: int = 20,
-        timeout: int = 30,
+        _timeout: int = 30,
     ) -> list[dict[str, Any]]:
         """Return open issues that do NOT have the exclude_tag label."""
-        del timeout  # protocol-required; no network timeout needed for gh CLI
         all_tasks: list[dict[str, Any]] = []
         for repo in projects:
             try:

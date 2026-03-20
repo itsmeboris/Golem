@@ -39,12 +39,12 @@ class LocalFileTaskSource:
 
     def poll_tasks(
         self,
-        projects: list[str],
+        _projects: list[str],
         detection_tag: str,
         timeout: int = 30,
     ) -> list[dict[str, Any]]:
         """Scan the tasks directory for files whose subject matches *detection_tag*."""
-        del projects, timeout  # protocol-required; local source uses fixed dir
+        del timeout  # protocol-required; callers pass as keyword
         if not self._tasks_dir.is_dir():
             logger.warning("Tasks directory does not exist: %s", self._tasks_dir)
             return []
@@ -126,21 +126,21 @@ class LocalFileTaskSource:
         return child_id
 
     def get_task_comments(
-        self, task_id: int | str, *, since: str = ""
+        self, _task_id: int | str, *, since: str = ""
     ) -> list[dict[str, Any]]:
         """Local backend has no comment support."""
-        del task_id, since  # protocol-required
+        del since  # keyword-only; cannot rename
         return []
 
     def poll_untagged_tasks(
         self,
-        projects: list[str],
-        exclude_tag: str,
+        _projects: list[str],
+        _exclude_tag: str,
         limit: int = 20,
-        timeout: int = 30,
+        _timeout: int = 30,
     ) -> list[dict[str, Any]]:
         """Local backend does not support untagged issue discovery."""
-        del projects, exclude_tag, limit, timeout  # protocol-required
+        del limit  # protocol-required; callers pass as keyword
         return []
 
     def _find_task(self, task_id: str) -> dict[str, Any] | None:
@@ -242,13 +242,12 @@ class LogNotifier:
     def notify_escalated(
         self,
         task_id: int | str,
-        subject: str,
+        _subject: str,
         verdict: str,
         summary: str,
         **_kwargs: Any,
     ) -> None:
         """Log a task-escalated notification."""
-        del subject  # protocol-required
         logger.info("NOTIFY: Task %s escalated (%s): %s", task_id, verdict, summary)
 
     def notify_batch_submitted(self, group_id: str, task_count: int) -> None:
@@ -298,7 +297,7 @@ class NullToolProvider:
         """Return an empty server list."""
         return []
 
-    def servers_for_subject(self, subject: str, *, role: str = "") -> list[str]:
+    def servers_for_subject(self, _subject: str, *, role: str = "") -> list[str]:
         """Return an empty server list (no MCP tools)."""
-        del subject, role  # protocol-required
+        del role  # keyword-only; cannot rename
         return []
