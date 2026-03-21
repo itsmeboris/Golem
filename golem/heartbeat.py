@@ -44,6 +44,20 @@ _TERMINAL_STATES = frozenset(
 
 _MD_JSON_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?\s*```", re.DOTALL)
 
+_DEDUP_REQUIRED_KEYS: frozenset[str] = frozenset({"evaluated_at", "verdict"})
+_CANDIDATE_REQUIRED_KEYS: frozenset[str] = frozenset(
+    {
+        "id",
+        "subject",
+        "body",
+        "automatable",
+        "confidence",
+        "complexity",
+        "reason",
+        "tier",
+    }
+)
+
 
 def _strip_markdown_json(text: str) -> str:
     """Strip markdown code fences from a JSON response.
@@ -382,7 +396,9 @@ class HeartbeatManager:
         if not self._state_file.exists():
             return
         try:
-            data = json.loads(self._state_file.read_text(encoding="utf-8"))
+            data: dict[str, Any] = json.loads(
+                self._state_file.read_text(encoding="utf-8")
+            )
         except (json.JSONDecodeError, OSError) as exc:
             logger.warning("Failed to load heartbeat state: %s", exc)
             return
@@ -397,7 +413,25 @@ class HeartbeatManager:
             if tid is not None:
                 coerced.append(tid)
         self._inflight_task_ids = coerced
-        self._dedup_memory = data.get("dedup_memory", {})
+        raw_dedup = data.get("dedup_memory", {})
+        if not isinstance(raw_dedup, dict):
+            logger.warning(
+                "dedup_memory is not a dict (%r) — resetting to empty",
+                type(raw_dedup).__name__,
+            )
+            raw_dedup = {}
+        validated_dedup: dict[str, DedupEntryDict] = {}
+        for key, value in raw_dedup.items():
+            if not isinstance(value, dict) or not _DEDUP_REQUIRED_KEYS.issubset(
+                value.keys()
+            ):
+                logger.warning(
+                    "Dropping invalid dedup_memory entry %r — missing required keys",
+                    key,
+                )
+            else:
+                validated_dedup[key] = value
+        self._dedup_memory = validated_dedup
         raw_cache = data.get("coverage_cache")
         if (
             isinstance(raw_cache, dict)
@@ -408,7 +442,19 @@ class HeartbeatManager:
             self._coverage_cache = raw_cache
         else:
             self._coverage_cache = None
-        self._candidates = data.get("candidates", [])
+        raw_candidates = data.get("candidates", [])
+        validated_candidates: list[HeartbeatCandidateDict] = []
+        for i, entry in enumerate(raw_candidates):
+            if not isinstance(entry, dict) or not _CANDIDATE_REQUIRED_KEYS.issubset(
+                entry.keys()
+            ):
+                logger.warning(
+                    "Dropping invalid candidates entry at index %d — missing required keys",
+                    i,
+                )
+            else:
+                validated_candidates.append(entry)
+        self._candidates = validated_candidates
         self._prune_dedup()
         self._tier2_completions_since_tier1 = data.get(
             "tier2_completions_since_tier1", 0

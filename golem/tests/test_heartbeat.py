@@ -97,6 +97,118 @@ class TestStatePersistence:
         mgr.load_state()  # should not raise
         assert mgr._daily_spend_usd == 0.0
 
+    def test_load_state_drops_invalid_dedup_entries(self, tmp_path):
+        """Dedup entries missing required keys or non-dict values are dropped."""
+        state_file = tmp_path / "heartbeat_state.json"
+        state_data = {
+            "dedup_memory": {
+                "github:valid": {
+                    "evaluated_at": "2026-03-15T10:00:00Z",
+                    "verdict": "not_automatable",
+                },
+                "github:missing_verdict": {
+                    "evaluated_at": "2026-03-15T10:00:00Z",
+                },
+                "github:missing_evaluated_at": {
+                    "verdict": "submitted",
+                },
+                "github:not_a_dict": "some string value",
+                "github:list_value": ["evaluated_at", "verdict"],
+            }
+        }
+        state_file.write_text(json.dumps(state_data), encoding="utf-8")
+        mgr = _make_manager(tmp_path)
+        mgr.load_state()
+        assert list(mgr._dedup_memory.keys()) == ["github:valid"]
+        assert mgr._dedup_memory["github:valid"]["verdict"] == "not_automatable"
+
+    def test_load_state_drops_invalid_candidate_entries(self, tmp_path):
+        """Candidate entries missing required keys or non-dict values are dropped."""
+        state_file = tmp_path / "heartbeat_state.json"
+        valid_candidate = {
+            "id": "gh:42",
+            "subject": "Fix bug",
+            "body": "Description",
+            "automatable": True,
+            "confidence": 0.9,
+            "complexity": "low",
+            "reason": "Simple fix",
+            "tier": 1,
+        }
+        incomplete_candidate = {
+            "id": "gh:99",
+            "subject": "Missing fields",
+        }
+        state_data = {
+            "candidates": [
+                valid_candidate,
+                incomplete_candidate,
+                "not a dict",
+                42,
+            ]
+        }
+        state_file.write_text(json.dumps(state_data), encoding="utf-8")
+        mgr = _make_manager(tmp_path)
+        mgr.load_state()
+        assert len(mgr._candidates) == 1
+        assert mgr._candidates[0]["id"] == "gh:42"
+
+    def test_load_state_warns_on_invalid_dedup_entry(self, tmp_path):
+        """logger.warning is called for each dropped invalid dedup entry."""
+        state_file = tmp_path / "heartbeat_state.json"
+        state_data = {
+            "dedup_memory": {
+                "github:valid": {
+                    "evaluated_at": "2026-03-15T10:00:00Z",
+                    "verdict": "not_automatable",
+                },
+                "github:bad": "not a dict",
+            }
+        }
+        state_file.write_text(json.dumps(state_data), encoding="utf-8")
+        mgr = _make_manager(tmp_path)
+        with patch("golem.heartbeat.logger") as mock_logger:
+            mgr.load_state()
+        mock_logger.warning.assert_called_once()
+        call_args = mock_logger.warning.call_args
+        assert call_args[0][1] == "github:bad"
+
+    def test_load_state_nondict_dedup_memory_becomes_empty(self, tmp_path):
+        """dedup_memory reset to {} with warning when the JSON value is not a dict."""
+        state_file = tmp_path / "heartbeat_state.json"
+        state_data = {"dedup_memory": ["list", "value"]}
+        state_file.write_text(json.dumps(state_data), encoding="utf-8")
+        mgr = _make_manager(tmp_path)
+        with patch("golem.heartbeat.logger") as mock_logger:
+            mgr.load_state()
+        mock_logger.warning.assert_called_once()
+        assert mgr._dedup_memory == {}
+
+    def test_load_state_warns_on_invalid_candidate_entry(self, tmp_path):
+        """logger.warning is called for each dropped invalid candidate entry."""
+        state_file = tmp_path / "heartbeat_state.json"
+        valid_candidate = {
+            "id": "gh:42",
+            "subject": "Fix bug",
+            "body": "Description",
+            "automatable": True,
+            "confidence": 0.9,
+            "complexity": "low",
+            "reason": "Simple fix",
+            "tier": 1,
+        }
+        state_data = {
+            "candidates": [
+                valid_candidate,
+                {"id": "gh:99"},
+            ]
+        }
+        state_file.write_text(json.dumps(state_data), encoding="utf-8")
+        mgr = _make_manager(tmp_path)
+        with patch("golem.heartbeat.logger") as mock_logger:
+            mgr.load_state()
+        mock_logger.warning.assert_called_once()
+
 
 class TestBudgetTracking:
     def test_budget_allows_when_under_limit(self, tmp_path):
