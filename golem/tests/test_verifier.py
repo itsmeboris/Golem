@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from golem.types import MutationResultDict, MutmutSummaryDict, VerificationResultDict
+from golem.types import MutationResultDict, VerificationResultDict
 from golem.verifier import (
     MutationResult,
     MutmutSummary,
@@ -894,28 +894,6 @@ class TestMutmutSummary:
         assert summary.suspicious == 0
         assert summary.skipped == 0
 
-    def test_to_dict_matches_mutmut_summary_dict_keys(self):
-        """to_dict() keys exactly match MutmutSummaryDict required keys."""
-        summary = MutmutSummary(
-            mutants_total=10, killed=8, survived=2, timeout=0, suspicious=0, skipped=0
-        )
-        result = summary.to_dict()
-        required = set(MutmutSummaryDict.__required_keys__)  # pylint: disable=no-member
-        assert set(result.keys()) == required
-
-    def test_to_dict_values_match_fields(self):
-        """to_dict() values reflect actual field values."""
-        summary = MutmutSummary(
-            mutants_total=10, killed=8, survived=2, timeout=1, suspicious=3, skipped=4
-        )
-        d = summary.to_dict()
-        assert d["mutants_total"] == 10
-        assert d["killed"] == 8
-        assert d["survived"] == 2
-        assert d["timeout"] == 1
-        assert d["suspicious"] == 3
-        assert d["skipped"] == 4
-
 
 class TestParseMutmutSummary:
     @pytest.mark.parametrize(
@@ -1023,18 +1001,6 @@ class TestParseMutmutSummary:
         assert result.timeout == 0
         assert result.suspicious == 0
         assert result.skipped == 0
-
-    def test_parse_mutmut_summary_to_dict_satisfies_typed_dict_contract(self):
-        """to_dict() on result satisfies MutmutSummaryDict serialization contract."""
-        result = parse_mutmut_summary(
-            "\u2838 10/10  \U0001f389 8  \u23f0 0  \U0001f914 0  \U0001f641 2  \U0001f507 0\n"
-        )
-        d = result.to_dict()
-        required = set(MutmutSummaryDict.__required_keys__)  # pylint: disable=no-member
-        assert set(d.keys()) == required
-        assert d["mutants_total"] == 10
-        assert d["killed"] == 8
-        assert d["survived"] == 2
 
 
 class TestParseMutmutResults:

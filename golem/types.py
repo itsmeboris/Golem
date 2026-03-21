@@ -273,21 +273,6 @@ class MutationResultDict(TypedDict):
     survived_mutants: list[SurvivedMutantDict]
 
 
-class MutmutSummaryDict(TypedDict):
-    """Summary counts from a mutmut run.
-
-    Producers: verifier.py parse_mutmut_summary()
-    Consumers: verifier.py run_mutation_testing()
-    """
-
-    mutants_total: int
-    killed: int
-    survived: int
-    timeout: int
-    suspicious: int
-    skipped: int
-
-
 class CoverageFileDataDict(TypedDict):
     """Per-file coverage data from coverage.py JSON output.
 

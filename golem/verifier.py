@@ -19,7 +19,6 @@ from pathlib import Path
 from golem.types import (
     CoverageDataDict,
     MutationResultDict,
-    MutmutSummaryDict,
     SurvivedMutantDict,
     VerificationResultDict,
 )
@@ -79,14 +78,6 @@ class CoverageDelta:
     delta_pct: float
     uncovered_lines: dict[str, list[int]]  # {filepath: [line_numbers]}
 
-    def summary(self) -> str:
-        if self.all_covered:
-            return "Coverage delta: 100% on changed files"
-        parts = []
-        for path, lines in self.uncovered_lines.items():
-            parts.append(f"  {path}: lines {lines}")
-        return f"Coverage delta: {self.delta_pct:.0f}%\n" + "\n".join(parts)
-
 
 @dataclass
 class SurvivedMutant:
@@ -144,17 +135,6 @@ class MutmutSummary:
     timeout: int = 0
     suspicious: int = 0
     skipped: int = 0
-
-    def to_dict(self) -> MutmutSummaryDict:
-        """Serialize for JSON persistence."""
-        return {
-            "mutants_total": self.mutants_total,
-            "killed": self.killed,
-            "survived": self.survived,
-            "timeout": self.timeout,
-            "suspicious": self.suspicious,
-            "skipped": self.skipped,
-        }
 
 
 def _validate_coverage_data(data: object) -> CoverageDataDict:

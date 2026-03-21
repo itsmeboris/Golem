@@ -21,6 +21,7 @@ class TestCoverageDelta:
         }
         changed_files = ["golem/foo.py"]
         result = parse_coverage_delta(cov_data, changed_files)
+        assert isinstance(result, CoverageDelta)
         assert result.all_covered is True
         assert result.delta_pct == 100.0
         assert not result.uncovered_lines
@@ -92,25 +93,6 @@ class TestCoverageDelta:
         result = parse_coverage_delta(cov_data, changed_files)
         assert result.all_covered is True
         assert result.delta_pct == 100.0
-
-
-class TestCoverageDeltaSummary:
-    def test_summary_all_covered(self):
-        """Summary returns 100% message when all covered."""
-        delta = CoverageDelta(all_covered=True, delta_pct=100.0, uncovered_lines={})
-        assert delta.summary() == "Coverage delta: 100% on changed files"
-
-    def test_summary_some_uncovered(self):
-        """Summary lists uncovered files and lines when not all covered."""
-        delta = CoverageDelta(
-            all_covered=False,
-            delta_pct=60.0,
-            uncovered_lines={"golem/foo.py": [4, 5]},
-        )
-        summary = delta.summary()
-        assert "60%" in summary
-        assert "golem/foo.py" in summary
-        assert "[4, 5]" in summary
 
 
 class TestCoverageDataDictContract:
