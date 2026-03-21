@@ -126,7 +126,7 @@ class RedmineTaskSource:
         _timeout: int = 30,
     ) -> list[dict[str, Any]]:
         """Redmine backend does not support untagged issue discovery."""
-        del limit  # protocol-required; callers pass as keyword
+        del limit  # keyword-passed by heartbeat.py; cannot rename
         return []
 
     def get_task_comments(

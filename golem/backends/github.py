@@ -135,7 +135,7 @@ class GitHubTaskSource:
         timeout: int = 30,
     ) -> list[dict[str, Any]]:
         """List open issues with the given label."""
-        del timeout  # protocol-required; callers pass as keyword
+        del timeout  # keyword-passed by flow.py; cannot rename
         all_tasks: list[dict[str, Any]] = []
         for repo in projects:
             try:

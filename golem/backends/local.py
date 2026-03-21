@@ -44,7 +44,7 @@ class LocalFileTaskSource:
         timeout: int = 30,
     ) -> list[dict[str, Any]]:
         """Scan the tasks directory for files whose subject matches *detection_tag*."""
-        del timeout  # protocol-required; callers pass as keyword
+        del timeout  # keyword-passed by flow.py; cannot rename
         if not self._tasks_dir.is_dir():
             logger.warning("Tasks directory does not exist: %s", self._tasks_dir)
             return []
@@ -140,7 +140,7 @@ class LocalFileTaskSource:
         _timeout: int = 30,
     ) -> list[dict[str, Any]]:
         """Local backend does not support untagged issue discovery."""
-        del limit  # protocol-required; callers pass as keyword
+        del limit  # keyword-passed by heartbeat.py; cannot rename
         return []
 
     def _find_task(self, task_id: str) -> dict[str, Any] | None:
