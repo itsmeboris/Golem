@@ -134,6 +134,29 @@ class MutationResult:
         }
 
 
+@dataclass
+class MutmutSummary:
+    """Parsed counts from mutmut progress/summary output."""
+
+    mutants_total: int = 0
+    killed: int = 0
+    survived: int = 0
+    timeout: int = 0
+    suspicious: int = 0
+    skipped: int = 0
+
+    def to_dict(self) -> MutmutSummaryDict:
+        """Serialize for JSON persistence."""
+        return {
+            "mutants_total": self.mutants_total,
+            "killed": self.killed,
+            "survived": self.survived,
+            "timeout": self.timeout,
+            "suspicious": self.suspicious,
+            "skipped": self.skipped,
+        }
+
+
 def _validate_coverage_data(data: object) -> CoverageDataDict:
     """Validate that data matches CoverageDataDict structure.
 
@@ -250,33 +273,26 @@ _MUTMUT_BLOCK_RE = re.compile(
 )
 
 
-def parse_mutmut_summary(output: str) -> MutmutSummaryDict:
+def parse_mutmut_summary(output: str) -> MutmutSummary:
     """Parse the progress/summary line from mutmut run output.
 
-    Returns a dict with keys: mutants_total, killed, survived, timeout,
-    suspicious, skipped.  All values are 0 if no summary line is found.
+    Returns a MutmutSummary with fields: mutants_total, killed, survived,
+    timeout, suspicious, skipped.  All values are 0 if no summary line found.
     """
     match = _MUTMUT_SUMMARY_RE.search(output)
     if not match:
-        return {
-            "mutants_total": 0,
-            "killed": 0,
-            "survived": 0,
-            "timeout": 0,
-            "suspicious": 0,
-            "skipped": 0,
-        }
+        return MutmutSummary()
     total, killed, timeout, suspicious, survived, skipped = (
         int(g) for g in match.groups()
     )
-    return {
-        "mutants_total": total,
-        "killed": killed,
-        "survived": survived,
-        "timeout": timeout,
-        "suspicious": suspicious,
-        "skipped": skipped,
-    }
+    return MutmutSummary(
+        mutants_total=total,
+        killed=killed,
+        survived=survived,
+        timeout=timeout,
+        suspicious=suspicious,
+        skipped=skipped,
+    )
 
 
 def parse_mutmut_results(output: str) -> list[SurvivedMutant]:
@@ -402,7 +418,7 @@ def run_mutation_testing(
 
     # Collect survived mutant details via `mutmut results` (separate command)
     survived_mutants: list[SurvivedMutant] = []
-    if counts["survived"] > 0:
+    if counts.survived > 0:
         _, results_output = _run_cmd(["mutmut", "results"], work_dir, timeout)
         survived_mutants = parse_mutmut_results(results_output)
 
@@ -411,12 +427,12 @@ def run_mutation_testing(
         output=output,
         passed=success,
         duration_s=duration,
-        mutants_total=counts["mutants_total"],
-        killed=counts["killed"],
-        survived=counts["survived"],
-        timeout=counts["timeout"],
-        suspicious=counts["suspicious"],
-        skipped=counts["skipped"],
+        mutants_total=counts.mutants_total,
+        killed=counts.killed,
+        survived=counts.survived,
+        timeout=counts.timeout,
+        suspicious=counts.suspicious,
+        skipped=counts.skipped,
         survived_mutants=survived_mutants,
     )
 

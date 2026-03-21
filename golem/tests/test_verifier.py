@@ -12,6 +12,7 @@ import pytest
 from golem.types import MutationResultDict, MutmutSummaryDict, VerificationResultDict
 from golem.verifier import (
     MutationResult,
+    MutmutSummary,
     SurvivedMutant,
     VerificationResult,
     _parse_pytest_output,
@@ -882,6 +883,40 @@ class TestRunMutationTesting:
         assert result.survived == 0
 
 
+class TestMutmutSummary:
+    def test_default_all_zeros(self):
+        """MutmutSummary() with no args produces all-zero fields."""
+        summary = MutmutSummary()
+        assert summary.mutants_total == 0
+        assert summary.killed == 0
+        assert summary.survived == 0
+        assert summary.timeout == 0
+        assert summary.suspicious == 0
+        assert summary.skipped == 0
+
+    def test_to_dict_matches_mutmut_summary_dict_keys(self):
+        """to_dict() keys exactly match MutmutSummaryDict required keys."""
+        summary = MutmutSummary(
+            mutants_total=10, killed=8, survived=2, timeout=0, suspicious=0, skipped=0
+        )
+        result = summary.to_dict()
+        required = set(MutmutSummaryDict.__required_keys__)  # pylint: disable=no-member
+        assert set(result.keys()) == required
+
+    def test_to_dict_values_match_fields(self):
+        """to_dict() values reflect actual field values."""
+        summary = MutmutSummary(
+            mutants_total=10, killed=8, survived=2, timeout=1, suspicious=3, skipped=4
+        )
+        d = summary.to_dict()
+        assert d["mutants_total"] == 10
+        assert d["killed"] == 8
+        assert d["survived"] == 2
+        assert d["timeout"] == 1
+        assert d["suspicious"] == 3
+        assert d["skipped"] == 4
+
+
 class TestParseMutmutSummary:
     @pytest.mark.parametrize(
         "output, expected",
@@ -889,86 +924,86 @@ class TestParseMutmutSummary:
             # Normal progress line with all mutants killed
             (
                 "\u2838 10/10  \U0001f389 8  \u23f0 0  \U0001f914 0  \U0001f641 2  \U0001f507 0\n",
-                {
-                    "mutants_total": 10,
-                    "killed": 8,
-                    "survived": 2,
-                    "timeout": 0,
-                    "suspicious": 0,
-                    "skipped": 0,
-                },
+                MutmutSummary(
+                    mutants_total=10,
+                    killed=8,
+                    survived=2,
+                    timeout=0,
+                    suspicious=0,
+                    skipped=0,
+                ),
             ),
             # All killed, no survivors
             (
                 "\u2838 5/5  \U0001f389 5  \u23f0 0  \U0001f914 0  \U0001f641 0  \U0001f507 0",
-                {
-                    "mutants_total": 5,
-                    "killed": 5,
-                    "survived": 0,
-                    "timeout": 0,
-                    "suspicious": 0,
-                    "skipped": 0,
-                },
+                MutmutSummary(
+                    mutants_total=5,
+                    killed=5,
+                    survived=0,
+                    timeout=0,
+                    suspicious=0,
+                    skipped=0,
+                ),
             ),
             # All zeros/one mutant with skipped
             (
                 "\u2838 3/3  \U0001f389 0  \u23f0 1  \U0001f914 1  \U0001f641 0  \U0001f507 1",
-                {
-                    "mutants_total": 3,
-                    "killed": 0,
-                    "survived": 0,
-                    "timeout": 1,
-                    "suspicious": 1,
-                    "skipped": 1,
-                },
+                MutmutSummary(
+                    mutants_total=3,
+                    killed=0,
+                    survived=0,
+                    timeout=1,
+                    suspicious=1,
+                    skipped=1,
+                ),
             ),
             # Empty output
             (
                 "",
-                {
-                    "mutants_total": 0,
-                    "killed": 0,
-                    "survived": 0,
-                    "timeout": 0,
-                    "suspicious": 0,
-                    "skipped": 0,
-                },
+                MutmutSummary(
+                    mutants_total=0,
+                    killed=0,
+                    survived=0,
+                    timeout=0,
+                    suspicious=0,
+                    skipped=0,
+                ),
             ),
             # No emoji summary line
             (
                 "Some random output with no summary",
-                {
-                    "mutants_total": 0,
-                    "killed": 0,
-                    "survived": 0,
-                    "timeout": 0,
-                    "suspicious": 0,
-                    "skipped": 0,
-                },
+                MutmutSummary(
+                    mutants_total=0,
+                    killed=0,
+                    survived=0,
+                    timeout=0,
+                    suspicious=0,
+                    skipped=0,
+                ),
             ),
             # Partial/truncated line (missing some fields)
             (
                 "\u2838 7/7  \U0001f389 4",
-                {
-                    "mutants_total": 0,
-                    "killed": 0,
-                    "survived": 0,
-                    "timeout": 0,
-                    "suspicious": 0,
-                    "skipped": 0,
-                },
+                MutmutSummary(
+                    mutants_total=0,
+                    killed=0,
+                    survived=0,
+                    timeout=0,
+                    suspicious=0,
+                    skipped=0,
+                ),
             ),
             # Summary line embedded in longer output
             (
                 "Running mutmut...\n\u2838 20/20  \U0001f389 18  \u23f0 1  \U0001f914 0  \U0001f641 1  \U0001f507 0\nDone.\n",
-                {
-                    "mutants_total": 20,
-                    "killed": 18,
-                    "survived": 1,
-                    "timeout": 1,
-                    "suspicious": 0,
-                    "skipped": 0,
-                },
+                MutmutSummary(
+                    mutants_total=20,
+                    killed=18,
+                    survived=1,
+                    timeout=1,
+                    suspicious=0,
+                    skipped=0,
+                ),
             ),
         ],
     )
@@ -976,19 +1011,30 @@ class TestParseMutmutSummary:
         result = parse_mutmut_summary(output)
         assert result == expected
 
-    def test_parse_mutmut_summary_returns_all_typed_dict_keys(self):
-        """parse_mutmut_summary return value has all keys required by MutmutSummaryDict."""
+    def test_parse_mutmut_summary_returns_dataclass_with_all_fields(self):
+        """parse_mutmut_summary returns MutmutSummary with correct field values."""
         result = parse_mutmut_summary(
             "\u2838 10/10  \U0001f389 8  \u23f0 0  \U0001f914 0  \U0001f641 2  \U0001f507 0\n"
         )
+        assert isinstance(result, MutmutSummary)
+        assert result.mutants_total == 10
+        assert result.killed == 8
+        assert result.survived == 2
+        assert result.timeout == 0
+        assert result.suspicious == 0
+        assert result.skipped == 0
+
+    def test_parse_mutmut_summary_to_dict_satisfies_typed_dict_contract(self):
+        """to_dict() on result satisfies MutmutSummaryDict serialization contract."""
+        result = parse_mutmut_summary(
+            "\u2838 10/10  \U0001f389 8  \u23f0 0  \U0001f914 0  \U0001f641 2  \U0001f507 0\n"
+        )
+        d = result.to_dict()
         required = set(MutmutSummaryDict.__required_keys__)  # pylint: disable=no-member
-        assert set(result.keys()) == required
-        assert result["mutants_total"] == 10
-        assert result["killed"] == 8
-        assert result["survived"] == 2
-        assert result["timeout"] == 0
-        assert result["suspicious"] == 0
-        assert result["skipped"] == 0
+        assert set(d.keys()) == required
+        assert d["mutants_total"] == 10
+        assert d["killed"] == 8
+        assert d["survived"] == 2
 
 
 class TestParseMutmutResults:
