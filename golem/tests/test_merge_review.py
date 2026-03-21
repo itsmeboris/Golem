@@ -27,18 +27,6 @@ def sample_missing():
     ]
 
 
-@pytest.fixture()
-def sample_diff():
-    return (
-        "diff --git a/foo.py b/foo.py\n"
-        "--- a/foo.py\n"
-        "+++ b/foo.py\n"
-        "@@ -1 +1,3 @@\n"
-        "+def hello():\n"
-        '+    return "world"\n'
-    )
-
-
 class TestReconciliationResultDefaults:
     def test_defaults(self):
         r = ReconciliationResult()
