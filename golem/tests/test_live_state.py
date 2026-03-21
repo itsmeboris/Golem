@@ -3,16 +3,7 @@
 
 import json
 
-import pytest
-
 from golem.core.live_state import LiveState, read_live_snapshot
-
-
-@pytest.fixture(autouse=True)
-def _reset_singleton():
-    LiveState.reset()
-    yield
-    LiveState.reset()
 
 
 class TestLiveSingleton:

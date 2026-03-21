@@ -24,13 +24,6 @@ from golem.health import (
 )
 
 
-@pytest.fixture(autouse=True)
-def _reset_live_state():
-    LiveState.reset()
-    yield
-    LiveState.reset()
-
-
 @pytest.fixture
 def config():
     return HealthConfig(
