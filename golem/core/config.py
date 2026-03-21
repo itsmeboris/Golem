@@ -114,6 +114,7 @@ class GolemFlowConfig(FlowConfig):
     heartbeat_not_automatable_ttl_days: int = 7
     heartbeat_category_failure_threshold: int = 3
     heartbeat_category_cooldown_hours: int = 6
+    heartbeat_recent_commits_lookback: int = 20
     heartbeat_max_ticks: int = 0  # 0 = unlimited
     heartbeat_max_duration_seconds: int = 0  # 0 = unlimited
     # Self-update — daemon monitors its own repo for changes (opt-in)
@@ -341,6 +342,9 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
         heartbeat_batch_size=data.get("heartbeat_batch_size", 5),
         heartbeat_tier1_every_n=data.get("heartbeat_tier1_every_n", 3),
         heartbeat_dedup_ttl_days=data.get("heartbeat_dedup_ttl_days", 30),
+        heartbeat_recent_commits_lookback=data.get(
+            "heartbeat_recent_commits_lookback", 20
+        ),
         heartbeat_max_ticks=data.get("heartbeat_max_ticks", 0),
         heartbeat_max_duration_seconds=data.get("heartbeat_max_duration_seconds", 0),
         # Self-update
@@ -600,6 +604,11 @@ def validate_config(config: Config) -> list[str]:
             errors.append(
                 "golem.heartbeat_tier1_every_n must be >= 1, "
                 f"got {config.golem.heartbeat_tier1_every_n}"
+            )
+        if config.golem.heartbeat_recent_commits_lookback < 1:
+            errors.append(
+                "golem.heartbeat_recent_commits_lookback must be >= 1, "
+                f"got {config.golem.heartbeat_recent_commits_lookback}"
             )
 
     # max_mcp_servers validation

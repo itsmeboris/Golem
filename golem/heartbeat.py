@@ -963,7 +963,7 @@ class HeartbeatManager:
                     "git",
                     "log",
                     "--oneline",
-                    "-5",
+                    f"-{self._config.heartbeat_recent_commits_lookback}",
                     "--fixed-strings",
                     "--grep=[HEARTBEAT] batch:",
                 ],
@@ -1006,7 +1006,7 @@ class HeartbeatManager:
                 [
                     "git",
                     "log",
-                    "-5",
+                    f"-{self._config.heartbeat_recent_commits_lookback}",
                     "--fixed-strings",
                     "--grep=[HEARTBEAT]",
                     "--format=%B",

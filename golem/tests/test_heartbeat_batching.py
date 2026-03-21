@@ -657,6 +657,80 @@ class TestGetRecentlyResolvedIds:
         assert "--format=%B" in called_cmd
 
 
+class TestHeartbeatRecentCommitsLookback:
+    def test_default_value(self):
+        cfg = GolemFlowConfig()
+        assert cfg.heartbeat_recent_commits_lookback == 20
+
+    def test_parsed_from_yaml(self, tmp_path):
+        from golem.core.config import load_config
+
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(
+            "flows:\n"
+            "  golem:\n"
+            "    projects: [test/repo]\n"
+            "    heartbeat_enabled: true\n"
+            "    heartbeat_recent_commits_lookback: 50\n"
+        )
+        config = load_config(cfg_file)
+        assert config.golem.heartbeat_recent_commits_lookback == 50
+
+    def test_validation_rejects_zero(self):
+        from golem.core.config import Config, validate_config
+
+        cfg = Config(
+            golem=GolemFlowConfig(
+                projects=["test/repo"],
+                heartbeat_enabled=True,
+                heartbeat_recent_commits_lookback=0,
+            )
+        )
+        errors = validate_config(cfg)
+        assert any("heartbeat_recent_commits_lookback" in e for e in errors)
+
+    def test_validation_rejects_negative(self):
+        from golem.core.config import Config, validate_config
+
+        cfg = Config(
+            golem=GolemFlowConfig(
+                projects=["test/repo"],
+                heartbeat_enabled=True,
+                heartbeat_recent_commits_lookback=-5,
+            )
+        )
+        errors = validate_config(cfg)
+        assert any("heartbeat_recent_commits_lookback" in e for e in errors)
+
+    def test_batch_categories_uses_configured_lookback(self, tmp_path):
+        mgr = _make_manager(
+            tmp_path,
+            default_work_dir=str(tmp_path),
+            heartbeat_recent_commits_lookback=50,
+        )
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            mgr._get_recent_batch_categories()
+        called_cmd = mock_run.call_args[0][0]
+        assert "-50" in called_cmd
+
+    def test_recently_resolved_ids_uses_configured_lookback(self, tmp_path):
+        mgr = _make_manager(
+            tmp_path,
+            default_work_dir=str(tmp_path),
+            heartbeat_recent_commits_lookback=50,
+        )
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            mgr._get_recently_resolved_ids()
+        called_cmd = mock_run.call_args[0][0]
+        assert "-50" in called_cmd
+
+
 class TestSubmitBatchPreFlight:
     async def test_batch_skipped_when_category_already_addressed(self, tmp_path):
         mgr = _make_manager(tmp_path, heartbeat_batch_size=5)
