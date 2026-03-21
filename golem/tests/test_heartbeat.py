@@ -638,6 +638,444 @@ class TestValidateCandidates:
         assert [c["id"] for c in result] == ["github:2", "github:3", "github:1"]
 
 
+class TestValidateCandidatesTypeSafety:
+    """Tests that _validate_candidates constructs explicit HeartbeatCandidateDict instances."""
+
+    def test_output_has_all_required_heartbeat_candidate_keys(self, tmp_path):
+        """Validated candidates must include all HeartbeatCandidateDict required keys."""
+        mgr = _make_manager(tmp_path)
+        raw = {
+            "candidates": [
+                {
+                    "id": "github:1",
+                    "automatable": True,
+                    "confidence": 0.9,
+                    "complexity": "small",
+                    "reason": "Clear bug fix",
+                    "subject": "Fix login bug",
+                    "body": "Steps to reproduce",
+                },
+            ]
+        }
+        result = mgr._validate_candidates(raw)
+        assert len(result) == 1
+        c = result[0]
+        # All required HeartbeatCandidateDict keys must be present
+        assert c["id"] == "github:1"
+        assert c["subject"] == "Fix login bug"
+        assert c["body"] == "Steps to reproduce"
+        assert c["automatable"] is True
+        assert c["confidence"] == 0.9
+        assert c["complexity"] == "small"
+        assert c["reason"] == "Clear bug fix"
+        assert c["tier"] == 0
+
+    def test_tier_parameter_is_set_in_output(self, tmp_path):
+        """The tier parameter must propagate to each candidate in the output."""
+        mgr = _make_manager(tmp_path)
+        raw = {
+            "candidates": [
+                {
+                    "id": "github:1",
+                    "automatable": True,
+                    "confidence": 0.9,
+                    "complexity": "small",
+                    "reason": "Fix",
+                },
+            ]
+        }
+        result1 = mgr._validate_candidates(raw, tier=1)
+        assert result1[0]["tier"] == 1
+
+        result2 = mgr._validate_candidates(raw, tier=2)
+        assert result2[0]["tier"] == 2
+
+    def test_tier_defaults_to_zero(self, tmp_path):
+        """Without a tier argument, tier defaults to 0."""
+        mgr = _make_manager(tmp_path)
+        raw = {
+            "candidates": [
+                {
+                    "id": "github:1",
+                    "automatable": True,
+                    "confidence": 0.9,
+                    "complexity": "small",
+                    "reason": "Fix",
+                },
+            ]
+        }
+        result = mgr._validate_candidates(raw)
+        assert result[0]["tier"] == 0
+
+    def test_subject_falls_back_to_reason_when_absent(self, tmp_path):
+        """If subject is absent in raw, subject must fall back to reason."""
+        mgr = _make_manager(tmp_path)
+        raw = {
+            "candidates": [
+                {
+                    "id": "github:1",
+                    "automatable": True,
+                    "confidence": 0.9,
+                    "complexity": "small",
+                    "reason": "Clear bug fix",
+                },
+            ]
+        }
+        result = mgr._validate_candidates(raw)
+        assert result[0]["subject"] == "Clear bug fix"
+
+    def test_body_falls_back_to_reason_when_absent(self, tmp_path):
+        """If body is absent in raw, body must fall back to reason."""
+        mgr = _make_manager(tmp_path)
+        raw = {
+            "candidates": [
+                {
+                    "id": "github:1",
+                    "automatable": True,
+                    "confidence": 0.9,
+                    "complexity": "small",
+                    "reason": "Description of fix",
+                },
+            ]
+        }
+        result = mgr._validate_candidates(raw)
+        assert result[0]["body"] == "Description of fix"
+
+    def test_candidate_with_empty_id_is_skipped(self, tmp_path):
+        """A candidate with an empty string id must be filtered out."""
+        mgr = _make_manager(tmp_path)
+        raw = {
+            "candidates": [
+                {
+                    "id": "",
+                    "automatable": True,
+                    "confidence": 0.9,
+                    "complexity": "small",
+                    "reason": "Fix",
+                },
+                {
+                    "id": "github:2",
+                    "automatable": True,
+                    "confidence": 0.9,
+                    "complexity": "small",
+                    "reason": "Also fix",
+                },
+            ]
+        }
+        result = mgr._validate_candidates(raw)
+        assert len(result) == 1
+        assert result[0]["id"] == "github:2"
+
+    def test_candidate_with_missing_id_is_skipped(self, tmp_path):
+        """A candidate without an id key must be filtered out."""
+        mgr = _make_manager(tmp_path)
+        raw = {
+            "candidates": [
+                {
+                    "automatable": True,
+                    "confidence": 0.9,
+                    "complexity": "small",
+                    "reason": "Fix",
+                },
+                {
+                    "id": "github:2",
+                    "automatable": True,
+                    "confidence": 0.9,
+                    "complexity": "small",
+                    "reason": "Also fix",
+                },
+            ]
+        }
+        result = mgr._validate_candidates(raw)
+        assert len(result) == 1
+        assert result[0]["id"] == "github:2"
+
+    def test_candidate_with_non_string_id_is_skipped(self, tmp_path):
+        """A candidate with a non-string id must be filtered out."""
+        mgr = _make_manager(tmp_path)
+        raw = {
+            "candidates": [
+                {
+                    "id": 42,
+                    "automatable": True,
+                    "confidence": 0.9,
+                    "complexity": "small",
+                    "reason": "Fix",
+                },
+                {
+                    "id": "github:2",
+                    "automatable": True,
+                    "confidence": 0.9,
+                    "complexity": "small",
+                    "reason": "Also fix",
+                },
+            ]
+        }
+        result = mgr._validate_candidates(raw)
+        assert len(result) == 1
+        assert result[0]["id"] == "github:2"
+
+    def test_automatable_field_always_true_in_output(self, tmp_path):
+        """Since non-automatable candidates are filtered, output automatable is always True."""
+        mgr = _make_manager(tmp_path)
+        raw = {
+            "candidates": [
+                {
+                    "id": "github:1",
+                    "automatable": True,
+                    "confidence": 0.9,
+                    "complexity": "small",
+                    "reason": "Fix",
+                },
+            ]
+        }
+        result = mgr._validate_candidates(raw)
+        assert result[0]["automatable"] is True
+
+
+class TestSubmitSingleTypeSafety:
+    """Tests that _submit_single uses direct [] access on required keys."""
+
+    def test_subject_comes_from_candidate_subject_field(self, tmp_path):
+        """submit_single must use candidate['subject'], not a .get() fallback."""
+        mgr = _make_manager(tmp_path)
+        mock_flow = MagicMock()
+        mock_flow.submit_task.return_value = {"task_id": 42}
+        mgr._flow = mock_flow
+
+        candidate = {
+            "id": "github:10",
+            "subject": "The real subject",
+            "body": "The real body",
+            "automatable": True,
+            "confidence": 0.9,
+            "complexity": "small",
+            "reason": "Fallback reason",
+            "tier": 1,
+        }
+        mgr._submit_single(candidate)
+
+        call_kwargs = mock_flow.submit_task.call_args.kwargs
+        assert "The real subject" in call_kwargs["subject"]
+
+    def test_body_comes_from_candidate_body_field(self, tmp_path):
+        """submit_single must use candidate['body'], not a .get() fallback."""
+        mgr = _make_manager(tmp_path)
+        mock_flow = MagicMock()
+        mock_flow.submit_task.return_value = {"task_id": 42}
+        mgr._flow = mock_flow
+
+        candidate = {
+            "id": "github:10",
+            "subject": "Subject",
+            "body": "The real body",
+            "automatable": True,
+            "confidence": 0.9,
+            "complexity": "small",
+            "reason": "Not the body",
+            "tier": 1,
+        }
+        mgr._submit_single(candidate)
+
+        call_kwargs = mock_flow.submit_task.call_args.kwargs
+        assert "The real body" in call_kwargs["prompt"]
+
+    def test_confidence_comes_from_candidate_field(self, tmp_path):
+        """submit_single must use candidate['confidence'], not a .get() fallback."""
+        mgr = _make_manager(tmp_path)
+        mock_flow = MagicMock()
+        mock_flow.submit_task.return_value = {"task_id": 42}
+        mgr._flow = mock_flow
+
+        candidate = {
+            "id": "github:10",
+            "subject": "Subject",
+            "body": "Body",
+            "automatable": True,
+            "confidence": 0.87,
+            "complexity": "small",
+            "reason": "reason",
+            "tier": 1,
+        }
+        mgr._submit_single(candidate)
+
+        call_kwargs = mock_flow.submit_task.call_args.kwargs
+        assert "0.87" in call_kwargs["prompt"]
+
+    def test_id_prefix_determines_issue_mode(self, tmp_path):
+        """submit_single uses candidate['id'] to determine issue_mode, not .get()."""
+        mgr = _make_manager(tmp_path)
+        mock_flow = MagicMock()
+        mock_flow.submit_task.return_value = {"task_id": 42}
+        mgr._flow = mock_flow
+
+        # improvement: prefix -> issue_mode=False
+        candidate = {
+            "id": "improvement:error-handling:fix1",
+            "subject": "Fix",
+            "body": "Desc",
+            "automatable": True,
+            "confidence": 0.9,
+            "complexity": "small",
+            "reason": "reason",
+            "tier": 2,
+        }
+        mgr._submit_single(candidate)
+
+        call_kwargs = mock_flow.submit_task.call_args.kwargs
+        assert call_kwargs["issue_mode"] is False
+
+
+class TestSubmitBatchTypeSafety:
+    """Tests that _submit_batch uses direct [] access on required keys."""
+
+    def test_batch_prompt_uses_candidate_id(self, tmp_path):
+        """_submit_batch must include each candidate's id in the prompt."""
+        mgr = _make_manager(tmp_path)
+        mock_flow = MagicMock()
+        mock_flow.submit_task.return_value = {"task_id": 99}
+        mgr._flow = mock_flow
+
+        batch = [
+            {
+                "id": "improvement:eh:specific-fix",
+                "category": "error-handling",
+                "subject": "S1",
+                "body": "B1",
+                "automatable": True,
+                "confidence": 0.9,
+                "complexity": "small",
+                "reason": "The specific reason",
+                "tier": 2,
+            },
+        ]
+        mgr._submit_batch(batch)
+
+        call_kwargs = mock_flow.submit_task.call_args.kwargs
+        assert "improvement:eh:specific-fix" in call_kwargs["prompt"]
+
+    def test_batch_prompt_uses_candidate_reason(self, tmp_path):
+        """_submit_batch must use candidate['reason'] in the prompt."""
+        mgr = _make_manager(tmp_path)
+        mock_flow = MagicMock()
+        mock_flow.submit_task.return_value = {"task_id": 99}
+        mgr._flow = mock_flow
+
+        batch = [
+            {
+                "id": "improvement:eh:fix",
+                "category": "error-handling",
+                "subject": "S",
+                "body": "Not the reason",
+                "automatable": True,
+                "confidence": 0.9,
+                "complexity": "small",
+                "reason": "The direct reason text",
+                "tier": 2,
+            },
+        ]
+        mgr._submit_batch(batch)
+
+        call_kwargs = mock_flow.submit_task.call_args.kwargs
+        assert "The direct reason text" in call_kwargs["prompt"]
+
+    def test_batch_subject_includes_category(self, tmp_path):
+        """_submit_batch must propagate category to the subject line."""
+        mgr = _make_manager(tmp_path)
+        mock_flow = MagicMock()
+        mock_flow.submit_task.return_value = {"task_id": 99}
+        mgr._flow = mock_flow
+        mgr._get_recent_batch_categories = lambda: set()
+
+        batch = [
+            {
+                "id": "improvement:unique-cat:fix",
+                "category": "unique-cat",
+                "subject": "S",
+                "body": "B",
+                "automatable": True,
+                "confidence": 0.9,
+                "complexity": "small",
+                "reason": "R",
+                "tier": 2,
+            },
+        ]
+        mgr._submit_batch(batch)
+
+        call_kwargs = mock_flow.submit_task.call_args.kwargs
+        assert "unique-cat" in call_kwargs["subject"]
+
+
+class TestSubmitPromotedTypeSafety:
+    """Tests that _submit_promoted uses direct [] access on required keys."""
+
+    def test_subject_comes_from_candidate_subject_field(self, tmp_path):
+        """submit_promoted must use candidate['subject'], not a .get() fallback."""
+        mgr = _make_manager(tmp_path)
+        mock_flow = MagicMock()
+        mock_flow.submit_task.return_value = {"task_id": 55}
+        mgr._flow = mock_flow
+
+        candidate = {
+            "id": "github:99",
+            "subject": "Promoted subject",
+            "body": "Promoted body",
+            "automatable": True,
+            "confidence": 0.95,
+            "complexity": "large",
+            "reason": "reason",
+            "tier": 1,
+        }
+        mgr._submit_promoted(candidate)
+
+        call_kwargs = mock_flow.submit_task.call_args.kwargs
+        assert "Promoted subject" in call_kwargs["subject"]
+
+    def test_body_comes_from_candidate_body_field(self, tmp_path):
+        """submit_promoted must use candidate['body'], not a .get() fallback."""
+        mgr = _make_manager(tmp_path)
+        mock_flow = MagicMock()
+        mock_flow.submit_task.return_value = {"task_id": 55}
+        mgr._flow = mock_flow
+
+        candidate = {
+            "id": "github:99",
+            "subject": "Subject",
+            "body": "Direct body content",
+            "automatable": True,
+            "confidence": 0.95,
+            "complexity": "large",
+            "reason": "Not the body",
+            "tier": 1,
+        }
+        mgr._submit_promoted(candidate)
+
+        call_kwargs = mock_flow.submit_task.call_args.kwargs
+        assert "Direct body content" in call_kwargs["prompt"]
+
+    def test_confidence_in_prompt(self, tmp_path):
+        """submit_promoted must include candidate['confidence'] in the prompt."""
+        mgr = _make_manager(tmp_path)
+        mock_flow = MagicMock()
+        mock_flow.submit_task.return_value = {"task_id": 55}
+        mgr._flow = mock_flow
+
+        candidate = {
+            "id": "github:99",
+            "subject": "Subject",
+            "body": "Body",
+            "automatable": True,
+            "confidence": 0.73,
+            "complexity": "medium",
+            "reason": "reason",
+            "tier": 1,
+        }
+        mgr._submit_promoted(candidate)
+
+        call_kwargs = mock_flow.submit_task.call_args.kwargs
+        assert "0.73" in call_kwargs["prompt"]
+
+
 class TestStripMarkdownJson:
     def test_plain_json_unchanged(self):
         assert _strip_markdown_json('{"a": 1}') == '{"a": 1}'

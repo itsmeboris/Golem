@@ -572,6 +572,7 @@ class HeartbeatManager:
         raw: Any,
         valid_complexities: tuple[str, ...] = ("small", "medium", "large"),
         confidence_floors: dict[str, float] | None = None,
+        tier: int = 0,
     ) -> list[HeartbeatCandidateDict]:
         """Validate and filter Haiku response per the output contract."""
         if not isinstance(raw, dict) or "candidates" not in raw:
@@ -580,17 +581,23 @@ class HeartbeatManager:
 
         floors = confidence_floors or self._DEFAULT_CONFIDENCE_FLOORS
 
-        valid = []
+        valid: list[HeartbeatCandidateDict] = []
         for c in raw["candidates"]:
             if not isinstance(c, dict):
                 continue
             if not c.get("automatable", False):
                 continue
+
+            # Validate id is a non-empty string
+            candidate_id = c.get("id", "")
+            if not isinstance(candidate_id, str) or not candidate_id:
+                logger.warning("Candidate has missing or empty id — skipping")
+                continue
+
             conf = c.get("confidence", 0.0)
             if not isinstance(conf, (int, float)):
                 continue
             conf = max(0.0, min(1.0, float(conf)))
-            c["confidence"] = conf
 
             complexity = c.get("complexity", "")
             if complexity not in ("small", "medium", "large"):
@@ -601,18 +608,30 @@ class HeartbeatManager:
             # Category: use explicit field, fall back to ID prefix
             category = c.get("category", "")
             if not category or not isinstance(category, str):
-                category = self._extract_category_from_id(c.get("id", ""))
+                category = self._extract_category_from_id(candidate_id)
             if not category:
                 logger.warning(
                     "Candidate %r has no category and unparseable ID — skipping",
-                    c.get("id", ""),
+                    candidate_id,
                 )
                 continue
-            c["category"] = category.lower()
+            category = category.lower()
 
+            reason = c.get("reason", "")
             min_conf = floors.get(complexity, 0.7)
             if conf >= min_conf:
-                valid.append(c)
+                validated: HeartbeatCandidateDict = {
+                    "id": candidate_id,
+                    "subject": c.get("subject", reason),
+                    "body": c.get("body", reason),
+                    "automatable": True,
+                    "confidence": conf,
+                    "complexity": complexity,
+                    "reason": reason,
+                    "tier": tier,
+                    "category": category,
+                }
+                valid.append(validated)
 
         return sorted(valid, key=lambda x: x["confidence"], reverse=True)
 
@@ -646,11 +665,11 @@ class HeartbeatManager:
         for c in candidates:
             cat = c.get("category", "")
             if not cat:
-                cat = self._extract_category_from_id(c.get("id", ""))
+                cat = self._extract_category_from_id(c["id"])
             if not cat:
                 logger.warning(
                     "Candidate %r has no category — skipping for batching",
-                    c.get("id", ""),
+                    c["id"],
                 )
                 continue
             groups.setdefault(cat, []).append(c)
@@ -665,7 +684,7 @@ class HeartbeatManager:
             groups,
             key=lambda cat: (
                 min(len(groups[cat]), batch_size),
-                sum(c.get("confidence", 0) for c in groups[cat]) / len(groups[cat]),
+                sum(c["confidence"] for c in groups[cat]) / len(groups[cat]),
             ),
         )
 
@@ -727,7 +746,7 @@ class HeartbeatManager:
         )
 
         response = await self._call_haiku(prompt, issues_json)
-        candidates = self._validate_candidates(response)
+        candidates = self._validate_candidates(response, tier=1)
 
         # Record all evaluated issues in dedup
         evaluated_ids = {f"{backend}:{i['id']}" for i in new_issues}
@@ -791,7 +810,7 @@ class HeartbeatManager:
         )
 
         response = await self._call_haiku(prompt, issues_json)
-        candidates = self._validate_candidates(response)
+        candidates = self._validate_candidates(response, tier=1)
 
         # Only record candidates in dedup — NOT rejects
         for c in candidates:
@@ -1089,7 +1108,7 @@ class HeartbeatManager:
         )
 
         response = await self._call_haiku(prompt, json.dumps(keyed_findings, indent=2))
-        candidates = self._validate_candidates(response)
+        candidates = self._validate_candidates(response, tier=2)
 
         # Filter out candidates whose category is in cooldown, was recently batched,
         # or ID was recently resolved
@@ -1109,7 +1128,7 @@ class HeartbeatManager:
             c
             for c in candidates
             if not self.is_category_cooled_down(c.get("category", ""))
-            and c.get("id", "") not in resolved_ids
+            and c["id"] not in resolved_ids
         ]
 
     async def _run_heartbeat_tick(self) -> None:
@@ -1163,21 +1182,18 @@ class HeartbeatManager:
 
     def _submit_single(self, candidate: HeartbeatCandidateDict) -> None:
         """Submit a single candidate as a heartbeat task."""
-        subject = (
-            f"[HEARTBEAT] "
-            f"{candidate.get('subject', candidate.get('id', 'improvement'))}"
-        )
-        body = candidate.get("body", candidate.get("reason", ""))
+        subject = f"[HEARTBEAT] {candidate['subject']}"
+        body = candidate["body"]
         prompt = (
             f"{body}\n\n"
             f"Source: heartbeat tier {self._last_scan_tier}\n"
-            f"Confidence: {candidate.get('confidence', 0)}\n"
-            f"Complexity: {candidate.get('complexity', 'unknown')}\n"
-            f"Reason: {candidate.get('reason', '')}"
+            f"Confidence: {candidate['confidence']}\n"
+            f"Complexity: {candidate['complexity']}\n"
+            f"Reason: {candidate['reason']}"
         )
 
         try:
-            is_issue = not candidate.get("id", "").startswith("improvement:")
+            is_issue = not candidate["id"].startswith("improvement:")
             result = self._flow.submit_task(
                 prompt=prompt, subject=subject, issue_mode=is_issue
             )
@@ -1196,7 +1212,7 @@ class HeartbeatManager:
                 task_id,
                 subject,
                 self._last_scan_tier,
-                candidate.get("confidence", 0),
+                candidate["confidence"],
             )
         except Exception:  # pylint: disable=broad-exception-caught
             logger.exception("Heartbeat failed to submit task")
@@ -1219,10 +1235,7 @@ class HeartbeatManager:
 
         items_text = []
         for i, c in enumerate(batch, 1):
-            items_text.append(
-                f"{i}. [{c.get('id', 'unknown')}] "
-                f"{c.get('reason', c.get('body', ''))}"
-            )
+            items_text.append(f"{i}. [{c['id']}] {c['reason']}")
 
         prompt = (
             f"Fix the following {len(batch)} related issues "
@@ -1259,17 +1272,14 @@ class HeartbeatManager:
 
     def _submit_promoted(self, candidate: HeartbeatCandidateDict) -> None:
         """Submit a promoted GH issue directly, bypassing heartbeat limits."""
-        subject = (
-            f"[PROMOTED] "
-            f"{candidate.get('subject', candidate.get('id', 'github-issue'))}"
-        )
-        body = candidate.get("body", candidate.get("reason", ""))
+        subject = f"[PROMOTED] {candidate['subject']}"
+        body = candidate["body"]
         prompt = (
             f"{body}\n\n"
             f"Source: heartbeat tier 1 promotion\n"
-            f"Confidence: {candidate.get('confidence', 0)}\n"
-            f"Complexity: {candidate.get('complexity', 'unknown')}\n"
-            f"Reason: {candidate.get('reason', '')}"
+            f"Confidence: {candidate['confidence']}\n"
+            f"Complexity: {candidate['complexity']}\n"
+            f"Reason: {candidate['reason']}"
         )
 
         try:
@@ -1290,7 +1300,7 @@ class HeartbeatManager:
             logger.info(
                 "Promoted GH issue submitted: %s (confidence=%.2f)",
                 subject,
-                candidate.get("confidence", 0),
+                candidate["confidence"],
             )
         except Exception:  # pylint: disable=broad-exception-caught
             logger.exception("Failed to submit promoted GH issue")
