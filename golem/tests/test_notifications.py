@@ -6,7 +6,6 @@ import pytest
 from golem.notifications import (
     _fmt_duration,
     build_health_alert_card,
-    build_task_activity_card,
     build_task_completed_card,
     build_task_escalation_card,
     build_task_failure_card,
@@ -91,23 +90,6 @@ class TestBuildTaskCompletedCard:
         )
         assert "issue 1" in concerns_block["text"]
         assert "issue 2" in concerns_block["text"]
-
-
-class TestBuildTaskActivityCard:
-    def test_structure(self):
-        card = build_task_activity_card(
-            99,
-            "Working on it",
-            "Analyzing code",
-            60.0,
-            3,
-        )
-        assert card["type"] == "AdaptiveCard"
-        assert "In Progress" in card["body"][0]["text"]
-        assert "99" in card["body"][0]["text"]
-        facts = _get_facts(card)
-        assert facts["Elapsed"] == "1m 0s"
-        assert facts["Steps"] == "3"
 
 
 class TestBuildTaskFailureCard:

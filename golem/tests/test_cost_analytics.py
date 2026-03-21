@@ -5,7 +5,6 @@ import pytest
 from golem.cost_analytics import (
     _extract_retry_count,
     compute_cost_analytics,
-    format_cost_summary_text,
 )
 
 
@@ -336,78 +335,3 @@ class TestSummary:
         s = result["summary"]
         assert s["total_cost"] == 0.0
         assert s["total_runs"] == 1
-
-
-class TestFormatCostSummaryText:
-    def _build_analytics(self):
-        runs = [
-            _make_run(verdict="PASS", cost_usd=4.0, started_at="2024-01-15T10:00:00"),
-            _make_run(
-                verdict="FAIL",
-                cost_usd=8.0,
-                started_at="2024-01-15T14:00:00",
-                actions_taken=["retries:1"],
-            ),
-        ]
-        sessions = {
-            1: _make_session(task_id=1, budget=10.0, spent=4.0, state="completed"),
-        }
-        return compute_cost_analytics(runs, sessions=sessions)
-
-    def test_returns_string(self):
-        analytics = self._build_analytics()
-        result = format_cost_summary_text(analytics)
-        assert isinstance(result, str)
-
-    def test_contains_summary_section(self):
-        analytics = self._build_analytics()
-        result = format_cost_summary_text(analytics)
-        assert "SUMMARY" in result
-
-    def test_contains_cost_by_verdict_section(self):
-        analytics = self._build_analytics()
-        result = format_cost_summary_text(analytics)
-        assert "COST BY VERDICT" in result
-
-    def test_contains_cost_by_retry_section(self):
-        analytics = self._build_analytics()
-        result = format_cost_summary_text(analytics)
-        assert "COST BY RETRY" in result
-
-    def test_contains_budget_utilization_section(self):
-        analytics = self._build_analytics()
-        result = format_cost_summary_text(analytics)
-        assert "BUDGET UTILIZATION" in result
-
-    def test_no_budget_utilization_section_when_none(self):
-        runs = [_make_run(cost_usd=5.0)]
-        analytics = compute_cost_analytics(runs, sessions=None)
-        result = format_cost_summary_text(analytics)
-        assert "BUDGET UTILIZATION" not in result
-
-    def test_contains_total_cost(self):
-        analytics = self._build_analytics()
-        result = format_cost_summary_text(analytics)
-        assert "12.00" in result or "$12" in result or "12" in result
-
-    def test_contains_verdict_labels(self):
-        analytics = self._build_analytics()
-        result = format_cost_summary_text(analytics)
-        assert "PASS" in result
-        assert "FAIL" in result
-
-    def test_empty_analytics_does_not_crash(self):
-        analytics = compute_cost_analytics([])
-        result = format_cost_summary_text(analytics)
-        assert isinstance(result, str)
-        assert "SUMMARY" in result
-
-    def test_contains_retry_bucket_labels(self):
-        runs = [
-            _make_run(cost_usd=3.0, actions_taken=["retries:0"]),
-            _make_run(cost_usd=5.0, actions_taken=["retries:2"]),
-        ]
-        analytics = compute_cost_analytics(runs)
-        result = format_cost_summary_text(analytics)
-        assert "0" in result
-        assert "2" in result

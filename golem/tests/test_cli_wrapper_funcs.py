@@ -15,7 +15,6 @@ from golem.core.cli_wrapper import (
     _extract_error_from_stream_output,
     _extract_metrics,
     _parse_stream_output,
-    active_process_count,
 )
 
 
@@ -246,11 +245,6 @@ class TestExtractErrorFromStreamOutput:
         stdout = "x" * 5000
         result = _extract_error_from_stream_output(stdout, "")
         assert len(result) == 5000
-
-
-class TestActiveProcessCount:
-    def test_initial_zero(self):
-        assert active_process_count() >= 0
 
 
 class TestExtractErrorLogsDebugOnNonJsonLine:

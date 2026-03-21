@@ -76,12 +76,6 @@ def kill_all_active(timeout: float = 5.0) -> int:
     return len(procs)
 
 
-def active_process_count() -> int:
-    """Return the number of currently tracked CLI subprocesses."""
-    with _active_procs_lock:
-        return len(_active_procs)
-
-
 class CLIType(Enum):
     """Supported CLI binary types."""
 

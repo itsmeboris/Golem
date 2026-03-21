@@ -22,7 +22,6 @@ from golem.flow import GolemFlow
 from golem.mcp_scope import determine_mcp_scope
 from golem.notifications import (
     _fmt_duration,
-    build_task_activity_card,
     build_task_completed_card,
     build_task_failure_card,
     build_task_started_card,
@@ -713,20 +712,6 @@ class TestNotifications:
         )
         facts = _get_facts(card)
         assert facts["Duration"] == "45s"
-
-    def test_build_task_activity_card(self):
-        card = build_task_activity_card(
-            parent_id=100,
-            subject="Fix everything",
-            status_text="Now updating config.yaml with improved comments...",
-            elapsed_s=62.0,
-            milestone_count=14,
-        )
-        assert card["type"] == "AdaptiveCard"
-        assert "In Progress" in card["body"][0]["text"]
-        assert "config.yaml" in card["body"][2]["text"]
-        facts = _get_facts(card)
-        assert facts["Elapsed"] == "1m 2s"
 
     def test_build_task_failure_card(self):
         card = build_task_failure_card(

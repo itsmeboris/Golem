@@ -25,16 +25,6 @@ _DEFAULT_STATUS_MAP: dict[str, int] = {
 _status_map: dict[str, int] = dict(_DEFAULT_STATUS_MAP)
 
 
-def configure_status_ids(mapping: dict[str, int]) -> None:
-    """Override Redmine status IDs for non-standard instances.
-
-    Example::
-
-        configure_status_ids({TaskStatus.FIXED: 16})
-    """
-    _status_map.update(mapping)
-
-
 # ---------------------------------------------------------------------------
 # RedmineTaskSource
 # ---------------------------------------------------------------------------

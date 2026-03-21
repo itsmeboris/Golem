@@ -6,27 +6,10 @@ from unittest.mock import MagicMock, patch
 from golem.backends.redmine import (
     RedmineStateBackend,
     RedmineTaskSource,
-    _DEFAULT_STATUS_MAP,
     _status_map,
-    configure_status_ids,
 )
 from golem.backends.teams_notifier import TeamsNotifier
 from golem.interfaces import TaskStatus
-
-
-class TestConfigureStatusIds:
-    def test_updates_map(self):
-        original = dict(_status_map)
-        try:
-            configure_status_ids({TaskStatus.FIXED: 99})
-            assert _status_map[TaskStatus.FIXED] == 99
-        finally:
-            _status_map.update(original)
-
-    def test_default_map(self):
-        assert TaskStatus.IN_PROGRESS in _DEFAULT_STATUS_MAP
-        assert TaskStatus.FIXED in _DEFAULT_STATUS_MAP
-        assert TaskStatus.CLOSED in _DEFAULT_STATUS_MAP
 
 
 class TestRedmineStateBackend:

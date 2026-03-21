@@ -7,7 +7,6 @@ from golem.errors import (
     GolemError,
     InfrastructureError,
     TaskExecutionError,
-    ValidationError,
 )
 
 
@@ -56,19 +55,3 @@ class TestTaskExecutionError:
 
     def test_str(self):
         assert str(TaskExecutionError("agent failed")) == "agent failed"
-
-
-class TestValidationError:
-    def test_is_golem_error(self):
-        assert issubclass(ValidationError, GolemError)
-        assert issubclass(ValidationError, Exception)
-
-    def test_retryable(self):
-        assert ValidationError.retryable is True
-
-    def test_raise_and_catch(self):
-        with pytest.raises(ValidationError, match="no verdict"):
-            raise ValidationError("no verdict")
-
-    def test_str(self):
-        assert str(ValidationError("no verdict")) == "no verdict"

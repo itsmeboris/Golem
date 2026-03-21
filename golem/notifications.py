@@ -1,14 +1,13 @@
 """Teams card builders for golem events.
 
 Constructs Microsoft Teams Adaptive Cards for the key lifecycle moments of a
-golem session: session start, successful completion, mid-run activity
-updates, failure (agent crash), and escalation (validation did not pass).
+golem session: session start, successful completion, failure (agent crash),
+and escalation (validation did not pass).
 
 Key exports:
 - ``build_task_started_card`` — card sent when a golem session begins.
 - ``build_task_completed_card`` — card sent on successful completion, including
   validation verdict, cost, and commit SHA.
-- ``build_task_activity_card`` — mid-run progress card (future Graph API use).
 - ``build_task_failure_card`` — card sent on agent crash or unrecoverable error.
 - ``build_task_escalation_card`` — card sent when validation fails and the task
   needs human review.
@@ -79,29 +78,6 @@ def build_task_completed_card(
         items = "\n".join(f"- {c}" for c in concerns)
         body.append(_text_block(f"**Concerns**:\n{items}"))
 
-    actions = [_open_url_action("View Issue", f"{REDMINE_ISSUES_URL}/{parent_id}")]
-    return _card_envelope(body, actions)
-
-
-def build_task_activity_card(
-    parent_id: int,
-    subject: str,
-    status_text: str,
-    elapsed_s: float,
-    milestone_count: int,
-) -> dict[str, Any]:
-    """Card for mid-run updates (future threaded replies via Graph API)."""
-    body: list[dict[str, Any]] = [
-        _header_block(f"Golem: #{parent_id} — In Progress", color="accent"),
-        _text_block(f"**{subject}**"),
-        _text_block(status_text if status_text else "Working..."),
-        _fact_set(
-            [
-                ("Elapsed", _fmt_duration(elapsed_s)),
-                ("Steps", str(milestone_count)),
-            ]
-        ),
-    ]
     actions = [_open_url_action("View Issue", f"{REDMINE_ISSUES_URL}/{parent_id}")]
     return _card_envelope(body, actions)
 

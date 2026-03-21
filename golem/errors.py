@@ -23,12 +23,6 @@ class TaskExecutionError(GolemError):
     retryable = False
 
 
-class ValidationError(GolemError):
-    """Validation agent failed to produce a verdict."""
-
-    retryable = True
-
-
 class TaskNotFoundError(GolemError):
     pass
 
