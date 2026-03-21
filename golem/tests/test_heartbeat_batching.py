@@ -1,6 +1,9 @@
 """Tests for heartbeat Tier 2 batching — _group_candidates, category validation, batch submission."""
 
+import subprocess
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from golem.heartbeat import HeartbeatManager
 from golem.core.config import GolemFlowConfig
@@ -514,3 +517,311 @@ class TestBatchSizeConfig:
         )
         errors = validate_config(cfg)
         assert any("heartbeat_batch_size" in e for e in errors)
+
+
+class TestGetRecentBatchCategories:
+    @pytest.mark.parametrize(
+        "stdout,expected",
+        [
+            (
+                "abc1234 [FIX][INFRA] [HEARTBEAT] batch:dead-code (1 items)\n"
+                "def5678 [FIX][INFRA] [HEARTBEAT] batch:error-handling (2 items)\n",
+                {"dead-code", "error-handling"},
+            ),
+            (
+                "abc1234 Some other commit message\n",
+                set(),
+            ),
+            ("", set()),
+        ],
+        ids=["matches_found", "no_matches", "empty_output"],
+    )
+    def test_parses_categories(self, tmp_path, stdout, expected):
+        mgr = _make_manager(tmp_path, default_work_dir=str(tmp_path))
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = stdout
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            result = mgr._get_recent_batch_categories()
+        assert result == expected
+        called_cmd = mock_run.call_args[0][0]
+        assert called_cmd[0] == "git"
+        assert "--fixed-strings" in called_cmd
+        assert "--grep=[HEARTBEAT] batch:" in called_cmd
+
+    def test_subprocess_failure_returns_empty(self, tmp_path):
+        mgr = _make_manager(tmp_path, default_work_dir=str(tmp_path))
+        with patch("subprocess.run", side_effect=OSError("git not found")):
+            result = mgr._get_recent_batch_categories()
+        assert result == set()
+
+    def test_subprocess_timeout_returns_empty(self, tmp_path):
+        mgr = _make_manager(tmp_path, default_work_dir=str(tmp_path))
+        with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("git", 30)):
+            result = mgr._get_recent_batch_categories()
+        assert result == set()
+
+    def test_nonzero_returncode_returns_empty(self, tmp_path):
+        mgr = _make_manager(tmp_path, default_work_dir=str(tmp_path))
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = "fatal: not a git repo\n"
+        with patch("subprocess.run", return_value=mock_result):
+            result = mgr._get_recent_batch_categories()
+        assert result == set()
+
+    def test_duplicate_category_returned_once(self, tmp_path):
+        mgr = _make_manager(tmp_path, default_work_dir=str(tmp_path))
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = (
+            "abc1234 [HEARTBEAT] batch:dead-code (1 items)\n"
+            "def5678 [HEARTBEAT] batch:dead-code (3 items)\n"
+        )
+        with patch("subprocess.run", return_value=mock_result):
+            result = mgr._get_recent_batch_categories()
+        assert result == {"dead-code"}
+
+
+class TestGetRecentlyResolvedIds:
+    @pytest.mark.parametrize(
+        "stdout,expected",
+        [
+            (
+                "Fix stuff\n\n[pitfall:abc123def456] resolved\n",
+                {"pitfall:abc123def456"},
+            ),
+            (
+                "Fix stuff\n\n[improvement:dead-code:fix1] done\n",
+                {"improvement:dead-code:fix1"},
+            ),
+            (
+                "[pitfall:abc123def456] done\n[improvement:eh:fix2] done\n",
+                {"pitfall:abc123def456", "improvement:eh:fix2"},
+            ),
+            (
+                "Just a regular commit message with no IDs\n",
+                set(),
+            ),
+            ("", set()),
+        ],
+        ids=[
+            "pitfall_id",
+            "improvement_id",
+            "multiple_ids",
+            "no_matches",
+            "empty_output",
+        ],
+    )
+    def test_parses_ids(self, tmp_path, stdout, expected):
+        mgr = _make_manager(tmp_path, default_work_dir=str(tmp_path))
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = stdout
+        with patch("subprocess.run", return_value=mock_result):
+            result = mgr._get_recently_resolved_ids()
+        assert result == expected
+
+    def test_subprocess_failure_returns_empty(self, tmp_path):
+        mgr = _make_manager(tmp_path, default_work_dir=str(tmp_path))
+        with patch("subprocess.run", side_effect=OSError("git not found")):
+            result = mgr._get_recently_resolved_ids()
+        assert result == set()
+
+    def test_subprocess_timeout_returns_empty(self, tmp_path):
+        mgr = _make_manager(tmp_path, default_work_dir=str(tmp_path))
+        with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("git", 30)):
+            result = mgr._get_recently_resolved_ids()
+        assert result == set()
+
+    def test_nonzero_returncode_returns_empty(self, tmp_path):
+        mgr = _make_manager(tmp_path, default_work_dir=str(tmp_path))
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = ""
+        with patch("subprocess.run", return_value=mock_result):
+            result = mgr._get_recently_resolved_ids()
+        assert result == set()
+
+    def test_uses_correct_git_flags(self, tmp_path):
+        mgr = _make_manager(tmp_path, default_work_dir=str(tmp_path))
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            mgr._get_recently_resolved_ids()
+        called_cmd = mock_run.call_args[0][0]
+        assert called_cmd[0] == "git"
+        assert "--fixed-strings" in called_cmd
+        assert "--grep=[HEARTBEAT]" in called_cmd
+        assert "--format=%B" in called_cmd
+
+
+class TestSubmitBatchPreFlight:
+    async def test_batch_skipped_when_category_already_addressed(self, tmp_path):
+        mgr = _make_manager(tmp_path, heartbeat_batch_size=5)
+        mock_flow = MagicMock()
+        mgr._flow = mock_flow
+
+        batch = [
+            {
+                "id": "improvement:dead-code:fix1",
+                "category": "dead-code",
+                "confidence": 0.9,
+                "complexity": "small",
+                "reason": "Fix dead code",
+                "automatable": True,
+            }
+        ]
+        with patch.object(
+            mgr, "_get_recent_batch_categories", return_value={"dead-code"}
+        ):
+            mgr._submit_batch(batch)
+
+        mock_flow.submit_task.assert_not_called()
+
+    async def test_batch_submitted_when_category_not_in_recent(self, tmp_path):
+        mgr = _make_manager(tmp_path, heartbeat_batch_size=5)
+        mock_flow = MagicMock()
+        mock_flow.submit_task.return_value = {"task_id": 42, "status": "submitted"}
+        mgr._flow = mock_flow
+
+        batch = [
+            {
+                "id": "improvement:error-handling:fix1",
+                "category": "error-handling",
+                "confidence": 0.9,
+                "complexity": "small",
+                "reason": "Fix error handling",
+                "automatable": True,
+            }
+        ]
+        with patch.object(
+            mgr, "_get_recent_batch_categories", return_value={"dead-code"}
+        ):
+            mgr._submit_batch(batch)
+
+        mock_flow.submit_task.assert_called_once()
+
+    async def test_batch_submitted_when_recent_categories_empty(self, tmp_path):
+        mgr = _make_manager(tmp_path, heartbeat_batch_size=5)
+        mock_flow = MagicMock()
+        mock_flow.submit_task.return_value = {"task_id": 99, "status": "submitted"}
+        mgr._flow = mock_flow
+
+        batch = [
+            {
+                "id": "improvement:dead-code:fix1",
+                "category": "dead-code",
+                "confidence": 0.9,
+                "complexity": "small",
+                "reason": "Fix",
+                "automatable": True,
+            }
+        ]
+        with patch.object(mgr, "_get_recent_batch_categories", return_value=set()):
+            mgr._submit_batch(batch)
+
+        mock_flow.submit_task.assert_called_once()
+
+
+class TestRunTier2Dedup:
+    async def test_resolved_ids_are_filtered_out(self, tmp_path):
+        mgr = _make_manager(tmp_path)
+        mock_call_haiku = MagicMock(
+            return_value={
+                "candidates": [
+                    {
+                        "id": "pitfall:abc123def456",
+                        "category": "reliability",
+                        "automatable": True,
+                        "confidence": 0.9,
+                        "complexity": "small",
+                        "reason": "Old pitfall",
+                    },
+                    {
+                        "id": "improvement:error-handling:fix1",
+                        "category": "error-handling",
+                        "automatable": True,
+                        "confidence": 0.85,
+                        "complexity": "small",
+                        "reason": "New fix",
+                    },
+                ]
+            }
+        )
+
+        async def async_haiku(prompt, content):
+            return mock_call_haiku(prompt, content)
+
+        with patch.object(
+            mgr, "_scan_todos", return_value=[("pitfall:abc123def456", "Old pitfall")]
+        ):
+            with patch.object(
+                mgr,
+                "_scan_coverage",
+                return_value=[("improvement:error-handling:fix1", "New fix")],
+            ):
+                with patch.object(mgr, "_scan_pitfalls", return_value=[]):
+                    with patch.object(mgr, "_call_haiku", new=async_haiku):
+                        with patch.object(
+                            mgr,
+                            "_get_recently_resolved_ids",
+                            return_value={"pitfall:abc123def456"},
+                        ):
+                            result = await mgr._run_tier2()
+
+        assert len(result) == 1
+        assert result[0]["id"] == "improvement:error-handling:fix1"
+
+    async def test_all_resolved_returns_empty(self, tmp_path):
+        mgr = _make_manager(tmp_path)
+
+        with patch.object(
+            mgr, "_scan_todos", return_value=[("pitfall:abc123def456", "Old pitfall")]
+        ):
+            with patch.object(mgr, "_scan_coverage", return_value=[]):
+                with patch.object(mgr, "_scan_pitfalls", return_value=[]):
+                    with patch.object(
+                        mgr,
+                        "_get_recently_resolved_ids",
+                        return_value={"pitfall:abc123def456"},
+                    ):
+                        result = await mgr._run_tier2()
+
+        assert result == []
+
+    async def test_no_resolved_ids_returns_all(self, tmp_path):
+        mgr = _make_manager(tmp_path)
+
+        async def async_haiku(_prompt, _content):
+            return {
+                "candidates": [
+                    {
+                        "id": "improvement:error-handling:fix1",
+                        "category": "error-handling",
+                        "automatable": True,
+                        "confidence": 0.85,
+                        "complexity": "small",
+                        "reason": "Fix error handling",
+                    }
+                ]
+            }
+
+        with patch.object(
+            mgr,
+            "_scan_todos",
+            return_value=[("improvement:error-handling:fix1", "Fix")],
+        ):
+            with patch.object(mgr, "_scan_coverage", return_value=[]):
+                with patch.object(mgr, "_scan_pitfalls", return_value=[]):
+                    with patch.object(mgr, "_call_haiku", new=async_haiku):
+                        with patch.object(
+                            mgr,
+                            "_get_recently_resolved_ids",
+                            return_value=set(),
+                        ):
+                            result = await mgr._run_tier2()
+
+        assert len(result) == 1
+        assert result[0]["id"] == "improvement:error-handling:fix1"

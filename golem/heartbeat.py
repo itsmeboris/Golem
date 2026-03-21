@@ -945,6 +945,89 @@ class HeartbeatManager:
                     pitfalls.append((key, f"Unresolved pitfall: {clean}"))
         return pitfalls
 
+    # -- Git history helpers ---------------------------------------------------
+
+    def _get_recent_batch_categories(self) -> set[str]:
+        """Return the set of batch categories addressed in recent HEARTBEAT commits.
+
+        Runs ``git log --oneline -5 --grep=[HEARTBEAT] batch:`` and parses the
+        category name from each matching line (e.g. ``batch:dead-code``).
+        Returns an empty set on any subprocess failure.
+        """
+        import subprocess
+
+        work_dir = self._config.default_work_dir or None
+        try:
+            result = subprocess.run(
+                [
+                    "git",
+                    "log",
+                    "--oneline",
+                    "-5",
+                    "--fixed-strings",
+                    "--grep=[HEARTBEAT] batch:",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+                cwd=work_dir,
+            )
+            if result.returncode != 0:
+                return set()
+            categories: set[str] = set()
+            for line in result.stdout.splitlines():
+                match = re.search(r"batch:(\S+)", line)
+                if match:
+                    # Strip trailing punctuation like " (1 items)" prefix spaces
+                    raw = match.group(1)
+                    # Remove trailing non-category characters such as spaces or parens
+                    # The category ends at the first space or paren
+                    category = re.split(r"[\s(]", raw)[0]
+                    if category:
+                        categories.add(category)
+            return categories
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            logger.debug("git log (batch categories) failed: %s", exc)
+            return set()
+
+    def _get_recently_resolved_ids(self) -> set[str]:
+        """Return the set of pitfall/improvement IDs referenced in recent HEARTBEAT commits.
+
+        Runs ``git log -5 --grep=[HEARTBEAT] --format=%B`` and extracts all
+        IDs matching ``pitfall:<hash>`` or ``improvement:<cat>:<name>`` patterns.
+        Returns an empty set on any subprocess failure.
+        """
+        import subprocess
+
+        work_dir = self._config.default_work_dir or None
+        try:
+            result = subprocess.run(
+                [
+                    "git",
+                    "log",
+                    "-5",
+                    "--fixed-strings",
+                    "--grep=[HEARTBEAT]",
+                    "--format=%B",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+                cwd=work_dir,
+            )
+            if result.returncode != 0:
+                return set()
+            ids: set[str] = set()
+            pattern = re.compile(r"\[?(pitfall:[a-f0-9]+|improvement:[^\]\s]+)\]?")
+            for match in pattern.finditer(result.stdout):
+                ids.add(match.group(1))
+            return ids
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            logger.debug("git log (recently resolved IDs) failed: %s", exc)
+            return set()
+
     # -- Tier 2 ---------------------------------------------------------------
 
     async def _run_tier2(self) -> list[HeartbeatCandidateDict]:
@@ -955,6 +1038,11 @@ class HeartbeatManager:
 
         # All scanners now return (key, description) tuples
         all_findings: list[tuple[str, str]] = [*todos, *coverage, *pitfalls]
+
+        # Filter out findings already resolved in recent commits
+        resolved_ids = self._get_recently_resolved_ids()
+        all_findings = [(k, d) for k, d in all_findings if k not in resolved_ids]
+
         if not all_findings:
             return []
 
@@ -980,11 +1068,12 @@ class HeartbeatManager:
         response = await self._call_haiku(prompt, json.dumps(keyed_findings, indent=2))
         candidates = self._validate_candidates(response)
 
-        # Filter out candidates whose category is in cooldown
+        # Filter out candidates whose category is in cooldown or ID was recently resolved
         return [
             c
             for c in candidates
             if not self.is_category_cooled_down(c.get("category", ""))
+            and c.get("id", "") not in resolved_ids
         ]
 
     async def _run_heartbeat_tick(self) -> None:
@@ -1080,6 +1169,16 @@ class HeartbeatManager:
     def _submit_batch(self, batch: list[HeartbeatCandidateDict]) -> None:
         """Submit a batch of Tier 2 candidates as a single heartbeat task."""
         category = batch[0].get("category", "improvement")
+
+        # Skip if this category was already addressed in a recent commit
+        recent_categories = self._get_recent_batch_categories()
+        if category in recent_categories:
+            logger.warning(
+                "Skipping batch submission — category %r was recently addressed",
+                category,
+            )
+            return
+
         subject = f"[HEARTBEAT] batch:{category} ({len(batch)} items)"
 
         items_text = []
