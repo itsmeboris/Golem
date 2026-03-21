@@ -43,33 +43,3 @@ def _isolate_data_dir(tmp_path, monkeypatch):
 @pytest.fixture
 def temp_config_file(tmp_path):
     return tmp_path / "config.yaml"
-
-
-@pytest.fixture
-def sample_config_content():
-    return """
-flows:
-  golem:
-    enabled: true
-    projects:
-      - test-project
-    task_model: sonnet
-    profile: redmine
-
-claude:
-  cli_type: agent
-  model: sonnet
-  timeout_seconds: 600
-
-dashboard:
-  port: 8082
-"""
-
-
-@pytest.fixture
-def mock_env(monkeypatch):
-    def _mock_env(**kwargs):
-        for key, value in kwargs.items():
-            monkeypatch.setenv(key, value)
-
-    return _mock_env
