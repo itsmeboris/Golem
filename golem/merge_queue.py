@@ -6,6 +6,8 @@ HEAD so every merge sees the freshest state.  On conflict or missing
 additions, an optional merge-agent callback can attempt resolution.
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import subprocess
@@ -13,7 +15,10 @@ from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
+
+if TYPE_CHECKING:
+    from .types import MergeQueueSnapshotDict
 
 from .worktree_manager import (
     MergeOutcome,
@@ -140,7 +145,7 @@ class MergeQueue:
         if self._on_state_change:
             self._on_state_change()
 
-    def snapshot(self) -> "MergeQueueSnapshotDict":  # noqa: F821
+    def snapshot(self) -> MergeQueueSnapshotDict:
         """Serialize current queue state for the dashboard API."""
         from .types import (
             MergeEntryDict,
