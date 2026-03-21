@@ -172,7 +172,7 @@ class TestPollableFlowOnItemSuccess:
             def poll_new_items(self):
                 return [{"id": 1}]
 
-            def generate_event_id(self, item_data):
+            def generate_event_id(self, _item_data):
                 return "id-1"
 
         flow = MinimalPollable()
@@ -188,7 +188,7 @@ class TestPollableFlowOnItemSuccess:
             def poll_new_items(self):
                 return []
 
-            def generate_event_id(self, item_data):
+            def generate_event_id(self, _item_data):
                 return "id-1"
 
         flow = MinimalPollable()

@@ -1335,7 +1335,7 @@ class TestCmdStopSignalPaths:
     @patch("os.kill")
     @patch("golem.cli.read_pid", return_value=5555)
     def test_force_stop(self, _mock_read, mock_kill, _mock_remove, _mock_wait, capsys):
-        mock_kill.side_effect = lambda pid, sig: None
+        mock_kill.side_effect = lambda _pid, _sig: None
         args = SimpleNamespace(dashboard=False, pid_file=None, force=True)
         result = cmd_stop(args)
         assert result == 0
@@ -1366,7 +1366,7 @@ class TestCmdStopSignalPaths:
     def test_escalate_to_sigkill(
         self, _mock_read, mock_kill, _mock_remove, _mock_wait, capsys
     ):
-        mock_kill.side_effect = lambda pid, sig: None
+        mock_kill.side_effect = lambda _pid, _sig: None
         args = SimpleNamespace(dashboard=False, pid_file=None, force=False)
         result = cmd_stop(args)
         assert result == 0
@@ -1381,7 +1381,7 @@ class TestCmdStopSignalPaths:
     def test_did_not_exit(
         self, _mock_read, mock_kill, _mock_remove, _mock_wait, capsys
     ):
-        mock_kill.side_effect = lambda pid, sig: None
+        mock_kill.side_effect = lambda _pid, _sig: None
         args = SimpleNamespace(dashboard=False, pid_file=None, force=False)
         result = cmd_stop(args)
         assert result == 1
@@ -1445,7 +1445,7 @@ class TestCmdStopSignalPaths:
     def test_dashboard_stop(
         self, _mock_read, mock_kill, _mock_remove, _mock_wait, capsys
     ):
-        mock_kill.side_effect = lambda pid, sig: None
+        mock_kill.side_effect = lambda _pid, _sig: None
         args = SimpleNamespace(dashboard=True, pid_file=None, force=False)
         result = cmd_stop(args)
         assert result == 0
@@ -1469,7 +1469,7 @@ class TestCmdStopSignalPaths:
         capsys,
     ):
         mock_cfg.return_value = MagicMock(dashboard=MagicMock(port=8081))
-        mock_kill.side_effect = lambda pid, sig: None
+        mock_kill.side_effect = lambda _pid, _sig: None
         args = SimpleNamespace(dashboard=False, pid_file=None, force=False, config=None)
         result = cmd_stop(args)
         assert result == 0

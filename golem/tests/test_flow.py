@@ -1092,7 +1092,7 @@ class TestCheckpointRecovery:
             "golem.flow.load_checkpoint",
             lambda sid: dict(checkpoint_data) if sid == 600 else None,
         )
-        monkeypatch.setattr("golem.flow.is_checkpoint_fresh", lambda cp, **kw: True)
+        monkeypatch.setattr("golem.flow.is_checkpoint_fresh", lambda _cp, **kw: True)
 
         profile = _make_test_profile()
         config = Config(
@@ -1143,7 +1143,7 @@ class TestCheckpointRecovery:
             "golem.flow.load_checkpoint",
             lambda sid: dict(checkpoint_data) if sid == 601 else None,
         )
-        monkeypatch.setattr("golem.flow.is_checkpoint_fresh", lambda cp, **kw: False)
+        monkeypatch.setattr("golem.flow.is_checkpoint_fresh", lambda _cp, **kw: False)
 
         profile = _make_test_profile()
         config = Config(
@@ -1218,7 +1218,7 @@ class TestCheckpointRecovery:
                 "parent_issue_id": "not-an-int",  # will cause from_dict to fail
             },
         )
-        monkeypatch.setattr("golem.flow.is_checkpoint_fresh", lambda cp, **kw: True)
+        monkeypatch.setattr("golem.flow.is_checkpoint_fresh", lambda _cp, **kw: True)
 
         profile = _make_test_profile()
         config = Config(
@@ -1300,7 +1300,7 @@ class TestCheckpointRecovery:
             "golem.flow.load_checkpoint",
             lambda sid: dict(checkpoint_data) if sid == 604 else None,
         )
-        monkeypatch.setattr("golem.flow.is_checkpoint_fresh", lambda cp, **kw: True)
+        monkeypatch.setattr("golem.flow.is_checkpoint_fresh", lambda _cp, **kw: True)
 
         profile = _make_test_profile()
         config = Config(
