@@ -29,7 +29,7 @@ class DummyTaskSource:
         return []
 
     def create_child_task(self, _parent_id, _subject, _description):
-        return None
+        pass
 
     def get_task_subject(self, _task_id):
         return ""
