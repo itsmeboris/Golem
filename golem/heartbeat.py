@@ -1068,7 +1068,20 @@ class HeartbeatManager:
         response = await self._call_haiku(prompt, json.dumps(keyed_findings, indent=2))
         candidates = self._validate_candidates(response)
 
-        # Filter out candidates whose category is in cooldown or ID was recently resolved
+        # Filter out candidates whose category is in cooldown, was recently batched,
+        # or ID was recently resolved
+        recent_categories = self._get_recent_batch_categories()
+        if recent_categories:
+            before = len(candidates)
+            candidates = [
+                c for c in candidates if c.get("category", "") not in recent_categories
+            ]
+            filtered = before - len(candidates)
+            if filtered:
+                logger.info(
+                    "Tier 2: filtered %d candidate(s) whose category was recently batched",
+                    filtered,
+                )
         return [
             c
             for c in candidates

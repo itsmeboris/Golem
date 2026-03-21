@@ -769,7 +769,12 @@ class TestRunTier2Dedup:
                             "_get_recently_resolved_ids",
                             return_value={"pitfall:abc123def456"},
                         ):
-                            result = await mgr._run_tier2()
+                            with patch.object(
+                                mgr,
+                                "_get_recent_batch_categories",
+                                return_value=set(),
+                            ):
+                                result = await mgr._run_tier2()
 
         assert len(result) == 1
         assert result[0]["id"] == "improvement:error-handling:fix1"
@@ -787,7 +792,12 @@ class TestRunTier2Dedup:
                         "_get_recently_resolved_ids",
                         return_value={"pitfall:abc123def456"},
                     ):
-                        result = await mgr._run_tier2()
+                        with patch.object(
+                            mgr,
+                            "_get_recent_batch_categories",
+                            return_value=set(),
+                        ):
+                            result = await mgr._run_tier2()
 
         assert result == []
 
@@ -821,7 +831,145 @@ class TestRunTier2Dedup:
                             "_get_recently_resolved_ids",
                             return_value=set(),
                         ):
-                            result = await mgr._run_tier2()
+                            with patch.object(
+                                mgr,
+                                "_get_recent_batch_categories",
+                                return_value=set(),
+                            ):
+                                result = await mgr._run_tier2()
 
         assert len(result) == 1
         assert result[0]["id"] == "improvement:error-handling:fix1"
+
+    async def test_recent_batch_category_filtered_out(self, tmp_path):
+        """Candidates whose category matches a recently-batched category are filtered."""
+        mgr = _make_manager(tmp_path)
+
+        async def async_haiku(_prompt, _content):
+            return {
+                "candidates": [
+                    {
+                        "id": "improvement:dead-code:unused_func",
+                        "category": "dead-code",
+                        "automatable": True,
+                        "confidence": 0.9,
+                        "complexity": "small",
+                        "reason": "Remove unused function",
+                    }
+                ]
+            }
+
+        with patch.object(
+            mgr,
+            "_scan_todos",
+            return_value=[("improvement:dead-code:unused_func", "Remove unused")],
+        ):
+            with patch.object(mgr, "_scan_coverage", return_value=[]):
+                with patch.object(mgr, "_scan_pitfalls", return_value=[]):
+                    with patch.object(mgr, "_call_haiku", new=async_haiku):
+                        with patch.object(
+                            mgr,
+                            "_get_recently_resolved_ids",
+                            return_value=set(),
+                        ):
+                            with patch.object(
+                                mgr,
+                                "_get_recent_batch_categories",
+                                return_value={"dead-code"},
+                            ):
+                                result = await mgr._run_tier2()
+
+        assert result == []
+
+    async def test_non_recent_category_passes_through(self, tmp_path):
+        """Candidates whose category is NOT in recent batch categories are kept."""
+        mgr = _make_manager(tmp_path)
+
+        async def async_haiku(_prompt, _content):
+            return {
+                "candidates": [
+                    {
+                        "id": "improvement:reliability:fix2",
+                        "category": "reliability",
+                        "automatable": True,
+                        "confidence": 0.85,
+                        "complexity": "small",
+                        "reason": "Improve reliability",
+                    }
+                ]
+            }
+
+        with patch.object(
+            mgr,
+            "_scan_todos",
+            return_value=[("improvement:reliability:fix2", "Reliability fix")],
+        ):
+            with patch.object(mgr, "_scan_coverage", return_value=[]):
+                with patch.object(mgr, "_scan_pitfalls", return_value=[]):
+                    with patch.object(mgr, "_call_haiku", new=async_haiku):
+                        with patch.object(
+                            mgr,
+                            "_get_recently_resolved_ids",
+                            return_value=set(),
+                        ):
+                            with patch.object(
+                                mgr,
+                                "_get_recent_batch_categories",
+                                return_value={"dead-code"},
+                            ):
+                                result = await mgr._run_tier2()
+
+        assert len(result) == 1
+        assert result[0]["id"] == "improvement:reliability:fix2"
+
+    async def test_mixed_batch_partial_filtering(self, tmp_path):
+        """Candidates with recently-batched category are filtered; others pass through."""
+        mgr = _make_manager(tmp_path)
+
+        async def async_haiku(_prompt, _content):
+            return {
+                "candidates": [
+                    {
+                        "id": "improvement:dead-code:old_func",
+                        "category": "dead-code",
+                        "automatable": True,
+                        "confidence": 0.9,
+                        "complexity": "small",
+                        "reason": "Old dead code",
+                    },
+                    {
+                        "id": "improvement:coverage:missing_test",
+                        "category": "coverage",
+                        "automatable": True,
+                        "confidence": 0.88,
+                        "complexity": "small",
+                        "reason": "Missing test coverage",
+                    },
+                ]
+            }
+
+        with patch.object(
+            mgr,
+            "_scan_todos",
+            return_value=[
+                ("improvement:dead-code:old_func", "Old dead code"),
+                ("improvement:coverage:missing_test", "Missing test"),
+            ],
+        ):
+            with patch.object(mgr, "_scan_coverage", return_value=[]):
+                with patch.object(mgr, "_scan_pitfalls", return_value=[]):
+                    with patch.object(mgr, "_call_haiku", new=async_haiku):
+                        with patch.object(
+                            mgr,
+                            "_get_recently_resolved_ids",
+                            return_value=set(),
+                        ):
+                            with patch.object(
+                                mgr,
+                                "_get_recent_batch_categories",
+                                return_value={"dead-code"},
+                            ):
+                                result = await mgr._run_tier2()
+
+        assert len(result) == 1
+        assert result[0]["id"] == "improvement:coverage:missing_test"
