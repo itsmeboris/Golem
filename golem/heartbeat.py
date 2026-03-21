@@ -1276,6 +1276,15 @@ class HeartbeatManager:
             )
             return
 
+        # Skip if all items in the batch were already resolved individually
+        resolved_ids = self._get_recently_resolved_ids()
+        if resolved_ids and all(c["id"] in resolved_ids for c in batch):
+            logger.warning(
+                "Skipping batch submission — all %d item(s) already resolved",
+                len(batch),
+            )
+            return
+
         subject = f"[HEARTBEAT] batch:{category} ({len(batch)} items)"
 
         items_text = []

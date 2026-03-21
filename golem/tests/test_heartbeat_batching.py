@@ -1047,3 +1047,91 @@ class TestRunTier2Dedup:
 
         assert len(result) == 1
         assert result[0]["id"] == "improvement:coverage:missing_test"
+
+
+class TestBatchAllItemsResolved:
+    """Tests for the item-level resolved check in _submit_batch()."""
+
+    def _make_batch(self, ids_and_categories):
+        return [
+            {
+                "id": item_id,
+                "category": category,
+                "confidence": 0.9,
+                "complexity": "small",
+                "reason": "Fix something",
+                "automatable": True,
+            }
+            for item_id, category in ids_and_categories
+        ]
+
+    async def test_batch_skipped_when_all_items_resolved(self, tmp_path):
+        mgr = _make_manager(tmp_path, heartbeat_batch_size=5)
+        mock_flow = MagicMock()
+        mgr._flow = mock_flow
+
+        batch = self._make_batch(
+            [
+                ("improvement:dead-code:fix1", "dead-code"),
+                ("improvement:dead-code:fix2", "dead-code"),
+            ]
+        )
+
+        with patch.object(mgr, "_get_recent_batch_categories", return_value=set()):
+            with patch.object(
+                mgr,
+                "_get_recently_resolved_ids",
+                return_value={
+                    "improvement:dead-code:fix1",
+                    "improvement:dead-code:fix2",
+                },
+            ):
+                mgr._submit_batch(batch)
+
+        mock_flow.submit_task.assert_not_called()
+
+    async def test_batch_submitted_when_some_items_resolved(self, tmp_path):
+        mgr = _make_manager(tmp_path, heartbeat_batch_size=5)
+        mock_flow = MagicMock()
+        mock_flow.submit_task.return_value = {"task_id": 42, "status": "submitted"}
+        mgr._flow = mock_flow
+
+        batch = self._make_batch(
+            [
+                ("improvement:dead-code:fix1", "dead-code"),
+                ("improvement:dead-code:fix2", "dead-code"),
+            ]
+        )
+
+        with patch.object(mgr, "_get_recent_batch_categories", return_value=set()):
+            with patch.object(
+                mgr,
+                "_get_recently_resolved_ids",
+                return_value={"improvement:dead-code:fix1"},
+            ):
+                mgr._submit_batch(batch)
+
+        mock_flow.submit_task.assert_called_once()
+
+    async def test_batch_submitted_when_no_items_resolved(self, tmp_path):
+        mgr = _make_manager(tmp_path, heartbeat_batch_size=5)
+        mock_flow = MagicMock()
+        mock_flow.submit_task.return_value = {"task_id": 99, "status": "submitted"}
+        mgr._flow = mock_flow
+
+        batch = self._make_batch(
+            [
+                ("improvement:dead-code:fix1", "dead-code"),
+                ("improvement:dead-code:fix2", "dead-code"),
+            ]
+        )
+
+        with patch.object(mgr, "_get_recent_batch_categories", return_value=set()):
+            with patch.object(
+                mgr,
+                "_get_recently_resolved_ids",
+                return_value=set(),
+            ):
+                mgr._submit_batch(batch)
+
+        mock_flow.submit_task.assert_called_once()
