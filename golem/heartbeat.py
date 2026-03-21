@@ -22,7 +22,13 @@ from typing import Any
 from .core.cli_wrapper import CLIConfig, CLIError, CLIType, invoke_cli
 from .core.config import DATA_DIR, GolemFlowConfig
 from .orchestrator import TaskSessionState
-from .types import HeartbeatCandidateDict, HeartbeatSnapshotDict
+from .types import (
+    CoverageCacheDict,
+    DedupEntryDict,
+    HeartbeatCandidateDict,
+    HeartbeatSnapshotDict,
+    LiveSnapshotDict,
+)
 
 logger = logging.getLogger("golem.heartbeat")
 
@@ -120,13 +126,13 @@ class HeartbeatManager:
         self._inflight_task_ids: list[int] = []
 
         # Dedup memory — keyed by "backend:id" string
-        self._dedup_memory: dict[str, dict[str, Any]] = {}
+        self._dedup_memory: dict[str, DedupEntryDict] = {}
 
         # Candidates — overwritten each scan
-        self._candidates: list[dict[str, Any]] = []
+        self._candidates: list[HeartbeatCandidateDict] = []
 
         # Coverage cache
-        self._coverage_cache: dict[str, Any] = {}
+        self._coverage_cache: CoverageCacheDict | None = None
 
         # Scan metadata
         self._last_scan_at: str = ""
@@ -173,13 +179,17 @@ class HeartbeatManager:
         """Return True if *issue_key* has already been evaluated."""
         return issue_key in self._dedup_memory
 
-    def record_dedup(self, issue_key: str, verdict: str, **extra: Any) -> None:
+    def record_dedup(
+        self, issue_key: str, verdict: str, task_id: int | None = None
+    ) -> None:
         """Record an evaluation in dedup memory."""
-        self._dedup_memory[issue_key] = {
+        entry: DedupEntryDict = {
             "evaluated_at": datetime.now(timezone.utc).isoformat(),
             "verdict": verdict,
-            **extra,
         }
+        if task_id is not None:
+            entry["task_id"] = task_id
+        self._dedup_memory[issue_key] = entry
 
     def _prune_dedup(self) -> None:
         """Remove dedup entries older than TTL.
@@ -356,7 +366,9 @@ class HeartbeatManager:
             "daily_spend_reset_at": self._daily_spend_reset_at,
             "inflight_task_ids": self._inflight_task_ids,
             "dedup_memory": self._dedup_memory,
-            "coverage_cache": self._coverage_cache,
+            "coverage_cache": (
+                self._coverage_cache if self._coverage_cache is not None else {}
+            ),
             "candidates": self._candidates,
             "tier2_completions_since_tier1": self._tier2_completions_since_tier1,
             "tier1_owed": self._tier1_owed,
@@ -386,7 +398,16 @@ class HeartbeatManager:
                 coerced.append(tid)
         self._inflight_task_ids = coerced
         self._dedup_memory = data.get("dedup_memory", {})
-        self._coverage_cache = data.get("coverage_cache", {})
+        raw_cache = data.get("coverage_cache")
+        if (
+            isinstance(raw_cache, dict)
+            and "commit_hash" in raw_cache
+            and "ran_at" in raw_cache
+            and "uncovered_modules" in raw_cache
+        ):
+            self._coverage_cache = raw_cache
+        else:
+            self._coverage_cache = None
         self._candidates = data.get("candidates", [])
         self._prune_dedup()
         self._tier2_completions_since_tier1 = data.get(
@@ -398,15 +419,15 @@ class HeartbeatManager:
 
     # -- Idle detection -------------------------------------------------------
 
-    def is_idle(self, snapshot: dict[str, Any]) -> bool:
+    def is_idle(self, snapshot: LiveSnapshotDict) -> bool:
         """Return True if there are no external tasks active."""
-        active = snapshot.get("active_count", 0)
+        active = snapshot["active_count"]
         heartbeat_count = len(self._inflight_task_ids)
         return active <= heartbeat_count
 
-    def has_external_tasks(self, snapshot: dict[str, Any]) -> bool:
+    def has_external_tasks(self, snapshot: LiveSnapshotDict) -> bool:
         """Return True if non-heartbeat tasks are active."""
-        active = snapshot.get("active_count", 0)
+        active = snapshot["active_count"]
         return active > len(self._inflight_task_ids)
 
     # -- Async loop -----------------------------------------------------------
@@ -849,18 +870,20 @@ class HeartbeatManager:
             logger.debug("git rev-parse HEAD failed: %s", exc)
             return []
 
-        cached_hash = self._coverage_cache.get("commit_hash", "")
-        cached_at = self._coverage_cache.get("ran_at", "")
-
         uncovered: list[str] | None = None
         # Use cache if same commit and ran within the last hour
-        if cached_hash == head and cached_at:
-            try:
-                ran_ts = datetime.fromisoformat(cached_at).timestamp()
-                if time.time() - ran_ts < 3600:
-                    uncovered = self._coverage_cache.get("uncovered_modules", [])
-            except ValueError as exc:
-                logger.debug("Invalid cached timestamp, re-running coverage: %s", exc)
+        if self._coverage_cache is not None:
+            cached_hash = self._coverage_cache["commit_hash"]
+            cached_at = self._coverage_cache["ran_at"]
+            if cached_hash == head and cached_at:
+                try:
+                    ran_ts = datetime.fromisoformat(cached_at).timestamp()
+                    if time.time() - ran_ts < 3600:
+                        uncovered = self._coverage_cache["uncovered_modules"]
+                except ValueError as exc:
+                    logger.debug(
+                        "Invalid cached timestamp, re-running coverage: %s", exc
+                    )
 
         if uncovered is None:
             # Run pytest --cov with timeout

@@ -357,6 +357,31 @@ class HeartbeatCandidateDict(TypedDict):
     complexity: str  # "small" | "medium" | "large"
     reason: str
     tier: int  # 1 or 2
+    category: NotRequired[str]
+
+
+class DedupEntryDict(TypedDict):
+    """A deduplication memory entry stored by HeartbeatManager.
+
+    Producers: heartbeat.py record_dedup()
+    Consumers: heartbeat.py is_deduped(), _prune_dedup(), get_claimed_issue_ids()
+    """
+
+    evaluated_at: str  # ISO 8601 UTC datetime
+    verdict: str  # e.g. "submitted", "completed", "not_automatable"
+    task_id: NotRequired[int]
+
+
+class CoverageCacheDict(TypedDict):
+    """Cached result of a pytest coverage scan.
+
+    Producers: heartbeat.py _scan_coverage()
+    Consumers: heartbeat.py _scan_coverage() (cache hit check)
+    """
+
+    commit_hash: str
+    ran_at: str  # ISO 8601 UTC datetime
+    uncovered_modules: list[str]
 
 
 class HeartbeatSnapshotDict(TypedDict):

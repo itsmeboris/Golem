@@ -11,6 +11,7 @@ import pytest
 from golem.heartbeat import HeartbeatManager, _coerce_task_id, _strip_markdown_json
 from golem.core.config import GolemFlowConfig
 from golem.orchestrator import TaskSessionState
+from golem.types import LiveSnapshotDict
 
 
 def _make_config(**overrides) -> GolemFlowConfig:
@@ -60,6 +61,34 @@ class TestStatePersistence:
         mgr = _make_manager(tmp_path)
         mgr.save_state()
         assert (tmp_path / "heartbeat_state.json").exists()
+
+    def test_load_state_invalid_coverage_cache_sets_none(self, tmp_path):
+        """Coverage cache missing required keys should be set to None."""
+        import json
+
+        state_file = tmp_path / "heartbeat_state.json"
+        state_data = {"coverage_cache": {"commit_hash": "abc", "ran_at": "2026-01-01"}}
+        state_file.write_text(json.dumps(state_data), encoding="utf-8")
+        mgr = _make_manager(tmp_path)
+        mgr.load_state()
+        assert mgr._coverage_cache is None
+
+    def test_load_state_valid_coverage_cache_preserved(self, tmp_path):
+        """Coverage cache with all required keys should be preserved."""
+        import json
+
+        state_file = tmp_path / "heartbeat_state.json"
+        cache = {
+            "commit_hash": "abc",
+            "ran_at": "2026-01-01T00:00:00+00:00",
+            "uncovered_modules": ["golem/foo.py"],
+        }
+        state_data = {"coverage_cache": cache}
+        state_file.write_text(json.dumps(state_data), encoding="utf-8")
+        mgr = _make_manager(tmp_path)
+        mgr.load_state()
+        assert mgr._coverage_cache is not None
+        assert mgr._coverage_cache["uncovered_modules"] == ["golem/foo.py"]
 
     def test_load_state_corrupt_json(self, tmp_path):
         state_file = tmp_path / "heartbeat_state.json"
@@ -2259,3 +2288,165 @@ class TestSnapshotNextTick:
         mgr._next_tick_at = time.time() + 120
         snap = mgr.snapshot()
         assert 118 <= snap["next_tick_seconds"] <= 120
+
+
+class TestDedupEntryDictContract:
+    """Verify record_dedup produces entries conforming to DedupEntryDict."""
+
+    def test_record_dedup_keys_match_typed_dict(self, tmp_path):
+        """Entry keys must match DedupEntryDict required and optional keys."""
+        mgr = _make_manager(tmp_path)
+        mgr.record_dedup("github:10", "submitted", task_id=42)
+        entry = mgr._dedup_memory["github:10"]
+        # Required keys
+        assert "evaluated_at" in entry
+        assert "verdict" in entry
+        # Optional key present when provided
+        assert "task_id" in entry
+        assert entry["task_id"] == 42
+        assert entry["verdict"] == "submitted"
+
+    def test_record_dedup_without_task_id(self, tmp_path):
+        """Entries without task_id must omit that key (NotRequired)."""
+        mgr = _make_manager(tmp_path)
+        mgr.record_dedup("github:20", "not_automatable")
+        entry = mgr._dedup_memory["github:20"]
+        assert "evaluated_at" in entry
+        assert "verdict" in entry
+        assert "task_id" not in entry
+
+    @pytest.mark.parametrize(
+        "required_key",
+        ["evaluated_at", "verdict"],
+    )
+    def test_required_keys_present(self, tmp_path, required_key):
+        """Every required key in DedupEntryDict must be present in each entry."""
+        mgr = _make_manager(tmp_path)
+        mgr.record_dedup("github:30", "candidate")
+        entry = mgr._dedup_memory["github:30"]
+        assert required_key in entry
+
+    def test_evaluated_at_is_utc_iso_format(self, tmp_path):
+        """evaluated_at must be a valid UTC ISO 8601 datetime string."""
+        from datetime import datetime, timezone
+
+        mgr = _make_manager(tmp_path)
+        mgr.record_dedup("github:40", "submitted")
+        entry = mgr._dedup_memory["github:40"]
+        parsed = datetime.fromisoformat(entry["evaluated_at"])
+        assert parsed.tzinfo == timezone.utc
+
+
+class TestLiveSnapshotDictTyping:
+    """Verify is_idle/has_external_tasks accept LiveSnapshotDict input."""
+
+    def test_is_idle_with_full_live_snapshot(self, tmp_path):
+        """is_idle must work with a fully-typed LiveSnapshotDict."""
+        mgr = _make_manager(tmp_path)
+        snapshot: LiveSnapshotDict = {
+            "uptime_s": 100.0,
+            "active_tasks": [],
+            "active_count": 0,
+            "queue_depth": 0,
+            "queued_event_ids": [],
+            "models_active": {},
+            "recently_completed": [],
+        }
+        assert mgr.is_idle(snapshot) is True
+
+    def test_has_external_tasks_with_full_live_snapshot(self, tmp_path):
+        """has_external_tasks must work with a fully-typed LiveSnapshotDict."""
+        mgr = _make_manager(tmp_path)
+        mgr._inflight_task_ids = [111]
+        snapshot: LiveSnapshotDict = {
+            "uptime_s": 50.0,
+            "active_tasks": [],
+            "active_count": 3,
+            "queue_depth": 1,
+            "queued_event_ids": [],
+            "models_active": {},
+            "recently_completed": [],
+        }
+        assert mgr.has_external_tasks(snapshot) is True
+
+    def test_is_idle_uses_active_count_key_directly(self, tmp_path):
+        """Regression: active_count must be read via direct key access."""
+        mgr = _make_manager(tmp_path)
+        mgr._inflight_task_ids = [5]
+        snapshot: LiveSnapshotDict = {
+            "uptime_s": 0.0,
+            "active_tasks": [],
+            "active_count": 1,
+            "queue_depth": 0,
+            "queued_event_ids": [],
+            "models_active": {},
+            "recently_completed": [],
+        }
+        # 1 active == 1 heartbeat → idle
+        assert mgr.is_idle(snapshot) is True
+
+
+class TestCoverageCacheDictContract:
+    """Verify _coverage_cache gets set as a proper CoverageCacheDict."""
+
+    def test_coverage_cache_keys_match_typed_dict(self, tmp_path):
+        """After a coverage scan, _coverage_cache keys must match CoverageCacheDict."""
+        mgr = _make_manager(tmp_path)
+        mgr._coverage_cache = None  # start fresh
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                MagicMock(returncode=0, stdout="abc123\n"),  # git rev-parse
+                MagicMock(
+                    returncode=0,
+                    stdout="golem/foo.py  80%  Missing: 1-5\n",
+                ),  # pytest --cov
+            ]
+            mgr._scan_coverage()
+        assert mgr._coverage_cache is not None
+        for key in ("commit_hash", "ran_at", "uncovered_modules"):
+            assert key in mgr._coverage_cache
+
+    def test_coverage_cache_commit_hash_matches_head(self, tmp_path):
+        """commit_hash in cache must equal the HEAD commit."""
+        mgr = _make_manager(tmp_path)
+        mgr._coverage_cache = None
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                MagicMock(returncode=0, stdout="deadbeef\n"),
+                MagicMock(returncode=0, stdout=""),
+            ]
+            mgr._scan_coverage()
+        assert mgr._coverage_cache is not None
+        assert mgr._coverage_cache["commit_hash"] == "deadbeef"
+
+    def test_coverage_cache_uncovered_modules_values(self, tmp_path):
+        """uncovered_modules must contain the exact modules below 100%."""
+        mgr = _make_manager(tmp_path)
+        mgr._coverage_cache = None
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                MagicMock(returncode=0, stdout="abc123\n"),
+                MagicMock(
+                    returncode=0,
+                    stdout="golem/a.py  90%  Missing: 1\ngolem/b.py  75%  Missing: 2-5\n",
+                ),
+            ]
+            mgr._scan_coverage()
+        assert mgr._coverage_cache is not None
+        assert mgr._coverage_cache["uncovered_modules"] == ["golem/a.py", "golem/b.py"]
+
+    def test_coverage_cache_starts_as_none(self, tmp_path):
+        """Fresh manager has _coverage_cache = None (not an empty dict)."""
+        mgr = _make_manager(tmp_path)
+        assert mgr._coverage_cache is None
+
+    def test_coverage_cache_none_does_not_prevent_scan(self, tmp_path):
+        """When _coverage_cache is None, scan must run without error."""
+        mgr = _make_manager(tmp_path)
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                MagicMock(returncode=0, stdout="abc123\n"),
+                MagicMock(returncode=0, stdout=""),
+            ]
+            result = mgr._scan_coverage()
+        assert isinstance(result, list)
