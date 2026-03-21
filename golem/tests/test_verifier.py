@@ -15,6 +15,7 @@ from golem.verifier import (
     SurvivedMutant,
     VerificationResult,
     _parse_pytest_output,
+    _validate_coverage_data,
     parse_coverage_delta,
     parse_mutmut_results,
     parse_mutmut_summary,
@@ -100,6 +101,93 @@ class TestParseCoverageDelta:
         cov_data = self._make_cov_data({"golem/foo.py": file_entry})  # type: ignore[arg-type]
         with pytest.raises(KeyError):
             parse_coverage_delta(cov_data, ["golem/foo.py"])
+
+
+class TestValidateCoverageData:
+    def test_valid_data_passes(self):
+        data = {
+            "files": {
+                "golem/foo.py": {
+                    "executed_lines": [1, 2, 3],
+                    "missing_lines": [4],
+                }
+            }
+        }
+        result = _validate_coverage_data(data)
+        assert result == data
+
+    def test_valid_data_empty_files_passes(self):
+        data = {"files": {}}
+        result = _validate_coverage_data(data)
+        assert result == data
+
+    def test_valid_data_extra_keys_in_file_entry_passes(self):
+        data = {
+            "files": {
+                "golem/foo.py": {
+                    "executed_lines": [1],
+                    "missing_lines": [],
+                    "summary": {"percent_covered": 100.0},
+                }
+            }
+        }
+        result = _validate_coverage_data(data)
+        assert result == data
+
+    @pytest.mark.parametrize(
+        "bad_input, expected_msg_fragment",
+        [
+            (None, "must be a dict"),
+            ("string", "must be a dict"),
+            (42, "must be a dict"),
+            ([], "must be a dict"),
+        ],
+        ids=["none", "string", "int", "list"],
+    )
+    def test_non_dict_input_raises_type_error(self, bad_input, expected_msg_fragment):
+        with pytest.raises(TypeError, match=expected_msg_fragment):
+            _validate_coverage_data(bad_input)
+
+    def test_missing_files_key_raises_type_error(self):
+        with pytest.raises(TypeError, match="missing required key 'files'"):
+            _validate_coverage_data({})
+
+    def test_non_dict_files_value_raises_type_error(self):
+        with pytest.raises(TypeError, match="'files' must be a dict"):
+            _validate_coverage_data({"files": ["not", "a", "dict"]})
+
+    @pytest.mark.parametrize(
+        "file_data, missing_key",
+        [
+            ({"missing_lines": [1]}, "executed_lines"),
+            ({"executed_lines": [1]}, "missing_lines"),
+            ({}, "executed_lines"),
+        ],
+        ids=["no_executed_lines", "no_missing_lines", "no_keys_at_all"],
+    )
+    def test_file_entry_missing_required_key_raises_type_error(
+        self, file_data, missing_key
+    ):
+        data = {"files": {"golem/foo.py": file_data}}
+        with pytest.raises(TypeError, match=missing_key):
+            _validate_coverage_data(data)
+
+    @pytest.mark.parametrize(
+        "line_key",
+        ["executed_lines", "missing_lines"],
+        ids=["executed_lines", "missing_lines"],
+    )
+    def test_non_list_line_field_raises_type_error(self, line_key):
+        file_data: dict = {"executed_lines": [1], "missing_lines": []}
+        file_data[line_key] = "not_a_list"
+        data = {"files": {"golem/foo.py": file_data}}
+        with pytest.raises(TypeError, match="must be a list"):
+            _validate_coverage_data(data)
+
+    def test_file_entry_non_dict_raises_type_error(self):
+        data = {"files": {"golem/foo.py": "not_a_dict"}}
+        with pytest.raises(TypeError, match="must be a dict"):
+            _validate_coverage_data(data)
 
 
 class TestParsePytestOutput:

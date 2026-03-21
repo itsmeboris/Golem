@@ -134,6 +134,41 @@ class MutationResult:
         }
 
 
+def _validate_coverage_data(data: object) -> CoverageDataDict:
+    """Validate that data matches CoverageDataDict structure.
+
+    Raises TypeError with a descriptive message if the structure is invalid.
+    Returns the validated data cast to CoverageDataDict.
+    """
+    if not isinstance(data, dict):
+        raise TypeError("coverage data must be a dict, got %s" % type(data).__name__)
+    if "files" not in data:
+        raise TypeError("coverage data missing required key 'files'")
+    files = data["files"]
+    if not isinstance(files, dict):
+        raise TypeError(
+            "coverage data 'files' must be a dict, got %s" % type(files).__name__
+        )
+    for filepath, file_data in files.items():
+        if not isinstance(file_data, dict):
+            raise TypeError(
+                "coverage file entry '%s' must be a dict, got %s"
+                % (filepath, type(file_data).__name__)
+            )
+        for key in ("executed_lines", "missing_lines"):
+            if key not in file_data:
+                raise TypeError(
+                    "coverage file entry '%s' missing required key '%s'"
+                    % (filepath, key)
+                )
+            if not isinstance(file_data[key], list):
+                raise TypeError(
+                    "coverage file entry '%s' key '%s' must be a list, got %s"
+                    % (filepath, key, type(file_data[key]).__name__)
+                )
+    return data  # type: ignore[return-value]
+
+
 def parse_coverage_delta(
     cov_data: CoverageDataDict, changed_files: list[str]
 ) -> CoverageDelta:
@@ -319,10 +354,11 @@ def _load_coverage_delta(cov_json_path: Path, work_dir: str) -> CoverageDelta | 
     if not cov_json_path.exists():
         return None
     try:
-        cov_data: CoverageDataDict = json.loads(cov_json_path.read_text())
+        raw_data = json.loads(cov_json_path.read_text())
+        cov_data = _validate_coverage_data(raw_data)
         changed_files = _get_changed_files(work_dir)
         return parse_coverage_delta(cov_data, changed_files)
-    except (json.JSONDecodeError, KeyError, OSError) as exc:
+    except (json.JSONDecodeError, KeyError, TypeError, OSError) as exc:
         logger.warning("Failed to parse coverage JSON: %s", exc)
         return None
     finally:
