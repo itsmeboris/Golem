@@ -1655,16 +1655,59 @@ class TestTier2:
         result1 = mgr._scan_pitfalls()
         assert len(result1) == 1
 
-        # Record it in dedup
+        # Record it in dedup — key must be based on clean content (no metadata)
         import hashlib
 
-        line = "- **Bug A**: desc <!-- seen:1 last:2026-03-15 -->"
-        key = f"pitfall:{hashlib.sha256(line.encode()).hexdigest()[:12]}"
+        clean = "- **Bug A**: desc"
+        key = f"pitfall:{hashlib.sha256(clean.encode()).hexdigest()[:12]}"
         mgr.record_dedup(key, "evaluated")
 
         # Second scan: should be filtered
         result2 = mgr._scan_pitfalls()
         assert len(result2) == 0
+
+    def test_scan_pitfalls_same_key_regardless_of_seen_count(self, tmp_path):
+        """SPEC-1: dedup key must not change when seen-count metadata changes."""
+        mgr = _make_manager(tmp_path, default_work_dir=str(tmp_path))
+        agents_md = tmp_path / "AGENTS.md"
+
+        # First scan with seen:1
+        agents_md.write_text(
+            "## Recurring Antipatterns\n"
+            "- **Bug X**: some desc <!-- seen:1 last:2026-01-01 -->\n"
+        )
+        result1 = mgr._scan_pitfalls()
+        assert len(result1) == 1
+        key1, _ = result1[0]
+
+        # Record the dedup so next scan skips it
+        mgr.record_dedup(key1, "evaluated")
+
+        # Update seen count and date — same semantic content, different metadata
+        agents_md.write_text(
+            "## Recurring Antipatterns\n"
+            "- **Bug X**: some desc <!-- seen:5 last:2026-03-20 -->\n"
+        )
+        result2 = mgr._scan_pitfalls()
+
+        # The entry should be deduped (same key) so no new findings
+        assert result2 == []
+
+    def test_scan_pitfalls_different_content_different_key(self, tmp_path):
+        """SPEC-2: pitfalls with different descriptions must produce different keys."""
+        mgr = _make_manager(tmp_path, default_work_dir=str(tmp_path))
+        agents_md = tmp_path / "AGENTS.md"
+        agents_md.write_text(
+            "## Recurring Antipatterns\n"
+            "- **Bug A**: first description <!-- seen:1 last:2026-01-01 -->\n"
+            "- **Bug B**: second description <!-- seen:1 last:2026-01-01 -->\n"
+        )
+
+        results = mgr._scan_pitfalls()
+        assert len(results) == 2
+        key_a, _ = results[0]
+        key_b, _ = results[1]
+        assert key_a != key_b
 
     def test_scan_coverage_stale_cache(self, tmp_path):
         """Cache is stale when ran_at is >1 hour ago."""

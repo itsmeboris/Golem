@@ -1026,10 +1026,9 @@ class HeartbeatManager:
             if not in_section:
                 continue
             if stripped.startswith("- ") and "<!-- seen:" in stripped:
-                key = f"pitfall:{self._content_hash(stripped)}"
+                clean = re.sub(r"\s*<!--.*?-->", "", stripped)
+                key = f"pitfall:{self._content_hash(clean)}"
                 if not self.is_deduped(key):
-                    # Strip the HTML comment marker for the Haiku prompt
-                    clean = re.sub(r"\s*<!--.*?-->", "", stripped)
                     pitfalls.append((key, f"Unresolved pitfall: {clean}"))
         return pitfalls
 
