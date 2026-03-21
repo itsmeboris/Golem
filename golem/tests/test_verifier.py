@@ -15,11 +15,91 @@ from golem.verifier import (
     SurvivedMutant,
     VerificationResult,
     _parse_pytest_output,
+    parse_coverage_delta,
     parse_mutmut_results,
     parse_mutmut_summary,
     run_mutation_testing,
     run_verification,
 )
+
+
+class TestParseCoverageDelta:
+    def _make_cov_data(self, files=None):
+        """Build a minimal valid CoverageDataDict."""
+        return {"files": files or {}}
+
+    def test_empty_changed_files_returns_all_covered(self):
+        cov_data = self._make_cov_data(
+            {"golem/foo.py": {"executed_lines": [1, 2], "missing_lines": [3]}}
+        )
+        result = parse_coverage_delta(cov_data, [])
+        assert result.all_covered is True
+        assert result.delta_pct == 100.0
+        assert result.uncovered_lines == {}
+
+    def test_valid_data_returns_correct_delta(self):
+        cov_data = self._make_cov_data(
+            {
+                "golem/foo.py": {
+                    "executed_lines": [1, 2, 3],
+                    "missing_lines": [4],
+                }
+            }
+        )
+        result = parse_coverage_delta(cov_data, ["golem/foo.py"])
+        assert result.all_covered is False
+        assert result.delta_pct == 75.0
+        assert result.uncovered_lines == {"golem/foo.py": [4]}
+
+    def test_all_lines_covered_returns_all_covered_true(self):
+        cov_data = self._make_cov_data(
+            {
+                "golem/bar.py": {
+                    "executed_lines": [1, 2, 3],
+                    "missing_lines": [],
+                }
+            }
+        )
+        result = parse_coverage_delta(cov_data, ["golem/bar.py"])
+        assert result.all_covered is True
+        assert result.delta_pct == 100.0
+        assert result.uncovered_lines == {}
+
+    def test_test_files_are_skipped(self):
+        cov_data = self._make_cov_data(
+            {
+                "golem/tests/test_foo.py": {
+                    "executed_lines": [1],
+                    "missing_lines": [2],
+                }
+            }
+        )
+        # Only the test file is in changed_files; it should be skipped
+        result = parse_coverage_delta(cov_data, ["golem/tests/test_foo.py"])
+        assert result.all_covered is True
+        assert result.delta_pct == 100.0
+        assert result.uncovered_lines == {}
+
+    def test_missing_files_key_raises_key_error(self):
+        """SPEC-1: direct key access on CoverageDataDict raises KeyError if 'files' absent."""
+        bad_data = {}  # type: ignore[var-annotated]
+        with pytest.raises(KeyError):
+            parse_coverage_delta(bad_data, ["golem/foo.py"])
+
+    @pytest.mark.parametrize(
+        "file_entry",
+        [
+            {"missing_lines": [1]},  # missing executed_lines
+            {"executed_lines": [1]},  # missing missing_lines
+            {},  # missing both
+        ],
+        ids=["no_executed_lines", "no_missing_lines", "no_keys_at_all"],
+    )
+    def test_missing_file_entry_keys_raise_key_error(self, file_entry):
+        """SPEC-2: direct key access on CoverageFileDataDict raises KeyError if keys absent."""
+        cov_data = self._make_cov_data({"golem/foo.py": file_entry})  # type: ignore[arg-type]
+        with pytest.raises(KeyError):
+            parse_coverage_delta(cov_data, ["golem/foo.py"])
 
 
 class TestParsePytestOutput:
@@ -322,6 +402,21 @@ class TestRunVerification:
         """When coverage.json contains invalid JSON, a warning is logged."""
         cov_json = tmp_path / "coverage.json"
         cov_json.write_text("not valid json {{{")
+
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="1 passed\nTOTAL 100 0 100%",
+            stderr="",
+        )
+        result = run_verification(str(tmp_path))
+        assert result.coverage_delta is None
+        assert not cov_json.exists()  # still cleaned up
+
+    @patch("golem.verifier.subprocess.run")
+    def test_coverage_json_missing_keys_returns_none(self, mock_run, tmp_path):
+        """When coverage.json is valid JSON but missing required keys, coverage_delta is None."""
+        cov_json = tmp_path / "coverage.json"
+        cov_json.write_text("{}")
 
         mock_run.return_value = MagicMock(
             returncode=0,

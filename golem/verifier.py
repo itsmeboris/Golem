@@ -141,7 +141,7 @@ def parse_coverage_delta(
     if not changed_files:
         return CoverageDelta(all_covered=True, delta_pct=100.0, uncovered_lines={})
 
-    files_data = cov_data.get("files", {})
+    files_data = cov_data["files"]
     uncovered: dict[str, list[int]] = {}
     total_lines = 0
     covered_lines = 0
@@ -155,8 +155,8 @@ def parse_coverage_delta(
         if file_cov is None:
             continue
 
-        executed = file_cov.get("executed_lines", [])
-        missing = file_cov.get("missing_lines", [])
+        executed = file_cov["executed_lines"]
+        missing = file_cov["missing_lines"]
         total_lines += len(executed) + len(missing)
         covered_lines += len(executed)
 
@@ -319,10 +319,10 @@ def _load_coverage_delta(cov_json_path: Path, work_dir: str) -> CoverageDelta | 
     if not cov_json_path.exists():
         return None
     try:
-        cov_data = json.loads(cov_json_path.read_text())
+        cov_data: CoverageDataDict = json.loads(cov_json_path.read_text())
         changed_files = _get_changed_files(work_dir)
         return parse_coverage_delta(cov_data, changed_files)
-    except (json.JSONDecodeError, OSError) as exc:
+    except (json.JSONDecodeError, KeyError, OSError) as exc:
         logger.warning("Failed to parse coverage JSON: %s", exc)
         return None
     finally:
