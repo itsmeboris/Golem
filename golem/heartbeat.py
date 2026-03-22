@@ -169,6 +169,11 @@ class HeartbeatManager:
         self._category_failures: dict[str, int] = {}
         self._category_cooldown_until: dict[str, str] = {}
 
+        # Tick-scoped cache for git-derived dedup data (populated by
+        # _run_tier2, consumed by _submit_batch via _run_heartbeat_tick)
+        self._tick_resolved_ids: set[str] | None = None
+        self._tick_recent_categories: set[str] | None = None
+
     # -- Budget ---------------------------------------------------------------
 
     def budget_allows(self) -> bool:
@@ -1126,8 +1131,10 @@ class HeartbeatManager:
         # All scanners now return (key, description) tuples
         all_findings: list[tuple[str, str]] = [*todos, *coverage, *pitfalls]
 
-        # Filter out findings already resolved in recent commits
+        # Filter out findings already resolved in recent commits.
+        # Cache the result for reuse by _submit_batch in the same tick.
         resolved_ids = self._get_recently_resolved_ids()
+        self._tick_resolved_ids = resolved_ids
         all_findings = [(k, d) for k, d in all_findings if k not in resolved_ids]
 
         if not all_findings:
@@ -1156,8 +1163,10 @@ class HeartbeatManager:
         candidates = self._validate_candidates(response, tier=2)
 
         # Filter out candidates whose category is in cooldown, was recently batched,
-        # or ID was recently resolved
+        # or ID was recently resolved.
+        # Cache the result for reuse by _submit_batch in the same tick.
         recent_categories = self._get_recent_batch_categories()
+        self._tick_recent_categories = recent_categories
         if recent_categories:
             before = len(candidates)
             candidates = [
@@ -1178,6 +1187,10 @@ class HeartbeatManager:
 
     async def _run_heartbeat_tick(self) -> None:
         """Execute one heartbeat cycle: promotion -> Tier 1 -> Tier 2 -> submit."""
+        # Clear tick-scoped caches from previous tick
+        self._tick_resolved_ids = None
+        self._tick_recent_categories = None
+
         if not self.can_submit():
             logger.debug("Heartbeat tick skipped — inflight limit reached")
             return
@@ -1219,7 +1232,13 @@ class HeartbeatManager:
                 self._state = "idle"
                 self.save_state()
                 return
-            self._submit_batch(batch)
+            # Reuse git-derived dedup data already computed by _run_tier2
+            # to avoid redundant subprocess calls within the same tick.
+            self._submit_batch(
+                batch,
+                recent_categories=self._tick_recent_categories,
+                resolved_ids=self._tick_resolved_ids,
+            )
         else:
             self._submit_single(candidates[0])
 
@@ -1263,12 +1282,24 @@ class HeartbeatManager:
             logger.exception("Heartbeat failed to submit task")
             self._state = "idle"
 
-    def _submit_batch(self, batch: list[HeartbeatCandidateDict]) -> None:
-        """Submit a batch of Tier 2 candidates as a single heartbeat task."""
+    def _submit_batch(
+        self,
+        batch: list[HeartbeatCandidateDict],
+        recent_categories: set[str] | None = None,
+        resolved_ids: set[str] | None = None,
+    ) -> None:
+        """Submit a batch of Tier 2 candidates as a single heartbeat task.
+
+        *recent_categories* and *resolved_ids* may be passed from an earlier
+        phase of the same tick to avoid redundant ``git log`` subprocess calls.
+        When omitted the values are computed on the fly (useful for direct
+        callers and tests).
+        """
         category = batch[0].get("category", "improvement")
 
         # Skip if this category was already addressed in a recent commit
-        recent_categories = self._get_recent_batch_categories()
+        if recent_categories is None:
+            recent_categories = self._get_recent_batch_categories()
         if category in recent_categories:
             logger.warning(
                 "Skipping batch submission — category %r was recently addressed",
@@ -1277,7 +1308,8 @@ class HeartbeatManager:
             return
 
         # Skip if all items in the batch were already resolved individually
-        resolved_ids = self._get_recently_resolved_ids()
+        if resolved_ids is None:
+            resolved_ids = self._get_recently_resolved_ids()
         if resolved_ids and all(c["id"] in resolved_ids for c in batch):
             logger.warning(
                 "Skipping batch submission — all %d item(s) already resolved",

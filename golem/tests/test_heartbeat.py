@@ -3,6 +3,7 @@
 import asyncio
 import json
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -35,13 +36,28 @@ def _make_manager(tmp_path, **config_overrides) -> HeartbeatManager:
     return HeartbeatManager(cfg, state_dir=tmp_path)
 
 
+def _make_snapshot(**overrides) -> LiveSnapshotDict:
+    """Build a complete ``LiveSnapshotDict`` with sensible defaults."""
+    base: LiveSnapshotDict = {
+        "uptime_s": 0.0,
+        "active_tasks": [],
+        "active_count": 0,
+        "queue_depth": 0,
+        "queued_event_ids": [],
+        "models_active": {},
+        "recently_completed": [],
+    }
+    base.update(overrides)  # type: ignore[typeddict-item]
+    return base
+
+
 class TestStatePersistence:
     def test_save_and_load_round_trip(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mgr._daily_spend_usd = 0.05
         mgr._inflight_task_ids = [123456]
         mgr._dedup_memory["github:42"] = {
-            "evaluated_at": "2026-03-15T10:00:00Z",
+            "evaluated_at": datetime.now(timezone.utc).isoformat(),
             "verdict": "not_automatable",
         }
         mgr.save_state()
@@ -103,11 +119,11 @@ class TestStatePersistence:
         state_data = {
             "dedup_memory": {
                 "github:valid": {
-                    "evaluated_at": "2026-03-15T10:00:00Z",
+                    "evaluated_at": datetime.now(timezone.utc).isoformat(),
                     "verdict": "not_automatable",
                 },
                 "github:missing_verdict": {
-                    "evaluated_at": "2026-03-15T10:00:00Z",
+                    "evaluated_at": datetime.now(timezone.utc).isoformat(),
                 },
                 "github:missing_evaluated_at": {
                     "verdict": "submitted",
@@ -159,7 +175,7 @@ class TestStatePersistence:
         state_data = {
             "dedup_memory": {
                 "github:valid": {
-                    "evaluated_at": "2026-03-15T10:00:00Z",
+                    "evaluated_at": datetime.now(timezone.utc).isoformat(),
                     "verdict": "not_automatable",
                 },
                 "github:bad": "not a dict",
@@ -347,7 +363,7 @@ class TestInflightTracking:
         mgr = _make_manager(tmp_path)
         mgr._inflight_task_ids = [123]
         mgr._dedup_memory["github:42"] = {
-            "evaluated_at": "2026-03-15T10:00:00Z",
+            "evaluated_at": datetime.now(timezone.utc).isoformat(),
             "verdict": "submitted",
             "task_id": 123,
         }
@@ -358,7 +374,7 @@ class TestInflightTracking:
         mgr = _make_manager(tmp_path)
         mgr._inflight_task_ids = [123]
         mgr._dedup_memory["github:42"] = {
-            "evaluated_at": "2026-03-15T10:00:00Z",
+            "evaluated_at": datetime.now(timezone.utc).isoformat(),
             "verdict": "submitted",
             "task_id": 123,
         }
@@ -369,7 +385,7 @@ class TestInflightTracking:
         mgr = _make_manager(tmp_path)
         mgr._inflight_task_ids = [123]
         mgr._dedup_memory["github:42"] = {
-            "evaluated_at": "2026-03-15T10:00:00Z",
+            "evaluated_at": datetime.now(timezone.utc).isoformat(),
             "verdict": "submitted",
             "task_id": 123,
         }
@@ -486,24 +502,19 @@ class TestSnapshot:
 class TestIdleDetection:
     def test_is_idle_true_when_no_active_tasks(self, tmp_path):
         mgr = _make_manager(tmp_path)
-        snapshot = {
-            "active_count": 0,
-            "queue_depth": 0,
-            "active_tasks": [],
-            "recently_completed": [],
-        }
+        snapshot = _make_snapshot(active_count=0, queue_depth=0)
         assert mgr.is_idle(snapshot) is True
 
     def test_is_idle_false_when_active_tasks(self, tmp_path):
         mgr = _make_manager(tmp_path)
-        snapshot = {"active_count": 2, "queue_depth": 0}
+        snapshot = _make_snapshot(active_count=2, queue_depth=0)
         assert mgr.is_idle(snapshot) is False
 
     def test_is_idle_true_when_only_heartbeat_tasks(self, tmp_path):
         """Idle means no external tasks. Heartbeat-own tasks don't count."""
         mgr = _make_manager(tmp_path)
         mgr._inflight_task_ids = [111, 222]
-        snapshot = {"active_count": 2, "queue_depth": 0}
+        snapshot = _make_snapshot(active_count=2, queue_depth=0)
         assert mgr.is_idle(snapshot) is True  # 2 active == 2 heartbeat
 
 
@@ -511,18 +522,18 @@ class TestExternalTaskDetection:
     def test_has_external_tasks_true(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mgr._inflight_task_ids = [111]
-        snapshot = {"active_count": 3}  # 3 active, 1 heartbeat = 2 external
+        snapshot = _make_snapshot(active_count=3)  # 3 active, 1 heartbeat = 2 external
         assert mgr.has_external_tasks(snapshot) is True
 
     def test_has_external_tasks_false_when_all_heartbeat(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mgr._inflight_task_ids = [111]
-        snapshot = {"active_count": 1}
+        snapshot = _make_snapshot(active_count=1)
         assert mgr.has_external_tasks(snapshot) is False
 
     def test_has_external_tasks_false_when_empty(self, tmp_path):
         mgr = _make_manager(tmp_path)
-        snapshot = {"active_count": 0}
+        snapshot = _make_snapshot(active_count=0)
         assert mgr.has_external_tasks(snapshot) is False
 
 
@@ -531,7 +542,9 @@ class TestAsyncLoop:
         mgr = _make_manager(tmp_path, heartbeat_interval_seconds=1)
         mock_flow = MagicMock()
         mock_flow.live = MagicMock()
-        mock_flow.live.snapshot.return_value = {"active_count": 5}  # not idle
+        mock_flow.live.snapshot.return_value = _make_snapshot(
+            active_count=5
+        )  # not idle
 
         mgr.start(mock_flow)
         assert mgr._loop_task is not None
@@ -543,7 +556,7 @@ class TestAsyncLoop:
         mgr = _make_manager(tmp_path, heartbeat_interval_seconds=1)
         mock_flow = MagicMock()
         mock_flow.live = MagicMock()
-        mock_flow.live.snapshot.return_value = {"active_count": 5}
+        mock_flow.live.snapshot.return_value = _make_snapshot(active_count=5)
         mgr._daily_spend_usd = 0.42
         mgr.start(mock_flow)
         await asyncio.sleep(0.1)
@@ -1323,7 +1336,7 @@ class TestTier1:
     async def test_tier1_skips_deduped_issues(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mgr._dedup_memory["github:42"] = {
-            "evaluated_at": "2026-03-15T10:00:00Z",
+            "evaluated_at": datetime.now(timezone.utc).isoformat(),
             "verdict": "not_automatable",
         }
         mock_flow = MagicMock()
@@ -1995,7 +2008,7 @@ class TestHeartbeatLoopBranches:
         mgr._daily_spend_usd = 999.0  # over budget
         mock_flow = MagicMock()
         mock_flow.live = MagicMock()
-        mock_flow.live.snapshot.return_value = {"active_count": 0}
+        mock_flow.live.snapshot.return_value = _make_snapshot(active_count=0)
         mgr.start(mock_flow)
         await asyncio.sleep(0.05)
         assert mgr._state == "budget_exhausted"
@@ -2010,7 +2023,7 @@ class TestHeartbeatLoopBranches:
         )
         mock_flow = MagicMock()
         mock_flow.live = MagicMock()
-        mock_flow.live.snapshot.return_value = {"active_count": 0}
+        mock_flow.live.snapshot.return_value = _make_snapshot(active_count=0)
         mgr.start(mock_flow)
         await asyncio.sleep(0.05)
         assert mgr._state == "idle"
@@ -2025,7 +2038,7 @@ class TestHeartbeatLoopBranches:
         )
         mock_flow = MagicMock()
         mock_flow.live = MagicMock()
-        mock_flow.live.snapshot.return_value = {"active_count": 0}
+        mock_flow.live.snapshot.return_value = _make_snapshot(active_count=0)
         mock_flow.submit_task = AsyncMock(return_value=None)
 
         tick_called = asyncio.Event()
@@ -2118,7 +2131,7 @@ class TestHeartbeatLoopGuards:
         )
         mock_flow = MagicMock()
         mock_flow.live = MagicMock()
-        mock_flow.live.snapshot.return_value = {"active_count": 0}
+        mock_flow.live.snapshot.return_value = _make_snapshot(active_count=0)
         mgr._daily_spend_usd = 999.0  # stay in budget_exhausted branch (fast path)
 
         mgr.start(mock_flow)
@@ -2142,7 +2155,7 @@ class TestHeartbeatLoopGuards:
         )
         mock_flow = MagicMock()
         mock_flow.live = MagicMock()
-        mock_flow.live.snapshot.return_value = {"active_count": 0}
+        mock_flow.live.snapshot.return_value = _make_snapshot(active_count=0)
         mgr._daily_spend_usd = 999.0  # fast budget_exhausted path
 
         with caplog.at_level(logging.INFO, logger="golem.heartbeat"):
@@ -2165,7 +2178,7 @@ class TestHeartbeatLoopGuards:
         )
         mock_flow = MagicMock()
         mock_flow.live = MagicMock()
-        mock_flow.live.snapshot.return_value = {"active_count": 0}
+        mock_flow.live.snapshot.return_value = _make_snapshot(active_count=0)
         mgr._daily_spend_usd = 999.0  # fast budget_exhausted path
 
         mgr.start(mock_flow)
@@ -2189,7 +2202,7 @@ class TestHeartbeatLoopGuards:
         )
         mock_flow = MagicMock()
         mock_flow.live = MagicMock()
-        mock_flow.live.snapshot.return_value = {"active_count": 0}
+        mock_flow.live.snapshot.return_value = _make_snapshot(active_count=0)
         mgr._daily_spend_usd = 999.0
 
         with caplog.at_level(logging.INFO, logger="golem.heartbeat"):
@@ -2213,7 +2226,7 @@ class TestHeartbeatLoopGuards:
         )
         mock_flow = MagicMock()
         mock_flow.live = MagicMock()
-        mock_flow.live.snapshot.return_value = {"active_count": 0}
+        mock_flow.live.snapshot.return_value = _make_snapshot(active_count=0)
         mgr._daily_spend_usd = 999.0  # fast budget_exhausted path
 
         threshold_reached = asyncio.Event()
@@ -2222,7 +2235,7 @@ class TestHeartbeatLoopGuards:
             counting_snapshot.n += 1
             if counting_snapshot.n >= 3:
                 threshold_reached.set()
-            return {"active_count": 0}
+            return _make_snapshot(active_count=0)
 
         counting_snapshot.n = 0
         mock_flow.live.snapshot.side_effect = counting_snapshot
@@ -2246,7 +2259,7 @@ class TestHeartbeatLoopGuards:
         )
         mock_flow = MagicMock()
         mock_flow.live = MagicMock()
-        mock_flow.live.snapshot.return_value = {"active_count": 0}
+        mock_flow.live.snapshot.return_value = _make_snapshot(active_count=0)
         mgr._daily_spend_usd = 999.0
 
         threshold_reached = asyncio.Event()
@@ -2255,7 +2268,7 @@ class TestHeartbeatLoopGuards:
             counting_snapshot.n += 1
             if counting_snapshot.n >= 3:
                 threshold_reached.set()
-            return {"active_count": 0}
+            return _make_snapshot(active_count=0)
 
         counting_snapshot.n = 0
         mock_flow.live.snapshot.side_effect = counting_snapshot
@@ -2604,7 +2617,7 @@ class TestTrigger:
         mgr = _make_manager(tmp_path, heartbeat_interval_seconds=999)
         mock_flow = MagicMock()
         mock_flow.live = MagicMock()
-        mock_flow.live.snapshot.return_value = {"active_count": 0}
+        mock_flow.live.snapshot.return_value = _make_snapshot(active_count=0)
         mgr.start(mock_flow)
         assert mgr.trigger() is True
         assert mgr._trigger_event.is_set()
@@ -2619,7 +2632,9 @@ class TestTrigger:
         )
         mock_flow = MagicMock()
         mock_flow.live = MagicMock()
-        mock_flow.live.snapshot.return_value = {"active_count": 5}  # not idle
+        mock_flow.live.snapshot.return_value = _make_snapshot(
+            active_count=5
+        )  # not idle
 
         tick_called = asyncio.Event()
 
@@ -2641,7 +2656,7 @@ class TestTrigger:
         mgr = _make_manager(tmp_path, heartbeat_interval_seconds=0)
         mock_flow = MagicMock()
         mock_flow.live = MagicMock()
-        mock_flow.live.snapshot.return_value = {"active_count": 0}
+        mock_flow.live.snapshot.return_value = _make_snapshot(active_count=0)
         mgr._flow = mock_flow
         mgr._trigger_event = None
 
@@ -2649,7 +2664,7 @@ class TestTrigger:
 
         def _signal_side_effect(*_a, **_kw):
             loop_iterated.set()
-            return {"active_count": 0}
+            return _make_snapshot(active_count=0)
 
         mock_flow.live.snapshot.side_effect = _signal_side_effect
 
