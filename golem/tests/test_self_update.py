@@ -566,6 +566,53 @@ class TestVerifyInWorktree:
             result = await manager._verify_in_worktree("abc123")
         assert result is True
 
+    async def test_uses_unique_temp_path_not_hardcoded(self, manager):
+        """INFRA-005: Worktree path must not be the hardcoded /tmp/golem-verify."""
+        mock_vr = MagicMock(passed=True)
+        captured_paths = []
+
+        def capture_run(cmd, **_kwargs):
+            if "add" in cmd:
+                captured_paths.append(cmd[-2])  # path arg before sha
+            return MagicMock(returncode=0)
+
+        with (
+            patch("golem.self_update.subprocess.run", side_effect=capture_run),
+            patch("golem.verifier.run_verification", return_value=mock_vr),
+        ):
+            await manager._verify_in_worktree("abc123")
+
+        assert captured_paths, "subprocess.run was not called with worktree add"
+        worktree_path = captured_paths[0]
+        assert (
+            worktree_path != "/tmp/golem-verify"
+        ), "Must not use hardcoded /tmp/golem-verify — use a unique temp path"
+
+    async def test_unique_paths_per_sha(self, manager):
+        """INFRA-005: Different SHAs should produce different worktree paths."""
+        mock_vr = MagicMock(passed=True)
+        paths_by_sha: dict = {}
+
+        for sha in ("aabbccdd", "11223344"):
+            calls: list = []
+
+            def capturing_run(cmd, _sha=sha, **_kw):
+                if "add" in cmd:
+                    calls.append((cmd[-2], _sha))
+                return MagicMock(returncode=0)
+
+            with (
+                patch("golem.self_update.subprocess.run", side_effect=capturing_run),
+                patch("golem.verifier.run_verification", return_value=mock_vr),
+            ):
+                await manager._verify_in_worktree(sha)
+            paths_by_sha[sha] = calls[0][0] if calls else None
+
+        if all(p is not None for p in paths_by_sha.values()):
+            assert (
+                paths_by_sha["aabbccdd"] != paths_by_sha["11223344"]
+            ), "Different SHAs must use different worktree paths"
+
 
 class TestLifecycle:
     async def test_start_creates_task(self, manager):

@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 import subprocess
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -380,7 +381,7 @@ class SelfUpdateManager:
 
     async def _verify_in_worktree(self, sha: str) -> bool:
         """Run verification in a temporary git worktree."""
-        worktree_path = "/tmp/golem-verify"
+        worktree_path = str(Path(tempfile.gettempdir()) / f"golem-verify-{sha[:8]}")
         try:
             # Create worktree
             await asyncio.to_thread(
