@@ -1335,8 +1335,8 @@ class TestRecordHandoff:
         assert session.phase_handoffs[1]["from_phase"] == "verifying"
         assert session.phase_handoffs[2]["from_phase"] == "validating"
 
-    def test_invalid_handoff_still_appended_and_warns(self):
-        """_record_handoff with empty context logs warning but still appends handoff."""
+    def test_invalid_handoff_rejected_and_warns(self):
+        """_record_handoff with empty context logs warning and rejects handoff."""
         session = TaskSession(parent_issue_id=1)
         orch = _make_orch(session)
 
@@ -1348,14 +1348,15 @@ class TestRecordHandoff:
                 files=[],
             )
 
-        assert len(session.phase_handoffs) == 1
+        assert len(session.phase_handoffs) == 0  # rejected
         mock_warn.assert_called_once()
         warn_args = mock_warn.call_args[0]
         assert "executing" in str(warn_args)
         assert "verifying" in str(warn_args)
+        assert "rejected" in str(warn_args)
 
-    def test_invalid_from_phase_warns(self):
-        """_record_handoff with empty from_phase logs warning but still appends."""
+    def test_invalid_from_phase_rejected(self):
+        """_record_handoff with empty from_phase logs warning and rejects handoff."""
         session = TaskSession(parent_issue_id=1)
         orch = _make_orch(session)
 
@@ -1367,7 +1368,7 @@ class TestRecordHandoff:
                 files=[],
             )
 
-        assert len(session.phase_handoffs) == 1
+        assert len(session.phase_handoffs) == 0  # rejected
         mock_warn.assert_called_once()
 
 

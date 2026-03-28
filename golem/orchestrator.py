@@ -357,11 +357,12 @@ class TaskOrchestrator:
         valid, reasons = validate_handoff(handoff)
         if not valid:
             self._slog.warning(
-                "Handoff %s\u2192%s validation failed: %s",
+                "Handoff %s\u2192%s validation failed — rejected: %s",
                 from_phase,
                 to_phase,
                 reasons,
             )
+            return
         self.session.phase_handoffs.append(handoff)
 
     async def tick(self) -> TaskSession:
