@@ -1,17 +1,21 @@
 # pylint: disable=too-few-public-methods
 """Tests for golem.cli — CLI entry point, argument parsing, helpers."""
 
+import argparse
 import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from golem.cli import (
+    _cmd_run_prompt,
     _make_event_handler,
     _now_iso,
     _print_cli_summary,
     _print_run_header,
     _save_cli_session,
     _submit_to_daemon,
+    cmd_attach,
+    cmd_detach,
     cmd_run,
     cmd_poll,
     cmd_stop,
@@ -546,4 +550,118 @@ class TestMainArgparse:
             with patch("golem.cli.cmd_poll", return_value=0):
                 main()
         assert logging.getLogger().level == logging.DEBUG
-        logging.getLogger().setLevel(logging.INFO)
+
+
+class TestCwdDefault:
+    """golem run --prompt defaults work_dir to caller's cwd."""
+
+    @patch("golem.cli._submit_to_daemon")
+    @patch("golem.cli._ensure_daemon")
+    @patch("golem.cli.load_config")
+    def test_prompt_defaults_to_cwd(
+        self, mock_config, _mock_ensure, mock_submit, tmp_path, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        mock_config.return_value.dashboard.port = 8080
+        mock_config.return_value.daemon = DaemonConfig()
+        mock_submit.return_value = {"task_id": 1}
+        args = SimpleNamespace(
+            prompt="test prompt",
+            cwd="",
+            subject="",
+            config=None,
+            file="",
+        )
+        _cmd_run_prompt(args, mock_config.return_value, "test prompt")
+        _, kwargs = mock_submit.call_args
+        assert kwargs.get("work_dir") == str(tmp_path)
+
+    @patch("golem.cli._submit_to_daemon")
+    @patch("golem.cli._ensure_daemon")
+    @patch("golem.cli.load_config")
+    def test_explicit_cwd_overrides(self, mock_config, _mock_ensure, mock_submit):
+        mock_config.return_value.dashboard.port = 8080
+        mock_config.return_value.daemon = DaemonConfig()
+        mock_submit.return_value = {"task_id": 1}
+        args = SimpleNamespace(
+            prompt="test",
+            cwd="/explicit/path",
+            subject="",
+            config=None,
+            file="",
+        )
+        _cmd_run_prompt(args, mock_config.return_value, "test")
+        _, kwargs = mock_submit.call_args
+        assert kwargs.get("work_dir") == "/explicit/path"
+
+
+class TestAttachDetach:
+    """Tests for golem attach / golem detach subcommands."""
+
+    def test_attach_cwd(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("GOLEM_REGISTRY_PATH", str(tmp_path / "repos.json"))
+        monkeypatch.chdir(tmp_path)
+        args = argparse.Namespace(path=None, no_heartbeat=False)
+        result = cmd_attach(args)
+        assert result == 0
+
+        from golem.repo_registry import RepoRegistry
+
+        reg = RepoRegistry(registry_path=tmp_path / "repos.json")
+        repos = reg.list_repos()
+        assert len(repos) == 1
+        assert repos[0]["path"] == str(tmp_path)
+        assert repos[0]["heartbeat"] is True
+
+    def test_attach_explicit_path(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("GOLEM_REGISTRY_PATH", str(tmp_path / "repos.json"))
+        target = tmp_path / "myrepo"
+        target.mkdir()
+        args = argparse.Namespace(path=str(target), no_heartbeat=False)
+        result = cmd_attach(args)
+        assert result == 0
+
+        from golem.repo_registry import RepoRegistry
+
+        reg = RepoRegistry(registry_path=tmp_path / "repos.json")
+        repos = reg.list_repos()
+        assert repos[0]["path"] == str(target)
+
+    def test_attach_no_heartbeat(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("GOLEM_REGISTRY_PATH", str(tmp_path / "repos.json"))
+        monkeypatch.chdir(tmp_path)
+        args = argparse.Namespace(path=None, no_heartbeat=True)
+        cmd_attach(args)
+
+        from golem.repo_registry import RepoRegistry
+
+        reg = RepoRegistry(registry_path=tmp_path / "repos.json")
+        assert reg.list_repos()[0]["heartbeat"] is False
+
+    def test_attach_nonexistent_dir_fails(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("GOLEM_REGISTRY_PATH", str(tmp_path / "repos.json"))
+        args = argparse.Namespace(path="/nonexistent/path/12345", no_heartbeat=False)
+        result = cmd_attach(args)
+        assert result == 1
+
+    def test_detach_cwd(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("GOLEM_REGISTRY_PATH", str(tmp_path / "repos.json"))
+        monkeypatch.chdir(tmp_path)
+        from golem.repo_registry import RepoRegistry
+
+        reg = RepoRegistry(registry_path=tmp_path / "repos.json")
+        reg.attach(str(tmp_path))
+
+        args = argparse.Namespace(path=None)
+        result = cmd_detach(args)
+        assert result == 0
+
+        reg2 = RepoRegistry(registry_path=tmp_path / "repos.json")
+        assert reg2.list_repos() == []
+
+    def test_detach_not_attached_warns(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.setenv("GOLEM_REGISTRY_PATH", str(tmp_path / "repos.json"))
+        args = argparse.Namespace(path="/not/attached")
+        result = cmd_detach(args)
+        assert result == 1
+        assert "not attached" in capsys.readouterr().err.lower()

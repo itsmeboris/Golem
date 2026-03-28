@@ -40,6 +40,7 @@ from .orchestrator import (
     save_sessions,
 )
 from .profile import build_profile
+from .repo_registry import RepoRegistry
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -572,7 +573,7 @@ def _cmd_run_prompt(args: argparse.Namespace, config: Config, prompt_text: str) 
     _ensure_daemon(args, config, port, daemon_cfg=daemon_cfg)
 
     subject = getattr(args, "subject", "") or ""
-    work_dir = getattr(args, "cwd", "") or ""
+    work_dir = getattr(args, "cwd", "") or os.getcwd()
     result = _submit_to_daemon(
         prompt=prompt_text,
         subject=subject,
@@ -1040,6 +1041,35 @@ def cmd_init(args) -> int:
     return run_wizard(output, use_defaults=defaults)
 
 
+def cmd_attach(args) -> int:
+    """Handler for the 'attach' subcommand — register a repo."""
+    path = getattr(args, "path", None) or os.getcwd()
+    path = str(Path(path).resolve())
+    if not Path(path).is_dir():
+        print(f"Error: directory does not exist: {path}", file=sys.stderr)
+        return 1
+
+    heartbeat = not getattr(args, "no_heartbeat", False)
+    reg = RepoRegistry()
+    reg.attach(path, heartbeat=heartbeat)
+    hb_label = "heartbeat on" if heartbeat else "heartbeat off"
+    print(f"  Attached: {path} ({hb_label})")
+    return 0
+
+
+def cmd_detach(args) -> int:
+    """Handler for the 'detach' subcommand — unregister a repo."""
+    path = getattr(args, "path", None) or os.getcwd()
+    path = str(Path(path).resolve())
+
+    reg = RepoRegistry()
+    if not reg.detach(path):
+        print(f"Error: {path} is not attached", file=sys.stderr)
+        return 1
+    print(f"  Detached: {path}")
+    return 0
+
+
 def _add_run_subparser(sub: argparse._SubParsersAction) -> None:
     run_p = sub.add_parser("run", help="Execute a task via single agent")
     run_p.add_argument(
@@ -1191,6 +1221,25 @@ def _build_parser() -> argparse.ArgumentParser:
         "--defaults", action="store_true", help="Use defaults without prompting"
     )
     init_p.set_defaults(func=cmd_init)
+
+    # attach
+    attach_p = sub.add_parser("attach", help="Register a repo with the daemon")
+    attach_p.add_argument(
+        "path", nargs="?", default=None, help="Directory (default: cwd)"
+    )
+    attach_p.add_argument(
+        "--no-heartbeat",
+        action="store_true",
+        help="Attach without heartbeat scanning",
+    )
+    attach_p.set_defaults(func=cmd_attach)
+
+    # detach
+    detach_p = sub.add_parser("detach", help="Unregister a repo from the daemon")
+    detach_p.add_argument(
+        "path", nargs="?", default=None, help="Directory (default: cwd)"
+    )
+    detach_p.set_defaults(func=cmd_detach)
 
     # config
     config_p = sub.add_parser("config", help="View and edit configuration")
