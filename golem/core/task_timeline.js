@@ -17,7 +17,7 @@ async function renderDetail(eventId, prefetchedTrace) {
     if (el) {
       const events = (session && session.event_log) || [];
       const isFailed = session.state === 'failed';
-      const pfColor = isFailed ? 'var(--danger, #e55)' : (PHASE_COLORS.PREFLIGHT || 'var(--cyan, #5eead4)');
+      const pfColor = isFailed ? 'var(--danger)' : (PHASE_COLORS.PREFLIGHT || 'var(--cyan)');
 
       let html = '';
 
@@ -53,7 +53,7 @@ async function renderDetail(eventId, prefetchedTrace) {
         const leadSection = sections.length > 0 && !/^(black|pylint|pytest):/i.test(sections[0]) ? sections.shift() : '';
 
         if (leadSection) {
-          html += `<div class="tl-text" style="color:var(--danger, #e55);font-weight:600;font-size:0.82rem;margin:0.5rem 0">${esc(leadSection.replace(/[;,]\s*$/, '').trim())}</div>`;
+          html += `<div class="tl-text" style="color:var(--danger);font-weight:600;font-size:0.82rem;margin:0.5rem 0">${esc(leadSection.replace(/[;,]\s*$/, '').trim())}</div>`;
         }
 
         for (const section of sections) {
@@ -62,13 +62,13 @@ async function renderDetail(eventId, prefetchedTrace) {
           const body = match ? match[2].replace(/[;,]\s*$/, '').trim() : section.trim();
           const passed = false;
           const icon = passed ? '✓' : '✗';
-          const nameColor = passed ? 'var(--green)' : 'var(--danger, #e55)';
+          const nameColor = passed ? 'var(--green)' : 'var(--danger)';
 
           html += `<div class="tl-tool" onclick="this.classList.toggle('expanded')">
             <div class="tl-tool-header">
               <span class="tl-tool-icon" style="color:${nameColor}">${icon}</span>
               <span class="tl-tool-name" style="color:${nameColor}">${esc(checker)}</span>
-              <span class="tl-tool-summary" style="color:var(--danger, #e55)">${esc(truncText(body, 100))}</span>
+              <span class="tl-tool-summary" style="color:var(--danger)">${esc(truncText(body, 100))}</span>
               <span class="tl-tool-chevron">▸</span>
             </div>
             <div class="tl-tool-body">
@@ -383,7 +383,7 @@ function renderPhaseSidebar(trace, running, session) {
   const preflightEvents = _getPreflightEvents((session && session.event_log) || []);
   let preflightHtml = '';
   if (preflightEvents.length > 0) {
-    const pfColor = PHASE_COLORS.PREFLIGHT || 'var(--cyan, #5eead4)';
+    const pfColor = PHASE_COLORS.PREFLIGHT || 'var(--cyan)';
     const pfFirst = preflightEvents[0].timestamp;
     const pfLast = preflightEvents[preflightEvents.length - 1].timestamp;
     const pfDurMs = pfFirst && pfLast ? (pfLast - pfFirst) * 1000 : 0;
@@ -614,7 +614,7 @@ function renderTimeline(trace, running, session) {
   // Pre-flight phase from session.event_log (collapsed by default for completed tasks)
   const preflightEvents = _getPreflightEvents((session && session.event_log) || []);
   if (preflightEvents.length > 0) {
-    const pfColor = PHASE_COLORS.PREFLIGHT || 'var(--cyan, #5eead4)';
+    const pfColor = PHASE_COLORS.PREFLIGHT || 'var(--cyan)';
     const pfErrors = preflightEvents.filter(ev => ev.is_error);
     const pfSteps = preflightEvents.filter(ev => !ev.is_error);
     const pfCollapsed = !running ? ' collapsed' : '';
@@ -665,7 +665,7 @@ function renderTimeline(trace, running, session) {
       const leadSection = sections.length > 0 && !/^(black|pylint|pytest):/i.test(sections[0]) ? sections.shift() : '';
 
       if (leadSection) {
-        html += `<div class="tl-text" style="color:var(--danger, #e55);font-weight:600;font-size:0.82rem;margin:0.5rem 0">${esc(leadSection.replace(/[;,]\s*$/, '').trim())}</div>`;
+        html += `<div class="tl-text" style="color:var(--danger);font-weight:600;font-size:0.82rem;margin:0.5rem 0">${esc(leadSection.replace(/[;,]\s*$/, '').trim())}</div>`;
       }
 
       for (const section of sections) {
@@ -674,9 +674,9 @@ function renderTimeline(trace, running, session) {
         const body = match ? match[2].replace(/[;,]\s*$/, '').trim() : section.trim();
         html += `<div class="tl-tool" onclick="this.classList.toggle('expanded')">
           <div class="tl-tool-header">
-            <span class="tl-tool-icon" style="color:var(--danger, #e55)">✗</span>
-            <span class="tl-tool-name" style="color:var(--danger, #e55)">${esc(checker)}</span>
-            <span class="tl-tool-summary" style="color:var(--danger, #e55)">${esc(truncText(body, 100))}</span>
+            <span class="tl-tool-icon" style="color:var(--danger)">✗</span>
+            <span class="tl-tool-name" style="color:var(--danger)">${esc(checker)}</span>
+            <span class="tl-tool-summary" style="color:var(--danger)">${esc(truncText(body, 100))}</span>
             <span class="tl-tool-chevron">▸</span>
           </div>
           <div class="tl-tool-body">
@@ -752,8 +752,8 @@ function renderTimeline(trace, running, session) {
     if (result) {
       const status = result.status || (result.success !== false ? 'COMPLETE' : 'BLOCKED');
       const success = status === 'COMPLETE' || status === 'PASS';
-      const bgColor = success ? 'var(--bg-success, #1a2a1a)' : 'var(--bg-danger, #2a1a1a)';
-      const borderColor = success ? 'var(--border-success, #2a4a2a)' : 'var(--border-danger, #4a2a2a)';
+      const bgColor = success ? 'var(--bg-success)' : 'var(--bg-danger)';
+      const borderColor = success ? 'var(--border-success)' : 'var(--border-danger)';
       const statusClass = success ? 'complete' : 'blocked';
       const summaryText = result.summary || '';
 
@@ -766,7 +766,7 @@ function renderTimeline(trace, running, session) {
             const lower = String(val).toLowerCase();
             const pass = val === true || (/\bpass/i.test(lower) && !/\bfail/i.test(lower));
             const skip = lower === 'not_applicable' || lower === 'skipped' || lower === 'not_run';
-            const color = skip ? 'var(--text-muted)' : (pass ? 'var(--green)' : 'var(--danger, #e55)');
+            const color = skip ? 'var(--text-muted)' : (pass ? 'var(--green)' : 'var(--danger)');
             const icon = skip ? '—' : (pass ? '✓' : '✗');
             return `<span style="color:${color};font-size:0.7rem">${icon} ${esc(name)}</span>`;
           }).join('') + '</div>';

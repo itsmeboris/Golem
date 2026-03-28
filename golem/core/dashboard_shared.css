@@ -38,6 +38,13 @@
   --orange-bg: rgba(251,146,60,0.10);
   --purple: #a78bfa;
   --purple-bg: rgba(167,139,250,0.10);
+  --cyan: #22d3ee;
+  --cyan-bg: rgba(34,211,238,0.10);
+  --danger: #f87171;
+  --bg-success: #0a1f15;
+  --border-success: #14532d;
+  --bg-danger: #1f0a0a;
+  --border-danger: #450a0a;
   --font-sans: 'Urbanist', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
   --radius: 10px;
@@ -95,6 +102,13 @@
   --orange-bg: rgba(234,88,12,0.08);
   --purple: #7c3aed;
   --purple-bg: rgba(124,58,237,0.08);
+  --cyan: #0891b2;
+  --cyan-bg: rgba(8,145,178,0.08);
+  --danger: #dc2626;
+  --bg-success: #ecfdf5;
+  --border-success: #a7f3d0;
+  --bg-danger: #fef2f2;
+  --border-danger: #fecaca;
   --font-sans: 'Urbanist', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
   --radius: 10px;
