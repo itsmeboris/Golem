@@ -1494,3 +1494,50 @@ async def test_processing_cleared_after_process_all():
         await mq.process_all()
 
     assert mq._processing == [], "processing must be empty after process_all"
+
+
+class TestMergeAgentCallbackSafety:
+    """REL-004: on_merge_agent callback exceptions are caught; merge fails gracefully."""
+
+    @patch(
+        "golem.merge_queue.merge_in_worktree",
+        return_value=MergeOutcome(
+            sha="",
+            error="merge conflict: conflicting changes",
+            merge_branch="merge-ready/1",
+        ),
+    )
+    @patch("golem.merge_queue.get_changed_files", return_value=[])
+    async def test_callback_exception_during_conflict_resolution_fails_gracefully(
+        self, _gcf, _miw, base_entry
+    ):
+        """If on_merge_agent raises during conflict resolution, merge fails gracefully."""
+        handler = MagicMock(side_effect=RuntimeError("agent crashed"))
+        q = MergeQueue(on_merge_agent=handler)
+        await q.enqueue(base_entry)
+        results = await q.process_all()
+        assert results[0].success is False
+        assert "merge agent error" in results[0].error
+
+    @patch(
+        "golem.merge_queue.merge_in_worktree",
+        return_value=MergeOutcome(
+            sha="sha1",
+            missing_additions=[
+                MissingAddition(file="f.py", expected_lines=["x"], description="d")
+            ],
+            agent_diff="diff text",
+            merge_branch="merge-ready/1",
+        ),
+    )
+    @patch("golem.merge_queue.get_changed_files", return_value=[])
+    async def test_callback_exception_during_missing_additions_fails_gracefully(
+        self, _gcf, _miw, base_entry
+    ):
+        """If on_merge_agent raises during missing additions, merge fails gracefully."""
+        handler = MagicMock(side_effect=ValueError("callback exploded"))
+        q = MergeQueue(on_merge_agent=handler)
+        await q.enqueue(base_entry)
+        results = await q.process_all()
+        assert results[0].success is False
+        assert "merge agent error" in results[0].error

@@ -275,14 +275,25 @@ class MergeQueue:
             # --- Merge failed (empty sha + error) ---
             if not outcome.sha and outcome.error:
                 if self._on_merge_agent and outcome.merge_branch:
-                    recon = await asyncio.to_thread(
-                        self._on_merge_agent,
-                        entry.base_dir,
-                        entry.session_id,
-                        outcome.agent_diff,
-                        entry.changed_files,
-                        [],
-                    )
+                    try:
+                        recon = await asyncio.to_thread(
+                            self._on_merge_agent,
+                            entry.base_dir,
+                            entry.session_id,
+                            outcome.agent_diff,
+                            entry.changed_files,
+                            [],
+                        )
+                    except Exception as exc:  # pylint: disable=broad-exception-caught
+                        logger.error(
+                            "Session %d: merge agent callback failed: %s",
+                            entry.session_id,
+                            exc,
+                        )
+                        recon = ReconciliationResult(
+                            resolved=False,
+                            explanation="merge agent error: %s" % exc,
+                        )
                     if recon.resolved:
                         # Agent resolved — retry merge
                         outcome2 = await asyncio.to_thread(
@@ -326,8 +337,15 @@ class MergeQueue:
                             or "merge failed after agent resolution",
                             conflict_files=entry.changed_files,
                         )
+                    # Agent callback returned unresolved (or raised)
+                    return MergeResult(
+                        session_id=entry.session_id,
+                        success=False,
+                        error=recon.explanation or outcome.error or "merge failed",
+                        conflict_files=entry.changed_files,
+                    )
 
-                # No agent or agent didn't resolve
+                # No agent configured
                 logger.warning(
                     "Session %d: merge failed, branch preserved for manual review",
                     entry.session_id,
@@ -347,14 +365,25 @@ class MergeQueue:
                         entry.session_id,
                         len(outcome.missing_additions),
                     )
-                    recon = await asyncio.to_thread(
-                        self._on_merge_agent,
-                        entry.base_dir,
-                        entry.session_id,
-                        outcome.agent_diff,
-                        [m.file for m in outcome.missing_additions],
-                        outcome.missing_additions,
-                    )
+                    try:
+                        recon = await asyncio.to_thread(
+                            self._on_merge_agent,
+                            entry.base_dir,
+                            entry.session_id,
+                            outcome.agent_diff,
+                            [m.file for m in outcome.missing_additions],
+                            outcome.missing_additions,
+                        )
+                    except Exception as exc:  # pylint: disable=broad-exception-caught
+                        logger.error(
+                            "Session %d: merge agent callback failed: %s",
+                            entry.session_id,
+                            exc,
+                        )
+                        recon = ReconciliationResult(
+                            resolved=False,
+                            explanation="merge agent error: %s" % exc,
+                        )
                     if not recon.resolved:
                         logger.warning(
                             "Session %d: reconciliation failed — %s",
