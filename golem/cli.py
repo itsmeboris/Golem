@@ -995,7 +995,7 @@ def cmd_config(args) -> int:
             for e in errors:
                 print(e, file=sys.stderr)
             return 1
-        pid_file = Path(os.environ.get("GOLEM_DATA_DIR", "data")) / "daemon.pid"
+        pid_file = DATA_DIR / "daemon.pid"
         reloaded = signal_daemon_reload(pid_file)
         if reloaded:
             print("Config saved. Daemon reload triggered.")

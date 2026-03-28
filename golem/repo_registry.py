@@ -1,7 +1,7 @@
 """Repo registry for Golem attach/detach.
 
 Tracks which directories are registered with the daemon.
-Persisted to ~/.config/golem/repos.json (overridable via
+Persisted to ~/.golem/repos.json (overridable via
 GOLEM_REGISTRY_PATH env var).
 """
 
@@ -11,11 +11,12 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .core.config import GOLEM_HOME
 from .types import RepoEntryDict
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_REGISTRY_PATH = Path.home() / ".config" / "golem" / "repos.json"
+_DEFAULT_REGISTRY_PATH = GOLEM_HOME / "repos.json"
 
 
 class RepoRegistry:

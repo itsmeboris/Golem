@@ -5,7 +5,6 @@ Uses prompt_toolkit for full-screen arrow-key navigation.
 
 from __future__ import annotations
 
-import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -17,7 +16,7 @@ from golem.config_editor import (
     signal_daemon_reload,
     update_config,
 )
-from golem.core.config import load_config
+from golem.core.config import DATA_DIR, load_config
 
 try:
     from prompt_toolkit import Application  # pragma: no cover
@@ -153,7 +152,7 @@ def run_config_tui(config_path: Path) -> int:  # pragma: no cover
         if errors:
             state.status_message = "Errors: " + "; ".join(errors)
             return
-        pid_file = Path(os.environ.get("GOLEM_DATA_DIR", "data")) / "daemon.pid"
+        pid_file = DATA_DIR / "daemon.pid"
         reloaded = signal_daemon_reload(pid_file)
         state.unsaved_changes.clear()
         if reloaded:

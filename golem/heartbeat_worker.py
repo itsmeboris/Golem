@@ -125,7 +125,7 @@ class HeartbeatWorker:
     ) -> None:
         self.repo_path = repo_path
         self._config = config
-        self._state_dir = state_dir or DATA_DIR
+        self._state_dir = state_dir or (DATA_DIR / "heartbeat")
 
         # Git detection (cached at init)
         self.is_git = is_git_repo(repo_path)
