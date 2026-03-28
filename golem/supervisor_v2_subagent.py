@@ -32,6 +32,7 @@ from .orchestrator import (
     _now_iso,
 )
 from .profile import GolemProfile
+from .ensemble import EnsembleResult, pick_best_result
 from .validation import ValidationVerdict, run_validation
 from .workdir import resolve_work_dir
 from .utils import format_duration
@@ -905,15 +906,194 @@ class SubagentSupervisor:
             self.task_config.ensemble_on_second_retry
             and self.session.retry_count < self.task_config.max_retries + 1
         ):
-            # Ensemble mode: spawn parallel candidates with different strategies
-            # and pick the best result. Full implementation pending — requires
-            # worktree creation, parallel agent invocation, and result validation.
-            self._slog.info(
-                "Ensemble retry eligible but not yet implemented, escalating"
-            )
-            self._escalate(retry_verdict)
+            await self._run_ensemble_retry(retry_verdict, work_dir, issue_id)
         else:
             self._escalate(retry_verdict)
+
+    # -- Ensemble retry --------------------------------------------------------
+
+    _ENSEMBLE_HINTS = [
+        "Try a different approach than before.",
+        "Focus on the test failures and fix them directly.",
+        "Simplify the implementation — remove complexity.",
+    ]
+
+    async def _run_ensemble_retry(
+        self,
+        verdict: ValidationVerdict,
+        work_dir: str,
+        issue_id: int,
+    ) -> None:
+        """Spawn N parallel candidates with different strategies; commit the best PASS."""
+        n = self.task_config.ensemble_candidates
+        self._emit_event("Ensemble retry: spawning %d parallel candidates" % n)
+        self._slog.info("Ensemble retry: spawning %d candidates for #%s", n, issue_id)
+
+        base_dir = self._base_work_dir or work_dir
+        description = self._get_description(issue_id)
+
+        # Build (worktree_path, candidate_id) pairs
+        candidate_ids = [issue_id * 1000 + i for i in range(n)]
+        worktree_paths: list[str] = []
+
+        async def _run_one(idx: int, cand_work_dir: str) -> tuple[CLIResult, str]:
+            hint = self._ENSEMBLE_HINTS[idx % len(self._ENSEMBLE_HINTS)]
+            concerns_text = (
+                "\n".join("- %s" % c for c in verdict.concerns) or "- (none specified)"
+            )
+            files_text = (
+                "\n".join("- %s" % f for f in verdict.files_to_fix)
+                or "- (none specified)"
+            )
+            tests_text = (
+                "\n".join("- %s" % t for t in verdict.test_failures) or "- (none)"
+            )
+            prompt = (
+                "Ensemble candidate %d/%d. %s\n\n"
+                "The previous attempt received verdict: %s\n"
+                "Summary: %s\n\n"
+                "Concerns:\n%s\n\n"
+                "Files to fix:\n%s\n\n"
+                "Test failures:\n%s\n\n"
+                "Address these issues and produce an updated JSON completion report."
+                % (
+                    idx + 1,
+                    n,
+                    hint,
+                    verdict.verdict,
+                    verdict.summary,
+                    concerns_text,
+                    files_text,
+                    tests_text,
+                )
+            )
+            cli_config = CLIConfig(
+                cli_type=CLIType.CLAUDE,
+                model=self.task_config.orchestrate_model or self.task_config.task_model,
+                max_budget_usd=self.task_config.retry_budget_usd,
+                timeout_seconds=self.task_config.orchestrate_timeout_seconds,
+                mcp_servers=self._get_mcp_servers(self.session.parent_subject),
+                cwd=cand_work_dir,
+            )
+            _write_prompt("golem", "golem-%s-ensemble%d" % (issue_id, idx), prompt)
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                None, invoke_cli_monitored, prompt, cli_config, None
+            )
+            self.session.total_cost_usd += result.cost_usd
+            return result, cand_work_dir
+
+        try:
+            for cid in candidate_ids:
+                wt_path = create_worktree(base_dir, cid)
+                worktree_paths.append(wt_path)
+
+            candidate_outputs = await asyncio.gather(
+                *[_run_one(i, wt) for i, wt in enumerate(worktree_paths)]
+            )
+
+            # Validate each candidate
+            from functools import partial
+
+            loop = asyncio.get_running_loop()
+            ensemble_results: list[EnsembleResult] = []
+            for idx, (cli_result, cand_work_dir) in enumerate(candidate_outputs):
+                val_verdict = await loop.run_in_executor(
+                    None,
+                    partial(
+                        run_validation,
+                        issue_id=candidate_ids[idx],
+                        subject=self.session.parent_subject,
+                        description=description,
+                        session_data=self.session.to_dict(),
+                        work_dir=cand_work_dir,
+                        model=self.task_config.validation_model,
+                        budget_usd=self.task_config.validation_budget_usd,
+                        timeout_seconds=self.task_config.validation_timeout_seconds,
+                        ast_analysis=self.task_config.ast_analysis,
+                    ),
+                )
+                self.session.total_cost_usd += val_verdict.cost_usd
+                self.session.validation_cost_usd += val_verdict.cost_usd
+                ensemble_results.append(
+                    EnsembleResult(
+                        verdict=val_verdict.verdict,
+                        confidence=val_verdict.confidence,
+                        cost_usd=cli_result.cost_usd + val_verdict.cost_usd,
+                        work_dir=cand_work_dir,
+                        summary=val_verdict.summary,
+                    )
+                )
+                self._slog.info(
+                    "Ensemble candidate %d: %s (confidence %.2f)",
+                    idx,
+                    val_verdict.verdict,
+                    val_verdict.confidence,
+                )
+
+            best = pick_best_result(ensemble_results)
+            if best is None or best.verdict != "PASS":
+                self._emit_event(
+                    "Ensemble retry: no PASS found (best=%s), escalating"
+                    % (best.verdict if best else "none")
+                )
+                self._slog.warning(
+                    "Ensemble retry: best verdict=%s — escalating",
+                    best.verdict if best else "none",
+                )
+                # Build a ValidationVerdict from the best ensemble result for escalation
+                best_verdict = ValidationVerdict(
+                    verdict=best.verdict if best else "FAIL",
+                    confidence=best.confidence if best else 0.0,
+                    summary=best.summary if best else "(no results)",
+                )
+                self._escalate(best_verdict)
+                return
+
+            # Copy winning work to main work_dir
+            self._emit_event(
+                "Ensemble retry: PASS — using candidate from %s" % best.work_dir
+            )
+            rsync_result = await asyncio.to_thread(
+                subprocess.run,
+                [
+                    "rsync",
+                    "-a",
+                    "--exclude",
+                    ".git",
+                    best.work_dir + "/",
+                    work_dir + "/",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if rsync_result.returncode != 0:
+                self._slog.error(
+                    "Ensemble rsync failed (rc=%d): %s",
+                    rsync_result.returncode,
+                    rsync_result.stderr.strip(),
+                )
+                self._escalate(
+                    ValidationVerdict(
+                        verdict="FAIL",
+                        confidence=0.0,
+                        summary="rsync failed copying ensemble winner",
+                    )
+                )
+                return
+            # Build a ValidationVerdict from the winning EnsembleResult
+            winning_verdict = ValidationVerdict(
+                verdict=best.verdict,
+                confidence=best.confidence,
+                summary=best.summary,
+            )
+            self.session.supervisor_phase = "committing"
+            await self._commit_and_complete(issue_id, work_dir, winning_verdict)
+
+        finally:
+            for cand_work_dir in worktree_paths:
+                cleanup_worktree(base_dir, cand_work_dir)
 
     # -- Commit & complete -----------------------------------------------------
 

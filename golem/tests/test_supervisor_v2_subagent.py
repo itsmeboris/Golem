@@ -1328,9 +1328,10 @@ class TestExtractPitfalls:
 
 
 class TestEnsembleRetryBranch:
-    """Cover the not-yet-implemented ensemble retry branch."""
+    """Cover the ensemble retry branch wiring in _retry_with_resume."""
 
-    async def test_ensemble_eligible_escalates(self):
+    async def test_ensemble_eligible_calls_run_ensemble_retry(self):
+        """When ensemble_on_second_retry=True and retry count is eligible, call _run_ensemble_retry."""
         cfg = _make_config(
             ensemble_on_second_retry=True,
             ensemble_candidates=2,
@@ -1340,6 +1341,41 @@ class TestEnsembleRetryBranch:
         )
         session = TaskSession(parent_issue_id=42, parent_subject="Test")
         session.retry_count = 0  # will be incremented to 1 inside _retry_with_resume
+        sup = _make_supervisor(session=session, config=cfg)
+
+        mock_cli = _make_cli_result(output_result="done")
+        retry_verdict = MagicMock(verdict="PARTIAL", confidence=0.5)
+        with (
+            patch.object(sup, "_build_retry_prompt", return_value=("retry prompt", "")),
+            patch(
+                "golem.supervisor_v2_subagent.invoke_cli_monitored",
+                return_value=mock_cli,
+            ),
+            patch.object(sup, "_get_description", return_value="desc"),
+            patch.object(
+                sup,
+                "_run_overall_validation",
+                new=AsyncMock(return_value=retry_verdict),
+            ),
+            patch.object(sup, "_run_ensemble_retry", new=AsyncMock()) as mock_ensemble,
+            patch.object(sup, "_save_checkpoint"),
+            patch.object(sup, "_emit_event"),
+            patch("golem.supervisor_v2_subagent._write_prompt"),
+            patch("golem.supervisor_v2_subagent._write_trace"),
+        ):
+            await sup._retry_with_resume(MagicMock(), "/work", 42)
+            mock_ensemble.assert_called_once_with(retry_verdict, "/work", 42)
+
+    async def test_ensemble_disabled_escalates(self):
+        """When ensemble_on_second_retry=False, still escalates on failure."""
+        cfg = _make_config(
+            ensemble_on_second_retry=False,
+            max_retries=2,
+            use_worktrees=False,
+            preflight_verify=False,
+        )
+        session = TaskSession(parent_issue_id=42, parent_subject="Test")
+        session.retry_count = 0
         sup = _make_supervisor(session=session, config=cfg)
 
         mock_cli = _make_cli_result(output_result="done")
@@ -2459,3 +2495,360 @@ class TestHeartbeatGuardConfig:
         cfg = _parse_golem_config(data)
         assert cfg.heartbeat_max_ticks == 0
         assert cfg.heartbeat_max_duration_seconds == 0
+
+
+class TestRunEnsembleRetry:
+    """Tests for SubagentSupervisor._run_ensemble_retry."""
+
+    def _make_ensemble_sup(self, n_candidates=2, **cfg_overrides):
+        cfg = _make_config(
+            ensemble_on_second_retry=True,
+            ensemble_candidates=n_candidates,
+            max_retries=2,
+            use_worktrees=False,
+            **cfg_overrides,
+        )
+        session = TaskSession(parent_issue_id=42, parent_subject="Test task")
+        sup = _make_supervisor(session=session, config=cfg, work_dir_override="/repo")
+        sup._base_work_dir = "/repo"
+        return sup, session
+
+    async def test_picks_best_and_commits(self):
+        """One PASS candidate, one FAIL — picks PASS and commits."""
+        sup, _ = self._make_ensemble_sup(n_candidates=2)
+
+        fail_verdict = ValidationVerdict(verdict="FAIL", confidence=0.2, summary="bad")
+        pass_verdict = ValidationVerdict(verdict="PASS", confidence=0.9, summary="ok")
+
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.create_worktree",
+                side_effect=["/repo/wt/42000", "/repo/wt/42001"],
+            ),
+            patch(
+                "golem.supervisor_v2_subagent.invoke_cli_monitored",
+                return_value=_make_cli_result(cost=0.5),
+            ),
+            patch(
+                "golem.supervisor_v2_subagent.run_validation",
+                side_effect=[fail_verdict, pass_verdict],
+            ),
+            patch.object(sup, "_commit_and_complete", new=AsyncMock()) as mock_commit,
+            patch("golem.supervisor_v2_subagent.cleanup_worktree") as mock_cleanup,
+            patch("golem.supervisor_v2_subagent.subprocess.run") as mock_rsync,
+            patch("golem.supervisor_v2_subagent._write_prompt"),
+            patch("golem.supervisor_v2_subagent._write_trace"),
+        ):
+            mock_rsync.return_value = MagicMock(returncode=0)
+            initial_verdict = ValidationVerdict(
+                verdict="PARTIAL", confidence=0.5, summary="partial"
+            )
+            await sup._run_ensemble_retry(initial_verdict, "/repo/work", 42)
+
+        # Committed using the PASS candidate's result
+        mock_commit.assert_called_once()
+        call_args = mock_commit.call_args
+        assert call_args[0][2].verdict == "PASS"
+
+        # Both worktrees cleaned up
+        assert mock_cleanup.call_count == 2
+
+    async def test_all_fail_escalates(self):
+        """All candidates fail → escalate with best (highest confidence) result."""
+        sup, _ = self._make_ensemble_sup(n_candidates=2)
+
+        fail1 = ValidationVerdict(verdict="FAIL", confidence=0.2, summary="fail1")
+        fail2 = ValidationVerdict(verdict="FAIL", confidence=0.4, summary="fail2")
+
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.create_worktree",
+                side_effect=["/repo/wt/42000", "/repo/wt/42001"],
+            ),
+            patch(
+                "golem.supervisor_v2_subagent.invoke_cli_monitored",
+                return_value=_make_cli_result(cost=0.3),
+            ),
+            patch(
+                "golem.supervisor_v2_subagent.run_validation",
+                side_effect=[fail1, fail2],
+            ),
+            patch.object(sup, "_escalate") as mock_esc,
+            patch("golem.supervisor_v2_subagent.cleanup_worktree"),
+            patch("golem.supervisor_v2_subagent._write_prompt"),
+            patch("golem.supervisor_v2_subagent._write_trace"),
+        ):
+            initial_verdict = ValidationVerdict(
+                verdict="FAIL", confidence=0.1, summary="initial fail"
+            )
+            await sup._run_ensemble_retry(initial_verdict, "/repo/work", 42)
+
+        mock_esc.assert_called_once()
+        escalated_verdict = mock_esc.call_args[0][0]
+        # Escalates with best (highest confidence) result
+        assert escalated_verdict.confidence == 0.4
+
+    async def test_partial_best_escalates(self):
+        """Best candidate is PARTIAL (not PASS) → escalate."""
+        sup, _ = self._make_ensemble_sup(n_candidates=2)
+
+        partial = ValidationVerdict(
+            verdict="PARTIAL", confidence=0.6, summary="partial"
+        )
+        fail = ValidationVerdict(verdict="FAIL", confidence=0.2, summary="fail")
+
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.create_worktree",
+                side_effect=["/repo/wt/42000", "/repo/wt/42001"],
+            ),
+            patch(
+                "golem.supervisor_v2_subagent.invoke_cli_monitored",
+                return_value=_make_cli_result(cost=0.3),
+            ),
+            patch(
+                "golem.supervisor_v2_subagent.run_validation",
+                side_effect=[partial, fail],
+            ),
+            patch.object(sup, "_escalate") as mock_esc,
+            patch("golem.supervisor_v2_subagent.cleanup_worktree"),
+            patch("golem.supervisor_v2_subagent._write_prompt"),
+            patch("golem.supervisor_v2_subagent._write_trace"),
+        ):
+            initial_verdict = ValidationVerdict(
+                verdict="FAIL", confidence=0.1, summary="initial fail"
+            )
+            await sup._run_ensemble_retry(initial_verdict, "/repo/work", 42)
+
+        mock_esc.assert_called_once()
+        escalated_verdict = mock_esc.call_args[0][0]
+        assert escalated_verdict.verdict == "PARTIAL"
+        assert escalated_verdict.confidence == 0.6
+
+    async def test_cleans_up_all_worktrees(self):
+        """cleanup_worktree is called for every candidate, even if one fails."""
+        sup, _ = self._make_ensemble_sup(n_candidates=3)
+
+        pass_v = ValidationVerdict(verdict="PASS", confidence=0.9, summary="ok")
+        fail_v = ValidationVerdict(verdict="FAIL", confidence=0.2, summary="fail")
+
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.create_worktree",
+                side_effect=["/repo/wt/42000", "/repo/wt/42001", "/repo/wt/42002"],
+            ),
+            patch(
+                "golem.supervisor_v2_subagent.invoke_cli_monitored",
+                return_value=_make_cli_result(cost=0.3),
+            ),
+            patch(
+                "golem.supervisor_v2_subagent.run_validation",
+                side_effect=[pass_v, fail_v, fail_v],
+            ),
+            patch.object(sup, "_commit_and_complete", new=AsyncMock()),
+            patch("golem.supervisor_v2_subagent.cleanup_worktree") as mock_cleanup,
+            patch("golem.supervisor_v2_subagent.subprocess.run") as mock_rsync,
+            patch("golem.supervisor_v2_subagent._write_prompt"),
+            patch("golem.supervisor_v2_subagent._write_trace"),
+        ):
+            mock_rsync.return_value = MagicMock(returncode=0)
+            initial_verdict = ValidationVerdict(
+                verdict="FAIL", confidence=0.1, summary="initial fail"
+            )
+            await sup._run_ensemble_retry(initial_verdict, "/repo/work", 42)
+
+        assert mock_cleanup.call_count == 3
+
+    async def test_tracks_total_cost(self):
+        """Costs from all candidates accumulate in session.total_cost_usd."""
+        sup, session = self._make_ensemble_sup(n_candidates=2)
+        initial_cost = session.total_cost_usd
+
+        pass_v = ValidationVerdict(
+            verdict="PASS", confidence=0.9, summary="ok", cost_usd=0.2
+        )
+        fail_v = ValidationVerdict(
+            verdict="FAIL", confidence=0.2, summary="fail", cost_usd=0.1
+        )
+
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.create_worktree",
+                side_effect=["/repo/wt/42000", "/repo/wt/42001"],
+            ),
+            patch(
+                "golem.supervisor_v2_subagent.invoke_cli_monitored",
+                return_value=_make_cli_result(cost=0.5),
+            ),
+            patch(
+                "golem.supervisor_v2_subagent.run_validation",
+                side_effect=[pass_v, fail_v],
+            ),
+            patch.object(sup, "_commit_and_complete", new=AsyncMock()),
+            patch("golem.supervisor_v2_subagent.cleanup_worktree"),
+            patch("golem.supervisor_v2_subagent.subprocess.run") as mock_rsync,
+            patch("golem.supervisor_v2_subagent._write_prompt"),
+            patch("golem.supervisor_v2_subagent._write_trace"),
+        ):
+            mock_rsync.return_value = MagicMock(returncode=0)
+            initial_verdict = ValidationVerdict(
+                verdict="FAIL", confidence=0.1, summary="initial fail"
+            )
+            await sup._run_ensemble_retry(initial_verdict, "/repo/work", 42)
+
+        # 2 CLI calls × 0.5 each + validation cost 0.2 + 0.1
+        # (validation cost is NOT double-counted since run_validation is mocked)
+        assert session.total_cost_usd > initial_cost
+        # Each candidate cost 0.5 CLI + validation cost from run_validation
+        # run_validation side_effect returns VV with cost_usd, those get added
+        expected = initial_cost + (2 * 0.5) + 0.2 + 0.1
+        assert abs(session.total_cost_usd - expected) < 0.001
+        # validation_cost_usd also tracks ensemble validation costs
+        assert abs(session.validation_cost_usd - (0.2 + 0.1)) < 0.001
+
+    async def test_candidate_issue_ids_avoid_collisions(self):
+        """Candidates use synthetic issue IDs (issue_id * 1000 + index)."""
+        sup, _ = self._make_ensemble_sup(n_candidates=2)
+
+        created_ids = []
+
+        def capture_create(_base_dir, issue_id):
+            created_ids.append(issue_id)
+            return f"/repo/wt/{issue_id}"
+
+        pass_v = ValidationVerdict(verdict="PASS", confidence=0.9, summary="ok")
+        fail_v = ValidationVerdict(verdict="FAIL", confidence=0.2, summary="fail")
+
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.create_worktree",
+                side_effect=capture_create,
+            ),
+            patch(
+                "golem.supervisor_v2_subagent.invoke_cli_monitored",
+                return_value=_make_cli_result(cost=0.3),
+            ),
+            patch(
+                "golem.supervisor_v2_subagent.run_validation",
+                side_effect=[pass_v, fail_v],
+            ),
+            patch.object(sup, "_commit_and_complete", new=AsyncMock()),
+            patch("golem.supervisor_v2_subagent.cleanup_worktree"),
+            patch("golem.supervisor_v2_subagent.subprocess.run") as mock_rsync,
+            patch("golem.supervisor_v2_subagent._write_prompt"),
+            patch("golem.supervisor_v2_subagent._write_trace"),
+        ):
+            mock_rsync.return_value = MagicMock(returncode=0)
+            initial_verdict = ValidationVerdict(
+                verdict="FAIL", confidence=0.1, summary="initial fail"
+            )
+            await sup._run_ensemble_retry(initial_verdict, "/repo/work", 42)
+
+        assert created_ids == [42000, 42001]
+
+    async def test_rsync_copies_winner_to_work_dir(self):
+        """When PASS is found, rsync copies the winning worktree to main work_dir."""
+        sup, _ = self._make_ensemble_sup(n_candidates=2)
+
+        fail_v = ValidationVerdict(verdict="FAIL", confidence=0.2, summary="fail")
+        pass_v = ValidationVerdict(verdict="PASS", confidence=0.9, summary="ok")
+
+        rsync_calls = []
+
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.create_worktree",
+                side_effect=["/repo/wt/42000", "/repo/wt/42001"],
+            ),
+            patch(
+                "golem.supervisor_v2_subagent.invoke_cli_monitored",
+                return_value=_make_cli_result(cost=0.3),
+            ),
+            patch(
+                "golem.supervisor_v2_subagent.run_validation",
+                side_effect=[fail_v, pass_v],
+            ),
+            patch.object(sup, "_commit_and_complete", new=AsyncMock()),
+            patch("golem.supervisor_v2_subagent.cleanup_worktree"),
+            patch(
+                "golem.supervisor_v2_subagent.subprocess.run",
+                side_effect=lambda *a, **kw: rsync_calls.append(a[0])
+                or MagicMock(returncode=0),
+            ),
+            patch("golem.supervisor_v2_subagent._write_prompt"),
+            patch("golem.supervisor_v2_subagent._write_trace"),
+        ):
+            initial_verdict = ValidationVerdict(
+                verdict="FAIL", confidence=0.1, summary="initial fail"
+            )
+            await sup._run_ensemble_retry(initial_verdict, "/repo/work", 42)
+
+        assert any("rsync" in str(call) for call in rsync_calls)
+        # Winning worktree is /repo/wt/42001 (PASS candidate index 1)
+        assert any("/repo/wt/42001/" in str(call) for call in rsync_calls)
+        assert any("/repo/work" in str(call) for call in rsync_calls)
+
+    async def test_worktree_creation_failure_cleans_up(self):
+        """If create_worktree fails mid-loop, already-created worktrees are cleaned."""
+        sup, _ = self._make_ensemble_sup(n_candidates=3)
+
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.create_worktree",
+                side_effect=["/repo/wt/42000", RuntimeError("disk full")],
+            ),
+            patch("golem.supervisor_v2_subagent.cleanup_worktree") as mock_cleanup,
+            patch("golem.supervisor_v2_subagent._write_prompt"),
+            patch("golem.supervisor_v2_subagent._write_trace"),
+        ):
+            initial_verdict = ValidationVerdict(
+                verdict="FAIL", confidence=0.1, summary="initial fail"
+            )
+            with pytest.raises(RuntimeError, match="disk full"):
+                await sup._run_ensemble_retry(initial_verdict, "/repo/work", 42)
+
+        # First worktree was created and should be cleaned up
+        mock_cleanup.assert_called_once()
+        cleaned_path = mock_cleanup.call_args[0][1]
+        assert cleaned_path == "/repo/wt/42000"
+
+    async def test_rsync_failure_escalates(self):
+        """If rsync fails copying the winner, escalate instead of committing."""
+        sup, _ = self._make_ensemble_sup(n_candidates=2)
+
+        pass_v = ValidationVerdict(verdict="PASS", confidence=0.9, summary="ok")
+        fail_v = ValidationVerdict(verdict="FAIL", confidence=0.2, summary="fail")
+
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.create_worktree",
+                side_effect=["/repo/wt/42000", "/repo/wt/42001"],
+            ),
+            patch(
+                "golem.supervisor_v2_subagent.invoke_cli_monitored",
+                return_value=_make_cli_result(cost=0.3),
+            ),
+            patch(
+                "golem.supervisor_v2_subagent.run_validation",
+                side_effect=[pass_v, fail_v],
+            ),
+            patch.object(sup, "_escalate") as mock_esc,
+            patch.object(sup, "_commit_and_complete", new=AsyncMock()) as mock_commit,
+            patch("golem.supervisor_v2_subagent.cleanup_worktree"),
+            patch(
+                "golem.supervisor_v2_subagent.subprocess.run",
+                return_value=MagicMock(returncode=1, stderr="rsync: error"),
+            ),
+            patch("golem.supervisor_v2_subagent._write_prompt"),
+            patch("golem.supervisor_v2_subagent._write_trace"),
+        ):
+            initial_verdict = ValidationVerdict(
+                verdict="FAIL", confidence=0.1, summary="initial fail"
+            )
+            await sup._run_ensemble_retry(initial_verdict, "/repo/work", 42)
+
+        mock_esc.assert_called_once()
+        escalated = mock_esc.call_args[0][0]
+        assert escalated.verdict == "FAIL"
+        assert "rsync" in escalated.summary
+        mock_commit.assert_not_called()
