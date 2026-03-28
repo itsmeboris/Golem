@@ -65,6 +65,9 @@ golem/hooks
 golem/objects
 golem/refs
 
+# Temp directories (accidentally committed artifacts)
+tmp*/
+
 # Claude CLI sandbox artifacts
 .bash_profile
 .bashrc
