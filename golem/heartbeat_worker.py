@@ -1003,12 +1003,14 @@ class HeartbeatWorker:
                 self._last_scan_at = datetime.now(timezone.utc).isoformat()
                 return promoted, 1
             if not budget_allows():
+                self._last_scan_at = datetime.now(timezone.utc).isoformat()
                 return [], 0
             candidates = await self._run_tier2(record_spend)
             if candidates:
                 self._last_scan_tier = 2
                 self._last_scan_at = datetime.now(timezone.utc).isoformat()
                 return candidates, 2
+            self._last_scan_at = datetime.now(timezone.utc).isoformat()
             return [], 0
 
         if not budget_allows():
