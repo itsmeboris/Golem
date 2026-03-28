@@ -12,7 +12,8 @@ See https://github.com/itsmeboris/Golem/issues
 - [x] BUG-001: **Merge queue thread safety** — added `_processing` list for in-flight entries; guarded with asyncio.Lock (2026-03-29)
 - [x] BUG-002: **Grace deadline parse crash** — guard empty `grace_deadline` before parsing (GH #61, 2026-03-29)
 - [x] BUG-003: **`_bisect_merges` empty-list guard** — early return None for empty list (GH #62, 2026-03-29)
-- [x] SEC-001: **API file-read path traversal** — validate file path against CWD/work_dir/registry before reading (GH #63, 2026-03-29)
+- [x] SEC-001: **API file-read path traversal** — removed untrusted work_dir from allowed bases; only CWD and registry trusted (GH #63, #84, 2026-03-29)
+- [ ] BUG-005: **Merge queue lock-free reads** — `pending`, `detect_overlaps()`, `snapshot()` read `_queue`/`_processing` without lock; safe in asyncio but breaks if called via `to_thread` (GH #85)
 
 ### P1 — Important
 

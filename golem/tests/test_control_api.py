@@ -357,27 +357,22 @@ class TestSubmitEndpoint:
         assert result["ok"] is True
         assert result["task_id"] == 42
 
-    async def test_submit_with_file(self, _wire_deps, tmp_path):
+    async def test_submit_with_file(self, _wire_deps, tmp_path, monkeypatch):
         from golem.core.control_api import submit_task
 
+        monkeypatch.chdir(tmp_path)
         prompt_file = tmp_path / "task.md"
         prompt_file.write_text("Do something", encoding="utf-8")
-        # Provide work_dir so the file is within an allowed directory.
-        req = _make_request(
-            json_data={"file": str(prompt_file), "work_dir": str(tmp_path)}
-        )
+        req = _make_request(json_data={"file": str(prompt_file)})
         result = await submit_task(req)
         assert result["ok"] is True
 
-    async def test_submit_file_not_found(self, _wire_deps, tmp_path):
+    async def test_submit_file_not_found(self, _wire_deps, tmp_path, monkeypatch):
         from golem.core.control_api import submit_task
 
-        # File is within allowed work_dir but does not exist on disk.
+        monkeypatch.chdir(tmp_path)
         req = _make_request(
-            json_data={
-                "file": str(tmp_path / "nonexistent.md"),
-                "work_dir": str(tmp_path),
-            }
+            json_data={"file": str(tmp_path / "nonexistent.md")}
         )
         with pytest.raises(Exception, match="File not found"):
             await submit_task(req)
@@ -451,16 +446,26 @@ class TestSubmitFilePathTraversal:
         # Path must not be echoed back (information disclosure prevention).
         assert file_arg not in exc_info.value.detail
 
-    async def test_file_within_work_dir_allowed(self, _wire_deps, tmp_path):
+    async def test_work_dir_not_trusted_as_allowed_base(self, _wire_deps, tmp_path):
+        """work_dir from payload must NOT be used as allowed base (bypass via '/')."""
+        from unittest.mock import patch
+
         from golem.core.control_api import submit_task
 
-        prompt_file = tmp_path / "prompt.md"
+        other = tmp_path / "other"
+        other.mkdir()
+        prompt_file = other / "prompt.md"
         prompt_file.write_text("Fix the bug", encoding="utf-8")
-        req = _make_request(
-            json_data={"file": str(prompt_file), "work_dir": str(tmp_path)}
-        )
-        result = await submit_task(req)
-        assert result["ok"] is True
+        # CWD is NOT other, and registry is empty — only work_dir would match.
+        mock_registry = MagicMock()
+        mock_registry.return_value.list_repos.return_value = []
+        with patch("golem.repo_registry.RepoRegistry", mock_registry):
+            req = _make_request(
+                json_data={"file": str(prompt_file), "work_dir": str(other)}
+            )
+            with pytest.raises(Exception) as exc_info:
+                await submit_task(req)
+        assert exc_info.value.status_code == 403
 
     async def test_file_within_cwd_allowed(self, _wire_deps, tmp_path, monkeypatch):
         from golem.core.control_api import submit_task
@@ -476,11 +481,8 @@ class TestSubmitFilePathTraversal:
     async def test_path_traversal_via_dotdot_rejected(self, _wire_deps, tmp_path):
         from golem.core.control_api import submit_task
 
-        # work_dir is tmp_path/subdir, but file tries to escape via ../../etc/passwd.
-        subdir = tmp_path / "subdir"
-        subdir.mkdir()
-        traversal = str(subdir / ".." / ".." / "etc" / "passwd")
-        req = _make_request(json_data={"file": traversal, "work_dir": str(subdir)})
+        traversal = str(tmp_path / ".." / ".." / "etc" / "passwd")
+        req = _make_request(json_data={"file": traversal})
         with pytest.raises(Exception) as exc_info:
             await submit_task(req)
         assert exc_info.value.status_code == 403
@@ -501,46 +503,40 @@ class TestSubmitFilePathTraversal:
         assert result["ok"] is True
 
     async def test_registry_load_failure_falls_back_gracefully(
-        self, _wire_deps, tmp_path
+        self, _wire_deps, tmp_path, monkeypatch
     ):
-        """If RepoRegistry raises, the request still proceeds with CWD/work_dir check."""
+        """If RepoRegistry raises, the request still proceeds with CWD check."""
         from unittest.mock import patch
 
         from golem.core.control_api import submit_task
 
+        monkeypatch.chdir(tmp_path)
         prompt_file = tmp_path / "task.md"
         prompt_file.write_text("Fallback task", encoding="utf-8")
 
         with patch(
             "golem.repo_registry.RepoRegistry", side_effect=RuntimeError("db error")
         ):
-            # File is within work_dir, so it should still be allowed.
-            req = _make_request(
-                json_data={"file": str(prompt_file), "work_dir": str(tmp_path)}
-            )
+            req = _make_request(json_data={"file": str(prompt_file)})
             result = await submit_task(req)
         assert result["ok"] is True
 
     async def test_file_outside_all_allowed_dirs_rejected(
         self, _wire_deps, tmp_path, monkeypatch
     ):
-        """A file outside CWD, work_dir, and all repos is rejected."""
+        """A file outside CWD and all repos is rejected."""
         from unittest.mock import patch
 
         from golem.core.control_api import submit_task
 
-        # Chdir to tmp_path so CWD is known.
         monkeypatch.chdir(tmp_path)
-        # Target a path outside tmp_path — use /tmp itself if it resolves differently.
         other_dir = tmp_path.parent
         target_file = other_dir / "secret.txt"
 
         mock_registry = MagicMock()
         mock_registry.return_value.list_repos.return_value = []
         with patch("golem.repo_registry.RepoRegistry", mock_registry):
-            req = _make_request(
-                json_data={"file": str(target_file), "work_dir": str(tmp_path)}
-            )
+            req = _make_request(json_data={"file": str(target_file)})
             with pytest.raises(Exception) as exc_info:
                 await submit_task(req)
         assert exc_info.value.status_code == 403

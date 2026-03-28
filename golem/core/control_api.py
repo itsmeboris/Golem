@@ -236,12 +236,10 @@ if FASTAPI_AVAILABLE:
         if file_path and not prompt:
             p = Path(file_path).resolve()
 
-            # Build allowed base directories: CWD, work_dir (if given),
-            # and all attached repo paths from the registry.
+            # Build allowed base directories: CWD and attached repo paths.
+            # work_dir is user-supplied and MUST NOT be trusted as an
+            # allowed base (attacker could set work_dir: "/" to bypass).
             allowed_bases = [Path.cwd().resolve()]
-            work_dir_str = payload.get("work_dir", "")
-            if work_dir_str:
-                allowed_bases.append(Path(work_dir_str).resolve())
             try:
                 from golem.repo_registry import RepoRegistry  # noqa: PLC0415
 

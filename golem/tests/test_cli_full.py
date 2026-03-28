@@ -1779,9 +1779,10 @@ class TestControlApiWiring:
 
         wire_control_api(golem_flow=None)
 
-    def test_submit_with_file(self, tmp_path):
+    def test_submit_with_file(self, tmp_path, monkeypatch):
         from golem.core.control_api import submit_task, wire_control_api
 
+        monkeypatch.chdir(tmp_path)
         prompt_file = tmp_path / "plan.md"
         prompt_file.write_text("detailed plan here")
 
@@ -1790,9 +1791,8 @@ class TestControlApiWiring:
         wire_control_api(golem_flow=mock_flow)
 
         mock_request = MagicMock()
-        # Provide work_dir so the file resolves within an allowed directory.
         mock_request.json = AsyncMock(
-            return_value={"file": str(prompt_file), "work_dir": str(tmp_path)}
+            return_value={"file": str(prompt_file)}
         )
 
         result = asyncio.run(submit_task(mock_request))
@@ -1818,20 +1818,17 @@ class TestControlApiWiring:
 
         wire_control_api(golem_flow=None)
 
-    def test_submit_nonexistent_file(self, tmp_path):
+    def test_submit_nonexistent_file(self, tmp_path, monkeypatch):
         from golem.core.control_api import submit_task, wire_control_api
         from fastapi import HTTPException
 
+        monkeypatch.chdir(tmp_path)
         mock_flow = MagicMock()
         wire_control_api(golem_flow=mock_flow)
 
         mock_request = MagicMock()
-        # File is within work_dir (so path check passes) but does not exist on disk.
         mock_request.json = AsyncMock(
-            return_value={
-                "file": str(tmp_path / "nonexistent.md"),
-                "work_dir": str(tmp_path),
-            }
+            return_value={"file": str(tmp_path / "nonexistent.md")}
         )
 
         with pytest.raises(HTTPException) as exc_info:
