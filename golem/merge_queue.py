@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import subprocess
+import threading
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -79,6 +80,7 @@ class MergeQueue:
         self._queue: list[MergeEntry] = []
         self._processing: list[MergeEntry] = []
         self._lock = asyncio.Lock()
+        self._thread_lock = threading.Lock()
         self._on_merge_agent = on_merge_agent
         self._on_state_change = on_state_change
         self._history: deque[tuple[MergeEntry, MergeResult]] = deque(maxlen=50)
@@ -86,7 +88,8 @@ class MergeQueue:
 
     @property
     def pending(self) -> int:
-        return len(self._queue) + len(self._processing)
+        with self._thread_lock:
+            return len(self._queue) + len(self._processing)
 
     async def enqueue(self, entry: MergeEntry) -> None:
         """Add a completed session to the merge queue.
@@ -101,7 +104,8 @@ class MergeQueue:
                 )
             if not entry.queued_at:
                 entry.queued_at = datetime.now(timezone.utc).isoformat()
-            self._queue.append(entry)
+            with self._thread_lock:
+                self._queue.append(entry)
             logger.info(
                 "Enqueued session %d for merge (%d files changed, priority=%d)",
                 entry.session_id,
@@ -112,8 +116,10 @@ class MergeQueue:
 
     def detect_overlaps(self) -> dict[str, list[int]]:
         """Return ``{filepath: [session_ids]}`` for files touched by 2+ sessions."""
+        with self._thread_lock:
+            entries = [*self._queue, *self._processing]
         file_map: dict[str, list[int]] = defaultdict(list)
-        for entry in [*self._queue, *self._processing]:
+        for entry in entries:
             for f in entry.changed_files:
                 file_map[f].append(entry.session_id)
         return {f: sids for f, sids in file_map.items() if len(sids) > 1}
@@ -126,21 +132,25 @@ class MergeQueue:
         otherwise the entry is flagged for manual review.
         """
         async with self._lock:
-            entries = sorted(self._queue, key=lambda e: e.priority)
-            self._queue.clear()
-            self._processing = list(entries)
+            with self._thread_lock:
+                entries = sorted(self._queue, key=lambda e: e.priority)
+                self._queue.clear()
+                self._processing = list(entries)
 
         results: list[MergeResult] = []
         for entry in entries:
             async with self._lock:
-                self._active = entry
+                with self._thread_lock:
+                    self._active = entry
             result = await self._merge_one(entry)
             async with self._lock:
-                self._active = None
-                self._processing = [e for e in self._processing if e is not entry]
+                with self._thread_lock:
+                    self._active = None
+                    self._processing = [e for e in self._processing if e is not entry]
             result.timestamp = datetime.now(timezone.utc).isoformat()
             async with self._lock:
-                self._history.append((entry, result))
+                with self._thread_lock:
+                    self._history.append((entry, result))
             self._notify()
             results.append(result)
 
@@ -183,33 +193,40 @@ class MergeQueue:
                 "timestamp": r.timestamp,
             }
 
+        # Snapshot all shared state under thread lock to prevent torn reads
+        with self._thread_lock:
+            queue_copy = list(self._queue)
+            processing_copy = list(self._processing)
+            active_copy = self._active
+            history_copy = list(self._history)
+
         # Build latest-index map for dedup
         latest_idx: dict[int, int] = {}
-        for i, (e, _r) in enumerate(self._history):
+        for i, (e, _r) in enumerate(history_copy):
             latest_idx[e.session_id] = i
 
         # Derive deferred/conflicts from history, only latest entry per session
         deferred = [
             _entry_dict(e)
-            for i, (e, r) in enumerate(self._history)
+            for i, (e, r) in enumerate(history_copy)
             if r.deferred and not r.success and latest_idx[e.session_id] == i
         ]
         conflicts = [
             _entry_dict(e)
-            for i, (e, r) in enumerate(self._history)
+            for i, (e, r) in enumerate(history_copy)
             if r.conflict_files
             and not r.success
             and not r.deferred
             and latest_idx[e.session_id] == i
         ]
 
-        active = _entry_dict(self._active) if self._active else None
+        active = _entry_dict(active_copy) if active_copy else None
         pending = [
             _entry_dict(e)
-            for e in [*self._queue, *self._processing]
-            if e is not self._active
+            for e in [*queue_copy, *processing_copy]
+            if e is not active_copy
         ]
-        history = [_history_dict(e, r) for e, r in self._history]
+        history = [_history_dict(e, r) for e, r in history_copy]
 
         return MergeQueueSnapshotDict(
             pending=pending,
@@ -225,7 +242,9 @@ class MergeQueue:
         Raises ``ValueError`` if no retryable entry is found.
         """
         async with self._lock:
-            for entry, result in reversed(self._history):
+            with self._thread_lock:
+                history_snapshot = list(self._history)
+            for entry, result in reversed(history_snapshot):
                 if entry.session_id == session_id and not result.success:
                     new_entry = MergeEntry(
                         session_id=entry.session_id,

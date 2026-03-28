@@ -1541,3 +1541,82 @@ class TestMergeAgentCallbackSafety:
         results = await q.process_all()
         assert results[0].success is False
         assert "merge agent error" in results[0].error
+
+
+# ---------------------------------------------------------------------------
+# BUG-005: Thread-safe reads — _thread_lock protects sync read methods
+# ---------------------------------------------------------------------------
+
+import threading
+
+
+class TestThreadLockExists:
+    """_thread_lock attribute is a threading.Lock instance."""
+
+    def test_thread_lock_is_threading_lock(self):
+        mq = MergeQueue()
+        assert hasattr(mq, "_thread_lock"), "_thread_lock attribute must exist"
+        assert isinstance(
+            mq._thread_lock, type(threading.Lock())
+        ), "_thread_lock must be a threading.Lock"
+
+
+class TestSnapshotThreadSafe:
+    """snapshot() is safe to call from asyncio.to_thread while process_all() mutates state."""
+
+    @patch("golem.merge_queue.get_changed_files", return_value=[])
+    async def test_snapshot_concurrent_with_process_all(self, _gcf, tmp_path):
+        """snapshot() called via asyncio.to_thread while process_all() is running must not raise."""
+        mq = MergeQueue()
+        e1 = MergeEntry(
+            session_id=10,
+            branch_name="agent/10",
+            worktree_path=str(tmp_path / "wt1"),
+            base_dir=str(tmp_path / "base"),
+            changed_files=["x.py"],
+        )
+        e2 = MergeEntry(
+            session_id=11,
+            branch_name="agent/11",
+            worktree_path=str(tmp_path / "wt2"),
+            base_dir=str(tmp_path / "base"),
+            changed_files=["y.py"],
+        )
+        mq._queue.extend([e1, e2])
+
+        merge_started = asyncio.Event()
+        allow_finish = asyncio.Event()
+        snapshot_result: list = []
+        snapshot_error: list = []
+
+        async def slow_merge_one(_entry):
+            merge_started.set()
+            await allow_finish.wait()
+            return MergeResult(session_id=_entry.session_id, success=True)
+
+        async def background_snapshot():
+            await merge_started.wait()
+            try:
+                snap = await asyncio.to_thread(mq.snapshot)
+                snapshot_result.append(snap)
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                snapshot_error.append(exc)
+            finally:
+                allow_finish.set()
+
+        with patch.object(mq, "_merge_one", side_effect=slow_merge_one):
+            process_task = asyncio.ensure_future(mq.process_all())
+            snap_task = asyncio.ensure_future(background_snapshot())
+            await asyncio.wait_for(asyncio.gather(process_task, snap_task), timeout=5.0)
+
+        assert not snapshot_error, (
+            "snapshot() raised under concurrent access: %s" % snapshot_error
+        )
+        assert len(snapshot_result) == 1
+        snap = snapshot_result[0]
+        # Snapshot must contain the required keys
+        assert "pending" in snap
+        assert "active" in snap
+        assert "deferred" in snap
+        assert "conflicts" in snap
+        assert "history" in snap

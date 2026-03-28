@@ -13,7 +13,8 @@ See https://github.com/itsmeboris/Golem/issues
 - [x] BUG-002: **Grace deadline parse crash** — guard empty `grace_deadline` before parsing (GH #61, 2026-03-29)
 - [x] BUG-003: **`_bisect_merges` empty-list guard** — early return None for empty list (GH #62, 2026-03-29)
 - [x] SEC-001: **API file-read path traversal** — removed untrusted work_dir from allowed bases; only CWD and registry trusted (GH #63, #84, 2026-03-29)
-- [ ] BUG-005: **Merge queue lock-free reads** — `pending`, `detect_overlaps()`, `snapshot()` read `_queue`/`_processing` without lock; safe in asyncio but breaks if called via `to_thread` (GH #85)
+- [x] BUG-005: **Merge queue lock-free reads** — added threading.Lock for thread-safe reads of shared state (GH #85, 2026-03-29)
+- [ ] SEC-008: **merge_review path traversal** — `_read_file_content()` constructs `Path(base_dir) / filepath` without validating resolved path stays within `base_dir`; attacker-controlled commit content could read arbitrary files (GH #86)
 
 ### P1 — Important
 
@@ -24,6 +25,9 @@ See https://github.com/itsmeboris/Golem/issues
 - [ ] SEC-005: **Dashboard API unauthenticated** — all `/api/*` endpoints (traces, analytics, SSE) publicly accessible; no auth middleware (GH #67)
 - [ ] SEC-006: **MCP tool schema validation** — poisoning defense (GH #18)
 - [ ] SEC-007: **Runtime subprocess sandboxing** — OS-level containment (GH #19)
+- [ ] BUG-006: **Merge agent blind to verification failures** — merge_review prompt lacks verification result context (pytest failures, pylint errors); agent resolves conflicts without knowing what broke (GH #88)
+- [ ] REL-008: **batch_monitor.load() crashes on corrupt state** — `read_text()` + `json.loads()` with no error handling; corrupt JSON crashes batch monitor; `_batches` left partially cleared (GH #89)
+- [ ] SEC-009: **TOCTOU race in API file-read validation** — path validation checked then file read in separate ops; symlink swap between `is_file()` and `read_text()` bypasses containment (GH #90)
 - [x] REL-001: **Notifier delivery resilience** — added retry loop (2 retries + 1s backoff) and ERROR logging on final failure (GH #68, 2026-03-29)
 - [x] REL-002: **Subprocess timeout gaps** — added timeout=30 to _detect_base_branch, timeout=120 to rsync (GH #69, 2026-03-29)
 - [x] REL-003: **Ensemble cost budget guard** — check remaining budget before spawning candidates; escalate if insufficient (GH #70, 2026-03-29)
@@ -47,11 +51,18 @@ See https://github.com/itsmeboris/Golem/issues
 - [ ] FEAT-003: **Dashboard prompt comparison UI** — table/chart for `/api/analytics/by-prompt` data; API exists, frontend missing (GH #82)
 - [ ] FEAT-004: **CLI `logs` command** — no `golem logs` / `golem logs --follow` subcommand; `status --watch` shows counters but not log output (GH #83)
 - [ ] TEST-002: **Mutation testing** — mutmut integration (GH #17)
+- [ ] BUG-007: **Self-update review silently truncates large diffs** — diff truncated to 50,000 chars without warning; review agent sees incomplete picture; truncated portion could hide malicious changes (GH #91)
+- [ ] UX-001: **Dashboard accessibility gaps** — missing ARIA labels, keyboard navigation, `role="dialog"` on modals, focus indicators; `--text-muted` may fail WCAG AA contrast (GH #92)
+- [ ] UX-002: **Dashboard missing pagination and search** — overview renders all sessions without pagination; no search/filter by subject, ID, or state; unusable at scale (GH #93)
+- [ ] UX-003: **No confirmation for destructive dashboard actions** — "Clear failed", admin "Stop"/"Restart" execute immediately; one accidental click clears data or stops flow (GH #94)
+- [ ] TEST-003: **Lint modules lack tests** — all 9 `golem/lint/` modules have no dedicated test files; pre-commit hooks can crash silently or produce false positives (GH #95)
 
 ### P3 — Low Priority
 
 - [ ] FEAT-005: **Evaluator-optimizer loop** — prompt auto-tuning (GH #15)
 - [ ] FEAT-006: **OpenTelemetry tracing** — agent observability (GH #16)
+- [ ] UX-004: **Frontend fetch calls lack timeout** — all `fetch()` in task_api.js/task_live.js have no AbortSignal; network hangs block UI indefinitely (GH #96)
+- [ ] TEST-004: **Multiple source modules lack test files** — 13+ modules (batch_cli, profile, prompts, core/slack, backends/github, notifiers, mcp_tools) have no dedicated tests; error paths unverified (GH #97)
 
 ---
 
