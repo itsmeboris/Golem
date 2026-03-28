@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import shutil
+import subprocess
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -57,6 +58,7 @@ from .self_update import SelfUpdateManager
 from .profile import GolemProfile, build_profile
 from .prompts import FilePromptProvider
 from .validation import ValidationVerdict
+from .verifier import run_verification
 
 SUBMISSIONS_DIR = DATA_DIR / "submissions"
 
@@ -1058,6 +1060,93 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         self._save_state()
         return {"group_id": group_id, "tasks": results}
 
+    def _bisect_merges(self, work_dir: str, ordered_shas: list[str]) -> "int | None":
+        """Binary-search ordered_shas to find the first failing commit.
+
+        For each bisect step, creates a temporary git worktree at the midpoint
+        SHA, runs run_verification(), and discards the worktree.
+
+        Returns the index of the first failing commit, or None if the search
+        is inconclusive (e.g. a verification step raises an exception).
+        A single-SHA list always returns 0 immediately.
+
+        NOTE: This method is synchronous and must be dispatched to a thread
+        via run_in_executor. The subprocess calls block the thread, not the
+        event loop.
+        """
+        if len(ordered_shas) == 1:
+            return 0
+
+        bisect_dir = Path(work_dir) / "data" / "agent" / "bisect-worktrees"
+        lo = 0
+        hi = len(ordered_shas) - 1
+
+        while lo < hi:
+            mid = (lo + hi) // 2
+            sha = ordered_shas[mid]
+            wt_path = str(bisect_dir / sha)
+            try:
+                subprocess.run(
+                    ["git", "worktree", "add", "--detach", wt_path, sha],
+                    cwd=work_dir,
+                    check=False,
+                    capture_output=True,
+                )
+                result = run_verification(wt_path)
+            except Exception:  # pylint: disable=broad-exception-caught
+                logger.warning("Bisect step failed for SHA %s; aborting bisect", sha)
+                subprocess.run(
+                    ["git", "worktree", "remove", "--force", wt_path],
+                    cwd=work_dir,
+                    check=False,
+                    capture_output=True,
+                )
+                return None
+            else:
+                subprocess.run(
+                    ["git", "worktree", "remove", "--force", wt_path],
+                    cwd=work_dir,
+                    check=False,
+                    capture_output=True,
+                )
+
+            if result.passed:
+                # Midpoint is good → culprit is after mid
+                lo = mid + 1
+            else:
+                # Midpoint is bad → culprit is at or before mid
+                hi = mid
+
+        # Verify the terminal SHA actually fails before blaming it
+        # (guards against non-deterministic / flaky test scenarios)
+        sha = ordered_shas[lo]
+        wt_path = str(bisect_dir / sha)
+        try:
+            subprocess.run(
+                ["git", "worktree", "add", "--detach", wt_path, sha],
+                cwd=work_dir,
+                check=False,
+                capture_output=True,
+            )
+            result = run_verification(wt_path)
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.warning("Bisect final-verify failed for SHA %s; inconclusive", sha)
+            subprocess.run(
+                ["git", "worktree", "remove", "--force", wt_path],
+                cwd=work_dir,
+                check=False,
+                capture_output=True,
+            )
+            return None
+        else:
+            subprocess.run(
+                ["git", "worktree", "remove", "--force", wt_path],
+                cwd=work_dir,
+                check=False,
+                capture_output=True,
+            )
+        return lo if not result.passed else None
+
     async def run_integration_validation(
         self, group_id: str, work_dir: str
     ) -> ValidationVerdict:
@@ -1103,6 +1192,61 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                 "Integration validation failed for %s: %s",
                 group_id,
                 verdict.summary,
+            )
+            verdict = await self._run_bisect_on_verdict(
+                verdict, group_sessions, work_dir
+            )
+
+        return verdict
+
+    async def _run_bisect_on_verdict(
+        self,
+        verdict: ValidationVerdict,
+        group_sessions: list,
+        work_dir: str,
+    ) -> ValidationVerdict:
+        """Attempt to identify the culprit merge via binary search.
+
+        Skips bisect when there is only one session (culprit is obvious) or
+        when no sessions have a commit_sha. Enriches the verdict summary and
+        files_to_fix with culprit information when found.
+        """
+        # Sort by merge time (ISO strings sort correctly)
+        ordered = sorted(group_sessions, key=lambda s: s.merge_queued_at or "")
+        shas_with_session = [(s.commit_sha, s) for s in ordered if s.commit_sha]
+
+        if not shas_with_session:
+            # Cannot bisect without commit SHAs
+            return verdict
+
+        ordered_shas = [sha for sha, _ in shas_with_session]
+        ordered_sessions = [s for _, s in shas_with_session]
+
+        if len(ordered_shas) == 1:
+            # Only one session — culprit is obvious, no bisect needed
+            culprit = ordered_sessions[0]
+            verdict.summary = (
+                f"#{culprit.parent_issue_id} ({culprit.parent_subject}) "
+                f"introduced the breakage. {verdict.summary}"
+            )
+            return verdict
+
+        culprit_idx = await asyncio.get_running_loop().run_in_executor(
+            None,
+            lambda: self._bisect_merges(work_dir, ordered_shas),
+        )
+
+        if culprit_idx is None:
+            return verdict
+
+        culprit = ordered_sessions[culprit_idx]
+        verdict.summary = (
+            f"#{culprit.parent_issue_id} ({culprit.parent_subject}) "
+            f"introduced the breakage. {verdict.summary}"
+        )
+        if culprit.files_changed:
+            verdict.files_to_fix = list(
+                dict.fromkeys(verdict.files_to_fix + culprit.files_changed)
             )
 
         return verdict

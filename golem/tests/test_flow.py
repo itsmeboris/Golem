@@ -1833,3 +1833,495 @@ class TestVerifiedRef:
         flow._set_verified_ref("first")
         flow._set_verified_ref("second")
         assert flow._verified_ref == "second"
+
+class TestBisectMerges:
+    """Tests for GolemFlow._bisect_merges() binary search helper."""
+
+    def _make_flow_bisect(self, monkeypatch, tmp_path):
+        return _make_flow(monkeypatch, tmp_path)
+
+    def test_bisect_finds_culprit_second_of_three(self, monkeypatch, tmp_path):
+        """3 SHAs: first passes, second breaks, third also fails → culprit is index 1."""
+        from unittest.mock import patch
+
+        from golem.verifier import VerificationResult
+
+        flow = self._make_flow_bisect(monkeypatch, tmp_path)
+
+        # sha0 passes, sha1 fails (first failure), sha2 also fails
+        results = {
+            "sha0": VerificationResult(
+                passed=True,
+                black_ok=True,
+                black_output="",
+                pylint_ok=True,
+                pylint_output="",
+                pytest_ok=True,
+                pytest_output="",
+            ),
+            "sha1": VerificationResult(
+                passed=False,
+                black_ok=False,
+                black_output="error",
+                pylint_ok=True,
+                pylint_output="",
+                pytest_ok=True,
+                pytest_output="",
+            ),
+        }
+
+        worktrees_created = []
+        worktrees_removed = []
+
+        def fake_run(cmd, **_kwargs):
+            mock = MagicMock()
+            mock.returncode = 0
+            if cmd[:3] == ["git", "worktree", "add"]:
+                worktrees_created.append(cmd[4])  # the wt_path
+            elif cmd[:3] == ["git", "worktree", "remove"]:
+                worktrees_removed.append(cmd[4])  # the wt_path
+            return mock
+
+        def fake_verify(wt_path, **_kwargs):
+            # The wt_path ends with the SHA
+            for sha, result in results.items():
+                if sha in wt_path:
+                    return result
+            # Default: passes
+            return VerificationResult(
+                passed=True,
+                black_ok=True,
+                black_output="",
+                pylint_ok=True,
+                pylint_output="",
+                pytest_ok=True,
+                pytest_output="",
+            )
+
+        with patch("golem.flow.subprocess.run", side_effect=fake_run):
+            with patch("golem.flow.run_verification", side_effect=fake_verify):
+                result = flow._bisect_merges(str(tmp_path), ["sha0", "sha1", "sha2"])
+
+        assert result == 1
+
+    def test_bisect_single_sha_returns_zero(self, monkeypatch, tmp_path):
+        """Single SHA always returns 0 — no bisect needed."""
+        flow = self._make_flow_bisect(monkeypatch, tmp_path)
+        result = flow._bisect_merges(str(tmp_path), ["only-sha"])
+        assert result == 0
+
+    def test_bisect_cleans_up_worktrees_on_success(self, monkeypatch, tmp_path):
+        """Every worktree created during bisect is removed (happy path)."""
+        from unittest.mock import patch
+
+        from golem.verifier import VerificationResult
+
+        flow = self._make_flow_bisect(monkeypatch, tmp_path)
+
+        worktrees_created = []
+        worktrees_removed = []
+
+        def fake_run(cmd, **_kwargs):
+            mock = MagicMock()
+            mock.returncode = 0
+            if cmd[:3] == ["git", "worktree", "add"]:
+                worktrees_created.append(cmd[4])  # wt_path
+            elif cmd[:3] == ["git", "worktree", "remove"]:
+                worktrees_removed.append(cmd[4])  # wt_path
+            return mock
+
+        call_count = [0]
+
+        def fake_verify(_wt_path, **_kwargs):
+            call_count[0] += 1
+            # First call passes (midpoint of [sha0, sha1, sha2] = sha1 passes),
+            # meaning culprit is in right half → sha2
+            passed = call_count[0] == 1
+            return VerificationResult(
+                passed=passed,
+                black_ok=passed,
+                black_output="",
+                pylint_ok=True,
+                pylint_output="",
+                pytest_ok=True,
+                pytest_output="",
+            )
+
+        with patch("golem.flow.subprocess.run", side_effect=fake_run):
+            with patch("golem.flow.run_verification", side_effect=fake_verify):
+                flow._bisect_merges(str(tmp_path), ["sha0", "sha1", "sha2"])
+
+        # Every created worktree must be removed
+        assert worktrees_created
+        assert len(worktrees_created) == len(worktrees_removed)
+
+    def test_bisect_cleans_up_worktrees_on_error(self, monkeypatch, tmp_path):
+        """Worktrees are cleaned up even if run_verification raises."""
+        from unittest.mock import patch
+
+        flow = self._make_flow_bisect(monkeypatch, tmp_path)
+
+        worktrees_created = []
+        worktrees_removed = []
+
+        def fake_run(cmd, **_kwargs):
+            mock = MagicMock()
+            mock.returncode = 0
+            if cmd[:3] == ["git", "worktree", "add"]:
+                worktrees_created.append(cmd[4])  # wt_path
+            elif cmd[:3] == ["git", "worktree", "remove"]:
+                worktrees_removed.append(cmd[4])  # wt_path
+            return mock
+
+        def fake_verify(_wt_path, **_kwargs):
+            raise RuntimeError("verification exploded")
+
+        with patch("golem.flow.subprocess.run", side_effect=fake_run):
+            with patch("golem.flow.run_verification", side_effect=fake_verify):
+                result = flow._bisect_merges(str(tmp_path), ["sha0", "sha1"])
+
+        # Bisect should return None when verification errors, not raise
+        assert result is None
+        # Any worktrees that were created must still be removed
+        assert len(worktrees_created) == len(worktrees_removed)
+
+    def test_bisect_all_pass_returns_none(self, monkeypatch, tmp_path):
+        """If all intermediate checks pass (flaky failure), final verify returns None."""
+        from unittest.mock import patch
+
+        from golem.verifier import VerificationResult
+
+        flow = self._make_flow_bisect(monkeypatch, tmp_path)
+
+        passing = VerificationResult(
+            passed=True,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="",
+        )
+
+        def fake_run(_cmd, **_kwargs):
+            mock = MagicMock()
+            mock.returncode = 0
+            return mock
+
+        with patch("golem.flow.subprocess.run", side_effect=fake_run):
+            with patch("golem.flow.run_verification", return_value=passing):
+                result = flow._bisect_merges(str(tmp_path), ["sha0", "sha1", "sha2"])
+
+        # All pass including final verify → inconclusive
+        assert result is None
+
+    def test_bisect_final_verify_exception_returns_none(self, monkeypatch, tmp_path):
+        """If the final verification step raises, bisect returns None."""
+        from unittest.mock import patch
+
+        from golem.verifier import VerificationResult
+
+        flow = self._make_flow_bisect(monkeypatch, tmp_path)
+
+        verify_calls = [0]
+
+        def fake_run(_cmd, **_kwargs):
+            mock = MagicMock()
+            mock.returncode = 0
+            return mock
+
+        def fake_verify(_wt_path, **_kwargs):
+            verify_calls[0] += 1
+            # Midpoint check passes; final verify raises
+            if verify_calls[0] == 1:
+                return VerificationResult(
+                    passed=True,
+                    black_ok=True,
+                    black_output="",
+                    pylint_ok=True,
+                    pylint_output="",
+                    pytest_ok=True,
+                    pytest_output="",
+                )
+            raise RuntimeError("final verify crashed")
+
+        with patch("golem.flow.subprocess.run", side_effect=fake_run):
+            with patch("golem.flow.run_verification", side_effect=fake_verify):
+                result = flow._bisect_merges(str(tmp_path), ["sha0", "sha1", "sha2"])
+
+        assert result is None
+
+
+class TestRunIntegrationValidation:
+    """Tests for GolemFlow.run_integration_validation()."""
+
+    async def test_pass_no_bisect(self, monkeypatch, tmp_path):
+        """When initial validation passes, bisect is never triggered."""
+        from unittest.mock import patch
+
+        from golem.validation import ValidationVerdict
+
+        flow = _make_flow(monkeypatch, tmp_path)
+
+        session = TaskSession(
+            parent_issue_id=10,
+            parent_subject="Fix A",
+            group_id="grp-1",
+            commit_sha="sha10",
+            merge_queued_at="2024-01-01T10:00:00",
+        )
+        flow._sessions[10] = session
+
+        passing_verdict = ValidationVerdict(
+            verdict="PASS", confidence=0.95, summary="All good"
+        )
+
+        def fake_run_validation(**_kwargs):
+            return passing_verdict
+
+        with patch("golem.flow.GolemFlow._bisect_merges") as mock_bisect:
+            with patch("golem.validation.run_validation", fake_run_validation):
+                result = await flow.run_integration_validation("grp-1", str(tmp_path))
+
+        assert result.verdict == "PASS"
+        mock_bisect.assert_not_called()
+
+    async def test_fail_triggers_bisect(self, monkeypatch, tmp_path):
+        """When initial validation fails and multiple sessions exist, bisect runs."""
+        from unittest.mock import patch
+
+        from golem.validation import ValidationVerdict
+
+        flow = _make_flow(monkeypatch, tmp_path)
+
+        for iid, sha, ts in [
+            (10, "sha10", "2024-01-01T10:00:00"),
+            (11, "sha11", "2024-01-01T11:00:00"),
+        ]:
+            flow._sessions[iid] = TaskSession(
+                parent_issue_id=iid,
+                parent_subject=f"Task {iid}",
+                group_id="grp-2",
+                commit_sha=sha,
+                merge_queued_at=ts,
+            )
+
+        failing_verdict = ValidationVerdict(
+            verdict="FAIL", confidence=0.3, summary="Tests broke"
+        )
+
+        bisect_calls = []
+
+        def fake_bisect(_work_dir, ordered_shas):
+            bisect_calls.append(ordered_shas)
+            return 1  # sha11 is the culprit
+
+        monkeypatch.setattr(flow, "_bisect_merges", fake_bisect)
+
+        with patch("golem.validation.run_validation", lambda **_kw: failing_verdict):
+            result = await flow.run_integration_validation("grp-2", str(tmp_path))
+
+        assert result.verdict == "FAIL"
+        assert len(bisect_calls) == 1
+        assert bisect_calls[0] == ["sha10", "sha11"]
+
+    async def test_fail_single_session_skips_bisect(self, monkeypatch, tmp_path):
+        """With only 1 session, bisect is skipped but culprit is still reported."""
+        from unittest.mock import patch
+
+        from golem.validation import ValidationVerdict
+
+        flow = _make_flow(monkeypatch, tmp_path)
+
+        flow._sessions[10] = TaskSession(
+            parent_issue_id=10,
+            parent_subject="Fix bug",
+            group_id="grp-3",
+            commit_sha="sha10",
+            merge_queued_at="2024-01-01T10:00:00",
+        )
+
+        failing_verdict = ValidationVerdict(
+            verdict="FAIL", confidence=0.2, summary="Tests broke"
+        )
+
+        bisect_calls = []
+
+        def fake_bisect(_work_dir, ordered_shas):
+            bisect_calls.append(ordered_shas)
+            return 0
+
+        monkeypatch.setattr(flow, "_bisect_merges", fake_bisect)
+
+        with patch("golem.validation.run_validation", lambda **_kw: failing_verdict):
+            result = await flow.run_integration_validation("grp-3", str(tmp_path))
+
+        assert result.verdict == "FAIL"
+        # Bisect not called for single session
+        assert not bisect_calls
+        # Culprit is obvious — it must be mentioned in the summary
+        assert "#10" in result.summary
+
+    async def test_fail_no_commit_shas_skips_bisect(self, monkeypatch, tmp_path):
+        """Sessions without commit_sha cannot be bisected — bisect is skipped."""
+        from unittest.mock import patch
+
+        from golem.validation import ValidationVerdict
+
+        flow = _make_flow(monkeypatch, tmp_path)
+
+        for iid in [20, 21]:
+            flow._sessions[iid] = TaskSession(
+                parent_issue_id=iid,
+                parent_subject=f"Task {iid}",
+                group_id="grp-4",
+                commit_sha="",  # no SHA
+                merge_queued_at="2024-01-01T10:00:00",
+            )
+
+        failing_verdict = ValidationVerdict(
+            verdict="FAIL", confidence=0.2, summary="Tests broke"
+        )
+
+        bisect_calls = []
+
+        def fake_bisect(_work_dir, ordered_shas):
+            bisect_calls.append(ordered_shas)
+            return 0
+
+        monkeypatch.setattr(flow, "_bisect_merges", fake_bisect)
+
+        with patch("golem.validation.run_validation", lambda **_kw: failing_verdict):
+            result = await flow.run_integration_validation("grp-4", str(tmp_path))
+
+        assert result.verdict == "FAIL"
+        assert not bisect_calls
+
+    async def test_bisect_enriches_verdict_with_culprit(self, monkeypatch, tmp_path):
+        """When bisect identifies a culprit, summary is enriched and files_to_fix set."""
+        from unittest.mock import patch
+
+        from golem.validation import ValidationVerdict
+
+        flow = _make_flow(monkeypatch, tmp_path)
+
+        for iid, sha, ts in [
+            (30, "sha30", "2024-01-01T10:00:00"),
+            (31, "sha31", "2024-01-01T11:00:00"),
+        ]:
+            flow._sessions[iid] = TaskSession(
+                parent_issue_id=iid,
+                parent_subject=f"Task {iid}",
+                group_id="grp-5",
+                commit_sha=sha,
+                merge_queued_at=ts,
+                files_changed=["golem/fix.py"] if iid == 31 else [],
+            )
+
+        failing_verdict = ValidationVerdict(
+            verdict="FAIL", confidence=0.2, summary="Tests broke"
+        )
+
+        def fake_bisect(_work_dir, _ordered_shas):
+            return 1  # sha31 is the culprit (index 1)
+
+        monkeypatch.setattr(flow, "_bisect_merges", fake_bisect)
+
+        with patch("golem.validation.run_validation", lambda **_kw: failing_verdict):
+            result = await flow.run_integration_validation("grp-5", str(tmp_path))
+
+        assert "#31" in result.summary
+        assert "Task 31" in result.summary
+        assert "golem/fix.py" in result.files_to_fix
+
+    async def test_bisect_inconclusive_leaves_verdict_intact(
+        self, monkeypatch, tmp_path
+    ):
+        """When bisect returns None (inconclusive), verdict is returned unchanged."""
+        from unittest.mock import patch
+
+        from golem.validation import ValidationVerdict
+
+        flow = _make_flow(monkeypatch, tmp_path)
+
+        for iid, sha, ts in [
+            (40, "sha40", "2024-01-01T10:00:00"),
+            (41, "sha41", "2024-01-01T11:00:00"),
+        ]:
+            flow._sessions[iid] = TaskSession(
+                parent_issue_id=iid,
+                parent_subject=f"Task {iid}",
+                group_id="grp-6",
+                commit_sha=sha,
+                merge_queued_at=ts,
+            )
+
+        failing_verdict = ValidationVerdict(
+            verdict="FAIL", confidence=0.2, summary="Tests broke"
+        )
+
+        def fake_bisect(_work_dir, _ordered_shas):
+            return None  # inconclusive
+
+        monkeypatch.setattr(flow, "_bisect_merges", fake_bisect)
+
+        with patch("golem.validation.run_validation", lambda **_kw: failing_verdict):
+            result = await flow.run_integration_validation("grp-6", str(tmp_path))
+
+        assert result.verdict == "FAIL"
+        assert result.summary == "Tests broke"
+
+    async def test_bisect_run_in_thread(self, monkeypatch, tmp_path):
+        """_bisect_merges is called via run_in_executor (thread), not directly."""
+        import asyncio as asyncio_module
+        from unittest.mock import patch
+
+        from golem.validation import ValidationVerdict
+
+        flow = _make_flow(monkeypatch, tmp_path)
+
+        for iid, sha, ts in [
+            (50, "sha50", "2024-01-01T10:00:00"),
+            (51, "sha51", "2024-01-01T11:00:00"),
+        ]:
+            flow._sessions[iid] = TaskSession(
+                parent_issue_id=iid,
+                parent_subject=f"Task {iid}",
+                group_id="grp-7",
+                commit_sha=sha,
+                merge_queued_at=ts,
+            )
+
+        failing_verdict = ValidationVerdict(
+            verdict="FAIL", confidence=0.2, summary="Tests broke"
+        )
+
+        bisect_calls = []
+
+        def fake_bisect(_work_dir, ordered_shas):
+            bisect_calls.append(ordered_shas)
+            return None
+
+        monkeypatch.setattr(flow, "_bisect_merges", fake_bisect)
+
+        # Patch the loop's run_in_executor to track calls
+        call_log = []
+        loop = asyncio_module.get_event_loop()
+        original_run_in_executor = loop.run_in_executor
+
+        async def tracking_run_in_executor(_executor, fn, *args):
+            call_log.append(fn)
+            return fn(*args) if args else fn()
+
+        loop.run_in_executor = tracking_run_in_executor
+        try:
+            with patch(
+                "golem.validation.run_validation", lambda **_kw: failing_verdict
+            ):
+                await flow.run_integration_validation("grp-7", str(tmp_path))
+        finally:
+            loop.run_in_executor = original_run_in_executor
+
+        # run_in_executor was used (at least for bisect)
+        assert call_log
+        assert bisect_calls
