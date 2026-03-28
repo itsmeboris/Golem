@@ -543,6 +543,12 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             for dep_id in session.depends_on:
                 dep = self._sessions.get(dep_id)
                 if dep is None:
+                    logger.warning(
+                        "Dependency #%d for session #%d not found; "
+                        "treating as satisfied",
+                        dep_id,
+                        session.parent_issue_id,
+                    )
                     continue
                 if dep.state == TaskSessionState.FAILED:
                     raise TaskExecutionError(

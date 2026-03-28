@@ -170,7 +170,7 @@ class TestDependencyWaiting:
         assert tick_count >= 1
         assert session.state == TaskSessionState.COMPLETED
 
-    async def test_deps_none_skipped(self, monkeypatch, tmp_path):
+    async def test_deps_none_skipped_with_warning(self, monkeypatch, tmp_path, caplog):
         flow = _make_flow(monkeypatch, tmp_path, tick_interval=0)
         flow._running = True
 
@@ -195,8 +195,13 @@ class TestDependencyWaiting:
 
         monkeypatch.setattr(TaskOrchestrator, "tick", completing_tick)
 
-        await flow._run_session(102)
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="golem.flow"):
+            await flow._run_session(102)
         assert session.state == TaskSessionState.COMPLETED
+        assert "Dependency #999" in caplog.text
+        assert "not found" in caplog.text
 
     async def test_dep_failed_raises(self, monkeypatch, tmp_path):
         from golem.errors import TaskExecutionError

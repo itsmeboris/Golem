@@ -383,7 +383,8 @@ class SelfUpdateManager:
         worktree_path = "/tmp/golem-verify"
         try:
             # Create worktree
-            subprocess.run(
+            await asyncio.to_thread(
+                subprocess.run,
                 ["git", "worktree", "add", worktree_path, sha],
                 check=True,
                 capture_output=True,
@@ -402,7 +403,8 @@ class SelfUpdateManager:
             return False
         finally:
             try:
-                subprocess.run(
+                await asyncio.to_thread(
+                    subprocess.run,
                     ["git", "worktree", "remove", "--force", worktree_path],
                     capture_output=True,
                     text=True,
@@ -420,14 +422,16 @@ class SelfUpdateManager:
         logger.info("Applying update %s (strategy=%s)", sha[:8], strategy)
         try:
             if strategy == "merged_only":
-                subprocess.run(
+                await asyncio.to_thread(
+                    subprocess.run,
                     ["git", "merge", "--ff-only", sha],
                     check=True,
                     capture_output=True,
                     text=True,
                 )
             else:
-                subprocess.run(
+                await asyncio.to_thread(
+                    subprocess.run,
                     ["git", "reset", "--hard", sha],
                     check=True,
                     capture_output=True,

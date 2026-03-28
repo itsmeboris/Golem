@@ -316,7 +316,8 @@ class SubagentSupervisor:
                 self._slog.info("Pre-flight verification passed (%.1fs)", vr.duration_s)
                 # Record HEAD SHA as verified for future tasks
                 if self._on_verified_ref:
-                    result = subprocess.run(
+                    result = await asyncio.to_thread(
+                        subprocess.run,
                         ["git", "rev-parse", "HEAD"],
                         capture_output=True,
                         text=True,
