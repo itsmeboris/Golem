@@ -209,6 +209,15 @@ class HeartbeatManager:
                 "Heartbeat reconciliation: removed %d stale inflight IDs", removed
             )
 
+        # Also reconcile worker inflight lists
+        for worker in self._workers.values():
+            w_before = len(worker._inflight_task_ids)
+            worker._inflight_task_ids = [
+                tid for tid in worker._inflight_task_ids if tid in active_session_ids
+            ]
+            if len(worker._inflight_task_ids) < w_before:
+                worker.save_state()
+
     # -- State persistence ----------------------------------------------------
 
     def save_state(self) -> None:
@@ -363,9 +372,10 @@ class HeartbeatManager:
         self._registry.load()
         current_paths = {r["path"] for r in self._registry.heartbeat_repos()}
 
-        # Remove workers for detached repos
+        # Remove workers for detached repos (save state first)
         for path in list(self._workers):
             if path not in current_paths:
+                self._workers[path].save_state()
                 del self._workers[path]
 
         # Create workers for new repos

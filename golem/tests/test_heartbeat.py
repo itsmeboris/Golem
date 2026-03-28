@@ -1695,3 +1695,89 @@ class TestMultiRepoScheduler:
         assert snap["last_scan_tier"] == 2
         assert snap["candidate_count"] == 1
         assert snap["dedup_entry_count"] == 1
+
+    async def test_run_multi_repo_tick_advances_past_dry_worker(self, tmp_path):
+        """Multi-repo tick skips a dry worker and submits from the next."""
+        reg_path = tmp_path / "registry.json"
+        from golem.repo_registry import RepoRegistry
+
+        reg = RepoRegistry(registry_path=reg_path)
+        reg.attach("/fake/dry_repo")
+        reg.attach("/fake/productive_repo")
+        mgr = _make_manager(tmp_path)
+        mgr._registry = reg
+        with patch("golem.heartbeat_worker.is_git_repo", return_value=False):
+            mgr._sync_workers()
+
+        # First worker returns nothing, second returns a candidate
+        dry_worker = mgr._workers["/fake/dry_repo"]
+        dry_worker.tick = AsyncMock(return_value=([], 0))
+
+        productive_worker = mgr._workers["/fake/productive_repo"]
+        candidate = {
+            "id": "github:99",
+            "subject": "fix",
+            "body": "body",
+            "automatable": True,
+            "confidence": 0.9,
+            "complexity": "small",
+            "reason": "easy",
+            "tier": 1,
+            "category": "bugfix",
+        }
+        productive_worker.tick = AsyncMock(return_value=([candidate], 1))
+
+        mgr._flow = MagicMock()
+        mgr._flow._profile = MagicMock()
+        mgr._flow.submit_task.return_value = {"task_id": 555}
+
+        await mgr._run_multi_repo_tick()
+
+        # Dry worker was tried but produced nothing
+        dry_worker.tick.assert_awaited_once()
+        # Productive worker was tried and submitted
+        productive_worker.tick.assert_awaited_once()
+        mgr._flow.submit_task.assert_called_once()
+        assert 555 in mgr._inflight_task_ids
+
+    def test_reconcile_inflight_cleans_worker_lists(self, tmp_path):
+        """reconcile_inflight removes stale IDs from worker lists too."""
+        reg_path = tmp_path / "registry.json"
+        from golem.repo_registry import RepoRegistry
+
+        reg = RepoRegistry(registry_path=reg_path)
+        reg.attach("/fake/repo1")
+        mgr = _make_manager(tmp_path)
+        mgr._registry = reg
+        with patch("golem.heartbeat_worker.is_git_repo", return_value=False):
+            mgr._sync_workers()
+
+        worker = mgr._workers["/fake/repo1"]
+        worker._inflight_task_ids = [100, 200]
+        mgr._inflight_task_ids = [100, 200]
+
+        # Only session 100 is still active
+        mgr.reconcile_inflight({100})
+        assert mgr._inflight_task_ids == [100]
+        assert worker._inflight_task_ids == [100]
+
+    def test_sync_workers_saves_state_before_removal(self, tmp_path):
+        """_sync_workers saves worker state before removing detached repos."""
+        reg_path = tmp_path / "registry.json"
+        from golem.repo_registry import RepoRegistry
+
+        reg = RepoRegistry(registry_path=reg_path)
+        reg.attach("/fake/repo1")
+        mgr = _make_manager(tmp_path)
+        mgr._registry = reg
+        with patch("golem.heartbeat_worker.is_git_repo", return_value=False):
+            mgr._sync_workers()
+
+        worker = mgr._workers["/fake/repo1"]
+        worker.save_state = MagicMock()
+
+        reg.detach("/fake/repo1")
+        mgr._sync_workers()
+
+        worker.save_state.assert_called_once()
+        assert "/fake/repo1" not in mgr._workers

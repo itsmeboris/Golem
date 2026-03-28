@@ -999,12 +999,15 @@ class HeartbeatWorker:
         if self._tier1_owed:
             promoted = await self._run_tier1_promoted(task_source, record_spend)
             if promoted:
+                self._last_scan_tier = 1
+                self._last_scan_at = datetime.now(timezone.utc).isoformat()
                 return promoted, 1
             if not budget_allows():
                 return [], 0
             candidates = await self._run_tier2(record_spend)
             if candidates:
                 self._last_scan_tier = 2
+                self._last_scan_at = datetime.now(timezone.utc).isoformat()
                 return candidates, 2
             return [], 0
 
@@ -1014,11 +1017,15 @@ class HeartbeatWorker:
         candidates = await self._run_tier1(task_source, record_spend)
         if candidates:
             self._last_scan_tier = 1
+            self._last_scan_at = datetime.now(timezone.utc).isoformat()
             return candidates, 1
 
         candidates = await self._run_tier2(record_spend)
         if candidates:
             self._last_scan_tier = 2
+            self._last_scan_at = datetime.now(timezone.utc).isoformat()
             return candidates, 2
 
+        # No candidates found, but still record scan time
+        self._last_scan_at = datetime.now(timezone.utc).isoformat()
         return [], 0
