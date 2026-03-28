@@ -665,3 +665,28 @@ class TestAttachDetach:
         result = cmd_detach(args)
         assert result == 1
         assert "not attached" in capsys.readouterr().err.lower()
+
+
+class TestEnsureGolemHome:
+    """Tests for _ensure_golem_home auto-init."""
+
+    def test_creates_config_when_missing(self, tmp_path, monkeypatch):
+        golem_home = tmp_path / "golem_home"
+        monkeypatch.setattr("golem.cli.GOLEM_HOME", golem_home)
+        from golem.cli import _ensure_golem_home
+
+        _ensure_golem_home()
+        assert golem_home.exists()
+        assert (golem_home / "config.yaml").exists()
+        content = (golem_home / "config.yaml").read_text()
+        assert "profile: local" in content
+
+    def test_does_not_overwrite_existing(self, tmp_path, monkeypatch):
+        golem_home = tmp_path / "golem_home"
+        golem_home.mkdir()
+        (golem_home / "config.yaml").write_text("custom: true")
+        monkeypatch.setattr("golem.cli.GOLEM_HOME", golem_home)
+        from golem.cli import _ensure_golem_home
+
+        _ensure_golem_home()
+        assert (golem_home / "config.yaml").read_text() == "custom: true"

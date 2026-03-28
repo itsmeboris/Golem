@@ -115,6 +115,8 @@ class TestFindConfigPath:
         config_file = tmp_path / "config.yaml"
         config_file.touch()
         monkeypatch.chdir(tmp_path)
+        # Ensure GOLEM_HOME doesn't shadow the cwd config
+        monkeypatch.setattr("golem.core.config.GOLEM_HOME", tmp_path / "no_golem")
         result = _find_config_path(None)
         assert result == config_file
 
@@ -122,16 +124,36 @@ class TestFindConfigPath:
         config_file = tmp_path / "config.yml"
         config_file.touch()
         monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr("golem.core.config.GOLEM_HOME", tmp_path / "no_golem")
         result = _find_config_path(None)
         assert result == config_file
+
+    def test_finds_golem_home_config(self, tmp_path, monkeypatch):
+        golem_home = tmp_path / "golem_home"
+        golem_home.mkdir()
+        (golem_home / "config.yaml").touch()
+        monkeypatch.setattr("golem.core.config.GOLEM_HOME", golem_home)
+        monkeypatch.chdir(tmp_path)  # cwd has no config
+        result = _find_config_path(None)
+        assert result == golem_home / "config.yaml"
+
+    def test_golem_home_takes_priority_over_cwd(self, tmp_path, monkeypatch):
+        golem_home = tmp_path / "golem_home"
+        golem_home.mkdir()
+        (golem_home / "config.yaml").write_text("golem_home: true")
+        (tmp_path / "config.yaml").write_text("cwd: true")
+        monkeypatch.setattr("golem.core.config.GOLEM_HOME", golem_home)
+        monkeypatch.chdir(tmp_path)
+        result = _find_config_path(None)
+        assert result == golem_home / "config.yaml"
 
     def test_returns_none_when_nothing_found(self, tmp_path, monkeypatch):
         empty = tmp_path / "empty"
         empty.mkdir()
         monkeypatch.chdir(empty)
+        monkeypatch.setattr("golem.core.config.GOLEM_HOME", tmp_path / "no_golem")
         result = _find_config_path(None)
-        if result is not None:
-            assert not result.exists()
+        assert result is None
 
 
 class TestLoadConfig:
