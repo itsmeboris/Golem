@@ -17,7 +17,6 @@ Items use GitHub issue numbers as IDs. See https://github.com/itsmeboris/Golem/i
 | #17 | [ ]    | **Mutation testing** — mutmut integration                                                                                                                   | Low    | P3             |
 | #18 | [ ]    | **MCP tool schema validation** — poisoning defense                                                                                                          | Medium | P2             |
 | #19 | [ ]    | **Runtime subprocess sandboxing** — OS-level containment                                                                                                    | High   | P2             |
-| #38 | [ ]    | **Merge queue thread safety** — `snapshot()`, `pending`, `detect_overlaps()` read shared state without lock while `process_all()` mutates it concurrently    | High   | P1             |
 | #39 | [ ]    | **Notifier fix_iteration passthrough** — `flow.py` never passes `fix_iteration` to `notify_completed`/`notify_escalated` despite protocol requiring it       | High   | P2             |
 | #40 | [ ]    | **Notifier delivery resilience** — all notifiers silently swallow exceptions; no retry, no failure signaling to orchestrator, no timeout on send operations   | High   | P2             |
 | #41 | [ ]    | **Subprocess timeout gaps** — `_detect_base_branch()` and `rsync` in ensemble have no timeout; can hang indefinitely on unresponsive repos                   | Medium | P2             |
@@ -51,3 +50,4 @@ Items use GitHub issue numbers as IDs. See https://github.com/itsmeboris/Golem/i
 | #35 | **Checkpoint restoration resilience** — corrupt checkpoints backed up to `.corrupt`, logged at ERROR; evidence preserved for recovery                         | Medium | P3       |
 | #37 | **Heartbeat state cleanup on detach** — `delete_state()` on HeartbeatWorker; `_sync_workers()` cleans up files for detached repos                            | Low    | P3       |
 | #21 | **Worktree and data isolation** — gitignore `data/`, ensure all tests use `tmp_path` instead of real repo for worktree/merge ops                            | High   | P0       |
+| #38 | **Merge queue thread safety** — `snapshot()`, `pending`, `detect_overlaps()` read shared state without lock; added `_processing` list for in-flight entries  | High   | P1       |

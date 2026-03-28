@@ -77,6 +77,7 @@ class MergeQueue:
         on_state_change: "Callable[[], None] | None" = None,
     ):
         self._queue: list[MergeEntry] = []
+        self._processing: list[MergeEntry] = []
         self._lock = asyncio.Lock()
         self._on_merge_agent = on_merge_agent
         self._on_state_change = on_state_change
@@ -85,7 +86,7 @@ class MergeQueue:
 
     @property
     def pending(self) -> int:
-        return len(self._queue)
+        return len(self._queue) + len(self._processing)
 
     async def enqueue(self, entry: MergeEntry) -> None:
         """Add a completed session to the merge queue.
@@ -112,7 +113,7 @@ class MergeQueue:
     def detect_overlaps(self) -> dict[str, list[int]]:
         """Return ``{filepath: [session_ids]}`` for files touched by 2+ sessions."""
         file_map: dict[str, list[int]] = defaultdict(list)
-        for entry in self._queue:
+        for entry in [*self._queue, *self._processing]:
             for f in entry.changed_files:
                 file_map[f].append(entry.session_id)
         return {f: sids for f, sids in file_map.items() if len(sids) > 1}
@@ -127,14 +128,19 @@ class MergeQueue:
         async with self._lock:
             entries = sorted(self._queue, key=lambda e: e.priority)
             self._queue.clear()
+            self._processing = list(entries)
 
         results: list[MergeResult] = []
         for entry in entries:
-            self._active = entry
+            async with self._lock:
+                self._active = entry
             result = await self._merge_one(entry)
-            self._active = None
+            async with self._lock:
+                self._active = None
+                self._processing = [e for e in self._processing if e is not entry]
             result.timestamp = datetime.now(timezone.utc).isoformat()
-            self._history.append((entry, result))
+            async with self._lock:
+                self._history.append((entry, result))
             self._notify()
             results.append(result)
 
@@ -198,7 +204,11 @@ class MergeQueue:
         ]
 
         active = _entry_dict(self._active) if self._active else None
-        pending = [_entry_dict(e) for e in self._queue]
+        pending = [
+            _entry_dict(e)
+            for e in [*self._queue, *self._processing]
+            if e is not self._active
+        ]
         history = [_history_dict(e, r) for e, r in self._history]
 
         return MergeQueueSnapshotDict(
@@ -214,20 +224,25 @@ class MergeQueue:
 
         Raises ``ValueError`` if no retryable entry is found.
         """
-        for entry, result in reversed(self._history):
-            if entry.session_id == session_id and not result.success:
-                new_entry = MergeEntry(
-                    session_id=entry.session_id,
-                    branch_name=entry.branch_name,
-                    worktree_path=entry.worktree_path,
-                    base_dir=entry.base_dir,
-                    changed_files=list(entry.changed_files),
-                    priority=entry.priority,
-                    group_id=entry.group_id,
+        async with self._lock:
+            for entry, result in reversed(self._history):
+                if entry.session_id == session_id and not result.success:
+                    new_entry = MergeEntry(
+                        session_id=entry.session_id,
+                        branch_name=entry.branch_name,
+                        worktree_path=entry.worktree_path,
+                        base_dir=entry.base_dir,
+                        changed_files=list(entry.changed_files),
+                        priority=entry.priority,
+                        group_id=entry.group_id,
+                    )
+                    break
+            else:
+                raise ValueError(
+                    "No retryable entry found for session_id %d" % session_id
                 )
-                await self.enqueue(new_entry)
-                return new_entry
-        raise ValueError("No retryable entry found for session_id %d" % session_id)
+        await self.enqueue(new_entry)
+        return new_entry
 
     @staticmethod
     def _is_transient(exc: Exception) -> bool:

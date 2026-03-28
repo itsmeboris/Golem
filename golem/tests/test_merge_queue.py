@@ -1321,3 +1321,176 @@ async def test_retry_calls_on_state_change():
         await mq.retry(42)
 
     assert cb.call_count >= 1
+
+
+# ---------------------------------------------------------------------------
+# Task 38: Thread safety — _processing field, pending/detect_overlaps/snapshot
+# ---------------------------------------------------------------------------
+
+
+async def test_pending_includes_inflight_entries():
+    """pending counts entries currently being processed by process_all()."""
+    mq = MergeQueue()
+    entry = MergeEntry(
+        session_id=1,
+        branch_name="agent/1",
+        worktree_path="/tmp/wt",
+        base_dir="/tmp/base",
+        changed_files=["a.py"],
+    )
+    merge_started = asyncio.Event()
+    allow_finish = asyncio.Event()
+
+    async def slow_merge_one(_entry):
+        merge_started.set()
+        await allow_finish.wait()
+        return MergeResult(session_id=_entry.session_id, success=True)
+
+    mq._queue.append(entry)
+
+    with patch.object(mq, "_merge_one", side_effect=slow_merge_one):
+        task = asyncio.ensure_future(mq.process_all())
+        await asyncio.wait_for(merge_started.wait(), timeout=2.0)
+        # While merge is in flight: _queue is empty but entry should be counted
+        assert mq.pending == 1, (
+            "pending must include in-flight entries; got %d" % mq.pending
+        )
+        allow_finish.set()
+        await task
+
+
+async def test_detect_overlaps_includes_inflight_entries():
+    """detect_overlaps() includes entries currently being merged."""
+    mq = MergeQueue()
+    e1 = MergeEntry(
+        session_id=1,
+        branch_name="agent/1",
+        worktree_path="/tmp/wt1",
+        base_dir="/tmp/base",
+        changed_files=["shared.py"],
+    )
+    e2 = MergeEntry(
+        session_id=2,
+        branch_name="agent/2",
+        worktree_path="/tmp/wt2",
+        base_dir="/tmp/base",
+        changed_files=["shared.py"],
+    )
+    merge_started = asyncio.Event()
+    allow_finish = asyncio.Event()
+    call_count = 0
+
+    async def slow_merge_one(_entry):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            merge_started.set()
+            await allow_finish.wait()
+        return MergeResult(session_id=_entry.session_id, success=True)
+
+    mq._queue.extend([e1, e2])
+
+    with patch.object(mq, "_merge_one", side_effect=slow_merge_one):
+        task = asyncio.ensure_future(mq.process_all())
+        await asyncio.wait_for(merge_started.wait(), timeout=2.0)
+        # Both e1 and e2 are in _processing (all moved atomically)
+        overlaps = mq.detect_overlaps()
+        assert "shared.py" in overlaps, (
+            "detect_overlaps must see in-flight entry; got %r" % overlaps
+        )
+        assert 1 in overlaps["shared.py"]
+        allow_finish.set()
+        await task
+
+
+async def test_snapshot_shows_inflight_entries():
+    """snapshot() active and pending reflect in-flight state correctly."""
+    mq = MergeQueue()
+    e1 = MergeEntry(
+        session_id=5,
+        branch_name="agent/5",
+        worktree_path="/tmp/wt1",
+        base_dir="/tmp/base",
+        changed_files=["x.py"],
+    )
+    e2 = MergeEntry(
+        session_id=6,
+        branch_name="agent/6",
+        worktree_path="/tmp/wt2",
+        base_dir="/tmp/base",
+        changed_files=["y.py"],
+    )
+    merge_started = asyncio.Event()
+    allow_finish = asyncio.Event()
+    call_count = 0
+
+    async def slow_merge_one(_entry):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            merge_started.set()
+            await allow_finish.wait()
+        return MergeResult(session_id=_entry.session_id, success=True)
+
+    mq._queue.extend([e1, e2])
+
+    with patch.object(mq, "_merge_one", side_effect=slow_merge_one):
+        task = asyncio.ensure_future(mq.process_all())
+        await asyncio.wait_for(merge_started.wait(), timeout=2.0)
+        snap = mq.snapshot()
+        # Active entry (e1) should be in active, not pending
+        assert snap["active"] is not None
+        assert snap["active"]["session_id"] == 5
+        # Remaining in-flight entry (e2) should be in pending
+        pending_ids = [p["session_id"] for p in snap["pending"]]
+        assert 6 in pending_ids, (
+            "snapshot pending must include non-active in-flight entry; got %r"
+            % pending_ids
+        )
+        assert 5 not in pending_ids, "active entry must not be in pending"
+        allow_finish.set()
+        await task
+
+
+async def test_retry_acquires_lock_safely():
+    """retry() holds the lock while iterating history and releases before enqueue."""
+    mq = MergeQueue()
+    entry = MergeEntry(
+        session_id=99,
+        branch_name="agent/99",
+        worktree_path="/tmp/wt",
+        base_dir="/tmp/base",
+        changed_files=["f.py"],
+    )
+    result = MergeResult(session_id=99, success=False, error="conflict")
+    mq._history.append((entry, result))
+
+    # If retry() tries to acquire the lock while holding it, it would deadlock.
+    # We verify it completes successfully (no deadlock / no ValueError).
+    with patch("golem.merge_queue.get_changed_files", return_value=["f.py"]):
+        re_entry = await asyncio.wait_for(mq.retry(99), timeout=2.0)
+
+    assert re_entry.session_id == 99
+    assert mq.pending == 1
+
+
+async def test_processing_cleared_after_process_all():
+    """_processing is empty after process_all() completes."""
+    mq = MergeQueue()
+    entry = MergeEntry(
+        session_id=3,
+        branch_name="agent/3",
+        worktree_path="/tmp/wt",
+        base_dir="/tmp/base",
+        changed_files=["z.py"],
+    )
+    mq._queue.append(entry)
+
+    with patch.object(
+        mq,
+        "_merge_one",
+        return_value=MergeResult(session_id=3, success=True),
+    ):
+        await mq.process_all()
+
+    assert mq._processing == [], "processing must be empty after process_all"
