@@ -374,7 +374,7 @@ class HeartbeatManager:
                 worker = HeartbeatWorker(
                     repo_path=path,
                     config=self._config,
-                    state_dir=self._state_dir,
+                    state_dir=self._state_dir / "heartbeat",
                 )
                 worker.load_state()
                 self._workers[path] = worker
