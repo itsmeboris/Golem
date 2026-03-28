@@ -25,7 +25,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [ ] SEC-007: **Runtime subprocess sandboxing** — OS-level containment (GH #19)
 - [ ] REL-001: **Notifier delivery resilience** — all notifiers silently swallow exceptions; no retry, no failure signaling to orchestrator, no timeout on send operations (GH #68)
 - [x] REL-002: **Subprocess timeout gaps** — added timeout=30 to _detect_base_branch, timeout=120 to rsync (GH #69, 2026-03-29)
-- [ ] REL-003: **Ensemble cost budget guard** — ensemble retry spawns N parallel candidates without checking `max_cost_usd` first; can exceed budget (GH #70)
+- [x] REL-003: **Ensemble cost budget guard** — check remaining budget before spawning candidates; escalate if insufficient (GH #70, 2026-03-29)
 - [x] REL-004: **Merge queue callback safety** — both callback sites wrapped in try/except with graceful fallback (GH #71, 2026-03-29)
 - [ ] REL-005: **Validation loop cost overflow** — base orchestrate can exceed `max_cost_usd`; subsequent validation runs proceed without budget guard (GH #72)
 - [ ] REL-006: **Checkpoint phase not cleared on recovery** — crashed sessions keep stale checkpoint phase on reset to DETECTED; may skip phases on restart (GH #73)

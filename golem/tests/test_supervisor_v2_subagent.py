@@ -2915,3 +2915,138 @@ class TestRunEnsembleRetry:
             await sup._run_ensemble_retry(initial_verdict, "/repo/work", 42)
 
         assert captured_kwargs.get("timeout") == 120
+
+    async def test_budget_guard_skips_ensemble_when_over_budget(self):
+        """REL-003: ensemble is skipped when estimated cost exceeds remaining budget."""
+        # 2 candidates × $5.0 retry_budget = $10.0 estimated, but only $3.0 remaining
+        sup, session = self._make_ensemble_sup(
+            n_candidates=2,
+            max_fix_cost_usd=10.0,
+            retry_budget_usd=5.0,
+        )
+        session.total_cost_usd = 7.0  # remaining = 10.0 - 7.0 = 3.0 < 10.0 estimated
+
+        mock_escalate = MagicMock()
+        with (
+            patch.object(sup, "_escalate", new=mock_escalate),
+            patch.object(sup, "_emit_event"),
+            patch("golem.supervisor_v2_subagent.create_worktree") as mock_wt,
+        ):
+            initial_verdict = ValidationVerdict(
+                verdict="FAIL", confidence=0.1, summary="fail"
+            )
+            await sup._run_ensemble_retry(initial_verdict, "/repo/work", 42)
+
+        # Ensemble was not started (no worktrees created)
+        mock_wt.assert_not_called()
+        # Escalated with a FAIL verdict indicating budget exceeded
+        mock_escalate.assert_called_once()
+        escalated = mock_escalate.call_args[0][0]
+        assert escalated.verdict == "FAIL"
+        assert "budget" in escalated.summary
+
+    async def test_budget_guard_allows_ensemble_when_sufficient_budget(self):
+        """REL-003: ensemble proceeds normally when budget is sufficient."""
+        # 2 candidates × $2.0 retry_budget = $4.0 estimated, $8.0 remaining
+        sup, session = self._make_ensemble_sup(
+            n_candidates=2,
+            max_fix_cost_usd=10.0,
+            retry_budget_usd=2.0,
+        )
+        session.total_cost_usd = 2.0  # remaining = 10.0 - 2.0 = 8.0 >= 4.0 estimated
+
+        pass_verdict = ValidationVerdict(verdict="PASS", confidence=0.9, summary="ok")
+
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.create_worktree",
+                side_effect=["/repo/wt/42000", "/repo/wt/42001"],
+            ),
+            patch(
+                "golem.supervisor_v2_subagent.invoke_cli_monitored",
+                return_value=_make_cli_result(cost=0.5),
+            ),
+            patch(
+                "golem.supervisor_v2_subagent.run_validation",
+                side_effect=[pass_verdict, pass_verdict],
+            ),
+            patch.object(sup, "_commit_and_complete", new=AsyncMock()) as mock_commit,
+            patch("golem.supervisor_v2_subagent.cleanup_worktree"),
+            patch(
+                "golem.supervisor_v2_subagent.subprocess.run",
+                return_value=MagicMock(returncode=0),
+            ),
+            patch("golem.supervisor_v2_subagent._write_prompt"),
+            patch("golem.supervisor_v2_subagent._write_trace"),
+        ):
+            initial_verdict = ValidationVerdict(
+                verdict="FAIL", confidence=0.1, summary="fail"
+            )
+            await sup._run_ensemble_retry(initial_verdict, "/repo/work", 42)
+
+        # Ensemble ran and committed
+        mock_commit.assert_called_once()
+
+    async def test_budget_guard_skips_when_zero_remaining(self):
+        """REL-003: ensemble is skipped when remaining budget is exactly zero."""
+        sup, session = self._make_ensemble_sup(
+            n_candidates=2,
+            max_fix_cost_usd=5.0,
+            retry_budget_usd=1.0,
+        )
+        session.total_cost_usd = 5.0  # remaining = 0.0
+
+        mock_escalate = MagicMock()
+        with (
+            patch.object(sup, "_escalate", new=mock_escalate),
+            patch.object(sup, "_emit_event"),
+            patch("golem.supervisor_v2_subagent.create_worktree") as mock_wt,
+        ):
+            initial_verdict = ValidationVerdict(
+                verdict="FAIL", confidence=0.1, summary="fail"
+            )
+            await sup._run_ensemble_retry(initial_verdict, "/repo/work", 42)
+
+        mock_wt.assert_not_called()
+        mock_escalate.assert_called_once()
+
+    async def test_budget_guard_unlimited_when_max_cost_zero(self):
+        """REL-003: max_fix_cost_usd=0 means no limit — ensemble proceeds."""
+        sup, session = self._make_ensemble_sup(
+            n_candidates=2,
+            max_fix_cost_usd=0.0,  # unlimited
+            retry_budget_usd=999.0,
+        )
+        session.total_cost_usd = 9999.0  # would exceed any finite limit
+
+        pass_verdict = ValidationVerdict(verdict="PASS", confidence=0.9, summary="ok")
+
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.create_worktree",
+                side_effect=["/repo/wt/42000", "/repo/wt/42001"],
+            ),
+            patch(
+                "golem.supervisor_v2_subagent.invoke_cli_monitored",
+                return_value=_make_cli_result(cost=0.5),
+            ),
+            patch(
+                "golem.supervisor_v2_subagent.run_validation",
+                side_effect=[pass_verdict, pass_verdict],
+            ),
+            patch.object(sup, "_commit_and_complete", new=AsyncMock()) as mock_commit,
+            patch("golem.supervisor_v2_subagent.cleanup_worktree"),
+            patch(
+                "golem.supervisor_v2_subagent.subprocess.run",
+                return_value=MagicMock(returncode=0),
+            ),
+            patch("golem.supervisor_v2_subagent._write_prompt"),
+            patch("golem.supervisor_v2_subagent._write_trace"),
+        ):
+            initial_verdict = ValidationVerdict(
+                verdict="FAIL", confidence=0.1, summary="fail"
+            )
+            await sup._run_ensemble_retry(initial_verdict, "/repo/work", 42)
+
+        # Budget guard should not have blocked ensemble
+        mock_commit.assert_called_once()

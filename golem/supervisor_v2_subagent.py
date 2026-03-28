@@ -926,6 +926,28 @@ class SubagentSupervisor:
     ) -> None:
         """Spawn N parallel candidates with different strategies; commit the best PASS."""
         n = self.task_config.ensemble_candidates
+
+        # Budget guard: check if we can afford N candidates before spawning
+        max_cost = self.task_config.max_fix_cost_usd
+        if max_cost > 0:
+            remaining = max_cost - self.session.total_cost_usd
+            estimated_cost = n * self.task_config.retry_budget_usd
+            if estimated_cost > remaining:
+                self._slog.warning(
+                    "Ensemble retry skipped: estimated cost $%.2f exceeds remaining budget $%.2f",
+                    estimated_cost,
+                    remaining,
+                )
+                self._escalate(
+                    ValidationVerdict(
+                        verdict="FAIL",
+                        confidence=0.0,
+                        summary="ensemble retry skipped — would exceed budget ($%.2f remaining, $%.2f estimated)"
+                        % (remaining, estimated_cost),
+                    )
+                )
+                return
+
         self._emit_event("Ensemble retry: spawning %d parallel candidates" % n)
         self._slog.info("Ensemble retry: spawning %d candidates for #%s", n, issue_id)
 
