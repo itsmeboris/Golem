@@ -18,7 +18,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from .core.config import DATA_DIR, DaemonConfig, DashboardConfig, load_config
+from .core.config import (
+    DATA_DIR,
+    GOLEM_HOME,
+    DaemonConfig,
+    DashboardConfig,
+    load_config,
+)
 from .core.defaults import _now_iso
 from .core.daemon_utils import (
     daemonize,
@@ -995,7 +1001,7 @@ def cmd_config(args) -> int:
             for e in errors:
                 print(e, file=sys.stderr)
             return 1
-        pid_file = Path(os.environ.get("GOLEM_DATA_DIR", "data")) / "daemon.pid"
+        pid_file = DATA_DIR / "daemon.pid"
         reloaded = signal_daemon_reload(pid_file)
         if reloaded:
             print("Config saved. Daemon reload triggered.")
@@ -1036,7 +1042,8 @@ def cmd_init(args) -> int:
     """Handler for the 'init' subcommand — generate starter config."""
     from .init_wizard import run_wizard  # pylint: disable=import-outside-toplevel
 
-    output = Path(getattr(args, "output", "config.yaml"))
+    default_output = str(GOLEM_HOME / "config.yaml")
+    output = Path(getattr(args, "output", default_output))
     defaults = getattr(args, "defaults", False)
     return run_wizard(output, use_defaults=defaults)
 
@@ -1215,7 +1222,10 @@ def _build_parser() -> argparse.ArgumentParser:
     # init
     init_p = sub.add_parser("init", help="Generate a starter config.yaml")
     init_p.add_argument(
-        "-o", "--output", default="config.yaml", help="Output file path"
+        "-o",
+        "--output",
+        default=str(GOLEM_HOME / "config.yaml"),
+        help="Output file path (default: ~/.golem/config.yaml)",
     )
     init_p.add_argument(
         "--defaults", action="store_true", help="Use defaults without prompting"
@@ -1255,8 +1265,35 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+_DEFAULT_CONFIG_YAML = """\
+# Golem configuration — auto-generated with defaults.
+# Run 'golem init' to customize interactively.
+flows:
+  golem:
+    enabled: true
+    profile: local
+    projects: []
+    task_model: claude-sonnet-4-20250514
+    budget_per_task_usd: 1.0
+    default_work_dir: ""
+    heartbeat_enabled: false
+dashboard:
+  port: 8081
+"""
+
+
+def _ensure_golem_home() -> None:
+    """Create ~/.golem/ and a default config if they don't exist."""
+    GOLEM_HOME.mkdir(parents=True, exist_ok=True)
+    config_path = GOLEM_HOME / "config.yaml"
+    if not config_path.exists():
+        config_path.write_text(_DEFAULT_CONFIG_YAML, encoding="utf-8")
+        logger.info("Created default config at %s", config_path)
+
+
 def main() -> int:
     """CLI entry point for Golem."""
+    _ensure_golem_home()
     parser = _build_parser()
     args = parser.parse_args()
     if args.verbose:

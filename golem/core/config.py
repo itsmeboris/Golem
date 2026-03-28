@@ -17,7 +17,8 @@ logger: logging.Logger = logging.getLogger("golem.core.config")
 
 # .parent chain: core/ → golem/ (the package itself)
 PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent
-DATA_DIR: Path = PROJECT_ROOT / os.environ.get("GOLEM_DATA_DIR", "data")
+GOLEM_HOME: Path = Path(os.environ.get("GOLEM_HOME", Path.home() / ".golem"))
+DATA_DIR: Path = GOLEM_HOME / "data"
 
 
 @dataclass
@@ -464,9 +465,9 @@ def _find_config_path(config_path: str | Path | None) -> Path | None:
         return Path(config_path)
 
     default_paths = [
+        GOLEM_HOME / "config.yaml",
         Path.cwd() / "config.yaml",
         Path.cwd() / "config.yml",
-        Path(__file__).resolve().parent.parent / "config.yaml",
     ]
     for path in default_paths:
         if path.exists():
