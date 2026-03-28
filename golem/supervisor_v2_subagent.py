@@ -624,6 +624,21 @@ class SubagentSupervisor:
     async def _run_overall_validation(
         self, issue_id: int, description: str, work_dir: str
     ) -> ValidationVerdict:
+        # Budget guard: skip validation if budget already exceeded
+        max_cost = self.task_config.max_fix_cost_usd
+        if max_cost > 0 and self.session.total_cost_usd >= max_cost:
+            self._slog.warning(
+                "Validation skipped: total cost $%.2f already exceeds limit $%.2f",
+                self.session.total_cost_usd,
+                max_cost,
+            )
+            return ValidationVerdict(
+                verdict="SKIP",
+                confidence=0.0,
+                summary="validation skipped — budget exceeded ($%.2f of $%.2f)"
+                % (self.session.total_cost_usd, max_cost),
+            )
+
         self.session.state = TaskSessionState.VALIDATING
         self.session.updated_at = _now_iso()
 

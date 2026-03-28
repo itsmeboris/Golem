@@ -2358,7 +2358,8 @@ class TestFixLoopCostGuard:
         assert session.fix_iteration == 0
 
     async def test_cost_guard_exits_mid_loop_when_budget_exceeded(self, _patches):
-        """_fix_loop exits on second iteration when first iteration exceeded budget."""
+        """After the first iteration pushes cost over budget, _run_overall_validation
+        returns SKIP (budget guard) so _fix_loop exits without a second CLI call."""
         config = _make_config(
             validator_fix_depth=3,
             resume_on_partial=True,
@@ -2374,10 +2375,9 @@ class TestFixLoopCostGuard:
         sup = _make_supervisor(session=session, config=config)
         sup._worktree_path = ""
 
-        # After the first CLI call (cost=0.5), total becomes 1.2 → over budget
-        _patches["val"].return_value = ValidationVerdict(
-            verdict="PARTIAL", confidence=0.6, summary="still bad", concerns=["c1"]
-        )
+        # After the first CLI call (cost=0.5), total becomes 1.2 → over budget.
+        # _run_overall_validation's budget guard now intercepts, returning SKIP.
+        # (run_validation mock is never reached.)
 
         initial = ValidationVerdict(
             verdict="PARTIAL", confidence=0.5, summary="p", concerns=["x"]
@@ -2385,10 +2385,14 @@ class TestFixLoopCostGuard:
 
         result = await sup._fix_loop(initial, "/work", 42, "desc")
 
-        # First iteration completes, second is blocked by cost guard
+        # First CLI call runs, then validation budget guard fires → SKIP returned
         assert _patches["cli"].call_count == 1
         assert session.fix_iteration == 1
-        assert result.verdict == "PARTIAL"
+        # SKIP is not PARTIAL, so _fix_loop exits with the SKIP verdict
+        assert result.verdict == "SKIP"
+        assert "budget exceeded" in result.summary
+        # run_validation was never invoked (budget guard short-circuited)
+        _patches["val"].assert_not_called()
 
     async def test_cost_guard_zero_means_unlimited(self, _patches):
         """max_fix_cost_usd=0 means no cost limit — all iterations run."""
@@ -2804,10 +2808,12 @@ class TestRunEnsembleRetry:
             )
             await sup._run_ensemble_retry(initial_verdict, "/repo/work", 42)
 
-        assert any("rsync" in str(call) for call in rsync_calls)
+        assert len(rsync_calls) == 1
+        # rsync_calls[0] is the argv list: ["rsync", "-a", "--exclude", ".git", src, dst]
+        assert rsync_calls[0][0] == "rsync"
         # Winning worktree is /repo/wt/42001 (PASS candidate index 1)
-        assert any("/repo/wt/42001/" in str(call) for call in rsync_calls)
-        assert any("/repo/work" in str(call) for call in rsync_calls)
+        assert rsync_calls[0][4] == "/repo/wt/42001/"
+        assert rsync_calls[0][5] == "/repo/work/"
 
     async def test_worktree_creation_failure_cleans_up(self):
         """If create_worktree fails mid-loop, already-created worktrees are cleaned."""
@@ -3050,3 +3056,78 @@ class TestRunEnsembleRetry:
 
         # Budget guard should not have blocked ensemble
         mock_commit.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# REL-005: Validation budget guard in _run_overall_validation
+# ---------------------------------------------------------------------------
+
+
+class TestValidationBudgetGuard:
+    """Tests for the budget guard in _run_overall_validation (REL-005)."""
+
+    async def test_validation_skipped_when_budget_exceeded(self):
+        """_run_overall_validation returns SKIP verdict when total_cost >= max_fix_cost."""
+        cfg = _make_config(max_fix_cost_usd=1.0)
+        session = TaskSession(parent_issue_id=42, parent_subject="Test")
+        session.total_cost_usd = 1.5  # exceeds limit of 1.0
+        sup = _make_supervisor(session=session, config=cfg)
+
+        with patch("golem.supervisor_v2_subagent.run_validation") as mock_val:
+            verdict = await sup._run_overall_validation(42, "desc", "/work")
+
+        assert verdict.verdict == "SKIP"
+        assert verdict.confidence == 0.0
+        assert "budget exceeded" in verdict.summary
+        assert "1.50" in verdict.summary
+        assert "1.00" in verdict.summary
+        # Validation agent must NOT have been invoked
+        mock_val.assert_not_called()
+
+    async def test_validation_skipped_at_exact_budget_limit(self):
+        """_run_overall_validation skips when cost equals max_fix_cost_usd exactly."""
+        cfg = _make_config(max_fix_cost_usd=2.0)
+        session = TaskSession(parent_issue_id=42, parent_subject="Test")
+        session.total_cost_usd = 2.0  # equals limit — must skip
+        sup = _make_supervisor(session=session, config=cfg)
+
+        with patch("golem.supervisor_v2_subagent.run_validation") as mock_val:
+            verdict = await sup._run_overall_validation(42, "desc", "/work")
+
+        assert verdict.verdict == "SKIP"
+        mock_val.assert_not_called()
+
+    async def test_validation_proceeds_when_budget_sufficient(self):
+        """_run_overall_validation calls run_validation when cost is under limit."""
+        cfg = _make_config(max_fix_cost_usd=5.0)
+        session = TaskSession(parent_issue_id=42, parent_subject="Test")
+        session.total_cost_usd = 1.0  # under limit
+        sup = _make_supervisor(session=session, config=cfg)
+
+        expected_verdict = ValidationVerdict(
+            verdict="PASS", confidence=0.9, summary="looks good"
+        )
+        with patch(
+            "golem.supervisor_v2_subagent.run_validation", return_value=expected_verdict
+        ):
+            verdict = await sup._run_overall_validation(42, "desc", "/work")
+
+        assert verdict.verdict == "PASS"
+        assert session.state == TaskSessionState.VALIDATING
+
+    async def test_validation_proceeds_when_no_budget_limit(self):
+        """_run_overall_validation calls run_validation when max_fix_cost_usd=0 (unlimited)."""
+        cfg = _make_config(max_fix_cost_usd=0.0)
+        session = TaskSession(parent_issue_id=42, parent_subject="Test")
+        session.total_cost_usd = 999.0  # very high, but no limit
+        sup = _make_supervisor(session=session, config=cfg)
+
+        expected_verdict = ValidationVerdict(
+            verdict="PASS", confidence=0.9, summary="ok"
+        )
+        with patch(
+            "golem.supervisor_v2_subagent.run_validation", return_value=expected_verdict
+        ):
+            verdict = await sup._run_overall_validation(42, "desc", "/work")
+
+        assert verdict.verdict == "PASS"
