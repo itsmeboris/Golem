@@ -37,6 +37,12 @@ class TestRepoRegistryAttachDetach:
         repos = reg.list_repos()
         assert repos[0]["path"] == "/home/user/projects/foo"
 
+    def test_attach_root_path_preserved(self, tmp_path):
+        reg = RepoRegistry(registry_path=tmp_path / "repos.json")
+        reg.attach("/")
+        repos = reg.list_repos()
+        assert repos[0]["path"] == "/"
+
     def test_detach_removes_entry(self, tmp_path):
         reg = RepoRegistry(registry_path=tmp_path / "repos.json")
         reg.attach("/home/user/projects/foo")
@@ -117,7 +123,8 @@ class TestRepoRegistryPersistence:
 class TestRepoRegistryEnvOverride:
     """GOLEM_REGISTRY_PATH env var override."""
 
-    def test_default_path(self):
+    def test_default_path(self, monkeypatch):
+        monkeypatch.delenv("GOLEM_REGISTRY_PATH", raising=False)
         reg = RepoRegistry()
         assert "golem" in str(reg._registry_path).lower()
 

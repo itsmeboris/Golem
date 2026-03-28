@@ -1371,8 +1371,11 @@ class HeartbeatManager:
 
     def _submit_promoted_for_worker(
         self, worker: HeartbeatWorker, candidate: HeartbeatCandidateDict
-    ) -> None:
-        """Submit a promoted GH issue for a worker's repo."""
+    ) -> bool:
+        """Submit a promoted GH issue for a worker's repo.
+
+        Returns True on successful submission, False on failure.
+        """
         subject = f"[PROMOTED] {candidate['subject']}"
         body = candidate["body"]
         prompt = (
@@ -1396,7 +1399,7 @@ class HeartbeatManager:
                     "submit_task returned non-integer task_id: %r",
                     result["task_id"],
                 )
-                return
+                return False
             self._inflight_task_ids.append(task_id)
             worker._inflight_task_ids.append(task_id)
             worker.record_dedup(candidate["id"], "promoted", task_id=task_id)
@@ -1406,8 +1409,10 @@ class HeartbeatManager:
                 candidate["confidence"],
                 worker.repo_path,
             )
+            return True
         except Exception:  # pylint: disable=broad-exception-caught
             logger.exception("Failed to submit promoted GH issue for worker")
+            return False
 
     async def _run_multi_repo_tick(self) -> None:
         """Multi-repo tick: round-robin across workers."""
@@ -1430,9 +1435,9 @@ class HeartbeatManager:
 
             # Handle promoted tier 1
             if tier == 1 and worker._tier1_owed:
-                self._submit_promoted_for_worker(worker, candidates[0])
-                worker._tier1_owed = False
-                worker._tier2_completions_since_tier1 = 0
+                if self._submit_promoted_for_worker(worker, candidates[0]):
+                    worker._tier1_owed = False
+                    worker._tier2_completions_since_tier1 = 0
                 worker.save_state()
                 break
 

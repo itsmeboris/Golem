@@ -3622,7 +3622,8 @@ class TestMultiRepoScheduler:
             "reason": "easy",
             "tier": 1,
         }
-        mgr._submit_promoted_for_worker(worker, candidate)
+        result = mgr._submit_promoted_for_worker(worker, candidate)
+        assert result is False
         assert not worker._inflight_task_ids
 
     def test_submit_promoted_for_worker_exception(self, tmp_path):
@@ -3650,8 +3651,45 @@ class TestMultiRepoScheduler:
             "reason": "easy",
             "tier": 1,
         }
-        mgr._submit_promoted_for_worker(worker, candidate)
+        result = mgr._submit_promoted_for_worker(worker, candidate)
+        assert result is False
         assert not worker._inflight_task_ids
+
+    async def test_run_multi_repo_tick_promoted_failure_preserves_debt(self, tmp_path):
+        """Failed promoted submission preserves tier1_owed state."""
+        reg_path = tmp_path / "registry.json"
+        from golem.repo_registry import RepoRegistry
+
+        reg = RepoRegistry(registry_path=reg_path)
+        reg.attach("/fake/repo1")
+        mgr = _make_manager(tmp_path)
+        mgr._registry = reg
+        with patch("golem.heartbeat_worker.is_git_repo", return_value=False):
+            mgr._sync_workers()
+        worker = mgr._workers["/fake/repo1"]
+        worker._tier1_owed = True
+        worker._tier2_completions_since_tier1 = 3
+
+        candidate = {
+            "id": "github:42",
+            "subject": "test",
+            "body": "body",
+            "automatable": True,
+            "confidence": 0.9,
+            "complexity": "small",
+            "reason": "easy",
+            "tier": 1,
+            "category": "coverage",
+        }
+        worker.tick = AsyncMock(return_value=([candidate], 1))
+        mgr._flow = MagicMock()
+        mgr._flow._profile = MagicMock()
+        mgr._flow.submit_task.side_effect = RuntimeError("boom")
+
+        await mgr._run_multi_repo_tick()
+        # Promotion debt must be preserved on failure
+        assert worker._tier1_owed is True
+        assert worker._tier2_completions_since_tier1 == 3
 
     async def test_run_multi_repo_tick_promoted_path(self, tmp_path):
         """_run_multi_repo_tick handles tier1_owed promotion path."""

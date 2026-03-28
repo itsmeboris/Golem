@@ -58,7 +58,8 @@ class RepoRegistry:
 
     def attach(self, path: str, heartbeat: bool = True) -> None:
         """Add or update a repo entry. Auto-saves."""
-        normalized = str(Path(path).resolve()).rstrip("/")
+        resolved = str(Path(path).resolve())
+        normalized = resolved if resolved == "/" else resolved.rstrip("/")
         for repo in self._repos:
             if repo["path"] == normalized:
                 repo["heartbeat"] = heartbeat
@@ -75,7 +76,8 @@ class RepoRegistry:
 
     def detach(self, path: str) -> bool:
         """Remove a repo entry. Returns True if found. Auto-saves."""
-        normalized = str(Path(path).resolve()).rstrip("/")
+        resolved = str(Path(path).resolve())
+        normalized = resolved if resolved == "/" else resolved.rstrip("/")
         before = len(self._repos)
         self._repos = [r for r in self._repos if r["path"] != normalized]
         if len(self._repos) < before:
