@@ -853,6 +853,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                 concerns=session.validation_concerns,
                 commit_sha=session.commit_sha,
                 retry_count=session.retry_count,
+                fix_iteration=session.fix_iteration,
             )
             self._health.record_task_result(success=True)
 
@@ -873,6 +874,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                     cost_usd=session.total_cost_usd,
                     duration_s=session.duration_seconds,
                     retry_count=session.retry_count,
+                    fix_iteration=session.fix_iteration,
                 )
             else:
                 reason = session.errors[-1] if session.errors else "Unknown error"

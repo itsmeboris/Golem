@@ -1,53 +1,79 @@
 # TODO
 
-Items use GitHub issue numbers as IDs. See https://github.com/itsmeboris/Golem/issues
+Category-based IDs. GitHub issue refs noted where they match (`GH #N`).
+See https://github.com/itsmeboris/Golem/issues
 
-## Active
+---
 
-| GH  | Status | Task                                                                                                                                                        | Impact | Priority       |
-| --- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | -------------- |
-| #22 | [ ]    | **State management audit rule** — detect innerHTML without state preservation, polling without concurrency guards, shared mutable state in async code        | Medium | P2             |
-| #23 | [ ]    | **Codebase contract linting** — static check that function return types match consumer expectations across module boundaries                                | Medium | P2             |
-| #13 | [ ]    | **Context budget system** — dynamic prompt content sizing                                                                                                   | Medium | P2             |
-| #14 | [ ]    | **A-Mem knowledge graph** — structured knowledge graph for AGENTS.md                                                                                        | Medium | P2             |
-| #2  | [ ]    | **Dashboard prompt comparison UI** — table/chart for `/api/analytics/by-prompt` data (API exists, frontend missing)                                         | Low    | P3             |
-| #36 | [ ]    | **CLI `logs` command** — no `golem logs` / `golem logs --follow` subcommand; `status --watch` shows counters but not log output                             | Low    | P3             |
-| #15 | [ ]    | **Evaluator-optimizer loop** — prompt auto-tuning                                                                                                           | Medium | P3             |
-| #16 | [ ]    | **OpenTelemetry tracing** — agent observability                                                                                                             | Medium | P3             |
-| #17 | [ ]    | **Mutation testing** — mutmut integration                                                                                                                   | Low    | P3             |
-| #18 | [ ]    | **MCP tool schema validation** — poisoning defense                                                                                                          | Medium | P2             |
-| #19 | [ ]    | **Runtime subprocess sandboxing** — OS-level containment                                                                                                    | High   | P2             |
-| #39 | [ ]    | **Notifier fix_iteration passthrough** — `flow.py` never passes `fix_iteration` to `notify_completed`/`notify_escalated` despite protocol requiring it       | High   | P2             |
-| #40 | [ ]    | **Notifier delivery resilience** — all notifiers silently swallow exceptions; no retry, no failure signaling to orchestrator, no timeout on send operations   | High   | P2             |
-| #41 | [ ]    | **Subprocess timeout gaps** — `_detect_base_branch()` and `rsync` in ensemble have no timeout; can hang indefinitely on unresponsive repos                   | Medium | P2             |
-| #42 | [ ]    | **Ensemble cost budget guard** — ensemble retry spawns N parallel candidates without checking `max_cost_usd` first; can exceed budget                        | Medium | P2             |
-| #43 | [ ]    | **Prompt placeholder fallbacks** — conditional placeholders (`{simplify_section}`, `{enhanced_review_section}`) render as literal text when conditions unmet  | Medium | P3             |
-| #44 | [ ]    | **AGENTS.md growth bound** — `pitfall_writer._apply_decay()` never removes high-seen entries; file grows unbounded over time                                 | Medium | P3             |
-| #45 | [ ]    | **Merge queue callback safety** — `on_merge_agent` callback not wrapped in try/except; exception leaves merge state inconsistent                             | Medium | P2             |
+## Open Issues
+
+### P0 — Critical (broken in current code)
+
+- [x] BUG-001: **Merge queue thread safety** — added `_processing` list for in-flight entries; guarded with asyncio.Lock (2026-03-29)
+- [ ] BUG-002: **Grace deadline parse crash** — `fromisoformat("")` on fresh session in `orchestrator.py` crashes on first tick; no fallback for empty/missing value
+- [ ] BUG-003: **`_bisect_merges` empty-list guard** — `flow.py:1077` has no guard for empty `ordered_shas`; caller prevents it but method itself will `IndexError`
+- [ ] SEC-001: **API file-read path traversal** — `/api/submit` `file` parameter reads arbitrary files via `Path(file).read_text()` with no path validation
+
+### P1 — Important
+
+- [x] BUG-004: **Notifier fix_iteration passthrough** — `fix_iteration` now passed through in both notify calls (2026-03-29)
+- [ ] SEC-002: **Dashboard event_id path traversal** — user-controlled `event_id` in `_resolve_paths()` used in file path construction without sufficient sanitization
+- [ ] SEC-003: **API missing CORS protection** — no `CORSMiddleware` on FastAPI app; cross-origin requests unrestricted from any browser origin
+- [ ] SEC-004: **API missing rate limiting** — `/api/submit`, `/api/submit/batch`, `/api/cancel` have no rate limits; resource exhaustion risk
+- [ ] SEC-005: **Dashboard API unauthenticated** — all `/api/*` endpoints (traces, analytics, SSE) publicly accessible; no auth middleware
+- [ ] SEC-006: **MCP tool schema validation** — poisoning defense (GH #18)
+- [ ] SEC-007: **Runtime subprocess sandboxing** — OS-level containment (GH #19)
+- [ ] REL-001: **Notifier delivery resilience** — all notifiers silently swallow exceptions; no retry, no failure signaling to orchestrator, no timeout on send operations
+- [ ] REL-002: **Subprocess timeout gaps** — `_detect_base_branch()` and `rsync` in ensemble have no timeout; can hang indefinitely on unresponsive repos
+- [ ] REL-003: **Ensemble cost budget guard** — ensemble retry spawns N parallel candidates without checking `max_cost_usd` first; can exceed budget
+- [ ] REL-004: **Merge queue callback safety** — `on_merge_agent` callback not wrapped in try/except; exception leaves merge state inconsistent
+- [ ] REL-005: **Validation loop cost overflow** — base orchestrate can exceed `max_cost_usd`; subsequent validation runs proceed without budget guard
+- [ ] REL-006: **Checkpoint phase not cleared on recovery** — crashed sessions keep stale checkpoint phase on reset to DETECTED; may skip phases on restart
+- [ ] TEST-001: **Test quality violations** — tautological tests in `test_human_feedback.py:12-29`, `str()` substring matching in `test_orchestrator_v2.py:1353` and `test_supervisor_v2_subagent.py:2786`, shallow `hasattr` assertions, misleading mock in `test_checkpoint.py:242`
+
+### P2 — Normal
+
+- [ ] REL-007: **Session state save not atomic** — crash between `save_sessions()` and `batch_monitor.save()` in `flow.py` leaves inconsistent state
+- [ ] INFRA-001: **State management audit rule** — detect innerHTML without state preservation, polling without concurrency guards, shared mutable state in async code
+- [ ] INFRA-002: **Codebase contract linting** — static check that function return types match consumer expectations across module boundaries (GH #23)
+- [ ] INFRA-003: **Prompt placeholder fallbacks** — conditional placeholders (`{simplify_section}`, `{enhanced_review_section}`) render as literal text when conditions unmet
+- [ ] INFRA-004: **AGENTS.md growth bound** — `pitfall_writer._apply_decay()` never removes high-seen entries; file grows unbounded over time
+- [ ] INFRA-005: **Self-update worktree temp file leak** — `/tmp/golem-verify` not cleaned on exception; hardcoded path, no tempfile context manager
+- [ ] INFRA-006: **Clarity check fail-open silently** — returns score=5 on any error with no warning; unclear tasks execute without operator visibility
+- [ ] INFRA-007: **Hardcoded verification timeout** — `run_verification()` uses fixed 120s in both `orchestrator.py` and `supervisor_v2_subagent.py`; not configurable
+- [ ] FEAT-001: **Context budget system** — dynamic prompt content sizing (GH #13)
+- [ ] FEAT-002: **A-Mem knowledge graph** — structured knowledge graph for AGENTS.md (GH #14)
+- [ ] TEST-002: **Mutation testing** — mutmut integration (GH #17)
+
+### P3 — Low Priority
+
+- [ ] FEAT-003: **Dashboard prompt comparison UI** — table/chart for `/api/analytics/by-prompt` data; API exists, frontend missing
+- [ ] FEAT-004: **CLI `logs` command** — no `golem logs` / `golem logs --follow` subcommand; `status --watch` shows counters but not log output
+- [ ] FEAT-005: **Evaluator-optimizer loop** — prompt auto-tuning (GH #15)
+- [ ] FEAT-006: **OpenTelemetry tracing** — agent observability (GH #16)
+
+---
 
 ## Completed
 
-| GH  | Task                                                                                                                                                        | Impact | Priority |
-| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | -------- |
-| #1  | **SSE-based dashboard live updates** — replace 5s polling with SSE for real-time dashboard updates                                                          | Medium | P3       |
-| #3  | **Validator fix-cycle depth** — multi-iteration build→review→fix loop                                                                                       | Medium | P3       |
-| #4  | **Task replay + dashboard controls** — re-run, edit-and-resubmit modal, cancel button in task detail view                                                   | Medium | P2       |
-| #5  | **Post-task learning loop** — extract pitfalls into AGENTS.md after each task                                                                               | Medium | P2       |
-| #6  | **Integration smoke tests** — FastAPI TestClient integration tests for key endpoints; `@pytest.mark.integration` marker                                     | High   | P1       |
-| #12 | **GitHub Issues self-serve** — let Golem pick up and close its own issues                                                                                   | High   | P2       |
-| #20 | **Post-merge re-verification** — run black/pylint/pytest after merge conflict resolution; fail merge if checks don't pass                                   | High   | P1       |
-| #24 | **Ensemble retry wiring** — `ensemble.py` `pick_best_result()` wired into supervisor; parallel candidates with validation                                    | High   | P1       |
-| #25 | **Integration validation binary search** — `flow.run_integration_validation()` bisects merge order to find which merge broke tests                           | High   | P1       |
-| #26 | **Health check result propagation** — alerts propagated to flow control; UNHEALTHY pauses detection; exposed via properties                                  | High   | P2       |
-| #27 | **Silent dependency skip** — `_wait_for_dependencies()` now logs warning when dep session ID is missing                                                      | Medium | P2       |
-| #28 | **Async subprocess blocking** — `subprocess.run()` in async functions wrapped with `asyncio.to_thread()`                                                     | Medium | P2       |
-| #29 | **Handoff validation enforcement** — invalid handoffs now rejected (not stored); downstream phases only receive valid context                                 | Medium | P2       |
-| #30 | **Retry signal promotion** — promoted signals now drive escalation on last retry; stored on session for visibility                                            | Medium | P2       |
-| #31 | **Ghost config properties** — removed undocumented properties from ops.md                                                                                    | Medium | P2       |
-| #33 | **Human feedback loop guard** — identical feedback detection + retry cap prevents infinite feedback loops                                                     | Medium | P3       |
-| #34 | **Dashboard API test coverage** — TestClient integration tests for analytics, cost-analytics, events SSE, and trace endpoints                                | Medium | P2       |
-| #32 | **Redmine/Local heartbeat Tier 1** — `poll_untagged_tasks()` implemented for both backends with tag filtering and error handling                              | Medium | P2       |
-| #35 | **Checkpoint restoration resilience** — corrupt checkpoints backed up to `.corrupt`, logged at ERROR; evidence preserved for recovery                         | Medium | P3       |
-| #37 | **Heartbeat state cleanup on detach** — `delete_state()` on HeartbeatWorker; `_sync_workers()` cleans up files for detached repos                            | Low    | P3       |
-| #21 | **Worktree and data isolation** — gitignore `data/`, ensure all tests use `tmp_path` instead of real repo for worktree/merge ops                            | High   | P0       |
-| #38 | **Merge queue thread safety** — `snapshot()`, `pending`, `detect_overlaps()` read shared state without lock; added `_processing` list for in-flight entries  | High   | P1       |
+- [x] BUG-E01: **Worktree and data isolation** — gitignore `data/`, all tests use `tmp_path` (GH #21, 2026-03-28)
+- [x] REL-E01: **Post-merge re-verification** — run black/pylint/pytest after merge conflict resolution (GH #20, 2026-03-29)
+- [x] REL-E02: **Ensemble retry wiring** — `pick_best_result()` wired into supervisor; parallel candidates with validation (2026-03-29)
+- [x] REL-E03: **Integration validation binary search** — `run_integration_validation()` bisects merge order to find breakage (2026-03-29)
+- [x] REL-E04: **Health check result propagation** — UNHEALTHY pauses detection; exposed via properties (2026-03-29)
+- [x] REL-E05: **Silent dependency skip** — `_wait_for_dependencies()` logs warning when dep session ID missing (2026-03-29)
+- [x] REL-E06: **Async subprocess blocking** — `subprocess.run()` wrapped with `asyncio.to_thread()` (2026-03-29)
+- [x] REL-E07: **Handoff validation enforcement** — invalid handoffs rejected, not stored (2026-03-29)
+- [x] REL-E08: **Retry signal promotion** — promoted signals drive escalation on last retry (2026-03-29)
+- [x] REL-E09: **Human feedback loop guard** — identical feedback detection + retry cap (2026-03-29)
+- [x] REL-E10: **Checkpoint restoration resilience** — corrupt checkpoints backed up to `.corrupt`, logged at ERROR (2026-03-29)
+- [x] FEAT-E01: **SSE-based dashboard live updates** — replace 5s polling with SSE (GH #1, 2026-03-27)
+- [x] FEAT-E02: **Validator fix-cycle depth** — multi-iteration build-review-fix loop (GH #3, 2026-03-27)
+- [x] FEAT-E03: **Task replay + dashboard controls** — re-run, edit-and-resubmit, cancel button (GH #4, 2026-03-27)
+- [x] FEAT-E04: **Post-task learning loop** — extract pitfalls into AGENTS.md after each task (GH #5, 2026-03-27)
+- [x] FEAT-E05: **GitHub Issues self-serve** — let Golem pick up and close its own issues (GH #12, 2026-03-28)
+- [x] FEAT-E06: **Redmine/Local heartbeat Tier 1** — `poll_untagged_tasks()` with tag filtering and error handling (2026-03-29)
+- [x] TEST-E01: **Integration smoke tests** — FastAPI TestClient integration tests; `@pytest.mark.integration` (GH #6, 2026-03-27)
+- [x] TEST-E02: **Dashboard API test coverage** — TestClient tests for analytics, cost-analytics, events SSE, traces (2026-03-29)
+- [x] INFRA-E01: **Ghost config properties** — removed undocumented properties from ops.md (2026-03-29)
+- [x] INFRA-E02: **Heartbeat state cleanup on detach** — `delete_state()` + `_sync_workers()` cleanup (2026-03-29)

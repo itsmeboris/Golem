@@ -730,6 +730,23 @@ class TestHandleStateTransition:
         )
         notifier.notify_completed.assert_called_once()
 
+    def test_to_completed_passes_fix_iteration(self, monkeypatch, tmp_path):
+        flow, notifier = self._make_flow_and_notifier(monkeypatch, tmp_path)
+        mock_live = MagicMock()
+        monkeypatch.setattr("golem.flow.LiveState.get", lambda: mock_live)
+
+        session = TaskSession(
+            parent_issue_id=210,
+            parent_subject="done after fix",
+            state=TaskSessionState.COMPLETED,
+            total_cost_usd=1.5,
+            fix_iteration=2,
+        )
+        flow._handle_state_transition(session, TaskSessionState.RUNNING)
+
+        call_kwargs = notifier.notify_completed.call_args[1]
+        assert call_kwargs["fix_iteration"] == 2
+
     def test_to_failed_with_verdict(self, monkeypatch, tmp_path):
         flow, notifier = self._make_flow_and_notifier(monkeypatch, tmp_path)
         mock_live = MagicMock()
@@ -750,6 +767,25 @@ class TestHandleStateTransition:
         )
         notifier.notify_escalated.assert_called_once()
         notifier.notify_failed.assert_not_called()
+
+    def test_to_failed_passes_fix_iteration(self, monkeypatch, tmp_path):
+        flow, notifier = self._make_flow_and_notifier(monkeypatch, tmp_path)
+        mock_live = MagicMock()
+        monkeypatch.setattr("golem.flow.LiveState.get", lambda: mock_live)
+
+        session = TaskSession(
+            parent_issue_id=211,
+            parent_subject="escalated after fix",
+            state=TaskSessionState.FAILED,
+            validation_verdict="FAIL",
+            validation_summary="still bad",
+            total_cost_usd=2.0,
+            fix_iteration=3,
+        )
+        flow._handle_state_transition(session, TaskSessionState.RUNNING)
+
+        call_kwargs = notifier.notify_escalated.call_args[1]
+        assert call_kwargs["fix_iteration"] == 3
 
     def test_to_failed_without_verdict(self, monkeypatch, tmp_path):
         flow, notifier = self._make_flow_and_notifier(monkeypatch, tmp_path)
