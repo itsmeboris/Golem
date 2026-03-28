@@ -64,6 +64,24 @@ def save_checkpoint(issue_id: int, session: TaskSession, phase: str) -> Path:
     return checkpoint_path
 
 
+def _backup_corrupt(path: Path, issue_id: int) -> None:
+    """Rename a corrupt checkpoint file to ``checkpoint.json.corrupt``.
+
+    Preserves the bad data for forensic recovery and makes the failure visible
+    on disk.  Logs at DEBUG if the rename itself fails.
+
+    Args:
+        path: Path to the corrupt checkpoint file.
+        issue_id: Issue ID, used only for diagnostic messages.
+    """
+    backup = path.parent / "checkpoint.json.corrupt"
+    try:
+        path.rename(backup)
+        logger.debug("Corrupt checkpoint for #%s backed up to %s", issue_id, backup)
+    except OSError as exc:
+        logger.debug("Failed to back up corrupt checkpoint for #%s: %s", issue_id, exc)
+
+
 def load_checkpoint(issue_id: int) -> dict[str, Any] | None:
     """Load a checkpoint from disk.
 
@@ -80,11 +98,13 @@ def load_checkpoint(issue_id: int) -> dict[str, Any] | None:
     try:
         data = json.loads(path.read_text("utf-8"))
     except Exception as exc:  # pylint: disable=broad-except
-        logger.warning("Failed to load checkpoint for #%s: %s", issue_id, exc)
+        logger.error("Checkpoint for #%s is corrupt (parse error): %s", issue_id, exc)
+        _backup_corrupt(path, issue_id)
         return None
 
     if not isinstance(data, dict):
-        logger.warning("Checkpoint for #%s is not a JSON object, ignoring", issue_id)
+        logger.error("Checkpoint for #%s is not a JSON object, ignoring", issue_id)
+        _backup_corrupt(path, issue_id)
         return None
 
     logger.debug("Checkpoint loaded for #%s", issue_id)

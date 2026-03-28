@@ -67,11 +67,11 @@ def test_load_corrupt_json_returns_none(caplog: pytest.LogCaptureFixture) -> Non
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
     checkpoint_path.write_text("not valid json {{{", encoding="utf-8")
 
-    with caplog.at_level(logging.WARNING, logger="golem.checkpoint"):
+    with caplog.at_level(logging.ERROR, logger="golem.checkpoint"):
         result = load_checkpoint(7)
 
     assert result is None
-    assert any("Failed to load checkpoint" in r.message for r in caplog.records)
+    assert any("is corrupt" in r.message for r in caplog.records)
 
 
 def test_load_non_dict_json_returns_none(caplog: pytest.LogCaptureFixture) -> None:
@@ -85,6 +85,103 @@ def test_load_non_dict_json_returns_none(caplog: pytest.LogCaptureFixture) -> No
 
     assert result is None
     assert any("not a JSON object" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# corruption resilience — ERROR logging + backup
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "issue_id, corrupt_content",
+    [
+        (300, "not valid json {{{"),
+        (301, "[1, 2, 3]"),
+    ],
+    ids=["invalid_json", "non_dict_json"],
+)
+def test_corrupt_json_logged_at_error(
+    issue_id: int, corrupt_content: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Corrupt and non-dict checkpoints must be logged at ERROR level, not WARNING."""
+    checkpoint_path = checkpoint_mod.CHECKPOINTS_DIR / str(issue_id) / "checkpoint.json"
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    checkpoint_path.write_text(corrupt_content, encoding="utf-8")
+
+    with caplog.at_level(logging.ERROR, logger="golem.checkpoint"):
+        result = load_checkpoint(issue_id)
+
+    assert result is None
+    error_records = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert error_records, "Expected at least one ERROR-level log record for corruption"
+
+
+@pytest.mark.parametrize(
+    "issue_id, corrupt_content",
+    [
+        (310, "not valid json {{{"),
+        (311, "[1, 2, 3]"),
+    ],
+    ids=["invalid_json", "non_dict_json"],
+)
+def test_corrupt_json_renamed_to_dot_corrupt(
+    issue_id: int, corrupt_content: str
+) -> None:
+    """Corrupt checkpoint files must be renamed to checkpoint.json.corrupt."""
+    checkpoint_path = checkpoint_mod.CHECKPOINTS_DIR / str(issue_id) / "checkpoint.json"
+    backup_path = checkpoint_path.parent / "checkpoint.json.corrupt"
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    checkpoint_path.write_text(corrupt_content, encoding="utf-8")
+
+    result = load_checkpoint(issue_id)
+
+    assert result is None
+    assert not checkpoint_path.exists(), "Original corrupt file should be renamed away"
+    assert backup_path.exists(), "Backup .corrupt file must exist"
+
+
+@pytest.mark.parametrize(
+    "issue_id, corrupt_content",
+    [
+        (320, "not valid json {{{"),
+        (321, "[1, 2, 3]"),
+    ],
+    ids=["invalid_json", "non_dict_json"],
+)
+def test_backup_file_contains_original_content(
+    issue_id: int, corrupt_content: str
+) -> None:
+    """The .corrupt backup must contain the original corrupt data verbatim."""
+    checkpoint_path = checkpoint_mod.CHECKPOINTS_DIR / str(issue_id) / "checkpoint.json"
+    backup_path = checkpoint_path.parent / "checkpoint.json.corrupt"
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    checkpoint_path.write_text(corrupt_content, encoding="utf-8")
+
+    load_checkpoint(issue_id)
+
+    assert backup_path.read_text("utf-8") == corrupt_content
+
+
+def test_backup_corrupt_logs_debug_when_rename_fails(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """If renaming the corrupt file fails, a DEBUG message is logged and None returned."""
+    checkpoint_path = checkpoint_mod.CHECKPOINTS_DIR / "330" / "checkpoint.json"
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    checkpoint_path.write_text("not valid json {{{", encoding="utf-8")
+
+    with (
+        patch("golem.checkpoint.Path.rename", side_effect=OSError("perm denied")),
+        caplog.at_level(logging.DEBUG, logger="golem.checkpoint"),
+    ):
+        result = load_checkpoint(330)
+
+    assert result is None
+    assert any(
+        "Failed to back up corrupt checkpoint" in r.message
+        for r in caplog.records
+        if r.levelno == logging.DEBUG
+    )
 
 
 # ---------------------------------------------------------------------------
