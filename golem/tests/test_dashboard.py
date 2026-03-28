@@ -18,6 +18,7 @@ from golem.core.dashboard import (
     _extract_numeric_id,
     _extract_user_events,
     _format_live_section,
+    _is_within,
     _parse_trace,
     _parse_trace_terminal,
     _read_and_parse_trace,
@@ -106,6 +107,63 @@ class TestResolvePaths:
             with patch("golem.core.dashboard.REPORTS_DIR", tmp_path / "reports"):
                 result = _resolve_paths("golem-5/sub1")
         assert result["trace"] is not None
+
+    def test_path_traversal_returns_all_none(self, tmp_path):
+        """event_id with path-traversal sequences returns all None (not found)."""
+        with patch("golem.core.dashboard.TRACES_DIR", tmp_path / "traces"):
+            with patch("golem.core.dashboard.REPORTS_DIR", tmp_path / "reports"):
+                result = _resolve_paths("../../etc/passwd")
+        assert result == {"trace": None, "prompt": None, "report": None}
+
+    def test_golem_with_valid_files_still_resolves(self, tmp_path):
+        """SEC-002: valid golem-1 event_id still resolves files after adding _is_within check."""
+        traces = tmp_path / "traces" / "golem"
+        reports = tmp_path / "reports" / "golem"
+        traces.mkdir(parents=True)
+        reports.mkdir(parents=True)
+        (traces / "golem-1.jsonl").write_text("{}", encoding="utf-8")
+        (traces / "golem-1.prompt.txt").write_text("prompt", encoding="utf-8")
+        (reports / "1.md").write_text("# Report", encoding="utf-8")
+        with patch("golem.core.dashboard.TRACES_DIR", tmp_path / "traces"):
+            with patch("golem.core.dashboard.REPORTS_DIR", tmp_path / "reports"):
+                result = _resolve_paths("golem-1")
+        assert result["trace"] is not None
+        assert result["prompt"] is not None
+        assert result["report"] is not None
+
+
+# ---------------------------------------------------------------------------
+# _is_within
+# ---------------------------------------------------------------------------
+
+
+class TestIsWithin:
+    def test_rejects_path_outside_base(self, tmp_path):
+        """Path outside the base directory is rejected."""
+        base = tmp_path / "base"
+        base.mkdir()
+        outside = tmp_path / "other" / "file.txt"
+        assert not _is_within(outside, base)
+
+    def test_accepts_path_inside_base(self, tmp_path):
+        """Path inside the base directory is accepted."""
+        base = tmp_path / "base"
+        base.mkdir()
+        inside = base / "subdir" / "file.txt"
+        assert _is_within(inside, base)
+
+    def test_rejects_dotdot_traversal(self, tmp_path):
+        """Path using .. to escape base directory is rejected."""
+        base = tmp_path / "base"
+        base.mkdir()
+        traversal = base / ".." / "secret.txt"
+        assert not _is_within(traversal, base)
+
+    def test_accepts_base_itself(self, tmp_path):
+        """Base directory itself is within base."""
+        base = tmp_path / "base"
+        base.mkdir()
+        assert _is_within(base, base)
 
 
 # ---------------------------------------------------------------------------

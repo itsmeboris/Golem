@@ -82,6 +82,15 @@ def _extract_numeric_id(event_id: str) -> tuple[str, str]:
     return "", ""
 
 
+def _is_within(path: Path, base: Path) -> bool:
+    """Return True if resolved path is within the base directory."""
+    try:
+        path.resolve().relative_to(base.resolve())
+        return True
+    except ValueError:
+        return False
+
+
 def _resolve_paths(event_id: str) -> dict[str, Path | None]:
     """Find prompt/trace/report file paths for a given event_id."""
     # Normalize bare numeric IDs (from sessions API) to golem-{id} format
@@ -96,15 +105,15 @@ def _resolve_paths(event_id: str) -> dict[str, Path | None]:
 
     if flow:
         t = TRACES_DIR / flow / f"{safe_id}.jsonl"
-        if t.exists():
+        if t.exists() and _is_within(t, TRACES_DIR):
             trace_path = t
         p = TRACES_DIR / flow / f"{safe_id}.prompt.txt"
-        if p.exists():
+        if p.exists() and _is_within(p, TRACES_DIR):
             prompt_path = p
 
         if numeric_id:
             r = REPORTS_DIR / flow / f"{numeric_id}.md"
-            if r.exists():
+            if r.exists() and _is_within(r, REPORTS_DIR):
                 report_path = r
 
     return {
