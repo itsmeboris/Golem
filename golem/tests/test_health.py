@@ -20,7 +20,7 @@ from golem.health import (
     STATUS_UNHEALTHY,
     HealthMonitor,
     HealthNotifier,
-    _compute_status,
+    compute_status,
 )
 
 
@@ -385,31 +385,31 @@ class TestSnapshot:
 
 class TestComputeStatus:
     def test_no_alerts_is_healthy(self):
-        assert _compute_status([]) == STATUS_HEALTHY
+        assert compute_status([]) == STATUS_HEALTHY
 
     def test_queue_depth_only_is_degraded(self):
         alerts = [{"type": ALERT_QUEUE_DEPTH}]
-        assert _compute_status(alerts) == STATUS_DEGRADED
+        assert compute_status(alerts) == STATUS_DEGRADED
 
     def test_high_error_rate_only_is_degraded(self):
         alerts = [{"type": ALERT_HIGH_ERROR_RATE}]
-        assert _compute_status(alerts) == STATUS_DEGRADED
+        assert compute_status(alerts) == STATUS_DEGRADED
 
     def test_consecutive_failures_is_unhealthy(self):
         alerts = [{"type": ALERT_CONSECUTIVE_FAILURES}]
-        assert _compute_status(alerts) == STATUS_UNHEALTHY
+        assert compute_status(alerts) == STATUS_UNHEALTHY
 
     def test_stale_daemon_is_unhealthy(self):
         alerts = [{"type": ALERT_STALE_DAEMON}]
-        assert _compute_status(alerts) == STATUS_UNHEALTHY
+        assert compute_status(alerts) == STATUS_UNHEALTHY
 
     def test_disk_usage_is_unhealthy(self):
         alerts = [{"type": ALERT_DISK_USAGE}]
-        assert _compute_status(alerts) == STATUS_UNHEALTHY
+        assert compute_status(alerts) == STATUS_UNHEALTHY
 
     def test_mixed_severe_and_mild_is_unhealthy(self):
         alerts = [{"type": ALERT_QUEUE_DEPTH}, {"type": ALERT_STALE_DAEMON}]
-        assert _compute_status(alerts) == STATUS_UNHEALTHY
+        assert compute_status(alerts) == STATUS_UNHEALTHY
 
 
 class TestHeartbeat:
@@ -511,7 +511,7 @@ class TestCheckMergeQueueBlocked:
                 "threshold": 5,
             }
         ]
-        status = _compute_status(alerts)
+        status = compute_status(alerts)
         assert status == STATUS_UNHEALTHY
 
     def test_alert_at_exact_threshold(self, monitor):

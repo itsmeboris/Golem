@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from .core.config import Config, DATA_DIR, GolemFlowConfig
-from .health import HealthMonitor
+from .health import STATUS_UNHEALTHY, HealthMonitor, compute_status
 from .core.live_state import LiveState
 from .core.triggers.base import TriggerEvent
 from .core.flow_base import BaseFlow, FlowResult, PollableFlow, WebhookableFlow
@@ -111,6 +111,8 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             notifier=self._profile.notifier,
             merge_deferred_count_fn=self._get_deferred_merge_count,
         )
+        self._last_health_alerts: list = []
+        self._health_status: str = "healthy"
 
         # Heartbeat — self-directed work when idle
         if self._task_config.heartbeat_enabled:
@@ -150,6 +152,16 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
     @property
     def health(self) -> HealthMonitor:
         return self._health
+
+    @property
+    def health_status(self) -> str:
+        """Current health status: 'healthy', 'degraded', or 'unhealthy'."""
+        return self._health_status
+
+    @property
+    def last_health_alerts(self) -> list:
+        """Most recent alerts from the last health check."""
+        return self._last_health_alerts
 
     @property
     def live(self) -> LiveState:
@@ -349,6 +361,24 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         """Periodically poll for new [AGENT] issues and spawn session tasks."""
         last_health_check = 0.0
         while self._running:
+            # Health check always runs so recovery is detected
+            now = time.time()
+            if now - last_health_check >= self._health.check_interval:
+                alerts = self._health.check()
+                self._last_health_alerts = alerts
+                self._health_status = compute_status(alerts)
+                if self._health_status == STATUS_UNHEALTHY:
+                    logger.warning(
+                        "Health status UNHEALTHY — pausing new task detection; "
+                        "active alerts: %s",
+                        [a["type"] for a in alerts],
+                    )
+                last_health_check = now
+
+            if self._health_status == STATUS_UNHEALTHY:
+                await asyncio.sleep(self._task_config.tick_interval)
+                continue
+
             try:
                 self._detect_new_issues()
                 self._check_human_feedback()
@@ -359,11 +389,6 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                 self._health.record_poll_error()
 
             self._health.record_heartbeat()
-
-            now = time.time()
-            if now - last_health_check >= self._health.check_interval:
-                self._health.check()
-                last_health_check = now
 
             await asyncio.sleep(self._task_config.tick_interval)
 

@@ -316,6 +316,51 @@ class TestDetectionLoop:
         await flow._detection_loop()
         assert calls == 1
 
+    async def test_unhealthy_skips_detection(self, monkeypatch, tmp_path, caplog):
+        """When health returns severe alerts, detection is skipped."""
+        from golem.health import ALERT_CONSECUTIVE_FAILURES
+
+        flow = _make_flow(monkeypatch, tmp_path, tick_interval=0)
+        flow._running = True
+
+        severe_alerts = [
+            {
+                "type": ALERT_CONSECUTIVE_FAILURES,
+                "message": "5 failures",
+                "value": 5,
+                "threshold": 3,
+            }
+        ]
+
+        detect_calls = 0
+        health_check_calls = 0
+
+        def fake_detect():
+            nonlocal detect_calls
+            detect_calls += 1
+
+        def fake_check():
+            nonlocal health_check_calls
+            health_check_calls += 1
+            # After first check returns unhealthy, stop the loop on second
+            if health_check_calls >= 2:
+                flow._running = False
+            return severe_alerts
+
+        monkeypatch.setattr(flow, "_detect_new_issues", fake_detect)
+        monkeypatch.setattr(flow._health, "check", fake_check)
+        monkeypatch.setattr(flow._health._config, "check_interval_seconds", 0)
+
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="golem.flow"):
+            await flow._detection_loop()
+
+        assert flow._health_status == "unhealthy"
+        assert detect_calls == 0  # detection was skipped
+        assert health_check_calls >= 1  # health check still ran
+        assert "UNHEALTHY" in caplog.text
+
 
 class TestDetectNewIssues:
     def test_creates_sessions_and_spawns(self, monkeypatch, tmp_path):
@@ -1054,6 +1099,74 @@ class TestHealthProperty:
 
         flow = _make_flow(monkeypatch, tmp_path)
         assert isinstance(flow.health, HealthMonitor)
+
+    def test_health_status_defaults_to_healthy(self, monkeypatch, tmp_path):
+        flow = _make_flow(monkeypatch, tmp_path)
+        assert flow.health_status == "healthy"
+        assert flow.last_health_alerts == []
+
+    async def test_detection_loop_propagates_degraded_alerts(
+        self, monkeypatch, tmp_path
+    ):
+        """_detection_loop stores alerts and computes status after health check."""
+        flow = _make_flow(monkeypatch, tmp_path, tick_interval=0)
+        flow._running = True
+
+        alerts = [
+            {
+                "type": "high_error_rate",
+                "message": "x",
+                "value": 0.5,
+                "threshold": 0.3,
+            }
+        ]
+        check_calls = 0
+
+        def fake_check():
+            nonlocal check_calls
+            check_calls += 1
+            flow._running = False  # stop after first check
+            return alerts
+
+        monkeypatch.setattr(flow._health, "check", fake_check)
+        monkeypatch.setattr(flow._health._config, "check_interval_seconds", 0)
+
+        await flow._detection_loop()
+
+        assert flow._last_health_alerts == alerts
+        assert flow._health_status == "degraded"
+        assert check_calls >= 1
+
+    async def test_detection_loop_sets_unhealthy_status(self, monkeypatch, tmp_path):
+        """When health check returns severe alerts, flow status becomes unhealthy."""
+        from golem.health import ALERT_CONSECUTIVE_FAILURES
+
+        flow = _make_flow(monkeypatch, tmp_path, tick_interval=0)
+        flow._running = True
+
+        alerts = [
+            {
+                "type": ALERT_CONSECUTIVE_FAILURES,
+                "message": "5 consecutive failures",
+                "value": 5,
+                "threshold": 3,
+            }
+        ]
+        check_calls = 0
+
+        def fake_check():
+            nonlocal check_calls
+            check_calls += 1
+            if check_calls >= 2:
+                flow._running = False
+            return alerts
+
+        monkeypatch.setattr(flow._health, "check", fake_check)
+        monkeypatch.setattr(flow._health._config, "check_interval_seconds", 0)
+
+        await flow._detection_loop()
+
+        assert flow._health_status == "unhealthy"
 
 
 class TestCheckpointRecovery:

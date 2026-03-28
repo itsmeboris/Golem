@@ -269,7 +269,7 @@ class HealthMonitor:
         else:
             alerts = []
 
-        status = _compute_status(alerts)
+        status = compute_status(alerts)
 
         return {
             "status": status,
@@ -286,7 +286,7 @@ class HealthMonitor:
         }
 
 
-def _compute_status(alerts: list[AlertDict]) -> str:
+def compute_status(alerts: list[AlertDict]) -> str:
     """Derive three-tier status from active alerts.
 
     - healthy: no alerts
