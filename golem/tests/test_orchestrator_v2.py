@@ -338,6 +338,20 @@ class TestTick:
         orch._run_agent.assert_not_awaited()
         assert session.state == TaskSessionState.DETECTED
 
+    async def test_tick_detected_empty_grace_deadline_runs_immediately(self):
+        """BUG-002: empty grace_deadline must not raise ValueError."""
+        session = TaskSession(
+            parent_issue_id=1,
+            state=TaskSessionState.DETECTED,
+            grace_deadline="",
+        )
+        orch = _make_orch(session)
+        orch._run_agent = AsyncMock()
+        result = await orch.tick()
+        assert result is session
+        orch._run_agent.assert_awaited_once()
+        assert session.state == TaskSessionState.RUNNING
+
     async def test_tick_completed_noop(self):
         session = TaskSession(
             parent_issue_id=1,

@@ -396,11 +396,11 @@ class TaskOrchestrator:
 
     async def _tick_detected(self) -> None:
         """Wait for grace period, then spawn the agent."""
-        now = datetime.now(timezone.utc)
-        deadline = datetime.fromisoformat(self.session.grace_deadline)
-
-        if now < deadline:
-            return  # Still in grace period
+        if self.session.grace_deadline:
+            now = datetime.now(timezone.utc)
+            deadline = datetime.fromisoformat(self.session.grace_deadline)
+            if now < deadline:
+                return  # Still in grace period
 
         # Transition to RUNNING and spawn agent
         self._slog.info(
