@@ -321,6 +321,48 @@ class TestBatchMonitorUpdateEdgeCases:
         )
 
 
+class TestBatchMonitorLoadCorrupt:
+    """REL-008: load() must handle corrupt JSON without crashing or clearing state."""
+
+    def test_load_corrupt_json_does_not_crash(self, tmp_path):
+        """load() on corrupt JSON logs an error and returns without crashing."""
+        corrupt_file = tmp_path / "batches.json"
+        corrupt_file.write_text("{invalid json!!!", encoding="utf-8")
+
+        mon = BatchMonitor()
+        mon.load(corrupt_file)  # must not raise
+
+    def test_load_corrupt_json_preserves_existing_state(self, tmp_path):
+        """load() on corrupt JSON leaves pre-existing in-memory state intact."""
+        corrupt_file = tmp_path / "batches.json"
+        corrupt_file.write_text("{invalid json!!!", encoding="utf-8")
+
+        mon = BatchMonitor()
+        mon.register("pre-existing", [1, 2, 3])
+
+        mon.load(corrupt_file)
+
+        batch = mon.get("pre-existing")
+        assert batch is not None
+        assert batch.task_ids == [1, 2, 3]
+
+    def test_load_corrupt_json_logged_as_error(self, tmp_path, caplog):
+        """load() logs a descriptive error message when JSON is corrupt."""
+        import logging
+
+        corrupt_file = tmp_path / "batches.json"
+        corrupt_file.write_text("NOTJSON", encoding="utf-8")
+
+        mon = BatchMonitor()
+        with caplog.at_level(logging.ERROR, logger="golem.batch_monitor"):
+            mon.load(corrupt_file)
+
+        assert any(
+            "Corrupt" in r.message and r.levelno == logging.ERROR
+            for r in caplog.records
+        )
+
+
 class TestBatchMonitorList:
     def test_list_batches_sorted_by_created_at(self):
         """list_batches() returns batches sorted by created_at descending."""

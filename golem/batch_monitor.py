@@ -223,7 +223,11 @@ class BatchMonitor:
         """Load batches from a JSON file."""
         if not path.exists():
             return
-        raw = _json.loads(path.read_text(encoding="utf-8"))
+        try:
+            raw = _json.loads(path.read_text(encoding="utf-8"))
+        except (_json.JSONDecodeError, ValueError) as exc:
+            logger.error("Corrupt batch monitor state at %s: %s", path, exc)
+            return
         self._batches.clear()
         for gid, bdata in raw.get("batches", {}).items():
             self._batches[gid] = BatchState.from_dict(bdata)
