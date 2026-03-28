@@ -1,6 +1,7 @@
 # pylint: disable=too-few-public-methods,too-many-lines
 """Tests for golem.supervisor_v2_subagent — full coverage."""
 
+import subprocess
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -2056,6 +2057,26 @@ class TestDetectBaseBranch:
             result = SubagentSupervisor._detect_base_branch("/work")
             assert result == expected
 
+    def test_detect_base_branch_timeout_returns_master(self):
+        """TimeoutExpired on git subprocess returns 'master' as default."""
+        with patch(
+            "golem.supervisor_v2_subagent.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+        ):
+            result = SubagentSupervisor._detect_base_branch("/work")
+            assert result == "master"
+
+    def test_detect_base_branch_passes_timeout_30(self):
+        """subprocess.run is called with timeout=30 for git symbolic-ref."""
+        mock_result = MagicMock(returncode=0, stdout="refs/remotes/origin/main\n")
+        with patch(
+            "golem.supervisor_v2_subagent.subprocess.run",
+            return_value=mock_result,
+        ) as mock_run:
+            SubagentSupervisor._detect_base_branch("/work")
+            call_kwargs = mock_run.call_args[1]
+            assert call_kwargs["timeout"] == 30
+
 
 class TestCreatePullRequestAfterCommit:
     """Supervisor calls create_pull_request after a successful commit."""
@@ -2852,3 +2873,45 @@ class TestRunEnsembleRetry:
         assert escalated.verdict == "FAIL"
         assert "rsync" in escalated.summary
         mock_commit.assert_not_called()
+
+    async def test_rsync_passes_timeout_120(self):
+        """subprocess.run for rsync is called with timeout=120."""
+        sup, _ = self._make_ensemble_sup(n_candidates=2)
+
+        pass_v = ValidationVerdict(verdict="PASS", confidence=0.9, summary="ok")
+        fail_v = ValidationVerdict(verdict="FAIL", confidence=0.2, summary="fail")
+
+        captured_kwargs = {}
+
+        def _capture_rsync(*_args, **kwargs):
+            captured_kwargs.update(kwargs)
+            return MagicMock(returncode=0)
+
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.create_worktree",
+                side_effect=["/repo/wt/42000", "/repo/wt/42001"],
+            ),
+            patch(
+                "golem.supervisor_v2_subagent.invoke_cli_monitored",
+                return_value=_make_cli_result(cost=0.3),
+            ),
+            patch(
+                "golem.supervisor_v2_subagent.run_validation",
+                side_effect=[pass_v, fail_v],
+            ),
+            patch.object(sup, "_commit_and_complete", new=AsyncMock()),
+            patch("golem.supervisor_v2_subagent.cleanup_worktree"),
+            patch(
+                "golem.supervisor_v2_subagent.subprocess.run",
+                side_effect=_capture_rsync,
+            ),
+            patch("golem.supervisor_v2_subagent._write_prompt"),
+            patch("golem.supervisor_v2_subagent._write_trace"),
+        ):
+            initial_verdict = ValidationVerdict(
+                verdict="FAIL", confidence=0.1, summary="initial fail"
+            )
+            await sup._run_ensemble_retry(initial_verdict, "/repo/work", 42)
+
+        assert captured_kwargs.get("timeout") == 120

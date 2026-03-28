@@ -1067,6 +1067,7 @@ class SubagentSupervisor:
                 check=False,
                 capture_output=True,
                 text=True,
+                timeout=120,
             )
             if rsync_result.returncode != 0:
                 self._slog.error(
@@ -1289,13 +1290,18 @@ class SubagentSupervisor:
     @staticmethod
     def _detect_base_branch(work_dir: str) -> str:
         """Detect the default branch from git remote."""
-        result = subprocess.run(
-            ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
-            capture_output=True,
-            text=True,
-            check=False,
-            cwd=work_dir,
-        )
+        try:
+            result = subprocess.run(
+                ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
+                capture_output=True,
+                text=True,
+                check=False,
+                cwd=work_dir,
+                timeout=30,
+            )
+        except subprocess.TimeoutExpired:
+            logger.warning("_detect_base_branch timed out; defaulting to master")
+            return "master"
         if result.returncode == 0:
             ref = result.stdout.strip()
             return ref.replace("refs/remotes/origin/", "")
