@@ -40,6 +40,8 @@ Submit a prompt. Walk away. It's done.
 
 Most AI coding tools wait for you to invoke them. Golem runs the other way around.
 
+**Work anywhere** — Submit a prompt from any directory and Golem runs it there. Register multiple repos with `golem attach` — the heartbeat scans all of them with fair round-robin scheduling.
+
 **Daemon-centric** — Everything runs through the daemon. Submit a prompt from the CLI, drop a file, or hit the HTTP API — the daemon picks it up, executes it in the background, and reports back.
 
 **Parallel execution** — Multiple Claude instances run simultaneously, each in its own git worktree. Validated work merges cleanly through a sequential merge queue.
@@ -102,10 +104,11 @@ pip install -e .
 ### 2. Configure
 
 ```bash
-golem init                             # interactive wizard
-# or manually:
-cp config.yaml.example config.yaml     # tweak settings
+golem init                             # interactive wizard → writes ~/.golem/config.yaml
 ```
+
+Golem auto-creates `~/.golem/config.yaml` with sensible defaults on first run.
+To customize, run `golem init` or edit the file directly.
 
 <details>
 <summary><strong>GitHub Issues setup</strong></summary>
@@ -131,11 +134,16 @@ Golem assigns issues to itself on pickup, closes them on completion, and creates
 ### 3. Run
 
 ```bash
-# Submit a prompt — daemon starts automatically if not running
+# Submit a prompt — runs in your current directory, daemon auto-starts
 golem run -p "Refactor the logging module to use structured JSON"
 
 # Submit from a file
 golem run -f plan.md
+
+# Register repos for background heartbeat work
+golem attach                           # attach current directory
+golem attach /path/to/other/project    # attach any directory
+golem detach                           # unregister current directory
 
 # Check what's running
 golem status
@@ -152,7 +160,7 @@ For a full walkthrough with expected output, see the **[Getting Started](https:/
 
 ```mermaid
 flowchart TB
-    cli["golem run -p / -f"] -- submit --> flow
+    cli["golem run -p / -f<br/>(defaults to cwd)"] -- submit --> flow
     api["HTTP API"] -- submit --> flow
     tracker["Issue Tracker<br/>(plugin)"] -. poll .-> flow
 
@@ -165,6 +173,7 @@ flowchart TB
         retry --> orch
         val -- PASS --> mq["Merge Queue"]
         val -- PARTIAL --> retry
+        hb["Heartbeat<br/>(multi-repo)"] -. "idle → submit" .-> flow
     end
 
     mq -- "rebase + merge" --> commit["Commit"]
@@ -172,7 +181,7 @@ flowchart TB
     val -- FAIL --> report["Report Failure"]
 ```
 
-Tasks flow through a state machine: **DETECTED → RUNNING → VERIFYING → VALIDATING → COMPLETED** (or RETRYING / FAILED). Each task runs in an isolated git worktree with its own Claude instance. Validated work enters a sequential merge queue that rebases onto HEAD — your working tree is never touched.
+Tasks flow through a state machine: **DETECTED → RUNNING → VERIFYING → VALIDATING → COMPLETED** (or RETRYING / FAILED). Each task runs in an isolated git worktree with its own Claude instance. Validated work enters a sequential merge queue that rebases onto HEAD — your working tree is never touched. The heartbeat scans all attached repos with fair round-robin scheduling when the daemon is idle.
 
 ---
 

@@ -14,7 +14,7 @@ The daemon is the single execution engine. All task execution flows through it r
 
 ```mermaid
 flowchart TB
-    cli["golem run -p / -f"] -- submit --> flow
+    cli["golem run -p / -f<br/>(defaults to cwd)"] -- submit --> flow
     api["HTTP API"] -- submit --> flow
     tracker["Issue Tracker<br/>(plugin)"] -. poll .-> flow
 
@@ -33,16 +33,24 @@ flowchart TB
         val -- PARTIAL --> retry
         val -- FAIL --> report["Report Failure"]
 
-        hb["Heartbeat"] -. "idle → submit" .-> flow
+        subgraph hb ["Heartbeat Scheduler"]
+            direction LR
+            sched["Manager<br/>(round-robin)"] --> w1["Worker A"]
+            sched --> w2["Worker B"]
+        end
+        hb -. "idle → submit" .-> flow
         su["Self-Update"] -. SIGHUP .-> flow
         hm["Health Monitor"] -. alerts .-> notify
     end
 
+    registry["~/.golem/repos.json"] -. "attach/detach" .-> hb
     mq -- "rebase + merge" --> commit["Commit"]
     commit --> notify["Notify"]
 ```
 
 The **Flow Engine** (`golem/flow.py`) handles Claude CLI invocation and event-stream parsing. The **Orchestrator** (`golem/orchestrator.py`) is a durable state machine that checkpoints on every tick so in-progress tasks survive daemon restarts. The **Verifier** (`golem/verifier.py`) runs deterministic checks. The **Validation Agent** (`golem/validation.py`) dispatches a separate Claude session that reviews evidence and returns a structured verdict.
+
+The **Heartbeat Scheduler** (`golem/heartbeat.py`) is a thin round-robin scheduler that delegates scan work to **HeartbeatWorkers** (`golem/heartbeat_worker.py`) — one per attached repo. Workers own per-repo state (dedup, coverage cache, cooldowns, promotion counters). The scheduler owns global budget and inflight tracking. The repo registry (`golem/repo_registry.py`) is reloaded each tick, so `golem attach` / `golem detach` take effect without restarting the daemon.
 
 ---
 

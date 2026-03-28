@@ -12,30 +12,104 @@ self-update, health monitoring, config management, and SIGHUP reload.
 
 ---
 
+## Multi-Repo Support
+
+Golem operates across multiple directories. Register repos with the daemon
+using `golem attach`, and ad-hoc tasks default to the caller's current
+directory.
+
+### CLI
+
+```bash
+golem attach                        # register cwd, heartbeat on
+golem attach --no-heartbeat         # register cwd, heartbeat off
+golem attach /path/to/dir           # register explicit path
+golem detach                        # unregister cwd
+golem detach /path/to/dir           # unregister explicit path
+```
+
+Attach is idempotent — re-attaching updates settings (e.g., toggle heartbeat).
+No daemon restart required; the heartbeat reloads the registry each tick.
+
+### Ad-hoc Tasks
+
+`golem run -p "..."` defaults `work_dir` to the caller's `os.getcwd()`.
+Explicit `--cwd /path` still overrides. Issue-based runs (`golem run <id>`)
+use the full resolution chain (description directive → subject tag → config
+default).
+
+### Registry
+
+Attached repos are stored in `~/.golem/repos.json`. The path is overridable
+via the `GOLEM_REGISTRY_PATH` environment variable for testing.
+
+### Git Remote Auto-Detection
+
+On attach, Golem detects `owner/repo` from the git origin remote (SSH and
+HTTPS formats). When detected, Tier 1 issue triage uses `gh issue list -R
+owner/repo`. Non-git directories skip Tier 1 and run Tier 2 only.
+
+### Graceful Degradation
+
+| Feature | Git repo | Non-git directory |
+|---------|----------|-------------------|
+| Tier 1 (issues) | Auto-detect | Skipped |
+| TODO/FIXME scan | `git log -G` | Skipped |
+| Coverage scan | `pytest --cov` | Works |
+| Pitfall scan | `AGENTS.md` | Works (if exists) |
+| Ad-hoc tasks | Works | Works |
+| Worktree isolation | Works | Skipped |
+
+---
+
 ## Heartbeat — Self-Directed Work
 
 When the daemon is idle (no external tasks for 15 minutes by default), Golem
-starts looking for work on its own.
+starts looking for work on its own across all attached repos.
 
 ```mermaid
 flowchart LR
-    idle["Idle Daemon"] --> t1["Tier 1: Triage<br/>(haiku scans issues)"]
-    idle --> t2["Tier 2: Self-Improve<br/>(TODOs, coverage gaps,<br/>antipatterns)"]
-    t1 --> submit["Submit Task"]
-    t2 --> submit
+    idle["Idle Daemon"] --> sched["Scheduler<br/>(round-robin)"]
+    sched --> w1["Worker: repo A"]
+    sched --> w2["Worker: repo B"]
+    w1 --> t1["Tier 1: Triage"]
+    w1 --> t2["Tier 2: Self-Improve"]
+    w2 --> t1b["Tier 1: Triage"]
+    w2 --> t2b["Tier 2: Self-Improve"]
+    t1 & t2 & t1b & t2b --> submit["Submit Task"]
     submit --> agent["Normal Agent Pipeline"]
 ```
 
+### Architecture
+
+The `HeartbeatManager` (`golem/heartbeat.py`) is a thin scheduler. Per-repo
+scan logic lives in `HeartbeatWorker` (`golem/heartbeat_worker.py`) — one
+instance per attached repo.
+
+**Scheduler** — Owns global budget (`daily_spend_usd`), global inflight
+tracking, and round-robin index across workers.
+
+**Workers** — Own per-repo state: dedup memory, coverage cache, category
+cooldowns, promotion counters, and all scan/tier methods.
+
+### Fair Scheduling
+
+Each tick, the scheduler picks the next worker via round-robin. If a worker
+produces no candidates, the scheduler tries the next worker in the same tick —
+no wasted cycles. Stops after trying all workers once. At most one task is
+submitted per tick.
+
 ### Tier 1 — Issue Triage
 
-Scans untagged issues from your task source, runs each through Haiku to assess
-automatability, confidence, and complexity. Candidates below the confidence
-threshold are skipped.
+Scans untagged issues from the auto-detected GitHub remote, runs each through
+Haiku to assess automatability, confidence, and complexity. Candidates below
+the confidence threshold are skipped. Requires a detected GitHub remote;
+skipped for non-git directories.
 
 ### Tier 2 — Self-Improvement
 
-Scans the codebase for:
-- TODOs/FIXMEs in recent git history
+Scans the repo for:
+- TODOs/FIXMEs in recent git history (git repos only)
 - Modules below 100% coverage
 - Recurring antipatterns from `AGENTS.md`
 
@@ -45,18 +119,24 @@ empty-exception-handler fixes) are grouped into a single task, capped at
 
 ### Tier 1 Promotion
 
-After every `heartbeat_tier1_every_n` successful Tier 2 completions, the
-heartbeat forces a GitHub issue submission — bypassing budget, inflight limits,
-and complexity filters. This ensures real feature work gets attention instead
-of endless self-improvement. The promoted task runs as a normal Golem task
-(not tracked in heartbeat inflight) and uses the real state backend so issue
-close/comment updates reach the tracker.
+Per-worker. After every `heartbeat_tier1_every_n` successful Tier 2
+completions, the worker's heartbeat forces a GitHub issue submission —
+bypassing budget, inflight limits, and complexity filters. A promotion in one
+repo doesn't affect another.
 
 ### Deduplication
 
-Candidates are deduplicated with a configurable TTL (default 30 days). The
-dedup memory, inflight task IDs, and daily spend are persisted to
-`data/heartbeat_state.json` for recovery across restarts.
+Candidates are deduplicated per-worker with a configurable TTL (default 30
+days). The budget is shared globally; dedup memory is per-repo.
+
+### State Persistence
+
+| State | Location |
+|-------|----------|
+| Global (budget, inflight, round-robin index) | `~/.golem/data/heartbeat_state.json` |
+| Per-worker (dedup, coverage, cooldowns, promotion) | `~/.golem/data/heartbeat/<path_hash>.json` |
+
+Both are loaded on daemon startup and saved after each tick.
 
 ### Configuration
 
@@ -65,12 +145,12 @@ dedup memory, inflight task IDs, and daily spend are persisted to
 | `heartbeat_enabled` | `false` | Enable self-directed work |
 | `heartbeat_interval_seconds` | `300` | Scan frequency (5 min) |
 | `heartbeat_idle_threshold_seconds` | `900` | Idle time before activation (15 min) |
-| `heartbeat_daily_budget_usd` | `1.0` | Daily spend cap for heartbeat tasks |
-| `heartbeat_max_inflight` | `1` | Max concurrent heartbeat tasks |
+| `heartbeat_daily_budget_usd` | `1.0` | Daily spend cap (shared across all repos) |
+| `heartbeat_max_inflight` | `1` | Max concurrent heartbeat tasks (global) |
 | `heartbeat_candidate_limit` | `5` | Max candidates per scan |
 | `heartbeat_batch_size` | `5` | Max Tier 2 candidates per batch submission |
-| `heartbeat_tier1_every_n` | `3` | Force a GH issue after N Tier 2 completions |
-| `heartbeat_dedup_ttl_days` | `30` | Deduplication memory TTL |
+| `heartbeat_tier1_every_n` | `3` | Force a GH issue after N Tier 2 completions (per-worker) |
+| `heartbeat_dedup_ttl_days` | `30` | Deduplication memory TTL (per-worker) |
 
 ---
 
@@ -109,8 +189,8 @@ flowchart LR
 | `self_update_interval_seconds` | `600` | Poll frequency (10 min) |
 | `self_update_strategy` | `merged_only` | `merged_only` (fast-forward) or `any_commit` (hard reset) |
 
-State persists to `data/self_update_state.json` including update history (last
-50 entries) and pre-update SHA for rollback.
+State persists to `~/.golem/data/self_update_state.json` including update
+history (last 50 entries) and pre-update SHA for rollback.
 
 ### API
 
@@ -326,9 +406,36 @@ golem config list                   # list all fields (sensitive values masked)
 
 Changes made via `golem config set` are written atomically and the daemon is sent `SIGHUP` to pick them up without restart.
 
+### GOLEM_HOME
+
+All Golem global state lives under `~/.golem/`:
+
+```
+~/.golem/
+├── config.yaml                  # main config (auto-created on first run)
+├── repos.json                   # attached repo registry
+└── data/
+    ├── heartbeat_state.json     # global heartbeat state
+    ├── heartbeat/               # per-worker state files
+    │   ├── <hash>.json
+    │   └── ...
+    ├── self_update_state.json   # self-update history
+    └── ...
+```
+
+Override with the `GOLEM_HOME` environment variable (useful for testing and CI).
+
+Config search order:
+1. Explicit `--config` / `-c` CLI argument
+2. `~/.golem/config.yaml`
+3. `./config.yaml` (cwd fallback)
+4. `./config.yml` (cwd fallback)
+
 ### Environment Variables
 
 ```bash
+GOLEM_HOME=/custom/path          # override ~/.golem/ (testing/CI)
+GOLEM_REGISTRY_PATH=/custom.json # override repos.json path (testing)
 REDMINE_URL=https://redmine.example.com
 REDMINE_API_KEY=your-api-key
 TEAMS_GOLEM_WEBHOOK_URL=https://...   # optional, or use Slack:
