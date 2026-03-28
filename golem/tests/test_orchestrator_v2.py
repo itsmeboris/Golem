@@ -3033,3 +3033,376 @@ class TestStallDetection:
 
         orch._retry_agent.assert_awaited_once()
         assert session.root_cause == ""
+
+class TestPromotedSignals:
+    """Tests for retry signal promotion wired into orchestrator control flow."""
+
+    def _make_fail_vr(self, failures=None):
+        from golem.verifier import VerificationResult
+
+        return VerificationResult(
+            passed=False,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=False,
+            pytest_output="1 failed",
+            failures=failures or ["test_x.py::test_foo"],
+            duration_s=1.0,
+        )
+
+    def _make_pass_vr(self):
+        from golem.verifier import VerificationResult
+
+        return VerificationResult(
+            passed=True,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="10 passed",
+            duration_s=1.0,
+        )
+
+    def _make_orch_with_profile(self, session):
+        profile = MagicMock()
+        profile.task_source.get_task_description.return_value = "desc"
+        profile.prompt_provider.format.return_value = "prompt"
+        profile.tool_provider.servers_for_subject.return_value = []
+        return _make_orch(session, profile=profile)
+
+    # -------------------------------------------------------------------------
+    # test_promoted_signals_stored_on_session
+    # -------------------------------------------------------------------------
+
+    async def test_promoted_signals_stored_on_session_after_verification(self):
+        """After _run_verification, newly promoted signals are stored on session."""
+        from golem.observation_hooks import ObservationSignal
+
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        orch = _make_orch(session)
+
+        fail_result = self._make_fail_vr()
+        fake_signal = ObservationSignal(
+            category="pytest_failure",
+            pattern="test_failed: test_x.py::test_foo",
+            source="verification",
+        )
+        promoted = ["pytest_failure::test_failed: test_x.py::test_foo"]
+
+        with (
+            patch("golem.orchestrator.run_verification", return_value=fail_result),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch(
+                "golem.orchestrator.mine_verification_signals",
+                return_value=[fake_signal],
+            ),
+            patch.object(
+                orch._signal_accumulator, "get_promoted", return_value=promoted
+            ),
+        ):
+            await orch._run_verification("/work")
+
+        assert session.promoted_signals == promoted
+
+    async def test_promoted_signals_stored_on_session_after_validation(self):
+        """After _run_validation, newly promoted signals are stored on session."""
+        from golem.observation_hooks import ObservationSignal
+
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        profile = MagicMock()
+        profile.task_source.get_task_description.return_value = "desc"
+        orch = _make_orch(session, profile=profile)
+
+        verdict = ValidationVerdict(
+            verdict="PARTIAL",
+            confidence=0.5,
+            summary="needs work",
+            concerns=["Missing error handling"],
+        )
+        val_signal = ObservationSignal(
+            category="validation_concern",
+            pattern="missing error handling",
+            source="validation",
+        )
+        promoted = ["validation_concern::missing error handling"]
+
+        with (
+            patch.object(orch, "_run_validation_in_executor", return_value=verdict),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch(
+                "golem.orchestrator.mine_validation_signals",
+                return_value=[val_signal],
+            ),
+            patch.object(
+                orch._signal_accumulator, "get_promoted", return_value=promoted
+            ),
+        ):
+            await orch._run_validation(42, "/work")
+
+        assert session.promoted_signals == promoted
+
+    async def test_promoted_signals_accumulate_across_calls(self):
+        """Promoted signals from multiple calls are merged (union) on session."""
+        from golem.observation_hooks import ObservationSignal
+
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        profile = MagicMock()
+        profile.task_source.get_task_description.return_value = "desc"
+        orch = _make_orch(session, profile=profile)
+
+        # Pre-seed session with a promoted signal from earlier verification
+        session.promoted_signals = ["pytest_failure::import_error: golem.foo"]
+
+        verdict = ValidationVerdict(
+            verdict="PARTIAL",
+            confidence=0.5,
+            summary="needs work",
+            concerns=["Missing error handling"],
+        )
+        val_signal = ObservationSignal(
+            category="validation_concern",
+            pattern="missing error handling",
+            source="validation",
+        )
+        new_promoted = ["validation_concern::missing error handling"]
+
+        with (
+            patch.object(orch, "_run_validation_in_executor", return_value=verdict),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch(
+                "golem.orchestrator.mine_validation_signals",
+                return_value=[val_signal],
+            ),
+            patch.object(
+                orch._signal_accumulator, "get_promoted", return_value=new_promoted
+            ),
+        ):
+            await orch._run_validation(42, "/work")
+
+        # Both original and new signals present
+        assert "pytest_failure::import_error: golem.foo" in session.promoted_signals
+        assert "validation_concern::missing error handling" in session.promoted_signals
+
+    async def test_no_promoted_signals_does_not_modify_session(self):
+        """When get_promoted() returns empty list, session.promoted_signals unchanged."""
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        orch = _make_orch(session)
+
+        pass_result = self._make_pass_vr()
+
+        with (
+            patch("golem.orchestrator.run_verification", return_value=pass_result),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch("golem.orchestrator.mine_verification_signals", return_value=[]),
+            patch.object(orch._signal_accumulator, "get_promoted", return_value=[]),
+        ):
+            await orch._run_verification("/work")
+
+        assert session.promoted_signals == []
+
+    # -------------------------------------------------------------------------
+    # test_promoted_signals_trigger_escalation
+    # -------------------------------------------------------------------------
+
+    async def test_promoted_signals_trigger_escalation_on_last_retry(self):
+        """When promoted signals exist and retry_count >= max_retries, escalate immediately."""
+        # retry_count=1, max_retries=1 → last retry exhausted
+        session = TaskSession(
+            parent_issue_id=42,
+            parent_subject="Fix",
+            retry_count=1,
+            promoted_signals=["pytest_failure::import_error: golem.missing"],
+        )
+        orch = self._make_orch_with_profile(session)
+        orch._escalate = MagicMock()
+
+        fail_vr = self._make_fail_vr()
+
+        deps = TestRunAgentMonolithic()._mock_deps()
+        with (
+            deps["resolve"],
+            deps["invoke"],
+            deps["preflight"],
+            deps["write_prompt"],
+            deps["write_trace"],
+            patch("golem.orchestrator.run_verification", return_value=fail_vr),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch("golem.orchestrator.delete_checkpoint"),
+            patch.object(orch, "_write_report"),
+            patch.object(orch, "_record_run"),
+        ):
+            await orch._run_agent_monolithic()
+
+        orch._escalate.assert_called_once()
+        escalate_verdict = orch._escalate.call_args[0][0]
+        assert escalate_verdict.verdict == "FAIL"
+        assert session.state != TaskSessionState.RETRYING  # escalated, not retried
+
+    async def test_promoted_signals_escalation_logs_signals(self):
+        """When escalating due to promoted signals, log message includes signal keys."""
+        session = TaskSession(
+            parent_issue_id=42,
+            parent_subject="Fix",
+            promoted_signals=["pytest_failure::import_error: golem.missing"],
+        )
+        profile = MagicMock()
+        orch = _make_orch(session, profile=profile)
+
+        log_messages = []
+
+        def capture_warning(msg, *args):
+            log_messages.append(msg % args if args else msg)
+
+        verdict = ValidationVerdict(verdict="FAIL", confidence=0.0, summary="x")
+
+        with patch.object(orch._slog, "warning", side_effect=capture_warning):
+            orch._check_promoted_and_escalate(verdict)
+
+        assert any("Promoted signals" in m for m in log_messages)
+        assert any("golem.missing" in m for m in log_messages)
+
+    # -------------------------------------------------------------------------
+    # test_no_promoted_signals_normal_retry
+    # -------------------------------------------------------------------------
+
+    async def test_no_promoted_signals_normal_retry_proceeds(self):
+        """Without promoted signals on last retry, normal escalation path (not promoted path)."""
+        session = TaskSession(
+            parent_issue_id=42,
+            parent_subject="Fix",
+            retry_count=1,  # exhausted retries
+            promoted_signals=[],  # no promoted signals
+        )
+        orch = self._make_orch_with_profile(session)
+
+        fail_vr = self._make_fail_vr()
+
+        deps = TestRunAgentMonolithic()._mock_deps()
+        with (
+            deps["resolve"],
+            deps["invoke"],
+            deps["preflight"],
+            deps["write_prompt"],
+            deps["write_trace"],
+            patch("golem.orchestrator.run_verification", return_value=fail_vr),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch("golem.orchestrator.delete_checkpoint"),
+            patch.object(orch, "_write_report"),
+            patch.object(orch, "_record_run"),
+        ):
+            await orch._run_agent_monolithic()
+
+        # Normal escalation path (verification fails, retries exhausted, escalated normally)
+        assert session.state == TaskSessionState.FAILED
+        # root_cause should be empty (not identical_failures, not budget_exceeded)
+        assert session.root_cause == ""
+
+    async def test_promoted_signals_with_retries_available_does_not_force_escalate(
+        self,
+    ):
+        """When promoted signals exist but retry is still available, retry proceeds normally."""
+        session = TaskSession(
+            parent_issue_id=42,
+            parent_subject="Fix",
+            retry_count=0,  # retries still available (max=1)
+            promoted_signals=["pytest_failure::import_error: golem.missing"],
+        )
+        orch = self._make_orch_with_profile(session)
+        orch._retry_agent = AsyncMock()
+
+        fail_vr = self._make_fail_vr()
+
+        deps = TestRunAgentMonolithic()._mock_deps()
+        with (
+            deps["resolve"],
+            deps["invoke"],
+            deps["preflight"],
+            deps["write_prompt"],
+            deps["write_trace"],
+            deps["commit"],
+            patch("golem.orchestrator.run_verification", return_value=fail_vr),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch("golem.orchestrator.delete_checkpoint"),
+            patch.object(orch, "_write_report"),
+            patch.object(orch, "_record_run"),
+        ):
+            await orch._run_agent_monolithic()
+
+        # Still retries because there are retries left
+        orch._retry_agent.assert_awaited_once()
+
+    # -------------------------------------------------------------------------
+    # test_promoted_signals_serialized
+    # -------------------------------------------------------------------------
+
+    def test_promoted_signals_field_default_is_empty_list(self):
+        """TaskSession.promoted_signals defaults to empty list."""
+        session = TaskSession(parent_issue_id=1)
+        assert session.promoted_signals == []
+        assert isinstance(session.promoted_signals, list)
+
+    def test_promoted_signals_round_trip_to_dict(self):
+        """promoted_signals field survives to_dict/from_dict."""
+        signals = [
+            "pytest_failure::import_error: golem.foo",
+            "validation_concern::missing error handling",
+        ]
+        session = TaskSession(parent_issue_id=42, promoted_signals=signals)
+        d = session.to_dict()
+        assert d["promoted_signals"] == signals
+        assert isinstance(d["promoted_signals"], list)
+
+        restored = TaskSession.from_dict(d)
+        assert restored.promoted_signals == signals
+
+    def test_promoted_signals_empty_round_trip(self):
+        """Empty promoted_signals survives serialization."""
+        session = TaskSession(parent_issue_id=42)
+        d = session.to_dict()
+        assert d["promoted_signals"] == []
+
+        restored = TaskSession.from_dict(d)
+        assert restored.promoted_signals == []
+
+    def test_promoted_signals_from_dict_missing_key_defaults_empty(self):
+        """from_dict with no promoted_signals key yields empty list (backward compat)."""
+        session = TaskSession.from_dict({"parent_issue_id": 1, "state": "detected"})
+        assert session.promoted_signals == []
+
+    def test_promoted_signals_independent_instances(self):
+        """Two TaskSession instances do not share the promoted_signals list."""
+        s1 = TaskSession(parent_issue_id=1)
+        s2 = TaskSession(parent_issue_id=2)
+        s1.promoted_signals.append("signal_a")
+        assert s2.promoted_signals == []
+
+    # -------------------------------------------------------------------------
+    # _check_promoted_and_escalate unit tests
+    # -------------------------------------------------------------------------
+
+    def test_check_promoted_no_promoted_signals_returns_false(self):
+        """_check_promoted_and_escalate returns False when no promoted signals."""
+        session = TaskSession(parent_issue_id=1, promoted_signals=[])
+        orch = _make_orch(session)
+        verdict = ValidationVerdict(verdict="FAIL", confidence=0.0, summary="x")
+        result = orch._check_promoted_and_escalate(verdict)
+        assert result is False
+
+    def test_check_promoted_with_signals_calls_escalate_returns_true(self):
+        """_check_promoted_and_escalate calls _escalate and returns True when signals present."""
+        session = TaskSession(
+            parent_issue_id=42,
+            parent_subject="Fix",
+            promoted_signals=["pytest_failure::import_error: golem.foo"],
+        )
+        profile = MagicMock()
+        orch = _make_orch(session, profile=profile)
+        verdict = ValidationVerdict(verdict="FAIL", confidence=0.0, summary="bad")
+
+        result = orch._check_promoted_and_escalate(verdict)
+
+        assert result is True
+        assert session.state == TaskSessionState.FAILED

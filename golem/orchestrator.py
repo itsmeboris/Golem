@@ -179,6 +179,8 @@ class TaskSession:
     phase_handoffs: list[PhaseHandoffDict] = field(default_factory=list)
     # Stall / abort root cause
     root_cause: str = ""
+    # Promoted observation signals (patterns seen >= threshold times)
+    promoted_signals: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-safe dictionary."""
@@ -242,6 +244,7 @@ class TaskSession:
             human_feedback_at=data.get("human_feedback_at", ""),
             phase_handoffs=data.get("phase_handoffs", []),
             root_cause=_parse_root_cause(data.get("root_cause", "")),
+            promoted_signals=data.get("promoted_signals", []),
         )
 
 
@@ -612,6 +615,9 @@ class TaskOrchestrator:
                     concerns=[feedback],
                 )
                 self._apply_verdict(synth_verdict)
+                # Guard 3: promoted signals — systematic issue detected, escalate with context
+                if self._check_promoted_and_escalate(synth_verdict):
+                    return
                 self._escalate(synth_verdict)
                 return
 
@@ -798,6 +804,12 @@ class TaskOrchestrator:
                 len(val_signals),
             )
 
+        # Update session with any newly promoted signals
+        promoted = self._signal_accumulator.get_promoted()
+        for key in promoted:
+            if key not in self.session.promoted_signals:
+                self.session.promoted_signals.append(key)
+
         try:
             save_checkpoint(issue_id, self.session, phase="validated")
         except Exception:  # pylint: disable=broad-exception-caught
@@ -845,6 +857,12 @@ class TaskOrchestrator:
                     "Detected %d identical retry pattern(s)", len(retry_signals)
                 )
         self._last_verification = result
+
+        # Update session with any newly promoted signals
+        promoted = self._signal_accumulator.get_promoted()
+        for key in promoted:
+            if key not in self.session.promoted_signals:
+                self.session.promoted_signals.append(key)
 
         try:
             save_checkpoint(
@@ -1116,6 +1134,21 @@ class TaskOrchestrator:
 
         if retry_verdict.verdict != "PASS":
             self._escalate(retry_verdict)
+
+    def _check_promoted_and_escalate(self, verdict: ValidationVerdict) -> bool:
+        """Check for promoted signals and escalate if any exist.
+
+        Returns True if escalation was triggered (caller should stop processing),
+        False if no promoted signals are present.
+        """
+        if not self.session.promoted_signals:
+            return False
+        self._slog.warning(
+            "Promoted signals detected, escalating: %s",
+            ", ".join(self.session.promoted_signals),
+        )
+        self._escalate(verdict)
+        return True
 
     def _escalate(self, verdict: ValidationVerdict, root_cause: str = "") -> None:
         """Mark session FAILED and post escalation details to Redmine."""
