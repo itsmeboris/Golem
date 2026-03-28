@@ -14,7 +14,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [x] BUG-003: **`_bisect_merges` empty-list guard** — early return None for empty list (GH #62, 2026-03-29)
 - [x] SEC-001: **API file-read path traversal** — removed untrusted work_dir from allowed bases; only CWD and registry trusted (GH #63, #84, 2026-03-29)
 - [x] BUG-005: **Merge queue lock-free reads** — added threading.Lock for thread-safe reads of shared state (GH #85, 2026-03-29)
-- [ ] SEC-008: **merge_review path traversal** — `_read_file_content()` constructs `Path(base_dir) / filepath` without validating resolved path stays within `base_dir`; attacker-controlled commit content could read arbitrary files (GH #86)
+- [x] SEC-008: **merge_review path traversal** — validate resolved path stays within base_dir before reading (GH #86, 2026-03-29)
 
 ### P1 — Important
 

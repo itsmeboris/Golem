@@ -49,6 +49,11 @@ class TestReadFileContent:
         result = _read_file_content(str(tmp_path), "big.py")
         assert len(result) == 100
 
+    def test_path_traversal_blocked(self, tmp_path):
+        result = _read_file_content(str(tmp_path), "../../etc/passwd")
+        assert "blocked" in result
+        assert "path traversal" in result
+
 
 class TestFormatMissingSummary:
     def test_basic(self, sample_missing):

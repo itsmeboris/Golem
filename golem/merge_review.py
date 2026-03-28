@@ -36,6 +36,11 @@ class ReconciliationResult:
 
 def _read_file_content(base_dir: str, filepath: str) -> str:
     full = Path(base_dir) / filepath
+    try:
+        full.resolve().relative_to(Path(base_dir).resolve())
+    except ValueError:
+        logger.warning("Path traversal blocked: %s escapes %s", filepath, base_dir)
+        return f"(file {filepath} blocked — path traversal)"
     if not full.exists():
         return f"(file {filepath} does not exist)"
     return full.read_text(encoding="utf-8", errors="replace")
