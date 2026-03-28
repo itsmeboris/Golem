@@ -146,7 +146,7 @@ function subjectTitle(session) {
 }
 
 const PHASE_COLORS = {
-  PREFLIGHT: 'var(--cyan, #5eead4)',
+  PREFLIGHT: 'var(--cyan)',
   UNDERSTAND: 'var(--blue)', PLAN: 'var(--purple)',
   BUILD: 'var(--accent)', REVIEW: 'var(--orange)', VERIFY: 'var(--green)'
 };

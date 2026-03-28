@@ -4,13 +4,13 @@
 :root{
   --metrics-min:150px;
   --tab-pre-max-h:400px;
-  --phase-scout:#22d3ee;--phase-scout-bg:rgba(34,211,238,0.1);
-  --phase-build:#4ade80;--phase-build-bg:rgba(74,222,128,0.1);
-  --phase-review:#fbbf24;--phase-review-bg:rgba(251,191,36,0.1);
-  --phase-verify:#2dd4bf;--phase-verify-bg:rgba(45,212,191,0.1);
-  --phase-validation:#a78bfa;--phase-validation-bg:rgba(167,139,250,0.1);
-  --phase-commit:#e2e8f0;--phase-commit-bg:rgba(226,232,240,0.08);
-  --phase-retry:#fb923c;--phase-retry-bg:rgba(251,146,60,0.1);
+  --phase-scout:#4db8a4;--phase-scout-bg:rgba(77,184,164,0.08);
+  --phase-build:#5ec480;--phase-build-bg:rgba(94,196,128,0.08);
+  --phase-review:#e8a832;--phase-review-bg:rgba(232,168,50,0.08);
+  --phase-verify:#4db8a4;--phase-verify-bg:rgba(77,184,164,0.08);
+  --phase-validation:#9d8ec7;--phase-validation-bg:rgba(157,142,199,0.08);
+  --phase-commit:#c8c6be;--phase-commit-bg:rgba(200,198,190,0.06);
+  --phase-retry:#e07840;--phase-retry-bg:rgba(224,120,64,0.08);
 }
 
 html,body{height:100%;font-family:var(--font-sans);background:var(--bg-base);color:var(--text-primary);font-size:15px;line-height:1.55;overflow:hidden}

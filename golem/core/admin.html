@@ -6,51 +6,51 @@
 <title>Golem — Admin</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:system-ui,-apple-system,sans-serif;background:#0f172a;color:#e2e8f0;line-height:1.6}
+body{font-family:'DM Sans',system-ui,-apple-system,sans-serif;background:#0c0c0e;color:#e4e2dc;line-height:1.6}
 .container{max-width:900px;margin:0 auto;padding:1.5rem}
-h1{font-size:1.6rem;font-weight:600;margin-bottom:1rem;color:#f8fafc}
-h2{font-size:1.15rem;font-weight:600;margin-bottom:.75rem;color:#f8fafc}
-a{color:#60a5fa;text-decoration:none}
+h1{font-size:1.6rem;font-weight:600;margin-bottom:1rem;color:#e4e2dc}
+h2{font-size:1.15rem;font-weight:600;margin-bottom:.75rem;color:#e4e2dc}
+a{color:#5b9bd5;text-decoration:none}
 a:hover{text-decoration:underline}
-.muted{color:#64748b}
+.muted{color:#605e56}
 .back-link{margin-bottom:1.5rem;display:inline-block;font-size:.85rem}
 
 /* --- Login form --- */
-.login-panel{background:#1e293b;border-radius:.75rem;padding:2rem;border:1px solid #334155;max-width:400px;margin:3rem auto}
+.login-panel{background:#1c1c20;border-radius:.75rem;padding:2rem;border:1px solid #2a2a30;max-width:400px;margin:3rem auto}
 .login-panel h2{text-align:center;margin-bottom:1rem}
-.login-panel p{text-align:center;color:#94a3b8;font-size:.85rem;margin-bottom:1.5rem}
+.login-panel p{text-align:center;color:#9a978e;font-size:.85rem;margin-bottom:1.5rem}
 .login-row{display:flex;gap:.5rem}
-.login-input{flex:1;background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:.5rem .75rem;border-radius:.375rem;font-size:.85rem}
-.login-input:focus{outline:none;border-color:#3b82f6}
-.login-btn{background:#3b82f6;color:#fff;border:none;padding:.5rem 1.25rem;border-radius:.375rem;font-size:.85rem;cursor:pointer;font-weight:600}
-.login-btn:hover{background:#2563eb}
-.login-error{color:#f87171;font-size:.8rem;margin-top:.5rem;text-align:center;display:none}
+.login-input{flex:1;background:#0c0c0e;color:#e4e2dc;border:1px solid #2a2a30;padding:.5rem .75rem;border-radius:.375rem;font-size:.85rem}
+.login-input:focus{outline:none;border-color:#e8a832}
+.login-btn{background:#e8a832;color:#0c0c0e;border:none;padding:.5rem 1.25rem;border-radius:.375rem;font-size:.85rem;cursor:pointer;font-weight:600}
+.login-btn:hover{background:#f0b848}
+.login-error{color:#ef6461;font-size:.8rem;margin-top:.5rem;text-align:center;display:none}
 
 /* --- Flow control panel --- */
 .section{margin-bottom:1.5rem}
-.panel{background:#1e293b;border-radius:.75rem;padding:1.25rem;border:1px solid #334155;margin-bottom:1.5rem}
+.panel{background:#1c1c20;border-radius:.75rem;padding:1.25rem;border:1px solid #2a2a30;margin-bottom:1.5rem}
 .panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem}
 .flow-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:.75rem}
-.fc-card{background:#0f172a;border-radius:.75rem;padding:1rem 1.25rem;border:1px solid #334155;display:flex;align-items:center;justify-content:space-between;gap:.75rem}
+.fc-card{background:#0c0c0e;border-radius:.75rem;padding:1rem 1.25rem;border:1px solid #2a2a30;display:flex;align-items:center;justify-content:space-between;gap:.75rem}
 .fc-info{display:flex;align-items:center;gap:.5rem;min-width:0}
-.fc-name{font-weight:600;font-size:.95rem;color:#cbd5e1;text-transform:capitalize;white-space:nowrap}
+.fc-name{font-weight:600;font-size:.95rem;color:#e4e2dc;text-transform:capitalize;white-space:nowrap}
 .fc-state{font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;padding:.15rem .5rem;border-radius:999px;font-weight:600;white-space:nowrap}
-.fc-state.running{background:#064e3b;color:#4ade80}
-.fc-state.stopped{background:#450a0a;color:#f87171}
-.fc-state.disabled{background:#1e293b;color:#64748b}
-.fc-state.available{background:#422006;color:#fbbf24}
+.fc-state.running{background:#0c1a16;color:#2dd4a8}
+.fc-state.stopped{background:#1c0e0e;color:#ef6461}
+.fc-state.disabled{background:#1c1c20;color:#605e56}
+.fc-state.available{background:#1c1608;color:#e8a832}
 .fc-actions{display:flex;gap:.4rem;flex-shrink:0}
-.fc-btn{padding:.35rem .75rem;border-radius:.375rem;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #334155;transition:background .15s}
-.fc-btn.start{background:#064e3b;color:#4ade80;border-color:#065f46}
-.fc-btn.start:hover{background:#065f46}
-.fc-btn.stop{background:#450a0a;color:#f87171;border-color:#7f1d1d}
-.fc-btn.stop:hover{background:#7f1d1d}
-.fc-btn.restart{background:#172554;color:#60a5fa;border-color:#1e3a8a}
-.fc-btn.restart:hover{background:#1e3a8a}
+.fc-btn{padding:.35rem .75rem;border-radius:.375rem;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #2a2a30;transition:background .15s}
+.fc-btn.start{background:#0c1a16;color:#2dd4a8;border-color:#164e3a}
+.fc-btn.start:hover{background:#164e3a}
+.fc-btn.stop{background:#1c0e0e;color:#ef6461;border-color:#4a1616}
+.fc-btn.stop:hover{background:#4a1616}
+.fc-btn.restart{background:#0e1520;color:#5b9bd5;border-color:#1a3050}
+.fc-btn.restart:hover{background:#1a3050}
 .fc-btn:disabled{opacity:.4;cursor:not-allowed}
-.status-msg{font-size:.8rem;color:#94a3b8}
-.logout-btn{background:none;border:1px solid #334155;color:#94a3b8;padding:.3rem .75rem;border-radius:.375rem;font-size:.75rem;cursor:pointer}
-.logout-btn:hover{background:#1e293b;color:#e2e8f0}
+.status-msg{font-size:.8rem;color:#9a978e}
+.logout-btn{background:none;border:1px solid #2a2a30;color:#9a978e;padding:.3rem .75rem;border-radius:.375rem;font-size:.75rem;cursor:pointer}
+.logout-btn:hover{background:#1c1c20;color:#e4e2dc}
 </style>
 </head>
 <body>
