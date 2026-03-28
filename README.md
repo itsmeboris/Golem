@@ -15,7 +15,7 @@
 <p align="center">
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white" alt="Python 3.11+"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT License"></a>
-  <a href="#quick-start"><img src="https://img.shields.io/badge/get_started-→-blue" alt="Get Started"></a>
+  <a href="https://github.com/itsmeboris/Golem/wiki"><img src="https://img.shields.io/badge/docs-wiki-blue?logo=github" alt="Wiki"></a>
   <a href="https://star-history.com/#itsmeboris/golem&Date"><img src="https://img.shields.io/badge/star_history-→-yellow" alt="Star History"></a>
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/made_with-Claude-blueviolet?logo=anthropic" alt="Made with Claude"></a>
 </p>
@@ -25,7 +25,6 @@
   <a href="#why-golem">Why Golem</a>&nbsp;&nbsp;·&nbsp;&nbsp;
   <a href="#how-it-works">How It Works</a>&nbsp;&nbsp;·&nbsp;&nbsp;
   <a href="https://github.com/itsmeboris/Golem/wiki">Wiki</a>&nbsp;&nbsp;·&nbsp;&nbsp;
-  <a href="docs/architecture.md">Architecture</a>&nbsp;&nbsp;·&nbsp;&nbsp;
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
@@ -63,8 +62,6 @@ Most AI coding tools wait for you to invoke them. Golem runs the other way aroun
 
 ## How Is This Different?
 
-Most AI coding tools are interactive — you drive, they assist. Golem is autonomous — you submit, it delivers.
-
 | | Interactive tools | Autonomous agents | **Golem** |
 |---|---|---|---|
 | **Mode** | You drive | Agent drives | **Agent drives** |
@@ -72,8 +69,6 @@ Most AI coding tools are interactive — you drive, they assist. Golem is autono
 | **Validation** | Manual review | Internal / benchmarks | **black + pylint + pytest + AST + review agent** |
 | **Budget control** | None | Varies | **Per-task dollar limit** |
 | **Merge workflow** | Manual | Patch / internal | **Rebase + merge queue + integrity check** |
-
-Claude Code is the engine. Golem is the autonomous workflow — validation, parallel execution, merge queue, and budget control — that lets you submit a prompt and walk away.
 
 ---
 
@@ -115,8 +110,6 @@ cp config.yaml.example config.yaml     # tweak settings
 <details>
 <summary><strong>GitHub Issues setup</strong></summary>
 
-To have Golem poll GitHub Issues instead of local file drops:
-
 ```bash
 gh auth login                          # authenticate the gh CLI
 golem init                             # select "github" profile, enter owner/repo
@@ -151,27 +144,7 @@ golem status
 golem dashboard --port 8081
 ```
 
-**`golem status` output:**
-
-```
-=== Golem Status (last 24h — golem) ===
-  Daemon:       running (PID 48201)
-
-  Uptime:       1h 23m 0s
-
-  ACTIVE:
-    # 1001  First-run config wizard (golem init)
-           Phase: orchestrating  Model: opus  Elapsed: 4m 12s  Cost: $1.24
-
-  Queue:        0 waiting
-
-  RECENT:
-    [OK  ]  2m 0s ago  #  998  Fix login bug                     $0.82  1m 45s
-    [FAIL]  18m 0s ago #  997  Add retry logic                   $2.10  5m 30s
-
-  HISTORY:
-    Total: 47  Success: 89.4%  Avg: 2m 22s  Cost: $15.82
-```
+For a full walkthrough with expected output, see the **[Getting Started](https://github.com/itsmeboris/Golem/wiki/Getting-Started)** wiki page.
 
 ---
 
@@ -201,16 +174,17 @@ flowchart TB
 
 Tasks flow through a state machine: **DETECTED → RUNNING → VERIFYING → VALIDATING → COMPLETED** (or RETRYING / FAILED). Each task runs in an isolated git worktree with its own Claude instance. Validated work enters a sequential merge queue that rebases onto HEAD — your working tree is never touched.
 
-For the full lifecycle, agent intelligence pipeline, HTTP API, and profile system, see the **[Architecture Guide](docs/architecture.md)**.
-
 ---
 
-## More
+## Documentation
 
-- **[Wiki](https://github.com/itsmeboris/Golem/wiki)** — comprehensive guides for users, operators, and contributors
-- **[Architecture](docs/architecture.md)** — task lifecycle, agent pipeline, subagents, profiles, dashboard, HTTP API
-- **[Operations Guide](docs/operations.md)** — configuration reference, heartbeat, self-update, health monitoring, SIGHUP reload
-- **[Contributing](CONTRIBUTING.md)** — development setup, project layout, testing, adding backends and skills
+| Resource | Description |
+|----------|-------------|
+| **[Wiki](https://github.com/itsmeboris/Golem/wiki)** | Comprehensive guides — getting started, configuration, CLI, dashboard, troubleshooting, architecture, and more |
+| **[Architecture](docs/architecture.md)** | Technical deep-dive — task lifecycle, agent pipeline, profiles, HTTP API |
+| **[Operations](docs/operations.md)** | Operational reference — heartbeat, self-update, health monitoring, config management |
+| **[Contributing](CONTRIBUTING.md)** | Development setup, project layout, coding conventions, testing |
+| **[Changelog](CHANGELOG.md)** | Release history |
 
 ---
 
