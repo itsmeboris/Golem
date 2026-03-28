@@ -362,14 +362,23 @@ class TestSubmitEndpoint:
 
         prompt_file = tmp_path / "task.md"
         prompt_file.write_text("Do something", encoding="utf-8")
-        req = _make_request(json_data={"file": str(prompt_file)})
+        # Provide work_dir so the file is within an allowed directory.
+        req = _make_request(
+            json_data={"file": str(prompt_file), "work_dir": str(tmp_path)}
+        )
         result = await submit_task(req)
         assert result["ok"] is True
 
-    async def test_submit_file_not_found(self, _wire_deps):
+    async def test_submit_file_not_found(self, _wire_deps, tmp_path):
         from golem.core.control_api import submit_task
 
-        req = _make_request(json_data={"file": "/nonexistent/path.md"})
+        # File is within allowed work_dir but does not exist on disk.
+        req = _make_request(
+            json_data={
+                "file": str(tmp_path / "nonexistent.md"),
+                "work_dir": str(tmp_path),
+            }
+        )
         with pytest.raises(Exception, match="File not found"):
             await submit_task(req)
 
@@ -413,6 +422,128 @@ class TestSubmitEndpoint:
         req = _make_request(json_data={"prompt": "Do it"})
         with pytest.raises(Exception, match="Internal server error"):
             await submit_task(req)
+
+
+@pytest.mark.skipif(
+    not control_api.FASTAPI_AVAILABLE,
+    reason="FastAPI not installed",
+)
+class TestSubmitFilePathTraversal:
+    """SEC-001: path traversal prevention on the file= parameter."""
+
+    @pytest.mark.parametrize(
+        "file_arg",
+        [
+            "/etc/passwd",
+            "/etc/shadow",
+            "/root/.ssh/id_rsa",
+        ],
+        ids=["etc_passwd", "etc_shadow", "root_ssh_key"],
+    )
+    async def test_absolute_path_outside_cwd_rejected(self, _wire_deps, file_arg):
+        from golem.core.control_api import submit_task
+
+        req = _make_request(json_data={"file": file_arg})
+        with pytest.raises(Exception) as exc_info:
+            await submit_task(req)
+        assert exc_info.value.status_code == 403
+        assert "outside allowed" in exc_info.value.detail
+        # Path must not be echoed back (information disclosure prevention).
+        assert file_arg not in exc_info.value.detail
+
+    async def test_file_within_work_dir_allowed(self, _wire_deps, tmp_path):
+        from golem.core.control_api import submit_task
+
+        prompt_file = tmp_path / "prompt.md"
+        prompt_file.write_text("Fix the bug", encoding="utf-8")
+        req = _make_request(
+            json_data={"file": str(prompt_file), "work_dir": str(tmp_path)}
+        )
+        result = await submit_task(req)
+        assert result["ok"] is True
+
+    async def test_file_within_cwd_allowed(self, _wire_deps, tmp_path, monkeypatch):
+        from golem.core.control_api import submit_task
+
+        # Patch CWD to tmp_path so the file resolves inside it.
+        monkeypatch.chdir(tmp_path)
+        prompt_file = tmp_path / "prompt.md"
+        prompt_file.write_text("Do something useful", encoding="utf-8")
+        req = _make_request(json_data={"file": str(prompt_file)})
+        result = await submit_task(req)
+        assert result["ok"] is True
+
+    async def test_path_traversal_via_dotdot_rejected(self, _wire_deps, tmp_path):
+        from golem.core.control_api import submit_task
+
+        # work_dir is tmp_path/subdir, but file tries to escape via ../../etc/passwd.
+        subdir = tmp_path / "subdir"
+        subdir.mkdir()
+        traversal = str(subdir / ".." / ".." / "etc" / "passwd")
+        req = _make_request(json_data={"file": traversal, "work_dir": str(subdir)})
+        with pytest.raises(Exception) as exc_info:
+            await submit_task(req)
+        assert exc_info.value.status_code == 403
+
+    async def test_file_within_registered_repo_allowed(self, _wire_deps, tmp_path):
+        from unittest.mock import patch
+
+        from golem.core.control_api import submit_task
+
+        prompt_file = tmp_path / "task.md"
+        prompt_file.write_text("Repo task", encoding="utf-8")
+
+        mock_registry = MagicMock()
+        mock_registry.return_value.list_repos.return_value = [{"path": str(tmp_path)}]
+        with patch("golem.repo_registry.RepoRegistry", mock_registry):
+            req = _make_request(json_data={"file": str(prompt_file)})
+            result = await submit_task(req)
+        assert result["ok"] is True
+
+    async def test_registry_load_failure_falls_back_gracefully(
+        self, _wire_deps, tmp_path
+    ):
+        """If RepoRegistry raises, the request still proceeds with CWD/work_dir check."""
+        from unittest.mock import patch
+
+        from golem.core.control_api import submit_task
+
+        prompt_file = tmp_path / "task.md"
+        prompt_file.write_text("Fallback task", encoding="utf-8")
+
+        with patch(
+            "golem.repo_registry.RepoRegistry", side_effect=RuntimeError("db error")
+        ):
+            # File is within work_dir, so it should still be allowed.
+            req = _make_request(
+                json_data={"file": str(prompt_file), "work_dir": str(tmp_path)}
+            )
+            result = await submit_task(req)
+        assert result["ok"] is True
+
+    async def test_file_outside_all_allowed_dirs_rejected(
+        self, _wire_deps, tmp_path, monkeypatch
+    ):
+        """A file outside CWD, work_dir, and all repos is rejected."""
+        from unittest.mock import patch
+
+        from golem.core.control_api import submit_task
+
+        # Chdir to tmp_path so CWD is known.
+        monkeypatch.chdir(tmp_path)
+        # Target a path outside tmp_path — use /tmp itself if it resolves differently.
+        other_dir = tmp_path.parent
+        target_file = other_dir / "secret.txt"
+
+        mock_registry = MagicMock()
+        mock_registry.return_value.list_repos.return_value = []
+        with patch("golem.repo_registry.RepoRegistry", mock_registry):
+            req = _make_request(
+                json_data={"file": str(target_file), "work_dir": str(tmp_path)}
+            )
+            with pytest.raises(Exception) as exc_info:
+                await submit_task(req)
+        assert exc_info.value.status_code == 403
 
 
 @pytest.mark.skipif(

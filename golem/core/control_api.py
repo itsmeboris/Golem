@@ -234,11 +234,34 @@ if FASTAPI_AVAILABLE:
         file_path = payload.get("file", "")
 
         if file_path and not prompt:
-            p = Path(file_path)
+            p = Path(file_path).resolve()
+
+            # Build allowed base directories: CWD, work_dir (if given),
+            # and all attached repo paths from the registry.
+            allowed_bases = [Path.cwd().resolve()]
+            work_dir_str = payload.get("work_dir", "")
+            if work_dir_str:
+                allowed_bases.append(Path(work_dir_str).resolve())
+            try:
+                from golem.repo_registry import RepoRegistry  # noqa: PLC0415
+
+                for entry in RepoRegistry().list_repos():
+                    repo_path = entry.get("path", "")
+                    if repo_path:
+                        allowed_bases.append(Path(repo_path).resolve())
+            except Exception:  # pylint: disable=broad-except
+                logger.warning("Could not load repo registry for path validation")
+
+            if not any(p == base or base in p.parents for base in allowed_bases):
+                raise HTTPException(
+                    status_code=403,
+                    detail="File path outside allowed directories",
+                )
+
             if not p.is_file():
                 raise HTTPException(
                     status_code=400,
-                    detail=f"File not found: {file_path}",
+                    detail="File not found",
                 )
             prompt = p.read_text(encoding="utf-8")
 
