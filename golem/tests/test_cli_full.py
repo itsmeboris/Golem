@@ -1791,9 +1791,7 @@ class TestControlApiWiring:
         wire_control_api(golem_flow=mock_flow)
 
         mock_request = MagicMock()
-        mock_request.json = AsyncMock(
-            return_value={"file": str(prompt_file)}
-        )
+        mock_request.json = AsyncMock(return_value={"file": str(prompt_file)})
 
         result = asyncio.run(submit_task(mock_request))
         assert result["ok"] is True

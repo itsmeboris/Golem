@@ -371,9 +371,7 @@ class TestSubmitEndpoint:
         from golem.core.control_api import submit_task
 
         monkeypatch.chdir(tmp_path)
-        req = _make_request(
-            json_data={"file": str(tmp_path / "nonexistent.md")}
-        )
+        req = _make_request(json_data={"file": str(tmp_path / "nonexistent.md")})
         with pytest.raises(Exception, match="File not found"):
             await submit_task(req)
 
