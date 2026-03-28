@@ -285,12 +285,13 @@ class TestCheckHumanFeedback:
         assert session.state == TaskSessionState.COMPLETED
 
     def test_detects_human_feedback_and_transitions(self, monkeypatch, tmp_path):
+        # retry_count=0 is below the default max_retries=1
         flow = _make_flow(monkeypatch, tmp_path)
         session = TaskSession(
             parent_issue_id=1,
             state=TaskSessionState.FAILED,
             updated_at="2026-03-01T00:00:00Z",
-            retry_count=2,
+            retry_count=0,
         )
         flow._sessions[1] = session
 
@@ -416,3 +417,179 @@ class TestTickHumanReview:
         assert session.state == TaskSessionState.RUNNING
         assert session.started_at != ""
         orch._run_agent.assert_awaited_once()
+
+# ---------------------------------------------------------------------------
+# Feedback guard: identical / different feedback, previous_feedback field
+# ---------------------------------------------------------------------------
+
+
+class TestFeedbackGuard:
+    def test_session_has_previous_feedback_field(self):
+        """TaskSession has a previous_feedback field defaulting to empty string."""
+        session = TaskSession(parent_issue_id=1)
+        assert hasattr(session, "previous_feedback")
+        assert session.previous_feedback == ""
+
+    def test_previous_feedback_serialized(self):
+        """previous_feedback survives to_dict/from_dict roundtrip."""
+        session = TaskSession(
+            parent_issue_id=42,
+            previous_feedback="Try using the SSO module",
+        )
+        data = session.to_dict()
+        restored = TaskSession.from_dict(data)
+        assert restored.previous_feedback == "Try using the SSO module"
+
+    def test_different_feedback_resets_retry_count(self, monkeypatch, tmp_path):
+        """New (different) feedback resets retry_count to 0."""
+        # Use max_retries=5 so retry_count=3 is under the cap
+        flow = _make_flow(monkeypatch, tmp_path, max_retries=5)
+        session = TaskSession(
+            parent_issue_id=1,
+            state=TaskSessionState.FAILED,
+            updated_at="2026-03-01T00:00:00Z",
+            retry_count=3,
+            previous_feedback="Old feedback",
+        )
+        flow._sessions[1] = session
+
+        comments = [
+            {
+                "author": "alice",
+                "body": "New feedback: use SSO",
+                "created_at": "2026-03-09T12:00:00Z",
+            }
+        ]
+        flow._profile.task_source.get_task_comments = MagicMock(return_value=comments)
+        spawned = []
+        monkeypatch.setattr(flow, "_spawn_session_task", spawned.append)
+
+        flow._check_human_feedback()
+
+        assert session.retry_count == 0
+        assert spawned == [1]
+
+    def test_identical_feedback_does_not_reset_retry_count(
+        self, monkeypatch, tmp_path, caplog
+    ):
+        """Identical feedback (case-insensitive, stripped) does NOT reset retry_count."""
+        import logging
+
+        # Use max_retries=5 so retry_count=2 is under the cap
+        flow = _make_flow(monkeypatch, tmp_path, max_retries=5)
+        existing_feedback = "**alice**: please use SSO"
+        session = TaskSession(
+            parent_issue_id=1,
+            state=TaskSessionState.FAILED,
+            updated_at="2026-03-01T00:00:00Z",
+            retry_count=2,
+            previous_feedback=existing_feedback,
+        )
+        flow._sessions[1] = session
+
+        # Produce identical feedback (same author + body → same formatted string)
+        comments = [
+            {
+                "author": "alice",
+                "body": "please use SSO",
+                "created_at": "2026-03-09T12:00:00Z",
+            }
+        ]
+        flow._profile.task_source.get_task_comments = MagicMock(return_value=comments)
+        spawned = []
+        monkeypatch.setattr(flow, "_spawn_session_task", spawned.append)
+
+        with caplog.at_level(logging.WARNING, logger="golem.flow"):
+            flow._check_human_feedback()
+
+        # retry_count must NOT be reset
+        assert session.retry_count == 2
+        assert "Identical feedback" in caplog.text
+        # Still spawned — state transitions but counter is unchanged
+        assert spawned == [1]
+
+    def test_previous_feedback_updated_after_feedback(self, monkeypatch, tmp_path):
+        """previous_feedback is updated to the new feedback on each round."""
+        flow = _make_flow(monkeypatch, tmp_path, max_retries=5)
+        session = TaskSession(
+            parent_issue_id=1,
+            state=TaskSessionState.FAILED,
+            updated_at="2026-03-01T00:00:00Z",
+            retry_count=1,
+            previous_feedback="",
+        )
+        flow._sessions[1] = session
+
+        comments = [
+            {
+                "author": "bob",
+                "body": "Try a different approach",
+                "created_at": "2026-03-09T12:00:00Z",
+            }
+        ]
+        flow._profile.task_source.get_task_comments = MagicMock(return_value=comments)
+        monkeypatch.setattr(flow, "_spawn_session_task", lambda _: None)
+
+        flow._check_human_feedback()
+
+        assert session.previous_feedback == "**bob**: Try a different approach"
+
+    def test_feedback_at_retry_limit_stays_failed(self, monkeypatch, tmp_path, caplog):
+        """When retry_count >= max_retries even after feedback, session stays FAILED."""
+        import logging
+
+        flow = _make_flow(monkeypatch, tmp_path, max_retries=1)
+        session = TaskSession(
+            parent_issue_id=1,
+            state=TaskSessionState.FAILED,
+            updated_at="2026-03-01T00:00:00Z",
+            retry_count=3,  # exceeds max_retries=1
+            previous_feedback="",
+        )
+        flow._sessions[1] = session
+
+        comments = [
+            {
+                "author": "alice",
+                "body": "Brand new feedback",
+                "created_at": "2026-03-09T12:00:00Z",
+            }
+        ]
+        flow._profile.task_source.get_task_comments = MagicMock(return_value=comments)
+        spawned = []
+        monkeypatch.setattr(flow, "_spawn_session_task", spawned.append)
+
+        with caplog.at_level(logging.WARNING, logger="golem.flow"):
+            flow._check_human_feedback()
+
+        assert session.state == TaskSessionState.FAILED
+        assert spawned == []
+        assert "Feedback retry limit reached" in caplog.text
+
+    def test_feedback_at_retry_limit_updates_updated_at(self, monkeypatch, tmp_path):
+        """When retry limit is hit, updated_at is set so the same feedback isn't re-detected."""
+        flow = _make_flow(monkeypatch, tmp_path, max_retries=1)
+        old_updated_at = "2026-03-01T00:00:00Z"
+        session = TaskSession(
+            parent_issue_id=1,
+            state=TaskSessionState.FAILED,
+            updated_at=old_updated_at,
+            retry_count=3,
+            previous_feedback="",
+        )
+        flow._sessions[1] = session
+
+        comments = [
+            {
+                "author": "alice",
+                "body": "Brand new feedback",
+                "created_at": "2026-03-09T12:00:00Z",
+            }
+        ]
+        flow._profile.task_source.get_task_comments = MagicMock(return_value=comments)
+        monkeypatch.setattr(flow, "_spawn_session_task", lambda _: None)
+
+        flow._check_human_feedback()
+
+        # updated_at must have changed to prevent infinite re-detection
+        assert session.updated_at != old_updated_at

@@ -416,12 +416,42 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             if not human_comments:
                 continue
 
-            session.human_feedback = "\n\n".join(
+            new_feedback = "\n\n".join(
                 f"**{c['author']}**: {c['body']}" for c in human_comments
             )
             session.human_feedback_at = human_comments[-1].get("created_at", "")
+
+            # Guard: check for feedback retry limit before accepting re-attempt
+            max_retries = self._task_config.max_retries
+            if session.retry_count >= max_retries:
+                logger.warning(
+                    "Feedback retry limit reached for #%s (retry_count=%d >= max_retries=%d)",
+                    sid,
+                    session.retry_count,
+                    max_retries,
+                )
+                session.previous_feedback = new_feedback
+                session.human_feedback = new_feedback
+                # Update updated_at so filter won't re-detect same comments
+                session.updated_at = _now_iso()
+                self._save_state()
+                continue
+
+            # Guard: identical feedback does not reset retry counter
+            if (
+                new_feedback.strip().lower()
+                == session.previous_feedback.strip().lower()
+            ):
+                logger.warning(
+                    "Identical feedback detected for #%s, not resetting retry counter",
+                    sid,
+                )
+            else:
+                session.retry_count = 0
+
+            session.human_feedback = new_feedback
+            session.previous_feedback = new_feedback
             session.state = TaskSessionState.HUMAN_REVIEW
-            session.retry_count = 0
             self._save_state()
             logger.info("Human feedback detected on #%s, queuing re-attempt", sid)
             self._spawn_session_task(sid)

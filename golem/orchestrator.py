@@ -175,6 +175,7 @@ class TaskSession:
     # Human feedback re-attempt
     human_feedback: str = ""
     human_feedback_at: str = ""
+    previous_feedback: str = ""
     # Phase-to-phase structured context
     phase_handoffs: list[PhaseHandoffDict] = field(default_factory=list)
     # Stall / abort root cause
@@ -242,6 +243,7 @@ class TaskSession:
             merge_queued_at=data.get("merge_queued_at", ""),
             human_feedback=data.get("human_feedback", ""),
             human_feedback_at=data.get("human_feedback_at", ""),
+            previous_feedback=data.get("previous_feedback", ""),
             phase_handoffs=data.get("phase_handoffs", []),
             root_cause=_parse_root_cause(data.get("root_cause", "")),
             promoted_signals=data.get("promoted_signals", []),
