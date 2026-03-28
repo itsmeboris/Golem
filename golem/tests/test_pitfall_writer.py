@@ -501,3 +501,60 @@ def test_migration_adds_metadata_to_bare_entries(mock_date, tmp_path):
         if line.startswith("- ") and "existing bare entry" in line:
             assert "seen:1" in line
             assert "last:2026-03-15" in line
+
+
+# -- INFRA-004: AGENTS.md growth bound (_apply_decay high-seen) --------------
+
+
+def test_decay_removes_high_seen_very_old():
+    """INFRA-004: Entries with seen >= 10 and age > 90 days are removed."""
+    entries = [
+        "established but ancient <!-- seen:10 last:2025-12-01 -->",
+    ]
+    result = _apply_decay(entries, today="2026-03-29")
+    assert result == [], "High-seen very-old entries must be purged"
+
+
+def test_decay_keeps_high_seen_recent():
+    """INFRA-004: Entries with seen >= 10 but recent (< 90 days) are kept."""
+    entries = [
+        "established and recent <!-- seen:10 last:2026-02-01 -->",
+    ]
+    result = _apply_decay(entries, today="2026-03-29")
+    assert len(result) == 1
+
+
+def test_decay_keeps_high_seen_no_metadata():
+    """INFRA-004: High-seen entry with no date tag is kept (safe default)."""
+    entries = [
+        "established no date <!-- seen:10 -->",
+    ]
+    # No 'last:' tag → cannot determine age → keep
+    result = _apply_decay(entries, today="2026-03-29")
+    assert len(result) == 1
+
+
+@pytest.mark.parametrize(
+    "seen, last, today, expected_kept",
+    [
+        # seen < 10 are NOT subject to the new max-age rule
+        (9, "2025-01-01", "2026-03-29", True),
+        # seen == 10, age == 90 days exactly (on the cutoff boundary) → keep
+        # today=2026-03-29, cutoff=2025-12-29; 2025-12-29 < 2025-12-29 is False → kept
+        (10, "2025-12-29", "2026-03-29", True),
+        # seen == 10, age == 91 days → remove
+        # today=2026-03-29, cutoff=2025-12-29; 2025-12-28 < 2025-12-29 → removed
+        (10, "2025-12-28", "2026-03-29", False),
+        # seen == 15, age > 90 → remove
+        (15, "2025-01-01", "2026-03-29", False),
+    ],
+    ids=["seen9_old", "seen10_exactly_cutoff", "seen10_91days", "seen15_old"],
+)
+def test_decay_high_seen_parametrized(seen, last, today, expected_kept):
+    """INFRA-004: Parametrized boundary cases for high-seen max-age removal."""
+    entry = f"some pitfall <!-- seen:{seen} last:{last} -->"
+    result = _apply_decay([entry], today=today)
+    if expected_kept:
+        assert len(result) == 1
+    else:
+        assert result == []

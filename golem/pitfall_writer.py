@@ -47,6 +47,8 @@ _LEGACY_COMMENT = (
 _METADATA_RE = re.compile(r"\s*<!--\s*seen:(\d+)\s+last:(\d{4}-\d{2}-\d{2})\s*-->$")
 _DECAY_DAYS = 30
 _DECAY_MIN_SEEN = 3
+_DECAY_MAX_SEEN = 10
+_DECAY_MAX_AGE_DAYS = 90
 
 
 def _parse_metadata(entry: str) -> tuple[int, str | None]:
@@ -75,18 +77,25 @@ def _apply_decay(entries: list[str], today: str | None = None) -> list[str]:
     """Remove stale entries based on seen count and age.
 
     - seen < 3 and last > 30 days ago: removed
-    - seen in [3, 4]: persists regardless of age
-    - seen >= 5: established, never removed
+    - seen in [3, 9]: persists regardless of age
+    - seen >= 10 and last > 90 days ago: aged out (growth bound)
+    - seen >= 10 and no date, or recent: kept
     - No metadata (migration): kept
     """
     if today is None:
         today = date.today().isoformat()
     today_date = date.fromisoformat(today)
     cutoff = today_date - timedelta(days=_DECAY_DAYS)
+    max_cutoff = today_date - timedelta(days=_DECAY_MAX_AGE_DAYS)
 
     result = []
     for entry in entries:
         seen, last_str = _parse_metadata(entry)
+        # High-seen entries: remove if very old (growth bound)
+        if seen >= _DECAY_MAX_SEEN and last_str is not None:
+            last_date_val = date.fromisoformat(last_str)
+            if last_date_val < max_cutoff:
+                continue  # aged out
         if seen >= _DECAY_MIN_SEEN:
             result.append(entry)
             continue
