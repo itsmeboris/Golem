@@ -372,8 +372,11 @@ class TestSubmitEndpoint:
 
         monkeypatch.chdir(tmp_path)
         req = _make_request(json_data={"file": str(tmp_path / "nonexistent.md")})
-        with pytest.raises(Exception, match="File not found"):
+        with pytest.raises(Exception) as exc_info:
             await submit_task(req)
+        # Nonexistent file → os.open raises OSError → 403 (SEC-009: don't reveal
+        # whether file exists vs. is a symlink — unified "not accessible" response)
+        assert exc_info.value.status_code == 403
 
     async def test_submit_no_prompt_or_file(self, _wire_deps):
         from golem.core.control_api import submit_task
@@ -538,6 +541,39 @@ class TestSubmitFilePathTraversal:
             with pytest.raises(Exception) as exc_info:
                 await submit_task(req)
         assert exc_info.value.status_code == 403
+
+    async def test_symlink_rejected_sec009(self, _wire_deps, tmp_path, monkeypatch):
+        """SEC-009: A symlink inside CWD pointing outside is rejected (O_NOFOLLOW)."""
+        from golem.core.control_api import submit_task
+
+        monkeypatch.chdir(tmp_path)
+
+        # Create a real file outside CWD and a symlink inside CWD pointing to it
+        sensitive = tmp_path.parent / "sensitive.txt"
+        sensitive.write_text("secret contents", encoding="utf-8")
+        symlink = tmp_path / "link.md"
+        symlink.symlink_to(sensitive)
+
+        req = _make_request(json_data={"file": str(symlink)})
+        with pytest.raises(Exception) as exc_info:
+            await submit_task(req)
+        assert exc_info.value.status_code == 403
+
+    async def test_file_read_error_returns_400(self, _wire_deps, tmp_path, monkeypatch):
+        """When os.fdopen/read raises after successful open, return 400."""
+        from unittest.mock import patch
+
+        from golem.core.control_api import submit_task
+
+        monkeypatch.chdir(tmp_path)
+        prompt_file = tmp_path / "task.md"
+        prompt_file.write_text("content", encoding="utf-8")
+
+        with patch("golem.core.control_api.os.fdopen", side_effect=OSError("read err")):
+            req = _make_request(json_data={"file": str(prompt_file)})
+            with pytest.raises(Exception) as exc_info:
+                await submit_task(req)
+        assert exc_info.value.status_code == 400
 
 
 @pytest.mark.skipif(

@@ -1831,7 +1831,8 @@ class TestControlApiWiring:
 
         with pytest.raises(HTTPException) as exc_info:
             asyncio.run(submit_task(mock_request))
-        assert exc_info.value.status_code == 400
+        # Nonexistent file → os.open raises OSError → 403 (SEC-009: unified response)
+        assert exc_info.value.status_code == 403
 
         wire_control_api(golem_flow=None)
 

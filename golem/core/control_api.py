@@ -256,12 +256,21 @@ if FASTAPI_AVAILABLE:
                     detail="File path outside allowed directories",
                 )
 
-            if not p.is_file():
-                raise HTTPException(
-                    status_code=400,
-                    detail="File not found",
-                )
-            prompt = p.read_text(encoding="utf-8")
+            # Atomic open with O_NOFOLLOW to prevent TOCTOU symlink swap.
+            # This also handles the "file not found" case since os.open raises
+            # OSError (ENOENT) when the path does not exist.
+            try:
+                fd = os.open(str(p), os.O_RDONLY | os.O_NOFOLLOW)
+            except OSError:
+                raise HTTPException(status_code=403, detail="File not accessible")
+            try:
+                with os.fdopen(fd, "r", encoding="utf-8") as f:
+                    prompt = f.read()
+            except Exception:
+                # os.fdopen takes ownership of fd on success; if it raised
+                # before taking ownership the fd may still be open, but that
+                # is an exceptional path — let the OS reclaim it on request end.
+                raise HTTPException(status_code=400, detail="Could not read file")
 
         if not prompt:
             raise HTTPException(

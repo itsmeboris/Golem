@@ -27,7 +27,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [ ] SEC-007: **Runtime subprocess sandboxing** — OS-level containment (GH #19)
 - [ ] BUG-006: **Merge agent blind to verification failures** — merge_review prompt lacks verification result context (pytest failures, pylint errors); agent resolves conflicts without knowing what broke (GH #88)
 - [ ] REL-008: **batch_monitor.load() crashes on corrupt state** — `read_text()` + `json.loads()` with no error handling; corrupt JSON crashes batch monitor; `_batches` left partially cleared (GH #89)
-- [ ] SEC-009: **TOCTOU race in API file-read validation** — path validation checked then file read in separate ops; symlink swap between `is_file()` and `read_text()` bypasses containment (GH #90)
+- [x] SEC-009: **TOCTOU race in API file-read validation** — atomic open with O_NOFOLLOW prevents symlink swap (GH #90, 2026-03-29)
 - [x] REL-001: **Notifier delivery resilience** — added retry loop (2 retries + 1s backoff) and ERROR logging on final failure (GH #68, 2026-03-29)
 - [x] REL-002: **Subprocess timeout gaps** — added timeout=30 to _detect_base_branch, timeout=120 to rsync (GH #69, 2026-03-29)
 - [x] REL-003: **Ensemble cost budget guard** — check remaining budget before spawning candidates; escalate if insufficient (GH #70, 2026-03-29)
