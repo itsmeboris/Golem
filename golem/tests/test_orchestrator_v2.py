@@ -3034,6 +3034,7 @@ class TestStallDetection:
         orch._retry_agent.assert_awaited_once()
         assert session.root_cause == ""
 
+
 class TestPromotedSignals:
     """Tests for retry signal promotion wired into orchestrator control flow."""
 

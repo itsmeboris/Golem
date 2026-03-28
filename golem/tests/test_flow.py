@@ -1834,6 +1834,7 @@ class TestVerifiedRef:
         flow._set_verified_ref("second")
         assert flow._verified_ref == "second"
 
+
 class TestBisectMerges:
     """Tests for GolemFlow._bisect_merges() binary search helper."""
 
