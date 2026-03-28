@@ -397,11 +397,48 @@ class TestTeamsNotifier:
         assert facts["Current"] == "0.5"
         assert facts["Threshold"] == "0.1"
 
-    def test_send_error_logged(self):
+    def test_send_succeeds_first_attempt_no_retry(self):
+        """_send succeeds on first attempt and does not call send_to_channel again."""
         client = MagicMock()
-        client.send_to_channel.side_effect = RuntimeError("network error")
         notifier = TeamsNotifier(client, "chan")
         notifier.notify_started(42, "Test")
+        assert client.send_to_channel.call_count == 1
+
+    @patch("golem.backends.teams_notifier.time.sleep")
+    def test_send_retries_on_transient_failure_and_succeeds(self, mock_sleep, caplog):
+        """_send retries after a transient failure and succeeds on the second attempt."""
+        import logging
+
+        client = MagicMock()
+        client.send_to_channel.side_effect = [RuntimeError("timeout"), None]
+        notifier = TeamsNotifier(client, "chan")
+
+        with caplog.at_level(logging.WARNING, logger="golem.backends.teams_notifier"):
+            notifier.notify_started(42, "Test")
+
+        assert client.send_to_channel.call_count == 2
+        assert any("attempt 1" in r.message for r in caplog.records)
+        assert not any(r.levelno == logging.ERROR for r in caplog.records)
+        mock_sleep.assert_called_once_with(TeamsNotifier._SEND_RETRY_DELAY)
+
+    @patch("golem.backends.teams_notifier.time.sleep")
+    def test_send_logs_error_after_all_retries_exhausted(self, mock_sleep, caplog):
+        """_send logs ERROR when all retry attempts are exhausted."""
+        import logging
+
+        client = MagicMock()
+        client.send_to_channel.side_effect = RuntimeError("persistent failure")
+        notifier = TeamsNotifier(client, "chan")
+
+        with caplog.at_level(logging.ERROR, logger="golem.backends.teams_notifier"):
+            notifier.notify_started(42, "Test")
+
+        # 1 initial + 2 retries = 3 total attempts
+        assert client.send_to_channel.call_count == 3
+        # Sleep is called between retries (2 sleeps: after attempt 0 and after attempt 1)
+        assert mock_sleep.call_count == TeamsNotifier._MAX_SEND_RETRIES
+        assert any(r.levelno == logging.ERROR for r in caplog.records)
+        assert any("3 attempts" in r.message for r in caplog.records)
 
 
 class TestLocalFileTaskSourceExtended:

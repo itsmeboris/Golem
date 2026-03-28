@@ -1,7 +1,7 @@
 # pylint: disable=too-few-public-methods
 """Tests for batch notification backends and flow-level batch integration."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -121,6 +121,60 @@ class TestSlackNotifierBatch:
         # No validation field when empty
         field_texts = [f["text"] for f in payload["blocks"][1]["fields"]]
         assert not any("Validation" in t for t in field_texts)
+
+
+# ---------------------------------------------------------------------------
+# Slack notifier _send retry tests
+# ---------------------------------------------------------------------------
+
+
+class TestSlackNotifierSendRetry:
+    def test_send_succeeds_first_attempt_no_retry(self):
+        """_send succeeds on first attempt without extra calls."""
+        from golem.backends.slack_notifier import SlackNotifier
+
+        client = MagicMock()
+        notifier = SlackNotifier(client, "test-chan")
+        notifier.notify_started(1, "Task")
+        assert client.send_to_channel.call_count == 1
+
+    @patch("golem.backends.slack_notifier.time.sleep")
+    def test_send_retries_on_transient_failure_and_succeeds(self, mock_sleep, caplog):
+        """_send retries after a transient error and succeeds on second attempt."""
+        import logging
+        from golem.backends.slack_notifier import SlackNotifier
+
+        client = MagicMock()
+        client.send_to_channel.side_effect = [RuntimeError("timeout"), None]
+        notifier = SlackNotifier(client, "test-chan")
+
+        with caplog.at_level(logging.WARNING, logger="golem.backends.slack_notifier"):
+            notifier.notify_started(1, "Task")
+
+        assert client.send_to_channel.call_count == 2
+        assert any("attempt 1" in r.message for r in caplog.records)
+        assert not any(r.levelno == logging.ERROR for r in caplog.records)
+        mock_sleep.assert_called_once_with(SlackNotifier._SEND_RETRY_DELAY)
+
+    @patch("golem.backends.slack_notifier.time.sleep")
+    def test_send_logs_error_after_all_retries_exhausted(self, mock_sleep, caplog):
+        """_send logs ERROR when all retry attempts are exhausted."""
+        import logging
+        from golem.backends.slack_notifier import SlackNotifier
+
+        client = MagicMock()
+        client.send_to_channel.side_effect = RuntimeError("persistent failure")
+        notifier = SlackNotifier(client, "test-chan")
+
+        with caplog.at_level(logging.ERROR, logger="golem.backends.slack_notifier"):
+            notifier.notify_started(1, "Task")
+
+        # 1 initial + 2 retries = 3 total attempts
+        assert client.send_to_channel.call_count == 3
+        # Sleep is called between retries (2 sleeps: after attempt 0 and after attempt 1)
+        assert mock_sleep.call_count == SlackNotifier._MAX_SEND_RETRIES
+        assert any(r.levelno == logging.ERROR for r in caplog.records)
+        assert any("3 attempts" in r.message for r in caplog.records)
 
 
 # ---------------------------------------------------------------------------

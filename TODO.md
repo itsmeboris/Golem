@@ -23,7 +23,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [ ] SEC-005: **Dashboard API unauthenticated** — all `/api/*` endpoints (traces, analytics, SSE) publicly accessible; no auth middleware (GH #67)
 - [ ] SEC-006: **MCP tool schema validation** — poisoning defense (GH #18)
 - [ ] SEC-007: **Runtime subprocess sandboxing** — OS-level containment (GH #19)
-- [ ] REL-001: **Notifier delivery resilience** — all notifiers silently swallow exceptions; no retry, no failure signaling to orchestrator, no timeout on send operations (GH #68)
+- [x] REL-001: **Notifier delivery resilience** — added retry loop (2 retries + 1s backoff) and ERROR logging on final failure (GH #68, 2026-03-29)
 - [x] REL-002: **Subprocess timeout gaps** — added timeout=30 to _detect_base_branch, timeout=120 to rsync (GH #69, 2026-03-29)
 - [x] REL-003: **Ensemble cost budget guard** — check remaining budget before spawning candidates; escalate if insufficient (GH #70, 2026-03-29)
 - [x] REL-004: **Merge queue callback safety** — both callback sites wrapped in try/except with graceful fallback (GH #71, 2026-03-29)

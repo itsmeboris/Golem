@@ -5,6 +5,7 @@ via ``SlackClient``.
 """
 
 import logging
+import time
 from typing import Any
 
 from ..core.defaults import _fmt_duration
@@ -207,9 +208,27 @@ class SlackNotifier:
                 blocks.append(_fields(facts))
         self._send(blocks, f"Health alert: {label}")
 
+    _MAX_SEND_RETRIES = 2
+    _SEND_RETRY_DELAY = 1.0  # seconds
+
     def _send(self, blocks: list[dict[str, Any]], fallback_text: str) -> None:
         payload = {"text": fallback_text, "blocks": blocks}
-        try:
-            self._slack.send_to_channel(self._channel, payload)
-        except Exception as exc:  # pylint: disable=broad-exception-caught
-            logger.warning("Failed to send Slack message: %s", exc)
+        for attempt in range(1 + self._MAX_SEND_RETRIES):
+            try:
+                self._slack.send_to_channel(self._channel, payload)
+                return
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                if attempt < self._MAX_SEND_RETRIES:
+                    logger.warning(
+                        "Failed to send Slack message (attempt %d/%d): %s — retrying",
+                        attempt + 1,
+                        1 + self._MAX_SEND_RETRIES,
+                        exc,
+                    )
+                    time.sleep(self._SEND_RETRY_DELAY)
+                else:
+                    logger.error(
+                        "Failed to send Slack message after %d attempts: %s",
+                        1 + self._MAX_SEND_RETRIES,
+                        exc,
+                    )

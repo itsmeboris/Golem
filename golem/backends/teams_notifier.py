@@ -5,6 +5,7 @@ Wraps the existing card builders in ``notifications.py`` and the
 """
 
 import logging
+import time
 from typing import Any
 
 from ..notifications import (
@@ -196,8 +197,26 @@ class TeamsNotifier:
         )
         self._send(card)
 
+    _MAX_SEND_RETRIES = 2
+    _SEND_RETRY_DELAY = 1.0  # seconds
+
     def _send(self, card: dict[str, Any]) -> None:
-        try:
-            self._teams.send_to_channel(self._channel, card)
-        except Exception as exc:  # pylint: disable=broad-exception-caught
-            logger.warning("Failed to send Teams card: %s", exc)
+        for attempt in range(1 + self._MAX_SEND_RETRIES):
+            try:
+                self._teams.send_to_channel(self._channel, card)
+                return
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                if attempt < self._MAX_SEND_RETRIES:
+                    logger.warning(
+                        "Failed to send Teams card (attempt %d/%d): %s — retrying",
+                        attempt + 1,
+                        1 + self._MAX_SEND_RETRIES,
+                        exc,
+                    )
+                    time.sleep(self._SEND_RETRY_DELAY)
+                else:
+                    logger.error(
+                        "Failed to send Teams card after %d attempts: %s",
+                        1 + self._MAX_SEND_RETRIES,
+                        exc,
+                    )
