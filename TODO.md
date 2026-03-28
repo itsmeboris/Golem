@@ -11,7 +11,7 @@ See https://github.com/itsmeboris/Golem/issues
 
 - [x] BUG-001: **Merge queue thread safety** — added `_processing` list for in-flight entries; guarded with asyncio.Lock (2026-03-29)
 - [x] BUG-002: **Grace deadline parse crash** — guard empty `grace_deadline` before parsing (GH #61, 2026-03-29)
-- [ ] BUG-003: **`_bisect_merges` empty-list guard** — `flow.py:1077` has no guard for empty `ordered_shas`; caller prevents it but method itself will `IndexError` (GH #62)
+- [x] BUG-003: **`_bisect_merges` empty-list guard** — early return None for empty list (GH #62, 2026-03-29)
 - [ ] SEC-001: **API file-read path traversal** — `/api/submit` `file` parameter reads arbitrary files via `Path(file).read_text()` with no path validation (GH #63)
 
 ### P1 — Important

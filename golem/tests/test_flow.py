@@ -1941,6 +1941,12 @@ class TestBisectMerges:
 
         assert result == 1
 
+    def test_bisect_empty_list_returns_none(self, monkeypatch, tmp_path):
+        """BUG-003: empty ordered_shas must return None without IndexError."""
+        flow = self._make_flow_bisect(monkeypatch, tmp_path)
+        result = flow._bisect_merges(str(tmp_path), [])
+        assert result is None
+
     def test_bisect_single_sha_returns_zero(self, monkeypatch, tmp_path):
         """Single SHA always returns 0 — no bisect needed."""
         flow = self._make_flow_bisect(monkeypatch, tmp_path)

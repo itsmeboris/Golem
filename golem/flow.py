@@ -1076,6 +1076,8 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         via run_in_executor. The subprocess calls block the thread, not the
         event loop.
         """
+        if not ordered_shas:
+            return None
         if len(ordered_shas) == 1:
             return 0
 
