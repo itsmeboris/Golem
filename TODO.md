@@ -6,14 +6,12 @@ Items use GitHub issue numbers as IDs. See https://github.com/itsmeboris/Golem/i
 
 | GH  | Status | Task                                                                                                                                                        | Impact | Priority       |
 | --- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | -------------- |
-| #32 | [ ]    | **Redmine/Local heartbeat Tier 1** — `poll_untagged_tasks()` returns `[]` for Redmine and Local backends; Tier 1 issue triage only works on GitHub           | Medium | P2             |
 | #22 | [ ]    | **State management audit rule** — detect innerHTML without state preservation, polling without concurrency guards, shared mutable state in async code        | Medium | P2             |
 | #23 | [ ]    | **Codebase contract linting** — static check that function return types match consumer expectations across module boundaries                                | Medium | P2             |
 | #13 | [ ]    | **Context budget system** — dynamic prompt content sizing                                                                                                   | Medium | P2             |
 | #14 | [ ]    | **A-Mem knowledge graph** — structured knowledge graph for AGENTS.md                                                                                        | Medium | P2             |
 | #2  | [ ]    | **Dashboard prompt comparison UI** — table/chart for `/api/analytics/by-prompt` data (API exists, frontend missing)                                         | Low    | P3             |
 | #36 | [ ]    | **CLI `logs` command** — no `golem logs` / `golem logs --follow` subcommand; `status --watch` shows counters but not log output                             | Low    | P3             |
-| #37 | [ ]    | **Heartbeat state cleanup on detach** — `golem detach` removes repo from registry but leaves orphan per-repo heartbeat state files on disk                   | Low    | P3             |
 | #15 | [ ]    | **Evaluator-optimizer loop** — prompt auto-tuning                                                                                                           | Medium | P3             |
 | #16 | [ ]    | **OpenTelemetry tracing** — agent observability                                                                                                             | Medium | P3             |
 | #17 | [ ]    | **Mutation testing** — mutmut integration                                                                                                                   | Low    | P3             |
@@ -49,5 +47,7 @@ Items use GitHub issue numbers as IDs. See https://github.com/itsmeboris/Golem/i
 | #31 | **Ghost config properties** — removed undocumented properties from ops.md                                                                                    | Medium | P2       |
 | #33 | **Human feedback loop guard** — identical feedback detection + retry cap prevents infinite feedback loops                                                     | Medium | P3       |
 | #34 | **Dashboard API test coverage** — TestClient integration tests for analytics, cost-analytics, events SSE, and trace endpoints                                | Medium | P2       |
+| #32 | **Redmine/Local heartbeat Tier 1** — `poll_untagged_tasks()` implemented for both backends with tag filtering and error handling                              | Medium | P2       |
 | #35 | **Checkpoint restoration resilience** — corrupt checkpoints backed up to `.corrupt`, logged at ERROR; evidence preserved for recovery                         | Medium | P3       |
+| #37 | **Heartbeat state cleanup on detach** — `delete_state()` on HeartbeatWorker; `_sync_workers()` cleans up files for detached repos                            | Low    | P3       |
 | #21 | **Worktree and data isolation** — gitignore `data/`, ensure all tests use `tmp_path` instead of real repo for worktree/merge ops                            | High   | P0       |

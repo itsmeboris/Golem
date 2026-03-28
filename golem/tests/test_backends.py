@@ -561,11 +561,220 @@ class TestLocalFileTaskSourceExtended:
         assert len(files) == 2
 
 
-def test_local_poll_untagged_tasks_returns_empty():
-    from pathlib import Path
+class TestLocalPollUntaggedTasks:
+    """Tests for LocalFileTaskSource.poll_untagged_tasks."""
 
-    from golem.backends.local import LocalFileTaskSource
+    def test_poll_untagged_filters_tagged_out(self, tmp_path):
+        import json
 
-    source = LocalFileTaskSource(Path("/tmp/test-tasks"))
-    result = source.poll_untagged_tasks(["proj"], "golem")
-    assert result == []
+        from golem.backends.local import LocalFileTaskSource
+
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        (tasks_dir / "001.json").write_text(
+            json.dumps(
+                {"id": "001", "subject": "[AGENT] Tagged task", "description": "d1"}
+            )
+        )
+        (tasks_dir / "002.json").write_text(
+            json.dumps(
+                {"id": "002", "subject": "Plain untagged task", "description": "d2"}
+            )
+        )
+        (tasks_dir / "003.json").write_text(
+            json.dumps(
+                {"id": "003", "subject": "Another plain task", "description": "d3"}
+            )
+        )
+        src = LocalFileTaskSource(tasks_dir)
+        result = src.poll_untagged_tasks(["any"], "[AGENT]")
+        ids = [r["id"] for r in result]
+        assert "001" not in ids
+        assert "002" in ids
+        assert "003" in ids
+
+    def test_poll_untagged_respects_limit(self, tmp_path):
+        import json
+
+        from golem.backends.local import LocalFileTaskSource
+
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        for i in range(5):
+            (tasks_dir / f"{i:03d}.json").write_text(
+                json.dumps({"id": str(i), "subject": f"Task {i}", "description": ""})
+            )
+        src = LocalFileTaskSource(tasks_dir)
+        result = src.poll_untagged_tasks(["any"], "[AGENT]", limit=2)
+        assert len(result) == 2
+
+    def test_poll_untagged_empty_dir(self, tmp_path):
+        from golem.backends.local import LocalFileTaskSource
+
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        src = LocalFileTaskSource(tasks_dir)
+        result = src.poll_untagged_tasks(["any"], "[AGENT]")
+        assert result == []
+
+    def test_poll_untagged_missing_dir(self, tmp_path):
+        from golem.backends.local import LocalFileTaskSource
+
+        src = LocalFileTaskSource(tmp_path / "nonexistent")
+        result = src.poll_untagged_tasks(["any"], "[AGENT]")
+        assert result == []
+
+    def test_poll_untagged_returns_correct_keys(self, tmp_path):
+        import json
+
+        from golem.backends.local import LocalFileTaskSource
+
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        (tasks_dir / "001.json").write_text(
+            json.dumps(
+                {"id": "001", "subject": "Plain task", "description": "body text"}
+            )
+        )
+        src = LocalFileTaskSource(tasks_dir)
+        result = src.poll_untagged_tasks(["any"], "[AGENT]")
+        assert len(result) == 1
+        assert result[0]["id"] == "001"
+        assert result[0]["subject"] == "Plain task"
+        assert result[0]["body"] == "body text"
+
+    def test_poll_untagged_skips_invalid_files(self, tmp_path):
+        import json
+
+        from golem.backends.local import LocalFileTaskSource
+
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        (tasks_dir / "bad.json").write_text("not valid json {{{")
+        (tasks_dir / "good.json").write_text(
+            json.dumps({"id": "good", "subject": "Good task", "description": "ok"})
+        )
+        src = LocalFileTaskSource(tasks_dir)
+        result = src.poll_untagged_tasks(["any"], "[AGENT]")
+        assert len(result) == 1
+        assert result[0]["id"] == "good"
+
+    def test_poll_untagged_skips_non_yaml_json(self, tmp_path):
+        import json
+
+        from golem.backends.local import LocalFileTaskSource
+
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        (tasks_dir / "readme.txt").write_text("not a task file")
+        (tasks_dir / "good.json").write_text(
+            json.dumps({"id": "good", "subject": "Good task", "description": "ok"})
+        )
+        src = LocalFileTaskSource(tasks_dir)
+        result = src.poll_untagged_tasks(["any"], "[AGENT]")
+        assert len(result) == 1
+        assert result[0]["id"] == "good"
+
+
+class TestRedminePollUntaggedTasks:
+    """Tests for RedmineTaskSource.poll_untagged_tasks."""
+
+    @patch("golem.backends.redmine._request_with_retry")
+    def test_poll_untagged_filters_tagged_out(self, mock_req):
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {
+            "issues": [
+                {"id": 1, "subject": "[AGENT] Tagged issue", "description": "d1"},
+                {"id": 2, "subject": "Plain untagged issue", "description": "d2"},
+                {"id": 3, "subject": "Another untagged issue", "description": "d3"},
+            ]
+        }
+        mock_req.return_value = mock_resp
+
+        source = RedmineTaskSource()
+        result = source.poll_untagged_tasks(["my-project"], "[AGENT]")
+        ids = [r["id"] for r in result]
+        assert 1 not in ids
+        assert 2 in ids
+        assert 3 in ids
+
+    @patch("golem.backends.redmine._request_with_retry")
+    def test_poll_untagged_respects_limit(self, mock_req):
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {
+            "issues": [
+                {"id": i, "subject": f"Plain issue {i}", "description": ""}
+                for i in range(10)
+            ]
+        }
+        mock_req.return_value = mock_resp
+
+        source = RedmineTaskSource()
+        result = source.poll_untagged_tasks(["my-project"], "[AGENT]", limit=3)
+        assert len(result) == 3
+
+    @patch("golem.backends.redmine._request_with_retry")
+    def test_poll_untagged_error_returns_empty(self, mock_req):
+        import requests
+
+        mock_req.side_effect = requests.RequestException("network error")
+        source = RedmineTaskSource()
+        result = source.poll_untagged_tasks(["my-project"], "[AGENT]")
+        assert result == []
+
+    @patch("golem.backends.redmine._request_with_retry")
+    def test_poll_untagged_returns_correct_keys(self, mock_req):
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {
+            "issues": [
+                {"id": 42, "subject": "Fix the bug", "description": "Bug details"}
+            ]
+        }
+        mock_req.return_value = mock_resp
+
+        source = RedmineTaskSource()
+        result = source.poll_untagged_tasks(["proj"], "[AGENT]")
+        assert len(result) == 1
+        assert result[0]["id"] == 42
+        assert result[0]["subject"] == "Fix the bug"
+        assert result[0]["body"] == "Bug details"
+
+    @patch("golem.backends.redmine._request_with_retry")
+    def test_poll_untagged_empty_project(self, mock_req):
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {"issues": []}
+        mock_req.return_value = mock_resp
+
+        source = RedmineTaskSource()
+        result = source.poll_untagged_tasks(["proj"], "[AGENT]")
+        assert result == []
+
+    @patch("golem.backends.redmine._request_with_retry")
+    def test_poll_untagged_multiple_projects(self, mock_req):
+        """Issues from multiple projects are merged and limited."""
+        call_count = [0]
+
+        def side_effect(*_args, **_kwargs):
+            call_count[0] += 1
+            resp = MagicMock()
+            resp.raise_for_status = MagicMock()
+            if call_count[0] == 1:
+                resp.json.return_value = {
+                    "issues": [{"id": 1, "subject": "Issue 1", "description": ""}]
+                }
+            else:
+                resp.json.return_value = {
+                    "issues": [{"id": 2, "subject": "Issue 2", "description": ""}]
+                }
+            return resp
+
+        mock_req.side_effect = side_effect
+        source = RedmineTaskSource()
+        result = source.poll_untagged_tasks(["proj-a", "proj-b"], "[AGENT]", limit=10)
+        ids = [r["id"] for r in result]
+        assert 1 in ids
+        assert 2 in ids

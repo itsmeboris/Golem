@@ -135,13 +135,35 @@ class LocalFileTaskSource:
     def poll_untagged_tasks(
         self,
         _projects: list[str],
-        _exclude_tag: str,
+        exclude_tag: str,
         limit: int = 20,
         _timeout: int = 30,
     ) -> list[dict[str, Any]]:
-        """Local backend does not support untagged issue discovery."""
-        del limit  # keyword-passed by heartbeat.py; cannot rename
-        return []
+        """Return tasks from the directory that do NOT contain *exclude_tag* in subject."""
+        if not self._tasks_dir.is_dir():
+            logger.warning("Tasks directory does not exist: %s", self._tasks_dir)
+            return []
+
+        results: list[dict[str, Any]] = []
+        for task_file in sorted(self._tasks_dir.iterdir()):
+            if task_file.suffix not in (".yaml", ".yml", ".json"):
+                continue
+            task = self._load_file(task_file)
+            if task is None:
+                continue
+            subject = task.get("subject", "")
+            if exclude_tag.upper() in subject.upper():
+                continue
+            results.append(
+                {
+                    "id": task.get("id", task_file.stem),
+                    "subject": subject,
+                    "body": task.get("description", ""),
+                }
+            )
+            if len(results) >= limit:
+                break
+        return results
 
     def _find_task(self, task_id: str) -> dict[str, Any] | None:
         for ext in (".yaml", ".yml", ".json"):

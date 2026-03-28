@@ -10,7 +10,11 @@ from typing import Any
 import requests as _requests
 
 from ..core.defaults import REDMINE_ISSUES_URL
-from ..core.service_clients import _request_with_retry, get_redmine_headers
+from ..core.service_clients import (
+    _request_with_retry,
+    get_redmine_headers,
+    get_redmine_url,
+)
 
 from ..interfaces import TaskStatus
 
@@ -110,14 +114,50 @@ class RedmineTaskSource:
 
     def poll_untagged_tasks(
         self,
-        _projects: list[str],
-        _exclude_tag: str,
+        projects: list[str],
+        exclude_tag: str,
         limit: int = 20,
-        _timeout: int = 30,
+        timeout: int = 30,
     ) -> list[dict[str, Any]]:
-        """Redmine backend does not support untagged issue discovery."""
-        del limit  # keyword-passed by heartbeat.py; cannot rename
-        return []
+        """Return open issues that do NOT contain *exclude_tag* in their subject."""
+        base = get_redmine_url()
+        headers = get_redmine_headers()
+        results: list[dict[str, Any]] = []
+        for project in projects:
+            url = f"{base}/issues.json"
+            params: dict[str, str] = {
+                "project_id": project,
+                "status_id": "open",
+                "sort": "created_on:desc",
+                "limit": str(limit),
+            }
+            try:
+                resp = _request_with_retry(
+                    _requests.get,
+                    url,
+                    headers=headers,
+                    params=params,
+                    timeout=timeout,
+                )
+                resp.raise_for_status()
+                for issue in resp.json().get("issues", []):
+                    subject = issue.get("subject", "")
+                    if exclude_tag.upper() in subject.upper():
+                        continue
+                    results.append(
+                        {
+                            "id": issue["id"],
+                            "subject": subject,
+                            "body": issue.get("description", "") or "",
+                        }
+                    )
+            except _requests.RequestException as exc:
+                logger.warning(
+                    "Failed to fetch untagged issues for project %s: %s",
+                    project,
+                    exc,
+                )
+        return results[:limit]
 
     def get_task_comments(
         self, task_id: int | str, *, since: str = ""
