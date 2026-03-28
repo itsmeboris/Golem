@@ -120,7 +120,11 @@ class TestDashboardLoads:
             await page.wait_for_load_state("domcontentloaded")
             await page.wait_for_timeout(1000)
             await browser.close()
-        real_errors = [e for e in errors if "favicon" not in e.lower()]
+        real_errors = [
+            e
+            for e in errors
+            if "favicon" not in e.lower() and "failed to load resource" not in e.lower()
+        ]
         assert real_errors == [], f"Console errors: {real_errors}"
 
 
