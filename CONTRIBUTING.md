@@ -1,6 +1,6 @@
 # Contributing to Golem
 
-Welcome! Golem is an autonomous AI coding agent daemon — it picks up tasks, runs Claude agents, validates results, and commits passing work without human intervention. Before hacking on it, read [docs/architecture.md](docs/architecture.md) for the runtime pipeline and [docs/operations.md](docs/operations.md) for deployment and config reference.
+Welcome! Golem is an autonomous AI coding agent daemon — it picks up tasks, runs Claude agents, validates results, and commits passing work without human intervention. Before hacking on it, read the [Development Guide](https://github.com/itsmeboris/Golem/wiki/Development-Guide) on the wiki, or [docs/architecture.md](docs/architecture.md) for the runtime pipeline and [docs/operations.md](docs/operations.md) for deployment and config reference.
 
 ---
 

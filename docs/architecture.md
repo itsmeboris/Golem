@@ -1,5 +1,7 @@
 # Architecture
 
+> **See also:** The [Architecture wiki page](https://github.com/itsmeboris/Golem/wiki/Architecture) for the latest version with interactive Mermaid diagrams, plus deep-dive pages on [Task Lifecycle](https://github.com/itsmeboris/Golem/wiki/Task-Lifecycle), [Sub-Agents](https://github.com/itsmeboris/Golem/wiki/Sub-Agents), and [Backends](https://github.com/itsmeboris/Golem/wiki/Backends).
+
 ## Golem Technical Deep Dive
 
 This document is the comprehensive technical reference for Golem's internals — runtime pipeline, task lifecycle, agent system, profile model, and HTTP API. For installation and quick start, see the [README](../README.md). For configuration, operations, and deployment, see [docs/operations.md](operations.md).

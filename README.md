@@ -24,8 +24,8 @@
   <a href="#quick-start">Quick Start</a>&nbsp;&nbsp;·&nbsp;&nbsp;
   <a href="#why-golem">Why Golem</a>&nbsp;&nbsp;·&nbsp;&nbsp;
   <a href="#how-it-works">How It Works</a>&nbsp;&nbsp;·&nbsp;&nbsp;
+  <a href="https://github.com/itsmeboris/Golem/wiki">Wiki</a>&nbsp;&nbsp;·&nbsp;&nbsp;
   <a href="docs/architecture.md">Architecture</a>&nbsp;&nbsp;·&nbsp;&nbsp;
-  <a href="docs/operations.md">Operations</a>&nbsp;&nbsp;·&nbsp;&nbsp;
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
@@ -207,6 +207,7 @@ For the full lifecycle, agent intelligence pipeline, HTTP API, and profile syste
 
 ## More
 
+- **[Wiki](https://github.com/itsmeboris/Golem/wiki)** — comprehensive guides for users, operators, and contributors
 - **[Architecture](docs/architecture.md)** — task lifecycle, agent pipeline, subagents, profiles, dashboard, HTTP API
 - **[Operations Guide](docs/operations.md)** — configuration reference, heartbeat, self-update, health monitoring, SIGHUP reload
 - **[Contributing](CONTRIBUTING.md)** — development setup, project layout, testing, adding backends and skills

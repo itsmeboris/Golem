@@ -1,5 +1,6 @@
 # Golem Configuration
 # Copy this file to config.yaml and customize for your environment.
+# Full reference: https://github.com/itsmeboris/Golem/wiki/Configuration
 # Environment variables can be referenced as ${VAR_NAME}.
 
 flows:
