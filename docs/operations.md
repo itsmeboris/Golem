@@ -136,7 +136,7 @@ days). The budget is shared globally; dedup memory is per-repo.
 | Global (budget, inflight, round-robin index) | `~/.golem/data/heartbeat_state.json` |
 | Per-worker (dedup, coverage, cooldowns, promotion) | `~/.golem/data/heartbeat/<path_hash>.json` |
 
-Both are loaded on daemon startup and saved after each tick.
+Both are loaded on daemon startup and saved after each tick. When a repo is detached via `golem detach`, the scheduler calls `HeartbeatWorker.delete_state()` to remove the per-repo state file — preventing stale dedup entries from accumulating for repos that are no longer tracked.
 
 ### Configuration
 
@@ -332,6 +332,15 @@ Changes are validated and optionally trigger a daemon reload on save.
 
 Config changes use temp file + rename to prevent corruption. The daemon is
 notified via `SIGHUP` to reload without restart.
+
+---
+
+## Checkpoint Resilience
+
+The orchestrator checkpoints task state to disk on every tick. If a checkpoint
+file is corrupt (invalid JSON), it is renamed to `.corrupt` alongside the
+original path for forensic inspection and logged at ERROR level. The daemon
+continues with a fresh session for that task rather than crashing.
 
 ---
 

@@ -98,9 +98,9 @@ flowchart LR
 | **RUNNING** | Claude instances execute in isolated worktrees (infra failures auto-retry) |
 | **VERIFYING** | Deterministic checks — `black`, `pylint`, `pytest` with 100% coverage, plus AST analysis and coverage delta on changed files. Failure skips the reviewer and retries immediately with structured feedback |
 | **VALIDATING** | A separate validation agent reviews the work with verification evidence, spec fidelity checks, reproduction test detection for bug fixes, and documentation relevance checks for user-facing changes |
-| **RETRYING** | Partial result — agent retries with validation feedback. On second retry with `ensemble_on_second_retry` enabled, spawns N parallel candidates with different strategy hints and picks the best PASS result |
+| **RETRYING** | Partial result — agent retries with validation feedback. On second retry with `ensemble_on_second_retry` enabled, spawns N parallel candidates in separate worktrees with different strategy hints; `pick_best_result()` selects the best PASS result and rsyncs the winner back to the work directory. On the last retry, `_check_promoted_and_escalate()` checks whether any observation signals have been promoted past the frequency threshold — if so, the task escalates instead of retrying |
 | **COMPLETED** | Validated, merged via merge queue, and team notified |
-| **FAILED** | Budget exceeded, timeout hit, or validation failed after retries. Promoted observation signals (patterns seen repeatedly across retries) are stored on the session for diagnostic visibility |
+| **FAILED** | Budget exceeded, timeout hit, or validation failed after retries. Promoted observation signals (patterns seen repeatedly across retries) are stored on the `promoted_signals` field of the session for diagnostic visibility |
 | **HUMAN_REVIEW** | Human posted feedback on a failed task — agent re-attempts with the human's guidance. Identical feedback (case-insensitive) does not reset the retry counter; when retry limit is reached, the session stays FAILED |
 
 Infrastructure failures (network timeouts, subprocess crashes) during RUNNING do not consume the task's retry budget — they trigger an automatic re-attempt within the same state.
