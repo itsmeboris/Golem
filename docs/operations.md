@@ -377,9 +377,6 @@ This prevents cascading failures when the base branch is temporarily broken.
 | `clarity_threshold` | `3` | Minimum clarity score (1–5) to proceed without human clarification |
 | `context_injection` | `true` | Auto-inject AGENTS.md + CLAUDE.md from workspace into agent sessions as system prompt context |
 | `enable_simplify_pass` | `true` | Run a code-cleanup pass between BUILD and REVIEW phases |
-| `iterative_retrieval` | `false` | Enable multi-round context retrieval (keyword search, structural summaries, test discovery) |
-| `confidence_override_threshold` | `0.3` | Confidence below which verifier-pass can override validation verdict |
-| `heartbeat_max_consecutive_errors` | `5` | Exit heartbeat loop after N consecutive tick errors |
 | `ensemble_on_second_retry` | `false` | Spawn parallel candidates with different strategies on second retry |
 | `ensemble_candidates` | `2` | Number of parallel candidates for ensemble retry |
 | `flaky_tests_file` | `""` | Path to known-flaky tests JSON registry; empty = disabled |
