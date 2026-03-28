@@ -48,7 +48,9 @@ flowchart TB
     commit --> notify["Notify"]
 ```
 
-The **Flow Engine** (`golem/flow.py`) handles Claude CLI invocation and event-stream parsing. The **Orchestrator** (`golem/orchestrator.py`) is a durable state machine that checkpoints on every tick so in-progress tasks survive daemon restarts. The **Verifier** (`golem/verifier.py`) runs deterministic checks. The **Validation Agent** (`golem/validation.py`) dispatches a separate Claude session that reviews evidence and returns a structured verdict.
+The **Flow Engine** (`golem/flow.py`) handles Claude CLI invocation and event-stream parsing. The **Orchestrator** (`golem/orchestrator.py`) is a durable state machine that checkpoints on every tick so in-progress tasks survive daemon restarts. Corrupt checkpoint files are logged at ERROR level, renamed to `.corrupt` for forensic recovery, and treated as missing — the daemon continues with a fresh session. The **Verifier** (`golem/verifier.py`) runs deterministic checks. The **Validation Agent** (`golem/validation.py`) dispatches a separate Claude session that reviews evidence and returns a structured verdict.
+
+The **Health Monitor** (`golem/health.py`) checks daemon health on each tick. Health status (`healthy`, `degraded`, `unhealthy`) is computed from active alerts and exposed via `GolemFlow.health_status`. When status is `UNHEALTHY` (consecutive failures, stale daemon, or disk pressure), the detection loop pauses new task detection until health recovers — existing tasks continue running.
 
 The **Heartbeat Scheduler** (`golem/heartbeat.py`) is a thin round-robin scheduler that delegates scan work to **HeartbeatWorkers** (`golem/heartbeat_worker.py`) — one per attached repo. Workers own per-repo state (dedup, coverage cache, cooldowns, promotion counters). The scheduler owns global budget and inflight tracking. The repo registry (`golem/repo_registry.py`) is reloaded each tick, so `golem attach` / `golem detach` take effect without restarting the daemon.
 
@@ -96,10 +98,10 @@ flowchart LR
 | **RUNNING** | Claude instances execute in isolated worktrees (infra failures auto-retry) |
 | **VERIFYING** | Deterministic checks — `black`, `pylint`, `pytest` with 100% coverage, plus AST analysis and coverage delta on changed files. Failure skips the reviewer and retries immediately with structured feedback |
 | **VALIDATING** | A separate validation agent reviews the work with verification evidence, spec fidelity checks, reproduction test detection for bug fixes, and documentation relevance checks for user-facing changes |
-| **RETRYING** | Partial result — agent retries with validation feedback |
+| **RETRYING** | Partial result — agent retries with validation feedback. On second retry with `ensemble_on_second_retry` enabled, spawns N parallel candidates with different strategy hints and picks the best PASS result |
 | **COMPLETED** | Validated, merged via merge queue, and team notified |
-| **FAILED** | Budget exceeded, timeout hit, or validation failed after retries |
-| **HUMAN_REVIEW** | Human posted feedback on a failed task — agent re-attempts with the human's guidance |
+| **FAILED** | Budget exceeded, timeout hit, or validation failed after retries. Promoted observation signals (patterns seen repeatedly across retries) are stored on the session for diagnostic visibility |
+| **HUMAN_REVIEW** | Human posted feedback on a failed task — agent re-attempts with the human's guidance. Identical feedback (case-insensitive) does not reset the retry counter; when retry limit is reached, the session stays FAILED |
 
 Infrastructure failures (network timeouts, subprocess crashes) during RUNNING do not consume the task's retry budget — they trigger an automatic re-attempt within the same state.
 
@@ -126,6 +128,12 @@ No locks, no conflicts between tasks. Each instance has full read-write access t
 When merges are deferred (dirty working tree or transient failure), the daemon retries up to 3 times per session. The health monitor fires an `ALERT_MERGE_QUEUE_BLOCKED` alert when deferred merges exceed the configured threshold (default 5), preventing silent merge queue backup.
 
 The `WorktreeManager` (`golem/worktree_manager.py`) owns the full lifecycle: creation, cleanup, and error recovery. The number of concurrent worktrees is bounded by `max_active_sessions` (default: 3).
+
+### Integration Validation & Bisect
+
+When multiple tasks are merged in a batch (`submit_batch`), an integration validation step runs against the combined result. If validation fails, `_bisect_merges()` binary-searches the merge order to identify which commit introduced the breakage. The culprit issue ID and affected files are added to the verdict for targeted debugging.
+
+The bisect runs in a thread pool (`run_in_executor`) to avoid blocking the event loop — each step creates a temporary worktree, runs verification, and removes the worktree. If the search is inconclusive (e.g., flaky tests pass on re-run), the verdict is returned unchanged.
 
 ---
 
@@ -187,7 +195,7 @@ Skills are discovered dynamically via the Skill tool. When new skills are added 
 
 **Context injection** (`golem/context_injection.py`) loads `AGENTS.md` and `CLAUDE.md` from the workspace into agent sessions as system-prompt context, ensuring agents benefit from accumulated learnings and project conventions.
 
-**Structured handoffs** (`golem/handoff.py`) pass context between orchestrator phases — each handoff captures the from/to phase, relevant files, open questions, and warnings, preventing context loss at phase boundaries.
+**Structured handoffs** (`golem/handoff.py`) pass context between orchestrator phases — each handoff captures the from/to phase, relevant files, open questions, and warnings, preventing context loss at phase boundaries. Invalid handoffs (empty context or missing phase identifiers) are rejected with a warning log rather than silently stored.
 
 ---
 

@@ -246,8 +246,13 @@ notifications through the configured notifier (Slack, Teams, or stdout).
 ### Status Tiers
 
 - **healthy** — all metrics within thresholds
-- **degraded** — one or more warnings
-- **unhealthy** — critical thresholds breached
+- **degraded** — one or more warnings (queue depth, high error rate)
+- **unhealthy** — critical thresholds breached (consecutive failures, stale daemon, disk usage)
+
+Health status is propagated to the flow engine (`GolemFlow.health_status`,
+`GolemFlow.last_health_alerts`). When status reaches **unhealthy**, the
+detection loop pauses new task detection until health recovers. Active tasks
+continue running — only the polling for new issues is suspended.
 
 ### Alert Behavior
 
@@ -377,8 +382,8 @@ This prevents cascading failures when the base branch is temporarily broken.
 | `clarity_threshold` | `3` | Minimum clarity score (1–5) to proceed without human clarification |
 | `context_injection` | `true` | Auto-inject AGENTS.md + CLAUDE.md from workspace into agent sessions as system prompt context |
 | `enable_simplify_pass` | `true` | Run a code-cleanup pass between BUILD and REVIEW phases |
-| `ensemble_on_second_retry` | `false` | Spawn parallel candidates with different strategies on second retry |
-| `ensemble_candidates` | `2` | Number of parallel candidates for ensemble retry |
+| `ensemble_on_second_retry` | `false` | On second retry, spawn N parallel candidates in separate worktrees with different strategy hints; validate each and commit the best PASS result. Falls back to escalation if no candidate passes |
+| `ensemble_candidates` | `2` | Number of parallel candidates for ensemble retry (each runs in its own worktree) |
 | `flaky_tests_file` | `""` | Path to known-flaky tests JSON registry; empty = disabled |
 | `heartbeat_enabled` | `false` | Enable self-directed work when idle (see [Heartbeat](#heartbeat--self-directed-work)) |
 | `heartbeat_daily_budget_usd` | `1.0` | Daily spend cap for heartbeat-spawned tasks |
