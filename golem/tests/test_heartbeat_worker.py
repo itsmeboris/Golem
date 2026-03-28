@@ -998,7 +998,9 @@ class TestRunTier1:
 
     @patch("golem.heartbeat_worker.is_git_repo", return_value=True)
     @patch("golem.heartbeat_worker.detect_github_remote", return_value="owner/repo")
-    async def test_poll_exception_returns_empty(self, _mock_remote, _mock_git, tmp_path):
+    async def test_poll_exception_returns_empty(
+        self, _mock_remote, _mock_git, tmp_path
+    ):
         w = HeartbeatWorker("/fake/repo", _make_config(), state_dir=tmp_path)
         task_source = MagicMock()
         task_source.poll_untagged_tasks.side_effect = RuntimeError("network error")
@@ -1055,7 +1057,9 @@ class TestRunTier1Promoted:
 
     @patch("golem.heartbeat_worker.is_git_repo", return_value=True)
     @patch("golem.heartbeat_worker.detect_github_remote", return_value="owner/repo")
-    async def test_poll_exception_returns_empty(self, _mock_remote, _mock_git, tmp_path):
+    async def test_poll_exception_returns_empty(
+        self, _mock_remote, _mock_git, tmp_path
+    ):
         w = HeartbeatWorker("/fake/repo", _make_config(), state_dir=tmp_path)
         task_source = MagicMock()
         task_source.poll_untagged_tasks.side_effect = RuntimeError("err")
@@ -1375,3 +1379,201 @@ class TestCoerceTaskId:
         from golem.heartbeat_worker import _coerce_task_id
 
         assert _coerce_task_id(value) == expected
+
+
+class TestWorkerLoadStateEdgeCases:
+    """Cover edge cases in load_state validation."""
+
+    def test_load_state_coerces_inflight_ids(self, tmp_path):
+        """load_state coerces string inflight task IDs to int."""
+        w = _make_worker(tmp_path)
+        w._state_file.parent.mkdir(parents=True, exist_ok=True)
+        state = {
+            "repo_path": "/fake/repo",
+            "inflight_task_ids": ["123", 456],
+            "dedup_memory": {},
+            "last_scan_at": "",
+            "last_scan_tier": 0,
+        }
+        w._state_file.write_text(json.dumps(state))
+        w.load_state()
+        assert w._inflight_task_ids == [123, 456]
+
+    def test_load_state_invalid_candidates_dropped(self, tmp_path):
+        """load_state drops candidates missing required keys."""
+        w = _make_worker(tmp_path)
+        w._state_file.parent.mkdir(parents=True, exist_ok=True)
+        state = {
+            "repo_path": "/fake/repo",
+            "inflight_task_ids": [],
+            "dedup_memory": {},
+            "candidates": [
+                {"id": "only_id"},  # missing required keys
+                {
+                    "id": "good",
+                    "subject": "s",
+                    "body": "b",
+                    "automatable": True,
+                    "confidence": 0.9,
+                    "complexity": "small",
+                    "reason": "r",
+                    "tier": 2,
+                },
+            ],
+            "last_scan_at": "",
+            "last_scan_tier": 0,
+        }
+        w._state_file.write_text(json.dumps(state))
+        w.load_state()
+        assert len(w._candidates) == 1
+        assert w._candidates[0]["id"] == "good"
+
+
+class TestWorkerValidateCandidatesEdgeCases:
+    """Cover edge cases in _validate_candidates."""
+
+    def test_complexity_not_in_valid_complexities(self, tmp_path):
+        """Candidate with valid complexity string but not in allowed set is skipped."""
+        w = _make_worker(tmp_path)
+        raw = {
+            "candidates": [
+                {
+                    "id": "github:42",
+                    "automatable": True,
+                    "confidence": 0.9,
+                    "complexity": "large",
+                    "reason": "r",
+                    "category": "coverage",
+                }
+            ]
+        }
+        # Only allow "small" complexity
+        result = w._validate_candidates(raw, valid_complexities=("small",), tier=1)
+        assert len(result) == 0
+
+
+class TestWorkerCoverageCacheEdgeCases:
+    """Cover edge cases in _scan_coverage cache."""
+
+    def test_invalid_cache_timestamp_reruns(self, tmp_path):
+        """Invalid ran_at timestamp in coverage cache triggers re-run."""
+        w = _make_worker(tmp_path)
+        w._coverage_cache = {
+            "commit_hash": "abc123",
+            "ran_at": "not-a-valid-date",
+            "uncovered_modules": ["golem/foo.py"],
+        }
+        with patch("golem.heartbeat_worker.subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                MagicMock(returncode=0, stdout="abc123\n"),  # HEAD hash matches cache
+                MagicMock(
+                    returncode=0,
+                    stdout="golem/bar.py  50  10  80%\n",
+                ),
+            ]
+            results = w._scan_coverage()
+            assert len(results) == 1
+            assert "bar.py" in results[0][1]
+
+
+class TestWorkerTier2RecentCategories:
+    """Cover recent_categories filtering in _run_tier2."""
+
+    @patch("golem.heartbeat_worker.is_git_repo", return_value=True)
+    @patch("golem.heartbeat_worker.detect_github_remote", return_value=None)
+    async def test_tier2_filters_recently_batched_categories(
+        self, _mock_remote, _mock_git, tmp_path
+    ):
+        w = HeartbeatWorker("/fake/repo", _make_config(), state_dir=tmp_path)
+        record_spend = MagicMock()
+
+        haiku_response = {
+            "candidates": [
+                {
+                    "id": "improvement:coverage:a",
+                    "automatable": True,
+                    "confidence": 0.9,
+                    "complexity": "small",
+                    "reason": "r",
+                    "category": "coverage",
+                }
+            ]
+        }
+        with patch.object(w, "_scan_todos", return_value=[]):
+            with patch.object(
+                w,
+                "_scan_coverage",
+                return_value=[("coverage:abc", "Module below 100%: golem/foo.py")],
+            ):
+                with patch.object(w, "_scan_pitfalls", return_value=[]):
+                    with patch.object(
+                        w,
+                        "_get_recently_resolved_ids",
+                        return_value=set(),
+                    ):
+                        with patch.object(
+                            w,
+                            "_get_recent_batch_categories",
+                            return_value={"coverage"},
+                        ):
+                            with patch.object(
+                                w,
+                                "_call_haiku",
+                                return_value=haiku_response,
+                            ):
+                                result = await w._run_tier2(record_spend)
+                                # Should be filtered out because "coverage" is recent
+                                assert len(result) == 0
+
+
+class TestWorkerTier1NotAutomatable:
+    """Cover not_automatable dedup recording in _run_tier1."""
+
+    @patch("golem.heartbeat_worker.is_git_repo", return_value=True)
+    @patch("golem.heartbeat_worker.detect_github_remote", return_value="owner/repo")
+    async def test_tier1_records_not_automatable(
+        self, _mock_remote, _mock_git, tmp_path
+    ):
+        w = HeartbeatWorker("/fake/repo", _make_config(), state_dir=tmp_path)
+        record_spend = MagicMock()
+        task_source = MagicMock()
+        task_source.poll_untagged_tasks.return_value = [
+            {"id": 1, "subject": "Issue 1", "body": "desc"},
+            {"id": 2, "subject": "Issue 2", "body": "desc"},
+        ]
+        # Backend is config.profile = "local"; Haiku says only issue 1 is automatable
+        haiku_response = {
+            "candidates": [
+                {
+                    "id": "local:1",
+                    "automatable": True,
+                    "confidence": 0.9,
+                    "complexity": "small",
+                    "reason": "easy",
+                    "category": "bugfix",
+                }
+            ]
+        }
+        with patch.object(w, "_call_haiku", return_value=haiku_response):
+            result = await w._run_tier1(task_source, record_spend)
+            assert len(result) == 1
+            # Issue 2 should be recorded as not_automatable
+            assert w._dedup_memory["local:2"]["verdict"] == "not_automatable"
+
+
+class TestWorkerTickBudgetExhausted:
+    """Cover budget_allows returning False during tier1_owed tick."""
+
+    async def test_tick_tier1_owed_no_budget_returns_empty(self, tmp_path):
+        w = _make_worker(tmp_path)
+        w._tier1_owed = True
+        task_source = MagicMock()
+        record_spend = MagicMock()
+
+        # promoted returns empty, then budget exhausted
+        with patch.object(w, "_run_tier1_promoted", new=AsyncMock(return_value=[])):
+            candidates, tier = await w.tick(
+                task_source, record_spend, budget_allows=lambda: False
+            )
+            assert candidates == []
+            assert tier == 0

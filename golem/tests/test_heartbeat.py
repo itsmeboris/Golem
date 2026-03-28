@@ -3407,3 +3407,348 @@ class TestMultiRepoScheduler:
         await mgr._run_heartbeat_tick()
 
         mgr._run_single_repo_tick.assert_awaited_once()
+
+    def test_submit_single_for_worker_coercion_failure(self, tmp_path):
+        """_submit_single_for_worker handles non-integer task_id from submit_task."""
+        reg_path = tmp_path / "registry.json"
+        from golem.repo_registry import RepoRegistry
+
+        reg = RepoRegistry(registry_path=reg_path)
+        reg.attach("/fake/repo1")
+        mgr = _make_manager(tmp_path)
+        mgr._registry = reg
+        with patch("golem.heartbeat_worker.is_git_repo", return_value=False):
+            mgr._sync_workers()
+        worker = mgr._workers["/fake/repo1"]
+        mgr._flow = MagicMock()
+        mgr._flow.submit_task.return_value = {"task_id": "not_an_int!!!"}
+
+        candidate = {
+            "id": "github:42",
+            "subject": "test",
+            "body": "test body",
+            "automatable": True,
+            "confidence": 0.9,
+            "complexity": "small",
+            "reason": "easy",
+            "tier": 1,
+        }
+        mgr._submit_single_for_worker(worker, candidate)
+        assert mgr._state == "idle"
+
+    def test_submit_single_for_worker_exception(self, tmp_path):
+        """_submit_single_for_worker handles submit_task exceptions."""
+        reg_path = tmp_path / "registry.json"
+        from golem.repo_registry import RepoRegistry
+
+        reg = RepoRegistry(registry_path=reg_path)
+        reg.attach("/fake/repo1")
+        mgr = _make_manager(tmp_path)
+        mgr._registry = reg
+        with patch("golem.heartbeat_worker.is_git_repo", return_value=False):
+            mgr._sync_workers()
+        worker = mgr._workers["/fake/repo1"]
+        mgr._flow = MagicMock()
+        mgr._flow.submit_task.side_effect = RuntimeError("boom")
+
+        candidate = {
+            "id": "github:42",
+            "subject": "test",
+            "body": "test body",
+            "automatable": True,
+            "confidence": 0.9,
+            "complexity": "small",
+            "reason": "easy",
+            "tier": 1,
+        }
+        mgr._submit_single_for_worker(worker, candidate)
+        assert mgr._state == "idle"
+
+    def test_submit_batch_for_worker_recent_category_skip(self, tmp_path):
+        """_submit_batch_for_worker skips recently addressed category."""
+        reg_path = tmp_path / "registry.json"
+        from golem.repo_registry import RepoRegistry
+
+        reg = RepoRegistry(registry_path=reg_path)
+        reg.attach("/fake/repo1")
+        mgr = _make_manager(tmp_path)
+        mgr._registry = reg
+        with patch("golem.heartbeat_worker.is_git_repo", return_value=False):
+            mgr._sync_workers()
+        worker = mgr._workers["/fake/repo1"]
+        mgr._flow = MagicMock()
+
+        batch = [
+            {
+                "id": "improvement:coverage:a",
+                "category": "coverage",
+                "confidence": 0.9,
+                "subject": "a",
+                "body": "a",
+                "automatable": True,
+                "complexity": "small",
+                "reason": "a",
+                "tier": 2,
+            }
+        ]
+        mgr._submit_batch_for_worker(
+            worker, batch, recent_categories={"coverage"}, resolved_ids=set()
+        )
+        mgr._flow.submit_task.assert_not_called()
+
+    def test_submit_batch_for_worker_all_resolved_skip(self, tmp_path):
+        """_submit_batch_for_worker skips when all items already resolved."""
+        reg_path = tmp_path / "registry.json"
+        from golem.repo_registry import RepoRegistry
+
+        reg = RepoRegistry(registry_path=reg_path)
+        reg.attach("/fake/repo1")
+        mgr = _make_manager(tmp_path)
+        mgr._registry = reg
+        with patch("golem.heartbeat_worker.is_git_repo", return_value=False):
+            mgr._sync_workers()
+        worker = mgr._workers["/fake/repo1"]
+        mgr._flow = MagicMock()
+
+        batch = [
+            {
+                "id": "improvement:coverage:a",
+                "category": "coverage",
+                "confidence": 0.9,
+                "subject": "a",
+                "body": "a",
+                "automatable": True,
+                "complexity": "small",
+                "reason": "a",
+                "tier": 2,
+            }
+        ]
+        mgr._submit_batch_for_worker(
+            worker,
+            batch,
+            recent_categories=set(),
+            resolved_ids={"improvement:coverage:a"},
+        )
+        mgr._flow.submit_task.assert_not_called()
+
+    def test_submit_batch_for_worker_coercion_failure(self, tmp_path):
+        """_submit_batch_for_worker handles non-integer task_id."""
+        reg_path = tmp_path / "registry.json"
+        from golem.repo_registry import RepoRegistry
+
+        reg = RepoRegistry(registry_path=reg_path)
+        reg.attach("/fake/repo1")
+        mgr = _make_manager(tmp_path)
+        mgr._registry = reg
+        with patch("golem.heartbeat_worker.is_git_repo", return_value=False):
+            mgr._sync_workers()
+        worker = mgr._workers["/fake/repo1"]
+        mgr._flow = MagicMock()
+        mgr._flow.submit_task.return_value = {"task_id": None}
+
+        batch = [
+            {
+                "id": "improvement:coverage:a",
+                "category": "coverage",
+                "confidence": 0.9,
+                "subject": "a",
+                "body": "a",
+                "automatable": True,
+                "complexity": "small",
+                "reason": "a",
+                "tier": 2,
+            }
+        ]
+        mgr._submit_batch_for_worker(
+            worker, batch, recent_categories=set(), resolved_ids=set()
+        )
+        assert mgr._state == "idle"
+
+    def test_submit_batch_for_worker_exception(self, tmp_path):
+        """_submit_batch_for_worker handles exceptions."""
+        reg_path = tmp_path / "registry.json"
+        from golem.repo_registry import RepoRegistry
+
+        reg = RepoRegistry(registry_path=reg_path)
+        reg.attach("/fake/repo1")
+        mgr = _make_manager(tmp_path)
+        mgr._registry = reg
+        with patch("golem.heartbeat_worker.is_git_repo", return_value=False):
+            mgr._sync_workers()
+        worker = mgr._workers["/fake/repo1"]
+        mgr._flow = MagicMock()
+        mgr._flow.submit_task.side_effect = RuntimeError("boom")
+
+        batch = [
+            {
+                "id": "improvement:coverage:a",
+                "category": "coverage",
+                "confidence": 0.9,
+                "subject": "a",
+                "body": "a",
+                "automatable": True,
+                "complexity": "small",
+                "reason": "a",
+                "tier": 2,
+            }
+        ]
+        mgr._submit_batch_for_worker(
+            worker, batch, recent_categories=set(), resolved_ids=set()
+        )
+        assert mgr._state == "idle"
+
+    def test_submit_promoted_for_worker_coercion_failure(self, tmp_path):
+        """_submit_promoted_for_worker handles non-integer task_id."""
+        reg_path = tmp_path / "registry.json"
+        from golem.repo_registry import RepoRegistry
+
+        reg = RepoRegistry(registry_path=reg_path)
+        reg.attach("/fake/repo1")
+        mgr = _make_manager(tmp_path)
+        mgr._registry = reg
+        with patch("golem.heartbeat_worker.is_git_repo", return_value=False):
+            mgr._sync_workers()
+        worker = mgr._workers["/fake/repo1"]
+        mgr._flow = MagicMock()
+        mgr._flow.submit_task.return_value = {"task_id": True}
+
+        candidate = {
+            "id": "github:42",
+            "subject": "test",
+            "body": "test body",
+            "automatable": True,
+            "confidence": 0.9,
+            "complexity": "small",
+            "reason": "easy",
+            "tier": 1,
+        }
+        mgr._submit_promoted_for_worker(worker, candidate)
+        assert not worker._inflight_task_ids
+
+    def test_submit_promoted_for_worker_exception(self, tmp_path):
+        """_submit_promoted_for_worker handles exceptions."""
+        reg_path = tmp_path / "registry.json"
+        from golem.repo_registry import RepoRegistry
+
+        reg = RepoRegistry(registry_path=reg_path)
+        reg.attach("/fake/repo1")
+        mgr = _make_manager(tmp_path)
+        mgr._registry = reg
+        with patch("golem.heartbeat_worker.is_git_repo", return_value=False):
+            mgr._sync_workers()
+        worker = mgr._workers["/fake/repo1"]
+        mgr._flow = MagicMock()
+        mgr._flow.submit_task.side_effect = RuntimeError("boom")
+
+        candidate = {
+            "id": "github:42",
+            "subject": "test",
+            "body": "test body",
+            "automatable": True,
+            "confidence": 0.9,
+            "complexity": "small",
+            "reason": "easy",
+            "tier": 1,
+        }
+        mgr._submit_promoted_for_worker(worker, candidate)
+        assert not worker._inflight_task_ids
+
+    async def test_run_multi_repo_tick_promoted_path(self, tmp_path):
+        """_run_multi_repo_tick handles tier1_owed promotion path."""
+        reg_path = tmp_path / "registry.json"
+        from golem.repo_registry import RepoRegistry
+
+        reg = RepoRegistry(registry_path=reg_path)
+        reg.attach("/fake/repo1")
+        mgr = _make_manager(tmp_path)
+        mgr._registry = reg
+        with patch("golem.heartbeat_worker.is_git_repo", return_value=False):
+            mgr._sync_workers()
+        worker = mgr._workers["/fake/repo1"]
+        worker._tier1_owed = True
+
+        candidate = {
+            "id": "github:42",
+            "subject": "test",
+            "body": "body",
+            "automatable": True,
+            "confidence": 0.9,
+            "complexity": "small",
+            "reason": "easy",
+            "tier": 1,
+            "category": "coverage",
+        }
+        worker.tick = AsyncMock(return_value=([candidate], 1))
+        mgr._flow = MagicMock()
+        mgr._flow._profile = MagicMock()
+        mgr._flow.submit_task.return_value = {"task_id": 999}
+
+        await mgr._run_multi_repo_tick()
+        mgr._flow.submit_task.assert_called_once()
+        assert worker._tier1_owed is False
+        assert worker._tier2_completions_since_tier1 == 0
+
+    async def test_run_multi_repo_tick_tier2_path(self, tmp_path):
+        """_run_multi_repo_tick handles tier 2 batch path."""
+        reg_path = tmp_path / "registry.json"
+        from golem.repo_registry import RepoRegistry
+
+        reg = RepoRegistry(registry_path=reg_path)
+        reg.attach("/fake/repo1")
+        mgr = _make_manager(tmp_path)
+        mgr._registry = reg
+        with patch("golem.heartbeat_worker.is_git_repo", return_value=False):
+            mgr._sync_workers()
+        worker = mgr._workers["/fake/repo1"]
+
+        candidates = [
+            {
+                "id": "improvement:coverage:a",
+                "category": "coverage",
+                "subject": "a",
+                "body": "a",
+                "automatable": True,
+                "confidence": 0.9,
+                "complexity": "small",
+                "reason": "a",
+                "tier": 2,
+            },
+        ]
+        worker.tick = AsyncMock(return_value=(candidates, 2))
+        worker._tick_recent_categories = set()
+        worker._tick_resolved_ids = set()
+        mgr._flow = MagicMock()
+        mgr._flow._profile = MagicMock()
+        mgr._flow.submit_task.return_value = {"task_id": 998}
+
+        await mgr._run_multi_repo_tick()
+        mgr._flow.submit_task.assert_called_once()
+
+    async def test_run_multi_repo_tick_next_worker_none(self, tmp_path):
+        """_run_multi_repo_tick handles _next_worker returning None mid-loop."""
+        mgr = _make_manager(tmp_path)
+        # Workers dict is non-empty so loop enters, but _next_worker returns None
+        mgr._workers = {"/fake": MagicMock()}
+        mgr._next_worker = MagicMock(return_value=None)
+        mgr._flow = MagicMock()
+        await mgr._run_multi_repo_tick()
+        assert mgr._state == "idle"
+
+    async def test_run_multi_repo_tick_no_candidates_skips(self, tmp_path):
+        """_run_multi_repo_tick skips workers with no candidates."""
+        reg_path = tmp_path / "registry.json"
+        from golem.repo_registry import RepoRegistry
+
+        reg = RepoRegistry(registry_path=reg_path)
+        reg.attach("/fake/repo1")
+        mgr = _make_manager(tmp_path)
+        mgr._registry = reg
+        with patch("golem.heartbeat_worker.is_git_repo", return_value=False):
+            mgr._sync_workers()
+        worker = mgr._workers["/fake/repo1"]
+        worker.tick = AsyncMock(return_value=([], 0))
+        mgr._flow = MagicMock()
+        mgr._flow._profile = MagicMock()
+
+        await mgr._run_multi_repo_tick()
+        assert mgr._state == "idle"
