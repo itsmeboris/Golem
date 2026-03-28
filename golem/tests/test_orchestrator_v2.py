@@ -109,6 +109,31 @@ class TestRecoverSessions:
         }
         assert recover_sessions(sessions) == 0
 
+    def test_checkpoint_phase_cleared_on_recovery(self):
+        """REL-006: checkpoint_phase must be cleared when session is reset to DETECTED."""
+        sessions = {
+            1: TaskSession(
+                parent_issue_id=1,
+                state=TaskSessionState.RUNNING,
+                checkpoint_phase="post_validate",
+            ),
+            2: TaskSession(
+                parent_issue_id=2,
+                state=TaskSessionState.RETRYING,
+                checkpoint_phase="pre_retry",
+            ),
+            3: TaskSession(
+                parent_issue_id=3,
+                state=TaskSessionState.COMPLETED,
+                checkpoint_phase="done",
+            ),
+        }
+        recover_sessions(sessions)
+        assert sessions[1].checkpoint_phase == ""
+        assert sessions[2].checkpoint_phase == ""
+        # Non-restartable sessions are not modified
+        assert sessions[3].checkpoint_phase == "done"
+
 
 class TestNowIso:
     def test_returns_iso_string(self):

@@ -1451,5 +1451,6 @@ def recover_sessions(sessions: dict[int, TaskSession]) -> int:
     for session in sessions.values():
         if session.state in _RESTARTABLE_STATES:
             session.state = TaskSessionState.DETECTED
+            session.checkpoint_phase = ""
             count += 1
     return count
