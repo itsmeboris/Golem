@@ -360,6 +360,18 @@ class HeartbeatCandidateDict(TypedDict):
     category: NotRequired[str]
 
 
+class RepoEntryDict(TypedDict):
+    """A registered repo in the attach/detach registry.
+
+    Producers: repo_registry.py attach()
+    Consumers: heartbeat.py, cli.py
+    """
+
+    path: str  # absolute normalized path
+    heartbeat: bool  # whether heartbeat scans this repo
+    attached_at: str  # ISO 8601 UTC datetime
+
+
 class DedupEntryDict(TypedDict):
     """A deduplication memory entry stored by HeartbeatManager.
 

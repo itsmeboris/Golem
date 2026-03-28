@@ -21,7 +21,9 @@ from typing import Any
 
 from .core.cli_wrapper import CLIConfig, CLIError, CLIType, invoke_cli
 from .core.config import DATA_DIR, GolemFlowConfig
+from .heartbeat_worker import HeartbeatWorker
 from .orchestrator import TaskSessionState
+from .repo_registry import RepoRegistry
 from .types import (
     CoverageCacheDict,
     DedupEntryDict,
@@ -174,6 +176,11 @@ class HeartbeatManager:
         self._tick_resolved_ids: set[str] | None = None
         self._tick_recent_categories: set[str] | None = None
 
+        # Multi-repo scheduler state
+        self._registry: RepoRegistry | None = None
+        self._workers: dict[str, HeartbeatWorker] = {}
+        self._repo_index: int = 0
+
     # -- Budget ---------------------------------------------------------------
 
     def budget_allows(self) -> bool:
@@ -238,9 +245,11 @@ class HeartbeatManager:
 
         Extracts numeric IDs from dedup keys like ``"github:40"`` where the
         verdict is still active (submitted, candidate, or promoted).
+        Includes IDs from all attached workers.
         """
         active_verdicts = {"submitted", "candidate", "promoted"}
         ids: set[int] = set()
+        # Local dedup (legacy single-repo mode)
         for key, entry in self._dedup_memory.items():
             if entry.get("verdict") not in active_verdicts:
                 continue
@@ -251,6 +260,9 @@ class HeartbeatManager:
                 ids.add(int(parts[1]))
             except ValueError:
                 pass
+        # Add worker-tracked IDs
+        for worker in self._workers.values():
+            ids.update(worker.get_claimed_issue_ids())
         return ids
 
     # -- Inflight -------------------------------------------------------------
@@ -291,6 +303,23 @@ class HeartbeatManager:
             return
         self._inflight_task_ids.remove(task_id)
 
+        # Route to worker if in multi-repo mode
+        routed = False
+        for worker in self._workers.values():
+            if task_id in worker._inflight_task_ids:
+                worker.on_task_completed(task_id, success)
+                worker.save_state()
+                routed = True
+                break
+
+        if not routed:
+            # Legacy single-repo mode: handle locally
+            self._on_task_completed_local(task_id, success)
+
+        self.save_state()
+
+    def _on_task_completed_local(self, task_id: int, success: bool) -> None:
+        """Handle task completion for legacy single-repo mode."""
         # Collect categories from dedup entries for this task
         task_categories: set[str] = set()
         for key, entry in self._dedup_memory.items():
@@ -1185,6 +1214,249 @@ class HeartbeatManager:
             and c["id"] not in resolved_ids
         ]
 
+    # -- Multi-repo scheduling -------------------------------------------------
+
+    def _sync_workers(self) -> None:
+        """Reload registry and create/remove workers as needed."""
+        if self._registry is None:
+            return
+
+        self._registry.load()
+        current_paths = {r["path"] for r in self._registry.heartbeat_repos()}
+
+        # Remove workers for detached repos
+        for path in list(self._workers):
+            if path not in current_paths:
+                del self._workers[path]
+
+        # Create workers for new repos
+        for path in current_paths:
+            if path not in self._workers:
+                worker = HeartbeatWorker(
+                    repo_path=path,
+                    config=self._config,
+                    state_dir=self._state_dir,
+                )
+                worker.load_state()
+                self._workers[path] = worker
+
+    def _next_worker(self) -> HeartbeatWorker | None:
+        """Return the next worker in round-robin order, or None if empty."""
+        if not self._workers:
+            return None
+        paths = sorted(self._workers.keys())
+        self._repo_index = self._repo_index % len(paths)
+        worker = self._workers[paths[self._repo_index]]
+        self._repo_index = (self._repo_index + 1) % len(paths)
+        return worker
+
+    def _submit_single_for_worker(
+        self, worker: HeartbeatWorker, candidate: HeartbeatCandidateDict
+    ) -> None:
+        """Submit a single candidate, routing to worker's repo."""
+        subject = f"[HEARTBEAT] {candidate['subject']}"
+        body = candidate["body"]
+        prompt = (
+            f"{body}\n\n"
+            f"Source: heartbeat tier {self._last_scan_tier}\n"
+            f"Confidence: {candidate['confidence']}\n"
+            f"Complexity: {candidate['complexity']}\n"
+            f"Reason: {candidate['reason']}"
+        )
+
+        try:
+            is_issue = not candidate["id"].startswith("improvement:")
+            result = self._flow.submit_task(
+                prompt=prompt,
+                subject=subject,
+                issue_mode=is_issue,
+                work_dir=worker.repo_path,
+            )
+            task_id = result["task_id"]
+            coerced = _coerce_task_id(task_id)
+            if coerced is None:
+                logger.error("submit_task returned non-integer task_id: %r", task_id)
+                self._state = "idle"
+                return
+            task_id = coerced
+            self._inflight_task_ids.append(task_id)
+            worker._inflight_task_ids.append(task_id)
+            worker.record_dedup(candidate["id"], "submitted", task_id=task_id)
+            self._state = "submitted"
+            logger.info(
+                "Heartbeat submitted task #%d: %s (tier=%d, confidence=%.2f, repo=%s)",
+                task_id,
+                subject,
+                self._last_scan_tier,
+                candidate["confidence"],
+                worker.repo_path,
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.exception("Heartbeat failed to submit task for worker")
+            self._state = "idle"
+
+    def _submit_batch_for_worker(
+        self,
+        worker: HeartbeatWorker,
+        batch: list[HeartbeatCandidateDict],
+        recent_categories: set[str] | None = None,
+        resolved_ids: set[str] | None = None,
+    ) -> None:
+        """Submit a batch of Tier 2 candidates for a worker's repo."""
+        category = batch[0].get("category", "improvement")
+
+        if recent_categories is None:
+            recent_categories = worker._get_recent_batch_categories()
+        if category in recent_categories:
+            logger.warning(
+                "Skipping batch submission — category %r was recently addressed",
+                category,
+            )
+            return
+
+        if resolved_ids is None:
+            resolved_ids = worker._get_recently_resolved_ids()
+        if resolved_ids and all(c["id"] in resolved_ids for c in batch):
+            logger.warning(
+                "Skipping batch submission — all %d item(s) already resolved",
+                len(batch),
+            )
+            return
+
+        subject = f"[HEARTBEAT] batch:{category} ({len(batch)} items)"
+
+        items_text = []
+        for i, c in enumerate(batch, 1):
+            items_text.append(f"{i}. [{c['id']}] {c['reason']}")
+
+        prompt = (
+            f"Fix the following {len(batch)} related issues "
+            f"(category: {category}):\n\n"
+            + "\n".join(items_text)
+            + f"\n\nSource: heartbeat tier {self._last_scan_tier}\n"
+            f"Batch size: {len(batch)}\n"
+            f"Category: {category}"
+        )
+
+        try:
+            result = self._flow.submit_task(
+                prompt=prompt,
+                subject=subject,
+                work_dir=worker.repo_path,
+            )
+            task_id = result["task_id"]
+            coerced = _coerce_task_id(task_id)
+            if coerced is None:
+                logger.error("submit_task returned non-integer task_id: %r", task_id)
+                self._state = "idle"
+                return
+            task_id = coerced
+            self._inflight_task_ids.append(task_id)
+            worker._inflight_task_ids.append(task_id)
+            for c in batch:
+                worker.record_dedup(c["id"], "submitted", task_id=task_id)
+            self._state = "submitted"
+            logger.info(
+                "Heartbeat submitted batch task #%d: %s "
+                "(tier=%d, items=%d, repo=%s)",
+                task_id,
+                subject,
+                self._last_scan_tier,
+                len(batch),
+                worker.repo_path,
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.exception("Heartbeat failed to submit batch task for worker")
+            self._state = "idle"
+
+    def _submit_promoted_for_worker(
+        self, worker: HeartbeatWorker, candidate: HeartbeatCandidateDict
+    ) -> None:
+        """Submit a promoted GH issue for a worker's repo."""
+        subject = f"[PROMOTED] {candidate['subject']}"
+        body = candidate["body"]
+        prompt = (
+            f"{body}\n\n"
+            f"Source: heartbeat tier 1 promotion\n"
+            f"Confidence: {candidate['confidence']}\n"
+            f"Complexity: {candidate['complexity']}\n"
+            f"Reason: {candidate['reason']}"
+        )
+
+        try:
+            result = self._flow.submit_task(
+                prompt=prompt,
+                subject=subject,
+                issue_mode=True,
+                work_dir=worker.repo_path,
+            )
+            task_id = _coerce_task_id(result["task_id"])
+            if task_id is None:
+                logger.error(
+                    "submit_task returned non-integer task_id: %r",
+                    result["task_id"],
+                )
+                return
+            self._inflight_task_ids.append(task_id)
+            worker._inflight_task_ids.append(task_id)
+            worker.record_dedup(candidate["id"], "promoted", task_id=task_id)
+            logger.info(
+                "Promoted GH issue submitted: %s (confidence=%.2f, repo=%s)",
+                subject,
+                candidate["confidence"],
+                worker.repo_path,
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.exception("Failed to submit promoted GH issue for worker")
+
+    async def _run_multi_repo_tick(self) -> None:
+        """Multi-repo tick: round-robin across workers."""
+        tried = 0
+        total = len(self._workers)
+        while tried < total:
+            worker = self._next_worker()
+            if worker is None:
+                break
+            tried += 1
+
+            candidates, tier = await worker.tick(
+                task_source=self._flow._profile.task_source,
+                record_spend=self.record_spend,
+                budget_allows=self.budget_allows,
+            )
+
+            if not candidates or not self.can_submit():
+                continue
+
+            # Handle promoted tier 1
+            if tier == 1 and worker._tier1_owed:
+                self._submit_promoted_for_worker(worker, candidates[0])
+                worker._tier1_owed = False
+                worker._tier2_completions_since_tier1 = 0
+                worker.save_state()
+                break
+
+            if tier == 1:
+                self._submit_single_for_worker(worker, candidates[0])
+                worker.save_state()
+                break
+
+            if tier == 2:
+                batch = worker._group_candidates(candidates)
+                if batch:
+                    self._submit_batch_for_worker(
+                        worker,
+                        batch,
+                        recent_categories=worker._tick_recent_categories,
+                        resolved_ids=worker._tick_resolved_ids,
+                    )
+                worker.save_state()
+                break
+
+        self._state = "idle"
+
+    # -- Tick dispatch --------------------------------------------------------
+
     async def _run_heartbeat_tick(self) -> None:
         """Execute one heartbeat cycle: promotion -> Tier 1 -> Tier 2 -> submit."""
         # Clear tick-scoped caches from previous tick
@@ -1197,6 +1469,18 @@ class HeartbeatManager:
 
         self._state = "scanning"
 
+        # Multi-repo mode: delegate to workers
+        self._sync_workers()
+        if self._workers:
+            await self._run_multi_repo_tick()
+        else:
+            # Legacy single-repo mode (preserves existing behavior)
+            await self._run_single_repo_tick()
+
+        self.save_state()
+
+    async def _run_single_repo_tick(self) -> None:
+        """Original tick logic for backward compat when no repos attached."""
         # Tier 1 promotion: when owed, run relaxed scan first
         if self._tier1_owed:
             promoted = await self._run_tier1_promoted()
@@ -1222,7 +1506,6 @@ class HeartbeatManager:
 
         if not candidates or not self.can_submit():
             self._state = "idle"
-            self.save_state()
             return
 
         # Tier 2: batch by category; Tier 1: single submission
@@ -1230,7 +1513,6 @@ class HeartbeatManager:
             batch = self._group_candidates(candidates)
             if not batch:
                 self._state = "idle"
-                self.save_state()
                 return
             # Reuse git-derived dedup data already computed by _run_tier2
             # to avoid redundant subprocess calls within the same tick.
@@ -1241,8 +1523,6 @@ class HeartbeatManager:
             )
         else:
             self._submit_single(candidates[0])
-
-        self.save_state()
 
     def _submit_single(self, candidate: HeartbeatCandidateDict) -> None:
         """Submit a single candidate as a heartbeat task."""
