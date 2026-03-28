@@ -21,12 +21,31 @@ class TestHumanReviewState:
         assert session.human_feedback == ""
         assert session.human_feedback_at == ""
 
-    def test_escalated_session_transitions_to_human_review(self):
-        """A FAILED session can transition to HUMAN_REVIEW when feedback arrives."""
-        session = TaskSession(parent_issue_id=1, state=TaskSessionState.FAILED)
-        session.state = TaskSessionState.HUMAN_REVIEW
-        session.human_feedback = "Try using the SSO module instead of raw auth"
+    def test_escalated_session_transitions_to_human_review(self, monkeypatch, tmp_path):
+        """_check_human_feedback transitions a FAILED session to HUMAN_REVIEW."""
+        flow = _make_flow(monkeypatch, tmp_path)
+        session = TaskSession(
+            parent_issue_id=1,
+            state=TaskSessionState.FAILED,
+            updated_at="2026-03-01T00:00:00Z",
+            retry_count=0,
+        )
+        flow._sessions[1] = session
+
+        comments = [
+            {
+                "author": "reviewer",
+                "body": "Try using the SSO module instead of raw auth",
+                "created_at": "2026-03-09T12:00:00Z",
+            }
+        ]
+        flow._profile.task_source.get_task_comments = MagicMock(return_value=comments)
+        monkeypatch.setattr(flow, "_spawn_session_task", lambda _: None)
+
+        flow._check_human_feedback()
+
         assert session.state == TaskSessionState.HUMAN_REVIEW
+        assert "SSO" in session.human_feedback
 
     def test_session_serialization_roundtrip(self):
         """HUMAN_REVIEW state and feedback fields survive serialization."""

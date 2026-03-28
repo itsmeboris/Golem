@@ -1390,9 +1390,10 @@ class TestRecordHandoff:
         assert len(session.phase_handoffs) == 0  # rejected
         mock_warn.assert_called_once()
         warn_args = mock_warn.call_args[0]
-        assert "executing" in str(warn_args)
-        assert "verifying" in str(warn_args)
-        assert "rejected" in str(warn_args)
+        # Verify specific positional args: (format_str, from_phase, to_phase, reasons)
+        assert "rejected" in warn_args[0]
+        assert warn_args[1] == "executing"
+        assert warn_args[2] == "verifying"
 
     def test_invalid_from_phase_rejected(self):
         """_record_handoff with empty from_phase logs warning and rejects handoff."""
