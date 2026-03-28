@@ -78,5 +78,5 @@ def check_clarity(
             cost_usd=result.cost_usd,
         )
     except Exception as exc:  # pylint: disable=broad-exception-caught
-        logger.warning("Clarity check failed (fail-open): %s", exc)
+        logger.error("Clarity check failed (fail-open, score=5): %s", exc)
         return ClarityResult(score=5, reason=f"Check failed: {exc}", cost_usd=0.0)

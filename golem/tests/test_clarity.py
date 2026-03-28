@@ -106,3 +106,29 @@ class TestClarityScoreClamping:
         with patch("golem.clarity.invoke_cli", return_value=mock_result):
             result = check_clarity(subject="Test", description="test")
             assert result.score == 5
+
+
+class TestClarityFailOpenLogging:
+    """INFRA-006: Fail-open errors must be logged at ERROR level, not WARNING."""
+
+    def test_fallback_logged_at_error_level(self, caplog):
+        """When clarity check fails, log at ERROR (not WARNING) for operator visibility."""
+        import logging
+
+        from golem.clarity import check_clarity
+
+        with (
+            patch(
+                "golem.clarity.invoke_cli", side_effect=RuntimeError("timeout error")
+            ),
+            caplog.at_level(logging.ERROR, logger="golem.clarity"),
+        ):
+            result = check_clarity(subject="Fix bug", description="Something broke")
+
+        assert result.score == 5  # still fail-open
+        assert any(
+            r.levelno == logging.ERROR for r in caplog.records
+        ), "Expected ERROR level log but found none"
+        assert not any(
+            r.levelno == logging.WARNING for r in caplog.records
+        ), "Must not log at WARNING — must use ERROR"

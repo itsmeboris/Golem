@@ -44,7 +44,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [ ] INFRA-003: **Prompt placeholder fallbacks** — conditional placeholders (`{simplify_section}`, `{enhanced_review_section}`) render as literal text when conditions unmet (GH #77)
 - [x] INFRA-004: **AGENTS.md growth bound** — entries with seen >= 10 and age > 90 days now removed by _apply_decay() (GH #78, 2026-03-29)
 - [x] INFRA-005: **Self-update worktree temp file leak** — use unique temp path per SHA instead of hardcoded /tmp/golem-verify (GH #79, 2026-03-29)
-- [ ] INFRA-006: **Clarity check fail-open silently** — returns score=5 on any error with no warning; unclear tasks execute without operator visibility (GH #80)
+- [x] INFRA-006: **Clarity check fail-open silently** — upgraded to logger.error for operator visibility (GH #80, 2026-03-29)
 - [ ] INFRA-007: **Hardcoded verification timeout** — `run_verification()` uses fixed 120s in both `orchestrator.py` and `supervisor_v2_subagent.py`; not configurable (GH #81)
 - [ ] FEAT-001: **Context budget system** — dynamic prompt content sizing (GH #13)
 - [ ] FEAT-002: **A-Mem knowledge graph** — structured knowledge graph for AGENTS.md (GH #14)
