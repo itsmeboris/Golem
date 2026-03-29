@@ -6,6 +6,15 @@
 
 async function renderDetail(eventId, prefetchedTrace) {
   const session = S.sessions[eventId];
+
+  // Show loading spinner while trace is being fetched
+  if (!prefetchedTrace && !S.parsedTraces[eventId]) {
+    const scrollEl = document.getElementById('timeline-scroll');
+    if (scrollEl) {
+      scrollEl.innerHTML = '<div class="loading-overlay"><div class="loading-spinner"></div>Loading trace\u2026</div>';
+    }
+  }
+
   const trace = prefetchedTrace || await fetchParsedTrace(eventId);
   const running = isTaskRunning(session);
 

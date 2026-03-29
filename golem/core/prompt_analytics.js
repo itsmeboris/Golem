@@ -4,7 +4,7 @@ async function renderPromptAnalytics() {
   const container = document.getElementById('pa-table-container');
   if (!container) return;
 
-  container.innerHTML = '<div style="padding:1rem;color:var(--text-muted)">Loading\u2026</div>';
+  container.innerHTML = '<div class="loading-overlay"><div class="loading-spinner"></div>Loading\u2026</div>';
 
   try {
     const res = await fetch('/api/analytics/by-prompt', { signal: AbortSignal.timeout(10000) });

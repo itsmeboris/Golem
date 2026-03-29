@@ -9,11 +9,19 @@ let _ovFilter = '';
 let _ovStateFilter = '';  // '' = all, 'running', 'completed', 'failed', 'detected'
 
 async function renderOverview() {
+  const listEl = document.getElementById('ov-task-list');
+  if (!listEl) return;
+
+  // Show skeleton loaders while data loads
+  if (Object.keys(S.sessions).length === 0) {
+    listEl.innerHTML = [1, 2, 3].map(() =>
+      '<div class="skeleton skeleton-card"></div>'
+    ).join('');
+  }
+
   const sessions = await fetchSessions();
   S.sessions = sessions;
 
-  const listEl = document.getElementById('ov-task-list');
-  if (!listEl) return;
   listEl.innerHTML = '';
 
   if (Object.keys(sessions).length === 0) {
@@ -220,6 +228,11 @@ async function renderPreview(eventId) {
   if (!session) {
     previewEl.innerHTML = '<div style="padding:1rem;color:var(--text-muted)">No task selected.</div>';
     return;
+  }
+
+  // Show a loading spinner while trace data is fetched
+  if (!S.parsedTraces[eventId]) {
+    previewEl.innerHTML = '<div class="loading-overlay"><div class="loading-spinner"></div>Loading\u2026</div>';
   }
 
   const running = isTaskRunning(session);

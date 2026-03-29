@@ -2540,3 +2540,146 @@ class TestSafeToThread:
 
         result = await _safe_to_thread(add, 3, b=7)
         assert result == 10
+
+
+# ---------------------------------------------------------------------------
+# Loading States (UX-007)
+# ---------------------------------------------------------------------------
+
+
+class TestLoadingStates:
+    """Verify loading spinner CSS and JS wiring for dashboard loading states."""
+
+    @pytest.fixture(autouse=True)
+    def _paths(self):
+        core = Path(__file__).resolve().parent.parent / "core"
+        self.css_path = core / "dashboard_shared.css"
+        self.overview_path = core / "task_overview.js"
+        self.timeline_path = core / "task_timeline.js"
+        self.analytics_path = core / "prompt_analytics.js"
+
+    # --- CSS: loading-spinner ---
+
+    def test_loading_spinner_class_in_css(self):
+        """CSS must define .loading-spinner for inline loading indicators."""
+        body = self.css_path.read_text(encoding="utf-8")
+        assert ".loading-spinner" in body, "Missing .loading-spinner rule in CSS"
+
+    def test_loading_spinner_uses_spin_keyframes(self):
+        """CSS .loading-spinner must reference the spin animation."""
+        body = self.css_path.read_text(encoding="utf-8")
+        idx = body.find(".loading-spinner")
+        assert idx != -1, "Missing .loading-spinner in CSS"
+        block = body[idx : idx + 300]
+        assert "spin" in block, ".loading-spinner must use spin animation"
+
+    def test_spin_keyframes_defined(self):
+        """CSS must define @keyframes spin for the spinner rotation."""
+        body = self.css_path.read_text(encoding="utf-8")
+        assert "@keyframes spin" in body, "Missing @keyframes spin in CSS"
+
+    def test_spin_keyframes_rotate(self):
+        """@keyframes spin must rotate to 360deg."""
+        body = self.css_path.read_text(encoding="utf-8")
+        idx = body.find("@keyframes spin")
+        assert idx != -1, "Missing @keyframes spin"
+        block = body[idx : idx + 80]
+        assert "rotate(360deg)" in block, "@keyframes spin must rotate(360deg)"
+
+    # --- CSS: loading-overlay ---
+
+    def test_loading_overlay_class_in_css(self):
+        """CSS must define .loading-overlay for page-level loading containers."""
+        body = self.css_path.read_text(encoding="utf-8")
+        assert ".loading-overlay" in body, "Missing .loading-overlay rule in CSS"
+
+    def test_loading_overlay_is_flex(self):
+        """.loading-overlay must use display:flex for centering."""
+        body = self.css_path.read_text(encoding="utf-8")
+        idx = body.find(".loading-overlay{")
+        assert idx != -1, "Missing .loading-overlay{ in CSS"
+        block = body[idx : idx + 200]
+        assert "flex" in block, ".loading-overlay must use display:flex"
+
+    # --- CSS: skeleton classes actually referenced in JS ---
+
+    def test_skeleton_card_used_in_overview_js(self):
+        """skeleton-card class must be used in task_overview.js task list loading."""
+        body = self.overview_path.read_text(encoding="utf-8")
+        assert (
+            "skeleton-card" in body
+        ), "skeleton-card class not used in task_overview.js"
+
+    def test_skeleton_class_used_in_overview_js(self):
+        """skeleton class must be applied to skeleton placeholder elements."""
+        body = self.overview_path.read_text(encoding="utf-8")
+        assert (
+            '"skeleton ' in body or "'skeleton " in body or "skeleton skeleton" in body
+        ), "skeleton class not applied in task_overview.js"
+
+    # --- JS: loading spinner wired up in task_overview.js ---
+
+    def test_overview_shows_loading_spinner_in_preview(self):
+        """renderPreview must show loading-spinner while trace is loading."""
+        body = self.overview_path.read_text(encoding="utf-8")
+        assert (
+            "loading-spinner" in body
+        ), "Missing loading-spinner usage in task_overview.js renderPreview"
+
+    def test_overview_shows_loading_overlay_in_preview(self):
+        """renderPreview must wrap the spinner in loading-overlay."""
+        body = self.overview_path.read_text(encoding="utf-8")
+        assert (
+            "loading-overlay" in body
+        ), "Missing loading-overlay usage in task_overview.js"
+
+    # --- JS: loading spinner wired up in task_timeline.js ---
+
+    def test_timeline_shows_loading_spinner_on_trace_fetch(self):
+        """renderDetail must show loading-spinner while trace data is loading."""
+        body = self.timeline_path.read_text(encoding="utf-8")
+        assert (
+            "loading-spinner" in body
+        ), "Missing loading-spinner usage in task_timeline.js"
+
+    def test_timeline_shows_loading_overlay_on_trace_fetch(self):
+        """renderDetail must wrap the spinner in loading-overlay."""
+        body = self.timeline_path.read_text(encoding="utf-8")
+        assert (
+            "loading-overlay" in body
+        ), "Missing loading-overlay usage in task_timeline.js"
+
+    def test_timeline_loading_shown_only_when_no_cache(self):
+        """renderDetail must skip spinner when trace is already cached."""
+        body = self.timeline_path.read_text(encoding="utf-8")
+        # The guard must reference parsedTraces so it only shows when no cache
+        assert (
+            "parsedTraces" in body
+        ), "renderDetail loading guard must check S.parsedTraces cache"
+
+    # --- JS: loading spinner wired up in prompt_analytics.js ---
+
+    def test_analytics_shows_loading_spinner(self):
+        """renderPromptAnalytics must show loading-spinner before the fetch."""
+        body = self.analytics_path.read_text(encoding="utf-8")
+        assert (
+            "loading-spinner" in body
+        ), "Missing loading-spinner usage in prompt_analytics.js"
+
+    def test_analytics_shows_loading_overlay(self):
+        """renderPromptAnalytics must wrap spinner in loading-overlay."""
+        body = self.analytics_path.read_text(encoding="utf-8")
+        assert (
+            "loading-overlay" in body
+        ), "Missing loading-overlay usage in prompt_analytics.js"
+
+    def test_analytics_loading_shown_before_fetch(self):
+        """loading-overlay must appear before the fetch() call in analytics JS."""
+        body = self.analytics_path.read_text(encoding="utf-8")
+        overlay_idx = body.find("loading-overlay")
+        fetch_idx = body.find("fetch(")
+        assert overlay_idx != -1, "Missing loading-overlay in analytics JS"
+        assert fetch_idx != -1, "Missing fetch() in analytics JS"
+        assert (
+            overlay_idx < fetch_idx
+        ), "loading-overlay must appear before fetch() in prompt_analytics.js"
