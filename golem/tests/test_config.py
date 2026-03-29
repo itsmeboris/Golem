@@ -577,3 +577,38 @@ class TestJsonLoggingConfig:
         )
         config = load_config(cfg_file)
         assert config.golem.json_logging is False
+
+
+class TestPromptEvaluationConfig:
+    """Tests for prompt_evaluation_* fields on GolemFlowConfig."""
+
+    def test_prompt_evaluation_defaults(self):
+        """Prompt evaluation fields default to disabled with interval of 10 ticks."""
+        cfg = GolemFlowConfig()
+        assert cfg.prompt_evaluation_enabled is False
+        assert cfg.prompt_evaluation_interval_ticks == 10
+
+    def test_prompt_evaluation_parsed_from_yaml(self, tmp_path):
+        """prompt_evaluation_enabled and interval are parsed from YAML correctly."""
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(
+            "flows:\n"
+            "  golem:\n"
+            "    profile: local\n"
+            "    projects: [test/repo]\n"
+            "    prompt_evaluation_enabled: true\n"
+            "    prompt_evaluation_interval_ticks: 5\n"
+        )
+        config = load_config(cfg_file)
+        assert config.golem.prompt_evaluation_enabled is True
+        assert config.golem.prompt_evaluation_interval_ticks == 5
+
+    def test_prompt_evaluation_absent_from_yaml_defaults_false(self, tmp_path):
+        """When prompt evaluation fields are absent, defaults apply."""
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(
+            "flows:\n" "  golem:\n" "    profile: local\n" "    projects: [repo]\n"
+        )
+        config = load_config(cfg_file)
+        assert config.golem.prompt_evaluation_enabled is False
+        assert config.golem.prompt_evaluation_interval_ticks == 10

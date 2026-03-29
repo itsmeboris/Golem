@@ -53,6 +53,7 @@ import os
 import tempfile
 
 from .batch_monitor import BatchMonitor
+from .prompt_optimizer import PromptEvaluator, PromptOptimizer
 from .orchestrator import (
     TaskOrchestrator,
     TaskSession,
@@ -153,6 +154,12 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         self._submissions_dir.mkdir(parents=True, exist_ok=True)
         self._submission_source = LocalFileTaskSource(self._submissions_dir)
         self._submission_profile = self._build_submission_profile()
+
+        # Prompt evaluation — periodic evaluation of prompt template performance
+        self._detection_tick_count: int = 0
+        _runs_dir = DATA_DIR / "prompt_runs"
+        self._prompt_evaluator = PromptEvaluator(runs_dir=_runs_dir)
+        self._prompt_optimizer = PromptOptimizer(self._prompt_evaluator)
 
         self._load_state()
 
@@ -480,7 +487,56 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
 
             self._health.record_heartbeat()
 
+            # Prompt evaluation — fire-and-forget so it never blocks detection
+            self._detection_tick_count += 1
+            if (
+                self._task_config.prompt_evaluation_enabled
+                and self._detection_tick_count
+                % self._task_config.prompt_evaluation_interval_ticks
+                == 0
+            ):
+                asyncio.create_task(
+                    self._run_prompt_evaluation(),
+                    name="prompt-evaluation",
+                )
+
             await asyncio.sleep(self._task_config.tick_interval)
+
+    async def _run_prompt_evaluation(self) -> None:
+        """Evaluate recent prompt runs and log suggestions.
+
+        Runs asynchronously so evaluation never blocks the detection loop.
+        Errors are caught and logged — a failing evaluation must never crash
+        the daemon.
+        """
+        try:
+            runs_dir = DATA_DIR / "prompt_runs"
+            runs: list[dict] = []
+            if runs_dir.exists():
+                for run_file in runs_dir.glob("*.json"):
+                    try:
+                        run_data = json.loads(run_file.read_text())
+                        if isinstance(run_data, list):
+                            runs.extend(run_data)
+                        elif isinstance(run_data, dict):
+                            runs.append(run_data)
+                    except Exception:  # pylint: disable=broad-exception-caught
+                        logger.debug("Skipping unreadable prompt run file %s", run_file)
+
+            self._prompt_evaluator.evaluate(runs)
+            suggestions = self._prompt_optimizer.suggest()
+
+            if suggestions:
+                report = self._prompt_optimizer.format_report(suggestions)
+                logger.info(
+                    "Prompt evaluation found %d suggestion(s):\n%s",
+                    len(suggestions),
+                    report,
+                )
+            else:
+                logger.debug("Prompt evaluation: all prompts performing well")
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.warning("Prompt evaluation failed (non-fatal)", exc_info=True)
 
     def _detect_new_issues(self) -> None:
         """Poll for new [AGENT] issues and scan submissions directory."""

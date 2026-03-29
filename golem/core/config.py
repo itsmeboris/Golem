@@ -135,6 +135,9 @@ class GolemFlowConfig(FlowConfig):
     sandbox_memory_gb: int = 4
     # Structured logging: emit JSON lines instead of text
     json_logging: bool = False
+    # Prompt evaluation: periodic evaluation of prompt template performance
+    prompt_evaluation_enabled: bool = False  # opt-in
+    prompt_evaluation_interval_ticks: int = 10  # every N detection ticks
 
 
 @dataclass
@@ -385,6 +388,11 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
         sandbox_memory_gb=data.get("sandbox_memory_gb", 4),
         # Structured logging
         json_logging=data.get("json_logging", False),
+        # Prompt evaluation
+        prompt_evaluation_enabled=data.get("prompt_evaluation_enabled", False),
+        prompt_evaluation_interval_ticks=data.get(
+            "prompt_evaluation_interval_ticks", 10
+        ),
     )
 
 

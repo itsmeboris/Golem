@@ -2951,3 +2951,281 @@ class TestFlowSandboxPreexec:
                 % kwargs
             )
             assert callable(kwargs["preexec_fn"])
+
+
+class TestPromptEvaluationFlowConfig:
+    """GolemFlowConfig fields for prompt evaluation wired into GolemFlow."""
+
+    def test_prompt_evaluation_disabled_by_default(self, monkeypatch, tmp_path):
+        """prompt_evaluation_enabled defaults to False (opt-in)."""
+        flow = _make_flow(monkeypatch, tmp_path)
+        assert flow._task_config.prompt_evaluation_enabled is False
+
+    def test_prompt_evaluation_interval_ticks_default(self, monkeypatch, tmp_path):
+        """prompt_evaluation_interval_ticks defaults to 10."""
+        flow = _make_flow(monkeypatch, tmp_path)
+        assert flow._task_config.prompt_evaluation_interval_ticks == 10
+
+    def test_prompt_evaluation_enabled_via_config(self, monkeypatch, tmp_path):
+        """Setting prompt_evaluation_enabled=True is reflected on the flow."""
+        flow = _make_flow(monkeypatch, tmp_path, prompt_evaluation_enabled=True)
+        assert flow._task_config.prompt_evaluation_enabled is True
+
+    def test_prompt_evaluation_interval_ticks_via_config(self, monkeypatch, tmp_path):
+        """Custom prompt_evaluation_interval_ticks is reflected on the flow."""
+        flow = _make_flow(monkeypatch, tmp_path, prompt_evaluation_interval_ticks=5)
+        assert flow._task_config.prompt_evaluation_interval_ticks == 5
+
+
+class TestRunPromptEvaluation:
+    """Tests for GolemFlow._run_prompt_evaluation."""
+
+    async def test_completes_without_error_when_no_runs_dir(
+        self, monkeypatch, tmp_path
+    ):
+        """When the runs_dir does not exist, evaluation completes without error."""
+        flow = _make_flow(monkeypatch, tmp_path)
+        monkeypatch.setattr("golem.flow.DATA_DIR", tmp_path / "nonexistent_data")
+        await flow._run_prompt_evaluation()
+
+    async def test_logs_suggestions_when_underperforming(
+        self, monkeypatch, tmp_path, caplog
+    ):
+        """When underperforming prompts exist, suggestions are logged at INFO."""
+        import logging
+
+        from golem.prompt_optimizer import PromptEvaluator, PromptOptimizer
+
+        flow = _make_flow(monkeypatch, tmp_path)
+        ev = PromptEvaluator(runs_dir=tmp_path)
+        ev.evaluate(
+            [
+                {
+                    "prompt_hash": "bad",
+                    "template_name": "build",
+                    "success": False,
+                    "cost_usd": 0.5,
+                    "duration_s": 5.0,
+                }
+                for _ in range(5)
+            ]
+        )
+        opt = PromptOptimizer(ev)
+        monkeypatch.setattr(flow, "_prompt_evaluator", ev)
+        monkeypatch.setattr(flow, "_prompt_optimizer", opt)
+        monkeypatch.setattr(ev, "evaluate", lambda _runs: ev._scores)
+
+        with caplog.at_level(logging.INFO, logger="golem.flow"):
+            await flow._run_prompt_evaluation()
+
+        assert any("suggestion" in rec.message.lower() for rec in caplog.records)
+
+    async def test_logs_debug_when_all_performing_well(
+        self, monkeypatch, tmp_path, caplog
+    ):
+        """When no underperforming prompts exist, a DEBUG message is logged."""
+        import logging
+
+        from golem.prompt_optimizer import PromptEvaluator, PromptOptimizer
+
+        flow = _make_flow(monkeypatch, tmp_path)
+        ev = PromptEvaluator(runs_dir=tmp_path)
+        ev.evaluate([])
+        opt = PromptOptimizer(ev)
+        monkeypatch.setattr(flow, "_prompt_evaluator", ev)
+        monkeypatch.setattr(flow, "_prompt_optimizer", opt)
+        monkeypatch.setattr(ev, "evaluate", lambda _runs: ev._scores)
+
+        with caplog.at_level(logging.DEBUG, logger="golem.flow"):
+            await flow._run_prompt_evaluation()
+
+        assert any("performing well" in rec.message.lower() for rec in caplog.records)
+
+    async def test_evaluation_error_does_not_raise(self, monkeypatch, tmp_path):
+        """Exceptions in _run_prompt_evaluation are caught and logged, not raised."""
+        flow = _make_flow(monkeypatch, tmp_path)
+
+        def explode(_runs):
+            raise RuntimeError("simulated evaluation error")
+
+        monkeypatch.setattr(flow._prompt_evaluator, "evaluate", explode)
+        await flow._run_prompt_evaluation()
+
+    async def test_reads_list_run_files_from_disk(self, monkeypatch, tmp_path):
+        """JSON files containing lists in the runs_dir are loaded and passed."""
+        runs_dir = tmp_path / "prompt_runs"
+        runs_dir.mkdir()
+        run_data = [
+            {
+                "prompt_hash": "abc",
+                "template_name": "build",
+                "success": True,
+                "cost_usd": 1.0,
+                "duration_s": 10.0,
+            }
+        ]
+        (runs_dir / "run1.json").write_text(json.dumps(run_data))
+
+        flow = _make_flow(monkeypatch, tmp_path)
+        monkeypatch.setattr("golem.flow.DATA_DIR", tmp_path)
+
+        collected_runs: list = []
+        orig_evaluate = flow._prompt_evaluator.evaluate
+
+        def capturing_evaluate(runs):
+            collected_runs.extend(runs)
+            return orig_evaluate(runs)
+
+        monkeypatch.setattr(flow._prompt_evaluator, "evaluate", capturing_evaluate)
+        await flow._run_prompt_evaluation()
+
+        assert len(collected_runs) == 1
+        assert collected_runs[0]["prompt_hash"] == "abc"
+
+    async def test_reads_dict_run_file_from_disk(self, monkeypatch, tmp_path):
+        """A run file containing a single dict (not a list) is accepted."""
+        runs_dir = tmp_path / "prompt_runs"
+        runs_dir.mkdir()
+        run_data = {
+            "prompt_hash": "xyz",
+            "template_name": "review",
+            "success": True,
+            "cost_usd": 0.5,
+            "duration_s": 5.0,
+        }
+        (runs_dir / "single_run.json").write_text(json.dumps(run_data))
+
+        flow = _make_flow(monkeypatch, tmp_path)
+        monkeypatch.setattr("golem.flow.DATA_DIR", tmp_path)
+
+        collected_runs: list = []
+        orig_evaluate = flow._prompt_evaluator.evaluate
+
+        def capturing_evaluate(runs):
+            collected_runs.extend(runs)
+            return orig_evaluate(runs)
+
+        monkeypatch.setattr(flow._prompt_evaluator, "evaluate", capturing_evaluate)
+        await flow._run_prompt_evaluation()
+
+        assert len(collected_runs) == 1
+        assert collected_runs[0]["prompt_hash"] == "xyz"
+
+    async def test_skips_unreadable_run_file(self, monkeypatch, tmp_path, caplog):
+        """Malformed JSON files are skipped with a debug log, not a crash."""
+        import logging
+
+        runs_dir = tmp_path / "prompt_runs"
+        runs_dir.mkdir()
+        (runs_dir / "bad.json").write_text("not valid json {{{")
+
+        flow = _make_flow(monkeypatch, tmp_path)
+        monkeypatch.setattr("golem.flow.DATA_DIR", tmp_path)
+
+        with caplog.at_level(logging.DEBUG, logger="golem.flow"):
+            await flow._run_prompt_evaluation()
+
+        assert any("Skipping" in rec.message for rec in caplog.records)
+
+
+class TestPromptEvaluationInDetectionLoop:
+    """Tests that the detection loop triggers prompt evaluation on the right ticks."""
+
+    async def test_evaluation_triggered_on_nth_tick(self, monkeypatch, tmp_path):
+        """Evaluation is fired when tick_count is a multiple of interval_ticks."""
+        flow = _make_flow(
+            monkeypatch,
+            tmp_path,
+            prompt_evaluation_enabled=True,
+            prompt_evaluation_interval_ticks=3,
+        )
+
+        evaluation_calls: list = []
+        created_tasks: list = []
+
+        async def fake_evaluation():
+            evaluation_calls.append(1)
+
+        monkeypatch.setattr(flow, "_run_prompt_evaluation", fake_evaluation)
+        monkeypatch.setattr(flow, "_detect_new_issues", lambda: None)
+        monkeypatch.setattr(flow, "_check_human_feedback", lambda: None)
+        monkeypatch.setattr(flow._health, "record_poll_success", lambda: None)
+        monkeypatch.setattr(flow._health, "record_heartbeat", lambda: None)
+        monkeypatch.setattr(flow._health, "check", lambda: [])
+        monkeypatch.setattr(flow._health._config, "check_interval_seconds", 0)
+
+        async def fake_retry_deferred():
+            pass
+
+        monkeypatch.setattr(flow, "_retry_deferred_merges", fake_retry_deferred)
+
+        tick_count = 0
+
+        async def fake_sleep(_):
+            nonlocal tick_count
+            tick_count += 1
+            if tick_count >= 3:
+                flow._running = False
+
+        monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+
+        # intercept create_task: run the coroutine eagerly so it completes
+        # before the assertion, without needing a real event loop drain
+        def fake_create_task(coro, **_kwargs):
+            loop = asyncio.get_event_loop()
+            task = loop.create_task(coro)
+            created_tasks.append(task)
+            return task
+
+        monkeypatch.setattr(asyncio, "create_task", fake_create_task)
+
+        flow._running = True
+        await flow._detection_loop()
+        # Drain all tasks spawned during the loop
+        if created_tasks:
+            await asyncio.gather(*created_tasks, return_exceptions=True)
+
+        # After 3 ticks with interval=3, exactly 1 evaluation should fire
+        assert len(evaluation_calls) == 1
+
+    async def test_evaluation_not_triggered_when_disabled(self, monkeypatch, tmp_path):
+        """When prompt_evaluation_enabled=False, evaluation is never called."""
+        flow = _make_flow(
+            monkeypatch,
+            tmp_path,
+            prompt_evaluation_enabled=False,
+            prompt_evaluation_interval_ticks=1,  # would fire every tick if enabled
+        )
+
+        evaluation_calls: list = []
+
+        async def fake_evaluation():
+            evaluation_calls.append(1)
+
+        monkeypatch.setattr(flow, "_run_prompt_evaluation", fake_evaluation)
+        monkeypatch.setattr(flow, "_detect_new_issues", lambda: None)
+        monkeypatch.setattr(flow, "_check_human_feedback", lambda: None)
+        monkeypatch.setattr(flow._health, "record_poll_success", lambda: None)
+        monkeypatch.setattr(flow._health, "record_heartbeat", lambda: None)
+        monkeypatch.setattr(flow._health, "check", lambda: [])
+        monkeypatch.setattr(flow._health._config, "check_interval_seconds", 0)
+
+        async def fake_retry_deferred():
+            pass
+
+        monkeypatch.setattr(flow, "_retry_deferred_merges", fake_retry_deferred)
+
+        tick_count = 0
+
+        async def fake_sleep(_):
+            nonlocal tick_count
+            tick_count += 1
+            if tick_count >= 5:
+                flow._running = False
+
+        monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+
+        flow._running = True
+        await flow._detection_loop()
+
+        assert evaluation_calls == []
