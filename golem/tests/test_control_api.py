@@ -814,7 +814,8 @@ class TestGetSessionEndpoint:
             "validation_cost_usd": 0.45,
         }
         control_api._golem_flow.get_session = MagicMock(return_value=session)
-        result = await get_session(42)
+        req = _make_request()
+        result = await get_session(task_id=42, request=req)
         assert result["ok"] is True
         assert result["session"]["parent_issue_id"] == 42
         assert result["session"]["total_cost_usd"] == 1.23
@@ -823,15 +824,17 @@ class TestGetSessionEndpoint:
         from golem.core.control_api import get_session
 
         control_api._golem_flow.get_session = MagicMock(return_value=None)
+        req = _make_request()
         with pytest.raises(Exception, match="No session found"):
-            await get_session(999)
+            await get_session(task_id=999, request=req)
 
     async def test_session_no_golem_flow(self, _wire_deps):
         from golem.core.control_api import get_session
 
         control_api._golem_flow = None
+        req = _make_request()
         with pytest.raises(Exception, match="not ready"):
-            await get_session(1)
+            await get_session(task_id=1, request=req)
 
 
 # ---------------------------------------------------------------------------
@@ -1031,7 +1034,8 @@ class TestClearFailedEndpoint:
 
         gf = control_api._golem_flow
         gf.clear_failed_sessions = MagicMock(return_value=[1, 5])
-        result = await clear_failed_sessions()
+        req = _make_request()
+        result = await clear_failed_sessions(req)
         assert result["ok"] is True
         assert result["cleared"] == [1, 5]
         gf.clear_failed_sessions.assert_called_once()
@@ -1040,8 +1044,10 @@ class TestClearFailedEndpoint:
         from golem.core.control_api import clear_failed_sessions
 
         wire_control_api()  # reset — no flow
+        req = _make_request(headers={})
+        req.query_params = {}
         with pytest.raises(HTTPException) as exc_info:
-            await clear_failed_sessions()
+            await clear_failed_sessions(req)
         assert exc_info.value.status_code == 503
 
 
@@ -1060,7 +1066,8 @@ class TestBatchEndpoints:
 
         gf = control_api._golem_flow
         gf.get_batch = MagicMock(return_value={"id": "b1", "status": "running"})
-        result = await get_batch(group_id="b1")
+        req = _make_request()
+        result = await get_batch(group_id="b1", request=req)
         assert result["ok"] is True
         assert result["batch"]["id"] == "b1"
         gf.get_batch.assert_called_once_with("b1")
@@ -1070,16 +1077,19 @@ class TestBatchEndpoints:
 
         gf = control_api._golem_flow
         gf.get_batch = MagicMock(return_value=None)
+        req = _make_request()
         with pytest.raises(HTTPException) as exc_info:
-            await get_batch(group_id="nope")
+            await get_batch(group_id="nope", request=req)
         assert exc_info.value.status_code == 404
 
     async def test_get_batch_no_flow(self):
         from golem.core.control_api import get_batch
 
         wire_control_api()  # reset — no flow
+        req = _make_request(headers={})
+        req.query_params = {}
         with pytest.raises(HTTPException) as exc_info:
-            await get_batch(group_id="b1")
+            await get_batch(group_id="b1", request=req)
         assert exc_info.value.status_code == 503
 
     async def test_list_batches_success(self, _wire_deps):
@@ -1087,7 +1097,8 @@ class TestBatchEndpoints:
 
         gf = control_api._golem_flow
         gf.list_batches = MagicMock(return_value=[{"id": "b1"}, {"id": "b2"}])
-        result = await list_batches()
+        req = _make_request()
+        result = await list_batches(request=req)
         assert result["ok"] is True
         assert len(result["batches"]) == 2
 
@@ -1095,8 +1106,10 @@ class TestBatchEndpoints:
         from golem.core.control_api import list_batches
 
         wire_control_api()  # reset — no flow
+        req = _make_request(headers={})
+        req.query_params = {}
         with pytest.raises(HTTPException) as exc_info:
-            await list_batches()
+            await list_batches(request=req)
         assert exc_info.value.status_code == 503
 
 
@@ -1255,3 +1268,217 @@ class TestRateLimitingEndpoints:
         req.client = None  # simulate missing client info
         result = await submit_task(req)
         assert result["ok"] is True
+
+
+# ---------------------------------------------------------------------------
+# SEC-011: Auth on clear-failed and health_router GET endpoints
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def _wire_deps_with_api_key_only():
+    """Wire deps with API key set, no admin token."""
+    gf = MagicMock()
+    gf.clear_failed_sessions = MagicMock(return_value=[])
+    gf.get_session = MagicMock(return_value=None)
+    gf.get_batch = MagicMock(return_value=None)
+    gf.list_batches = MagicMock(return_value=[])
+    wire_control_api(golem_flow=gf, api_key="sec-key")
+    yield
+    wire_control_api()
+
+
+def _make_unauthed_request():
+    req = AsyncMock()
+    req.headers = {}
+    req.query_params = {}
+    req.json = AsyncMock(return_value={})
+    return req
+
+
+def _make_authed_request(key="sec-key"):
+    req = AsyncMock()
+    req.headers = {"authorization": f"Bearer {key}"}
+    req.query_params = {}
+    req.json = AsyncMock(return_value={})
+    return req
+
+
+@pytest.mark.skipif(
+    not control_api.FASTAPI_AVAILABLE,
+    reason="FastAPI not installed",
+)
+class TestSec011ClearFailedAuth:
+    """SEC-011: clear_failed_sessions requires API key."""
+
+    async def test_clear_failed_rejects_missing_key(self, _wire_deps_with_api_key_only):
+        from golem.core.control_api import clear_failed_sessions
+
+        req = _make_unauthed_request()
+        with pytest.raises(Exception, match="Invalid or missing API key"):
+            await clear_failed_sessions(req)
+
+    async def test_clear_failed_rejects_wrong_key(self, _wire_deps_with_api_key_only):
+        from golem.core.control_api import clear_failed_sessions
+
+        req = _make_authed_request("wrong-key")
+        with pytest.raises(Exception, match="Invalid or missing API key"):
+            await clear_failed_sessions(req)
+
+    async def test_clear_failed_accepts_valid_key(self, _wire_deps_with_api_key_only):
+        from golem.core.control_api import clear_failed_sessions
+
+        req = _make_authed_request("sec-key")
+        result = await clear_failed_sessions(req)
+        assert result["ok"] is True
+
+    async def test_clear_failed_open_when_no_key(self):
+        """When no API key is configured, clear-failed is open."""
+        gf = MagicMock()
+        gf.clear_failed_sessions = MagicMock(return_value=[42])
+        wire_control_api(golem_flow=gf, api_key="")
+        try:
+            from golem.core.control_api import clear_failed_sessions
+
+            req = _make_unauthed_request()
+            result = await clear_failed_sessions(req)
+            assert result["cleared"] == [42]
+        finally:
+            wire_control_api()
+
+
+@pytest.mark.skipif(
+    not control_api.FASTAPI_AVAILABLE,
+    reason="FastAPI not installed",
+)
+class TestSec011GetSessionAuth:
+    """SEC-011: GET /sessions/{task_id} requires API key."""
+
+    async def test_get_session_rejects_missing_key(self, _wire_deps_with_api_key_only):
+        from golem.core.control_api import get_session
+
+        req = _make_unauthed_request()
+        with pytest.raises(Exception, match="Invalid or missing API key"):
+            await get_session(task_id=1, request=req)
+
+    async def test_get_session_rejects_wrong_key(self, _wire_deps_with_api_key_only):
+        from golem.core.control_api import get_session
+
+        req = _make_authed_request("wrong-key")
+        with pytest.raises(Exception, match="Invalid or missing API key"):
+            await get_session(task_id=1, request=req)
+
+    async def test_get_session_accepts_valid_key(self, _wire_deps_with_api_key_only):
+        from golem.core.control_api import get_session
+
+        session = MagicMock()
+        session.to_dict.return_value = {"parent_issue_id": 1, "state": "done"}
+        control_api._golem_flow.get_session = MagicMock(return_value=session)
+        req = _make_authed_request("sec-key")
+        result = await get_session(task_id=1, request=req)
+        assert result["ok"] is True
+
+
+@pytest.mark.skipif(
+    not control_api.FASTAPI_AVAILABLE,
+    reason="FastAPI not installed",
+)
+class TestSec011GetBatchAuth:
+    """SEC-011: GET /batch/{group_id} requires API key."""
+
+    async def test_get_batch_rejects_missing_key(self, _wire_deps_with_api_key_only):
+        from golem.core.control_api import get_batch
+
+        req = _make_unauthed_request()
+        with pytest.raises(Exception, match="Invalid or missing API key"):
+            await get_batch(group_id="g1", request=req)
+
+    async def test_get_batch_rejects_wrong_key(self, _wire_deps_with_api_key_only):
+        from golem.core.control_api import get_batch
+
+        req = _make_authed_request("wrong-key")
+        with pytest.raises(Exception, match="Invalid or missing API key"):
+            await get_batch(group_id="g1", request=req)
+
+    async def test_get_batch_accepts_valid_key(self, _wire_deps_with_api_key_only):
+        from golem.core.control_api import get_batch
+
+        control_api._golem_flow.get_batch = MagicMock(return_value={"id": "g1"})
+        req = _make_authed_request("sec-key")
+        result = await get_batch(group_id="g1", request=req)
+        assert result["ok"] is True
+
+
+@pytest.mark.skipif(
+    not control_api.FASTAPI_AVAILABLE,
+    reason="FastAPI not installed",
+)
+class TestSec011ListBatchesAuth:
+    """SEC-011: GET /batches requires API key."""
+
+    async def test_list_batches_rejects_missing_key(self, _wire_deps_with_api_key_only):
+        from golem.core.control_api import list_batches
+
+        req = _make_unauthed_request()
+        with pytest.raises(Exception, match="Invalid or missing API key"):
+            await list_batches(request=req)
+
+    async def test_list_batches_rejects_wrong_key(self, _wire_deps_with_api_key_only):
+        from golem.core.control_api import list_batches
+
+        req = _make_authed_request("wrong-key")
+        with pytest.raises(Exception, match="Invalid or missing API key"):
+            await list_batches(request=req)
+
+    async def test_list_batches_accepts_valid_key(self, _wire_deps_with_api_key_only):
+        from golem.core.control_api import list_batches
+
+        control_api._golem_flow.list_batches = MagicMock(return_value=[])
+        req = _make_authed_request("sec-key")
+        result = await list_batches(request=req)
+        assert result["ok"] is True
+
+
+@pytest.mark.skipif(
+    not control_api.FASTAPI_AVAILABLE,
+    reason="FastAPI not installed",
+)
+class TestSec011SelfUpdateAuth:
+    """SEC-011: GET /self-update requires API key."""
+
+    async def test_self_update_rejects_missing_key(self, _wire_deps_with_api_key_only):
+        from golem.core.control_api import self_update_status
+
+        req = _make_unauthed_request()
+        with pytest.raises(Exception, match="Invalid or missing API key"):
+            await self_update_status(request=req)
+
+    async def test_self_update_rejects_wrong_key(self, _wire_deps_with_api_key_only):
+        from golem.core.control_api import self_update_status
+
+        req = _make_authed_request("wrong-key")
+        with pytest.raises(Exception, match="Invalid or missing API key"):
+            await self_update_status(request=req)
+
+    async def test_self_update_accepts_valid_key_no_manager(
+        self, _wire_deps_with_api_key_only
+    ):
+        from golem.core.control_api import self_update_status
+
+        control_api._self_update_manager = None
+        req = _make_authed_request("sec-key")
+        result = await self_update_status(request=req)
+        assert result == {"enabled": False}
+
+    async def test_self_update_accepts_valid_key_with_manager(
+        self, _wire_deps_with_api_key_only
+    ):
+        from golem.core.control_api import self_update_status
+
+        mgr = MagicMock()
+        mgr.snapshot.return_value = {"enabled": True, "last_check": "2026-01-01"}
+        control_api._self_update_manager = mgr
+        req = _make_authed_request("sec-key")
+        result = await self_update_status(request=req)
+        assert result["enabled"] is True
+        control_api._self_update_manager = None

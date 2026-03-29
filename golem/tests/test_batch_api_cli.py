@@ -215,19 +215,29 @@ def _wire_batch_deps():
 )
 class TestGetBatchEndpoint:
     async def test_get_batch_endpoint_returns_batch(self, _wire_batch_deps):
+        from unittest.mock import AsyncMock as _AM
+
         from golem.core.control_api import get_batch
 
-        result = await get_batch("grp-api")
+        req = _AM()
+        req.headers = {"authorization": "Bearer tok"}
+        req.query_params = {}
+        result = await get_batch("grp-api", request=req)
         assert result["ok"] is True
         assert result["batch"]["group_id"] == "grp-api"
         assert result["batch"]["task_ids"] == [1, 2]
 
     async def test_get_batch_endpoint_404_for_unknown(self, _wire_batch_deps):
+        from unittest.mock import AsyncMock as _AM
+
         from golem.core.control_api import get_batch
 
         control_api._golem_flow.get_batch = MagicMock(return_value=None)
+        req = _AM()
+        req.headers = {"authorization": "Bearer tok"}
+        req.query_params = {}
         with pytest.raises(Exception, match="No batch found"):
-            await get_batch("nonexistent")
+            await get_batch("nonexistent", request=req)
 
 
 @pytest.mark.skipif(
@@ -236,9 +246,14 @@ class TestGetBatchEndpoint:
 )
 class TestListBatchesEndpoint:
     async def test_list_batches_endpoint(self, _wire_batch_deps):
+        from unittest.mock import AsyncMock as _AM
+
         from golem.core.control_api import list_batches
 
-        result = await list_batches()
+        req = _AM()
+        req.headers = {"authorization": "Bearer tok"}
+        req.query_params = {}
+        result = await list_batches(request=req)
         assert result["ok"] is True
         assert len(result["batches"]) == 1
         assert result["batches"][0]["group_id"] == "grp-api"
@@ -255,18 +270,28 @@ class TestListBatchesEndpoint:
 )
 class TestBatchEndpoints503WhenNoFlow:
     async def test_get_batch_503_when_no_flow(self):
+        from unittest.mock import AsyncMock as _AM
+
         from golem.core.control_api import get_batch
 
         wire_control_api()  # reset — no golem_flow
+        req = _AM()
+        req.headers = {}
+        req.query_params = {}
         with pytest.raises(Exception, match="Daemon not ready"):
-            await get_batch("any-group")
+            await get_batch("any-group", request=req)
 
     async def test_list_batches_503_when_no_flow(self):
+        from unittest.mock import AsyncMock as _AM
+
         from golem.core.control_api import list_batches
 
         wire_control_api()  # reset — no golem_flow
+        req = _AM()
+        req.headers = {}
+        req.query_params = {}
         with pytest.raises(Exception, match="Daemon not ready"):
-            await list_batches()
+            await list_batches(request=req)
 
 
 class TestCmdBatchNoSubcommand:

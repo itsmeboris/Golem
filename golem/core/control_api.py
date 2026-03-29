@@ -322,11 +322,12 @@ if FASTAPI_AVAILABLE:
         return {"ok": True, **result}
 
     @health_router.post("/sessions/clear-failed")
-    async def clear_failed_sessions():
+    async def clear_failed_sessions(request: Request):
         """Remove all FAILED sessions from state.
 
         Returns ``{"ok": true, "cleared": [...]}``.
         """
+        _require_api_key(request)
         if _golem_flow is None:
             raise HTTPException(
                 status_code=503,
@@ -442,7 +443,8 @@ if FASTAPI_AVAILABLE:
         return {"ok": True, **result}
 
     @health_router.get("/sessions/{task_id}")
-    async def get_session(task_id: int):
+    async def get_session(task_id: int, request: Request):
+        _require_api_key(request)
         if _golem_flow is None:
             raise HTTPException(
                 status_code=503,
@@ -457,8 +459,9 @@ if FASTAPI_AVAILABLE:
         return {"ok": True, "session": session.to_dict()}
 
     @health_router.get("/batch/{group_id}")
-    async def get_batch(group_id: str):
+    async def get_batch(group_id: str, request: Request):
         """Return batch status for a given group_id."""
+        _require_api_key(request)
         if _golem_flow is None:
             raise HTTPException(
                 status_code=503,
@@ -473,8 +476,9 @@ if FASTAPI_AVAILABLE:
         return {"ok": True, "batch": batch}
 
     @health_router.get("/batches")
-    async def list_batches():
+    async def list_batches(request: Request):
         """Return all tracked batches."""
+        _require_api_key(request)
         if _golem_flow is None:
             raise HTTPException(
                 status_code=503,
@@ -483,8 +487,9 @@ if FASTAPI_AVAILABLE:
         return {"ok": True, "batches": _golem_flow.list_batches()}
 
     @health_router.get("/self-update")
-    async def self_update_status():
-        """Return self-update manager status snapshot (no auth required)."""
+    async def self_update_status(request: Request):
+        """Return self-update manager status snapshot."""
+        _require_api_key(request)
         if _self_update_manager is None:
             return {"enabled": False}
         return _self_update_manager.snapshot()

@@ -15,6 +15,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [x] SEC-001: **API file-read path traversal** — removed untrusted work_dir from allowed bases; only CWD and registry trusted (GH #63, #84, 2026-03-29)
 - [x] BUG-005: **Merge queue lock-free reads** — added threading.Lock for thread-safe reads of shared state (GH #85, 2026-03-29)
 - [x] SEC-008: **merge_review path traversal** — validate resolved path stays within base_dir before reading (GH #86, 2026-03-29)
+- [x] SEC-011: **clear-failed and health_router endpoints missing auth** — added _require_api_key to clear-failed, sessions/{id}, batch/{id}, batches, self-update (GH #111, 2026-03-29)
 
 ### P1 — Important
 
@@ -26,6 +27,9 @@ See https://github.com/itsmeboris/Golem/issues
 - [x] SEC-010: **cancel_task missing API key auth** — added _require_api_key check before rate limiter (GH #98, 2026-03-29)
 - [x] BUG-010: **Supervisor verification pipeline gap** — fixed _verification_feedback() to use correct dict keys (black_output/pylint_output/pytest_output) (GH #102, 2026-03-29)
 - [x] REL-009: **No graceful shutdown drain** — added graceful_stop() with state save, task drain, and timeout (GH #103, 2026-03-29)
+- [ ] BUG-013: **data_retention cleanup crashes on TOCTOU/permission errors** — `stat()`/`unlink()` in `data_retention.py` have no error handling; race with active sessions crashes cleanup partway through (GH #112)
+- [ ] REL-010: **GitHub `_gh()` wrapper missing subprocess timeout** — all GitHub CLI operations (poll_tasks, close_task, reopen_task) can hang indefinitely; critical polling path blocks entire daemon (GH #109)
+- [ ] REL-011: **graceful_stop doesn't await cancelled tasks** — `task.cancel()` called but not awaited; `finally` blocks (state flush, worktree locks) may not run (GH #113)
 - [ ] SEC-006: **MCP tool schema validation** — poisoning defense (GH #18)
 - [ ] SEC-007: **Runtime subprocess sandboxing** — OS-level containment (GH #19)
 - [x] BUG-006: **Merge agent blind to verification failures** — added verification_summary parameter to run_merge_agent and callback type (GH #88, 2026-03-29)
@@ -62,6 +66,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [ ] UX-002: **Dashboard missing pagination and search** — overview renders all sessions without pagination; no search/filter by subject, ID, or state; unusable at scale (GH #93)
 - [x] UX-003: **No confirmation for destructive dashboard actions** — added confirm() dialogs to clear/cancel/trigger buttons (GH #94, 2026-03-29)
 - [ ] TEST-003: **Lint modules lack tests** — all 9 `golem/lint/` modules have no dedicated test files; pre-commit hooks can crash silently or produce false positives (GH #95)
+- [ ] REL-011: **graceful_stop doesn't await cancelled tasks** — `task.cancel()` called but tasks not awaited; CancelledError never caught; tasks may still run in event loop after `_session_tasks.clear()` (GH #110)
 - [x] INFRA-009: **Worktree orphans on crash recovery** — cleanup_orphaned_worktrees() runs at startup, prunes stale refs and orphaned dirs (GH #104, 2026-03-29)
 - [x] INFRA-010: **Trace/checkpoint data retention** — cleanup_old_data() removes traces/checkpoints > 30 days on startup (GH #105, 2026-03-29)
 - [x] INFRA-011: **No startup dependency validation** — added validate_dependencies() checking git/claude in PATH at daemon start (GH #106, 2026-03-29)
