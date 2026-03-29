@@ -160,13 +160,14 @@ For a full walkthrough with expected output, see the **[Getting Started](https:/
 
 ```mermaid
 flowchart TB
-    cli["golem run -p / -f<br/>(defaults to cwd)"] -- submit --> flow
-    api["HTTP API"] -- submit --> flow
+    cli["golem run -p / -f<br/>(defaults to cwd)"] -- submit --> api_gw
+    api["HTTP API"] -- submit --> api_gw
     tracker["Issue Tracker<br/>(plugin)"] -. poll .-> flow
 
     subgraph daemon ["Golem Daemon"]
         direction TB
-        flow["Flow Engine"] --> orch["Orchestrator"]
+        api_gw["API Gateway<br/>CORS · Auth · Rate Limit"] --> flow["Flow Engine"]
+        flow --> orch["Orchestrator"]
         orch --> vfy["Verifier<br/>black · pylint · pytest"]
         vfy -- pass --> val["Validation Agent"]
         vfy -- fail --> retry["Retry w/ Feedback"]

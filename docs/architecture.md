@@ -14,14 +14,24 @@ The daemon is the single execution engine. All task execution flows through it r
 
 ```mermaid
 flowchart TB
-    cli["golem run -p / -f<br/>(defaults to cwd)"] -- submit --> flow
-    api["HTTP API"] -- submit --> flow
+    cli["golem run -p / -f<br/>(defaults to cwd)"] -- submit --> api_gw
+    api["HTTP API"] -- submit --> api_gw
     tracker["Issue Tracker<br/>(plugin)"] -. poll .-> flow
 
     subgraph daemon ["Golem Daemon"]
         direction TB
 
-        flow["Flow Engine"]
+        subgraph startup ["Startup"]
+            direction LR
+            deps["validate_dependencies()<br/>git · claude"] --> cleanup["cleanup worktrees<br/>+ data retention"]
+        end
+
+        subgraph api_gw ["API Gateway"]
+            direction LR
+            cors["CORS<br/>localhost only"] --> auth["API Key Auth"] --> rl["Rate Limiter<br/>10 req/min"]
+        end
+
+        api_gw --> flow["Flow Engine"]
         flow --> orch["Orchestrator"]
 
         orch --> vfy["Verifier<br/>black · pylint · pytest"]
@@ -29,7 +39,7 @@ flowchart TB
         vfy -- fail --> retry["Retry w/ Feedback"]
         retry --> orch
 
-        val -- PASS --> mq["Merge Queue"]
+        val -- PASS --> mq["Merge Queue<br/>(dual-lock)"]
         val -- PARTIAL --> retry
         val -- FAIL --> report["Report Failure"]
 
@@ -45,7 +55,8 @@ flowchart TB
 
     registry["~/.golem/repos.json"] -. "attach/detach" .-> hb
     mq -- "rebase + merge" --> commit["Commit"]
-    commit --> notify["Notify"]
+    commit --> notify["Notify<br/>(retry × 2)"]
+    sigterm["SIGINT / SIGTERM"] -. "graceful_stop()" .-> flow
 ```
 
 The **Flow Engine** (`golem/flow.py`) handles Claude CLI invocation and event-stream parsing. The **Orchestrator** (`golem/orchestrator.py`) is a durable state machine that checkpoints on every tick so in-progress tasks survive daemon restarts. Corrupt checkpoint files are logged at ERROR level, renamed to `.corrupt` for forensic recovery, and treated as missing — the daemon continues with a fresh session. The **Verifier** (`golem/verifier.py`) runs deterministic checks. The **Validation Agent** (`golem/validation.py`) dispatches a separate Claude session that reviews evidence and returns a structured verdict.
@@ -217,8 +228,8 @@ flowchart LR
     ts -.- github["GitHub Issues"]
     ts -.- filedrop["File Drop"]
 
-    nf -.- teams["Teams"]
-    nf -.- slack["Slack"]
+    nf -.- teams["Teams<br/>(retry × 2)"]
+    nf -.- slack["Slack<br/>(retry × 2)"]
     nf -.- log["stdout"]
 ```
 
