@@ -69,5 +69,5 @@ function _fmtDuration(seconds) {
 function _esc(text) {
   const d = document.createElement('div');
   d.textContent = String(text);
-  return d.innerHTML;
+  return d.innerHTML.replace(/'/g, '&#39;').replace(/"/g, '&quot;');
 }

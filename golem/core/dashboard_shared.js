@@ -11,7 +11,7 @@ const $$ = s => document.querySelectorAll(s);
 function esc(s) {
   const d = document.createElement('div');
   d.textContent = s || '';
-  return d.innerHTML;
+  return d.innerHTML.replace(/'/g, '&#39;').replace(/"/g, '&quot;');
 }
 
 function fmtCost(c, decimals) {

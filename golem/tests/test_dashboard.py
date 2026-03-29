@@ -3147,3 +3147,45 @@ class TestMobileResponsiveCSS:
         assert (
             breakpoint in body
         ), f"Breakpoint {breakpoint} missing from dashboard_shared.css"
+
+
+class TestXssEscaping:
+    """SEC-012: esc() must escape single and double quotes for safe attribute use."""
+
+    shared_js_path = Path(__file__).resolve().parent.parent / "core" / "dashboard_shared.js"
+    analytics_js_path = (
+        Path(__file__).resolve().parent.parent / "core" / "prompt_analytics.js"
+    )
+
+    def test_esc_escapes_single_quote(self):
+        """esc() must replace ' with &#39;."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        assert "&#39;" in body, "esc() must escape single quotes to &#39;"
+
+    def test_esc_escapes_double_quote(self):
+        """esc() must replace \" with &quot;."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        assert "&quot;" in body, "esc() must escape double quotes to &quot;"
+
+    def test_analytics_esc_escapes_single_quote(self):
+        """_esc() in prompt_analytics.js must also escape single quotes."""
+        body = self.analytics_js_path.read_text(encoding="utf-8")
+        assert "&#39;" in body, "_esc() must escape single quotes to &#39;"
+
+    def test_analytics_esc_escapes_double_quote(self):
+        """_esc() in prompt_analytics.js must also escape double quotes."""
+        body = self.analytics_js_path.read_text(encoding="utf-8")
+        assert "&quot;" in body, "_esc() must escape double quotes to &quot;"
+
+    @pytest.mark.parametrize(
+        "js_file",
+        ["dashboard_shared.js", "prompt_analytics.js"],
+        ids=["shared_esc", "analytics_esc"],
+    )
+    def test_esc_uses_replace_chain(self, js_file):
+        """Both esc functions must chain .replace() for ' and \" after innerHTML."""
+        path = Path(__file__).resolve().parent.parent / "core" / js_file
+        body = path.read_text(encoding="utf-8")
+        # Verify the replace chain pattern: innerHTML followed by .replace(...)
+        assert ".replace(/'/g" in body, f"{js_file} must have single-quote replace"
+        assert '.replace(/"/g' in body, f"{js_file} must have double-quote replace"
