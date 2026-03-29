@@ -81,7 +81,7 @@ async function renderDetail(eventId, prefetchedTrace) {
               <span class="tl-tool-chevron">▸</span>
             </div>
             <div class="tl-tool-body">
-              <pre>${esc(body)}</pre>
+              <pre class="copy-target" data-copy="${esc(body).replace(/"/g, '&quot;')}" title="Click to copy" onclick="event.stopPropagation();copyToClipboard(this.textContent)">${esc(body)}</pre>
             </div>
           </div>`;
         }
@@ -195,7 +195,7 @@ function renderDetailHeader(session, trace, running) {
     const parts = [];
     if (cost) parts.push(`<span style="color:var(--green)">${fmtCost(cost)}</span> cost`);
     if (durMs) parts.push(fmtDurationMs(durMs));
-    if (commitSha) parts.push(`<code style="font-family:var(--font-mono);font-size:0.72rem;background:var(--bg-elevated);padding:0.1rem 0.3rem;border-radius:3px">${esc(String(commitSha).slice(0, 7))}</code>`);
+    if (commitSha) parts.push(`<code class="copy-target" onclick="copyToClipboard('${esc(String(commitSha))}')" title="Click to copy" style="font-family:var(--font-mono);font-size:0.72rem;background:var(--bg-elevated);padding:0.1rem 0.3rem;border-radius:3px">${esc(String(commitSha).slice(0, 7))}</code>`);
     if (fixIter) parts.push(`<span style="color:var(--orange)">${fixIter} fix iter</span>`);
     if (retryCount) parts.push(`${retryCount} full retr${retryCount === 1 ? 'y' : 'ies'}`);
 
@@ -204,9 +204,10 @@ function renderDetailHeader(session, trace, running) {
     }
   }
 
+  const rawTaskId = session ? String(session.parent_issue_id || session.id || '') : '';
   el.innerHTML = `
     <div class="td-top">
-      <span class="td-id">#${taskId}</span>
+      <span class="td-id copy-target" onclick="copyToClipboard('${esc(rawTaskId)}')" title="Click to copy">#${taskId}</span>
       <span class="td-mode">${mode}</span>
       <span class="td-badge ${chipClass}">${esc(state.toLowerCase())}</span>
       ${liveHtml}
@@ -690,7 +691,7 @@ function renderTimeline(trace, running, session) {
             <span class="tl-tool-chevron">▸</span>
           </div>
           <div class="tl-tool-body">
-            <pre>${esc(body)}</pre>
+            <pre class="copy-target" title="Click to copy" onclick="event.stopPropagation();copyToClipboard(this.textContent)">${esc(body)}</pre>
           </div>
         </div>`;
       }

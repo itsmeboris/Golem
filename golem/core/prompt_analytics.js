@@ -42,7 +42,7 @@ async function renderPromptAnalytics() {
       const barWidth = Math.round(row.success_rate * 100);
 
       html += '<tr>';
-      html += `<td class="pa-hash"><code>${_esc(row.prompt_hash)}</code></td>`;
+      html += `<td class="pa-hash"><code class="copy-target" onclick="copyToClipboard('${_esc(row.prompt_hash)}')" title="Click to copy">${_esc(row.prompt_hash)}</code></td>`;
       html += `<td class="pa-runs">${row.run_count}</td>`;
       html += `<td class="pa-success ${successClass}">
         <div class="pa-bar-bg"><div class="pa-bar" style="width:${barWidth}%"></div></div>

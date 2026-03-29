@@ -468,6 +468,10 @@ body{font-family:var(--font-sans);background:var(--bg-base);color:var(--text-pri
   to{opacity:0;transform:translateX(24px)}
 }
 
+/* ── Copy Target ─────────────────────────────────────────── */
+.copy-target{cursor:pointer}
+.copy-target:hover{text-decoration:underline}
+
 /* ── Button Loading State ────────────────────────────────── */
 .btn-loading{position:relative;cursor:not-allowed!important;opacity:0.72}
 .btn-loading::after{

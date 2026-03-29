@@ -249,6 +249,20 @@ function el(tag, classes, attrs) {
   return e;
 }
 
+/* ── Copy to Clipboard ────────────────────────────────────── */
+
+/**
+ * Copy text to clipboard and show a toast confirmation.
+ * @param {string} text - Text to copy
+ */
+function copyToClipboard(text) {
+  navigator.clipboard.writeText(text).then(function() {
+    showToast('Copied!', 'success', 1500);
+  }, function() {
+    showToast('Copy failed', 'error');
+  });
+}
+
 /* ── Toast Notifications ──────────────────────────────────── */
 
 /**

@@ -202,7 +202,7 @@ function renderTaskRow(eventId, session) {
   div.className = 'ov-task';
   div.dataset.eventId = eventId;
   div.innerHTML = `
-    <span class="ov-task-id">#${esc(String(issueId))}</span>
+    <span class="ov-task-id copy-target" onclick="event.stopPropagation();copyToClipboard('${esc(String(eventId))}')" title="Click to copy">#${esc(String(issueId))}</span>
     <span class="ov-task-subject">${esc(truncText(subject, 60))}</span>
     ${activity ? `<span class="ov-task-activity">${activity}</span>` : '<span class="ov-task-activity"></span>'}
     <span class="ov-task-badge ${chipClass}">${esc(stateLabel)}</span>

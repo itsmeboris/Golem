@@ -2683,3 +2683,124 @@ class TestLoadingStates:
         assert (
             overlay_idx < fetch_idx
         ), "loading-overlay must appear before fetch() in prompt_analytics.js"
+
+
+# ---------------------------------------------------------------------------
+# UX-010: Copy-to-clipboard
+# ---------------------------------------------------------------------------
+
+
+class TestCopyToClipboard:
+    """Verify copy-to-clipboard function, CSS, and wiring across dashboard JS files."""
+
+    @pytest.fixture(autouse=True)
+    def _paths(self):
+        core = Path(__file__).resolve().parent.parent / "core"
+        self.shared_js_path = core / "dashboard_shared.js"
+        self.shared_css_path = core / "dashboard_shared.css"
+        self.overview_path = core / "task_overview.js"
+        self.timeline_path = core / "task_timeline.js"
+        self.analytics_path = core / "prompt_analytics.js"
+
+    # --- JS: copyToClipboard function in shared JS ---
+
+    def test_copy_to_clipboard_function_exists(self):
+        """copyToClipboard function must be defined in dashboard_shared.js."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        assert (
+            "function copyToClipboard(" in body
+        ), "Missing copyToClipboard function in dashboard_shared.js"
+
+    def test_copy_to_clipboard_uses_navigator_clipboard(self):
+        """copyToClipboard must use navigator.clipboard.writeText."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        assert (
+            "navigator.clipboard.writeText" in body
+        ), "copyToClipboard must use navigator.clipboard.writeText"
+
+    def test_copy_to_clipboard_calls_show_toast_on_success(self):
+        """copyToClipboard must call showToast on success."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        assert "showToast(" in body, "copyToClipboard must call showToast for feedback"
+
+    def test_copy_to_clipboard_shows_copied_message(self):
+        """copyToClipboard success toast must say 'Copied!'."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        assert "Copied!" in body, "copyToClipboard success message must be 'Copied!'"
+
+    def test_copy_to_clipboard_handles_error(self):
+        """copyToClipboard must show an error toast on failure."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        # The rejection handler must reference 'error' type toast
+        assert (
+            "'error'" in body or '"error"' in body
+        ), "copyToClipboard must show error toast on failure"
+
+    # --- CSS: copy-target class ---
+
+    def test_copy_target_class_exists_in_css(self):
+        """.copy-target CSS class must be defined in dashboard_shared.css."""
+        body = self.shared_css_path.read_text(encoding="utf-8")
+        assert (
+            ".copy-target" in body
+        ), "Missing .copy-target CSS class in dashboard_shared.css"
+
+    def test_copy_target_has_pointer_cursor(self):
+        """.copy-target must set cursor:pointer."""
+        body = self.shared_css_path.read_text(encoding="utf-8")
+        idx = body.find(".copy-target")
+        assert idx != -1, "Missing .copy-target in CSS"
+        block = body[idx : idx + 100]
+        assert "cursor:pointer" in block, ".copy-target must have cursor:pointer"
+
+    # --- JS: copy-target elements wired up ---
+
+    def test_copy_target_used_in_overview_js(self):
+        """task_overview.js must contain copy-target elements for session IDs."""
+        body = self.overview_path.read_text(encoding="utf-8")
+        assert (
+            "copy-target" in body
+        ), "Missing copy-target class usage in task_overview.js"
+
+    def test_overview_copy_target_calls_copy_to_clipboard(self):
+        """copy-target elements in task_overview.js must call copyToClipboard."""
+        body = self.overview_path.read_text(encoding="utf-8")
+        assert (
+            "copyToClipboard(" in body
+        ), "task_overview.js copy-target must call copyToClipboard()"
+
+    def test_copy_target_used_in_timeline_js(self):
+        """task_timeline.js must contain copy-target elements for task IDs or error text."""
+        body = self.timeline_path.read_text(encoding="utf-8")
+        assert (
+            "copy-target" in body
+        ), "Missing copy-target class usage in task_timeline.js"
+
+    def test_timeline_copy_target_calls_copy_to_clipboard(self):
+        """copy-target elements in task_timeline.js must call copyToClipboard."""
+        body = self.timeline_path.read_text(encoding="utf-8")
+        assert (
+            "copyToClipboard(" in body
+        ), "task_timeline.js copy-target must call copyToClipboard()"
+
+    def test_copy_target_used_in_analytics_js(self):
+        """prompt_analytics.js must contain copy-target elements for prompt hashes."""
+        body = self.analytics_path.read_text(encoding="utf-8")
+        assert (
+            "copy-target" in body
+        ), "Missing copy-target class usage in prompt_analytics.js"
+
+    def test_analytics_copy_target_calls_copy_to_clipboard(self):
+        """copy-target elements in prompt_analytics.js must call copyToClipboard."""
+        body = self.analytics_path.read_text(encoding="utf-8")
+        assert (
+            "copyToClipboard(" in body
+        ), "prompt_analytics.js copy-target must call copyToClipboard()"
+
+    def test_copy_target_has_title_attribute(self):
+        """copy-target elements must have title='Click to copy' for discoverability."""
+        for path in (self.overview_path, self.timeline_path, self.analytics_path):
+            body = path.read_text(encoding="utf-8")
+            assert (
+                'title="Click to copy"' in body or "title='Click to copy'" in body
+            ), f"Missing title='Click to copy' on copy-target in {path.name}"
