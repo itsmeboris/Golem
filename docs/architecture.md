@@ -265,33 +265,40 @@ Additional features:
 
 The daemon exposes a REST API (served on the dashboard port, default `8081`).
 
+**Security:** All `/api/*` endpoints (except `/api/health` and `/api/flow/status`)
+require an `X-Api-Key` header when `api_key` is configured. Mutation endpoints
+(`/api/submit`, `/api/submit/batch`, `/api/cancel`) are additionally rate-limited
+to 10 requests/minute per client IP (sliding window). CORS is restricted to
+`localhost`/`127.0.0.1` origins only.
+
 | Endpoint | Method | Auth | Description |
 |----------|--------|------|-------------|
 | `/api/health` | GET | None | Readiness probe — returns `{"ok": true, "pid": ..., "uptime_seconds": ...}` |
-| `/api/submit` | POST | None | Submit a task — accepts `{"prompt": "..."}` or `{"file": "/path/to/file.md"}` with optional `subject` and `work_dir` |
-| `/api/submit/batch` | POST | None | Submit multiple tasks as a batch — accepts `{"tasks": [...], "group_id": "..."}` with per-task `depends_on` for ordering |
+| `/api/submit` | POST | API key | Submit a task — accepts `{"prompt": "..."}` or `{"file": "/path/to/file.md"}` with optional `subject` and `work_dir`. File reads are validated against CWD and registered repos; opened with `O_NOFOLLOW` to prevent symlink attacks |
+| `/api/submit/batch` | POST | API key | Submit multiple tasks as a batch — accepts `{"tasks": [...], "group_id": "..."}` with per-task `depends_on` for ordering |
 | `/api/flow/status` | GET | None | Status of all configured flows |
 | `/api/flow/start` | POST | Admin | Start flows by name |
 | `/api/flow/stop` | POST | Admin | Stop flows by name |
-| `/api/analytics` | GET | None | Quality metrics — pass/fail rates, avg cost, retry effectiveness, top failure reasons |
-| `/api/live` | GET | None | Live dashboard state — active tasks, queue depth, uptime, and recently completed tasks |
-| `/api/cost-analytics` | GET | None | Cost analytics and budget insights — spend per task, totals, budget remaining |
-| `/api/cancel/{task_id}` | POST | None | Cancel a running task |
-| `/api/sessions` | GET | None | All session metadata |
-| `/api/sessions/{task_id}` | GET | None | Session details for a specific task |
-| `/api/batch/{group_id}` | GET | None | Status of a submitted batch by group ID |
-| `/api/batches` | GET | None | List all known batches |
-| `/api/merge-queue` | GET | None | Merge queue snapshot — pending, active, deferred, conflicts, and recent history |
-| `/api/merge-queue/retry/{session_id}` | POST | None | Re-enqueue a failed or deferred merge entry |
+| `/api/analytics` | GET | API key | Quality metrics — pass/fail rates, avg cost, retry effectiveness, top failure reasons |
+| `/api/live` | GET | API key | Live dashboard state — active tasks, queue depth, uptime, and recently completed tasks |
+| `/api/cost-analytics` | GET | API key | Cost analytics and budget insights — spend per task, totals, budget remaining |
+| `/api/cancel/{task_id}` | POST | API key | Cancel a running task |
+| `/api/sessions` | GET | API key | All session metadata |
+| `/api/sessions/{task_id}` | GET | API key | Session details for a specific task |
+| `/api/sessions/clear-failed` | POST | API key | Clear all failed sessions from history |
+| `/api/batch/{group_id}` | GET | API key | Status of a submitted batch by group ID |
+| `/api/batches` | GET | API key | List all known batches |
+| `/api/merge-queue` | GET | API key | Merge queue snapshot — pending, active, deferred, conflicts, and recent history |
+| `/api/merge-queue/retry/{session_id}` | POST | API key | Re-enqueue a failed or deferred merge entry |
 | `/api/config` | GET | Admin* | Current config grouped by category with field metadata |
 | `/api/config/update` | POST | Admin* | Validate and apply config updates; triggers daemon reload |
-| `/api/self-update` | GET | None | Self-update status — branch, last check, verdict, history |
-| `/api/logs` | GET | None | Tail of the daemon log file |
-| `/api/trace-parsed/{event_id}` | GET | None | Structured trace with phase detection, subagent grouping, and tool timelines; accepts `?since_event=N` to skip re-parsing when unchanged |
-| `/api/trace/{event_id}` | GET | None | Raw JSONL trace parsed into sections |
-| `/api/trace-terminal/{event_id}` | GET | None | Terminal-renderable event list |
-| `/api/prompt/{event_id}` | GET | None | Prompt text for a task |
-| `/api/report/{event_id}` | GET | None | Report markdown for a completed task |
+| `/api/self-update` | GET | API key | Self-update status — branch, last check, verdict, history |
+| `/api/logs` | GET | API key | Tail of the daemon log file |
+| `/api/trace-parsed/{event_id}` | GET | API key | Structured trace with phase detection, subagent grouping, and tool timelines; accepts `?since_event=N` to skip re-parsing when unchanged |
+| `/api/trace/{event_id}` | GET | API key | Raw JSONL trace parsed into sections |
+| `/api/trace-terminal/{event_id}` | GET | API key | Terminal-renderable event list |
+| `/api/prompt/{event_id}` | GET | API key | Prompt text for a task |
+| `/api/report/{event_id}` | GET | API key | Report markdown for a completed task |
 
 *Admin\* = requires `admin_token` header if configured; open access otherwise.*
 

@@ -278,6 +278,10 @@ includes active alerts and current metrics.
 The merge queue processes validated work sequentially — each merge rebases onto
 HEAD in a disposable worktree, then fast-forwards the main branch.
 
+The queue uses dual locking: an `asyncio.Lock` for async mutation coordination
+and a `threading.Lock` for thread-safe reads from dashboard/API endpoints that
+may run via `asyncio.to_thread`.
+
 ### Deferred Merges
 
 When the working tree is dirty (human editing files while daemon runs), merges
@@ -344,6 +348,51 @@ continues with a fresh session for that task rather than crashing.
 
 ---
 
+## Startup Checks
+
+On daemon start, Golem runs two sets of checks before entering the main loop:
+
+### Dependency Validation
+
+`validate_dependencies()` confirms that required tools (`git`, `claude`) are in
+`$PATH`. If either is missing, the daemon exits with a clear error message.
+Optional tools (`sg` for ast-grep) produce a warning but don't block startup.
+
+### Cleanup
+
+1. **Orphaned worktrees** — `cleanup_orphaned_worktrees()` runs `git worktree prune`,
+   then removes any directories under `worktrees/`, `verify-worktrees/`, and
+   `bisect-worktrees/` that are not registered git worktrees. This recovers disk
+   space from daemon crashes that left worktrees behind.
+
+2. **Data retention** — `cleanup_old_data()` deletes trace files and checkpoints
+   older than 30 days. Errors on individual files (permission, TOCTOU races with
+   active sessions) are logged and skipped — cleanup never crashes the daemon.
+
+---
+
+## Graceful Shutdown
+
+`SIGINT` / `SIGTERM` triggers `graceful_stop()`:
+
+1. Stop detection loop (no new tasks spawned)
+2. Save current state (two-phase atomic write)
+3. Cancel timed-out sessions, `await` their `finally` blocks
+4. Kill all active CLI subprocesses
+5. Final state save
+
+The drain timeout is controlled by `daemon.drain_timeout_seconds` (default 300s).
+
+---
+
+## Notifier Resilience
+
+Both Slack and Teams notifiers retry failed `_send()` calls up to 2 times with
+1-second backoff. On final failure, the error is logged at ERROR level but does
+not crash the daemon or block the orchestrator.
+
+---
+
 ## Pre-Flight Verification
 
 Before spending budget on a task, the supervisor runs `black`, `pylint`, and
@@ -391,6 +440,8 @@ This prevents cascading failures when the base branch is temporarily broken.
 | `clarity_threshold` | `3` | Minimum clarity score (1–5) to proceed without human clarification |
 | `context_injection` | `true` | Auto-inject AGENTS.md + CLAUDE.md from workspace into agent sessions as system prompt context |
 | `enable_simplify_pass` | `true` | Run a code-cleanup pass between BUILD and REVIEW phases |
+| `verification_timeout_seconds` | `300` | Timeout for black/pylint/pytest verification runs (pre-flight, post-merge, validation) |
+| `api_key` | `""` | API key for `/api/*` endpoints; empty = no auth required |
 | `ensemble_on_second_retry` | `false` | On second retry, spawn N parallel candidates in separate worktrees with different strategy hints; validate each and commit the best PASS result. Falls back to escalation if no candidate passes |
 | `ensemble_candidates` | `2` | Number of parallel candidates for ensemble retry (each runs in its own worktree) |
 | `flaky_tests_file` | `""` | Path to known-flaky tests JSON registry; empty = disabled |
