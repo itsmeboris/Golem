@@ -78,6 +78,7 @@ class MergeQueue:
         self,
         on_merge_agent: OnMergeAgent = None,
         on_state_change: "Callable[[], None] | None" = None,
+        verification_timeout: int = 120,
     ):
         self._queue: list[MergeEntry] = []
         self._processing: list[MergeEntry] = []
@@ -87,6 +88,7 @@ class MergeQueue:
         self._on_state_change = on_state_change
         self._history: deque[tuple[MergeEntry, MergeResult]] = deque(maxlen=50)
         self._active: MergeEntry | None = None
+        self._verification_timeout = verification_timeout
 
     @property
     def pending(self) -> int:
@@ -270,6 +272,18 @@ class MergeQueue:
         """Return True if the exception looks like a transient infra failure."""
         return isinstance(exc, (subprocess.TimeoutExpired, OSError))
 
+    @staticmethod
+    def _format_verification_summary(vr: VerificationResult) -> str:
+        """Format a VerificationResult into a human-readable summary string."""
+        parts = ["Verification failed after merge:"]
+        if vr.black_output:
+            parts.append("Black: %s" % vr.black_output.strip())
+        if vr.pylint_output:
+            parts.append("Pylint: %s" % vr.pylint_output.strip())
+        if vr.pytest_output:
+            parts.append("Pytest: %s" % vr.pytest_output[:2000].strip())
+        return "\n".join(parts)
+
     async def _merge_one(self, entry: MergeEntry) -> MergeResult:
         for attempt in range(1 + self.INFRA_RETRIES):
             result = await self._try_merge(entry, attempt)
@@ -336,6 +350,44 @@ class MergeQueue:
                                     " after conflict resolution",
                                     entry.session_id,
                                 )
+                                if self._on_merge_agent:
+                                    verify_summary = self._format_verification_summary(
+                                        vr
+                                    )
+                                    try:
+                                        recon2 = await asyncio.to_thread(
+                                            self._on_merge_agent,
+                                            entry.base_dir,
+                                            entry.session_id,
+                                            outcome2.agent_diff,
+                                            entry.changed_files,
+                                            [],
+                                            verify_summary,
+                                        )
+                                    except (
+                                        Exception
+                                    ) as exc:  # pylint: disable=broad-exception-caught
+                                        logger.error(
+                                            "Session %d: merge agent verify-fix"
+                                            " callback failed: %s",
+                                            entry.session_id,
+                                            exc,
+                                        )
+                                        recon2 = ReconciliationResult(
+                                            resolved=False,
+                                            explanation="merge agent error: %s" % exc,
+                                        )
+                                    if recon2.resolved:
+                                        vr2 = await asyncio.to_thread(
+                                            self._verify_merge,
+                                            entry.base_dir,
+                                            outcome2.merge_branch,
+                                            entry.session_id,
+                                        )
+                                        if vr2.passed:
+                                            return await asyncio.to_thread(
+                                                self._try_ff, entry, outcome2
+                                            )
                                 return MergeResult(
                                     session_id=entry.session_id,
                                     success=False,
@@ -459,6 +511,42 @@ class MergeQueue:
                         "Session %d: post-merge verification failed",
                         entry.session_id,
                     )
+                    if self._on_merge_agent:
+                        verify_summary = self._format_verification_summary(vr)
+                        try:
+                            recon_vf = await asyncio.to_thread(
+                                self._on_merge_agent,
+                                entry.base_dir,
+                                entry.session_id,
+                                outcome.agent_diff,
+                                entry.changed_files,
+                                [],
+                                verify_summary,
+                            )
+                        except (
+                            Exception
+                        ) as exc:  # pylint: disable=broad-exception-caught
+                            logger.error(
+                                "Session %d: merge agent verify-fix callback"
+                                " failed: %s",
+                                entry.session_id,
+                                exc,
+                            )
+                            recon_vf = ReconciliationResult(
+                                resolved=False,
+                                explanation="merge agent error: %s" % exc,
+                            )
+                        if recon_vf.resolved:
+                            vr2 = await asyncio.to_thread(
+                                self._verify_merge,
+                                entry.base_dir,
+                                outcome.merge_branch,
+                                entry.session_id,
+                            )
+                            if vr2.passed:
+                                return await asyncio.to_thread(
+                                    self._try_ff, entry, outcome
+                                )
                     return MergeResult(
                         session_id=entry.session_id,
                         success=False,
@@ -499,9 +587,8 @@ class MergeQueue:
                 error=str(exc),
             )
 
-    @staticmethod
     def _verify_merge(
-        base_dir: str, merge_branch: str, session_id: int
+        self, base_dir: str, merge_branch: str, session_id: int
     ) -> VerificationResult:
         """Run verification in a temporary worktree created from the merge branch.
 
@@ -542,7 +629,7 @@ class MergeQueue:
             )
 
         try:
-            return run_verification(verify_wt_path)
+            return run_verification(verify_wt_path, timeout=self._verification_timeout)
         finally:
             _run_git(
                 ["worktree", "remove", "--force", verify_wt_path],

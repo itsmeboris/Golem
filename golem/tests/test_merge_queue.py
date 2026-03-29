@@ -750,16 +750,65 @@ class TestPostMergeVerification:
         ],
     )
     @patch("golem.merge_queue.get_changed_files", return_value=[])
-    async def test_conflict_resolution_verification_fails(self, _gcf, _miw, base_entry):
-        """After agent resolves conflict, verification fails -> merge fails with branch preserved."""
-        handler = MagicMock(return_value=ReconciliationResult(resolved=True))
+    async def test_conflict_resolution_verification_fails_no_agent(
+        self, _gcf, _miw, base_entry
+    ):
+        """After conflict resolution, verify fails, agent returns unresolved -> failure."""
+        handler = MagicMock(
+            side_effect=[
+                ReconciliationResult(resolved=True),  # first: resolves conflict
+                ReconciliationResult(resolved=False),  # second: can't fix verify
+            ]
+        )
         q = MergeQueue(on_merge_agent=handler)
         await q.enqueue(base_entry)
         with patch.object(MergeQueue, "_verify_merge", return_value=_FAILING_VR):
             results = await q.process_all()
         assert results[0].success is False
-        assert results[0].merge_branch == "merge-ready/1"
         assert "post-merge verification failed" in results[0].error
+        # Verify the second call included a non-empty verification_summary
+        second_call_args = handler.call_args_list[1]
+        verification_summary_arg = second_call_args[0][5]
+        assert verification_summary_arg != ""
+        assert "Black" in verification_summary_arg
+
+    @patch("golem.merge_queue._run_git")
+    @patch("golem.merge_queue.fast_forward_if_safe", return_value=(True, ""))
+    @patch(
+        "golem.merge_queue.merge_in_worktree",
+        side_effect=[
+            MergeOutcome(
+                sha="",
+                error="merge conflict",
+                merge_branch="merge-ready/1",
+            ),
+            MergeOutcome(
+                sha="resolved_sha",
+                merge_branch="merge-ready/1",
+            ),
+        ],
+    )
+    @patch("golem.merge_queue.get_changed_files", return_value=[])
+    async def test_conflict_resolution_verify_fails_then_agent_fixes(
+        self, _gcf, _miw, _ff, _rg, base_entry
+    ):
+        """After verification fails, second agent call succeeds -> merge succeeds."""
+        handler = MagicMock(
+            side_effect=[
+                ReconciliationResult(resolved=True),  # first: resolves conflict
+                ReconciliationResult(resolved=True),  # second: fixes verify
+            ]
+        )
+        q = MergeQueue(on_merge_agent=handler)
+        await q.enqueue(base_entry)
+        with patch.object(
+            MergeQueue,
+            "_verify_merge",
+            side_effect=[_FAILING_VR, _PASSING_VR],
+        ):
+            results = await q.process_all()
+        assert results[0].success is True
+        assert handler.call_count == 2
 
     # ------------------------------------------------------------------ #
     # Path 2: reconciliation of missing additions
@@ -807,18 +856,28 @@ class TestPostMergeVerification:
         ),
     )
     @patch("golem.merge_queue.get_changed_files", return_value=[])
-    async def test_reconciliation_verification_fails(self, _gcf, _miw, base_entry):
-        """After reconciliation, verification fails -> merge fails with branch preserved."""
+    async def test_reconciliation_verification_fails_no_fix(
+        self, _gcf, _miw, base_entry
+    ):
+        """After reconciliation, verify fails, second agent returns unresolved -> failure."""
         handler = MagicMock(
-            return_value=ReconciliationResult(resolved=True, commit_sha="fix1")
+            side_effect=[
+                ReconciliationResult(
+                    resolved=True, commit_sha="fix1"
+                ),  # first reconcile
+                ReconciliationResult(resolved=False),  # second: can't fix verify
+            ]
         )
         q = MergeQueue(on_merge_agent=handler)
         await q.enqueue(base_entry)
         with patch.object(MergeQueue, "_verify_merge", return_value=_FAILING_VR):
             results = await q.process_all()
         assert results[0].success is False
-        assert results[0].merge_branch == "merge-ready/1"
         assert "post-merge verification failed" in results[0].error
+        # Second agent call must include verification_summary
+        second_call_args = handler.call_args_list[1]
+        verification_summary_arg = second_call_args[0][5]
+        assert verification_summary_arg != ""
 
     # ------------------------------------------------------------------ #
     # SPEC-5: Clean merges also run verification
@@ -879,15 +938,14 @@ class TestPostMergeVerification:
         success_result.returncode = 0
         success_result.stderr = ""
 
+        q = MergeQueue()
         with (
             patch("golem.merge_queue._run_git", return_value=success_result) as mock_rg,
             patch(
                 "golem.merge_queue.run_verification", return_value=_PASSING_VR
             ) as mock_rv,
         ):
-            result = MergeQueue._verify_merge(
-                str(tmp_path), "merge-ready/1", session_id=99
-            )
+            result = q._verify_merge(str(tmp_path), "merge-ready/1", session_id=99)
 
         assert result is _PASSING_VR
         mock_rv.assert_called_once()
@@ -921,10 +979,9 @@ class TestPostMergeVerification:
                 return fail_result
             return success_result
 
+        q = MergeQueue()
         with patch("golem.merge_queue._run_git", side_effect=side_effect):
-            result = MergeQueue._verify_merge(
-                str(tmp_path), "merge-ready/1", session_id=7
-            )
+            result = q._verify_merge(str(tmp_path), "merge-ready/1", session_id=7)
 
         assert result.passed is False
 
@@ -938,11 +995,12 @@ class TestPostMergeVerification:
         success_result.returncode = 0
         success_result.stderr = ""
 
+        q = MergeQueue()
         with (
             patch("golem.merge_queue._run_git", return_value=success_result) as mock_rg,
             patch("golem.merge_queue.run_verification", return_value=_PASSING_VR),
         ):
-            MergeQueue._verify_merge(str(tmp_path), "merge-ready/42", session_id=42)
+            q._verify_merge(str(tmp_path), "merge-ready/42", session_id=42)
 
         # Verify that worktree remove was called for the stale path
         remove_calls = [
@@ -950,6 +1008,29 @@ class TestPostMergeVerification:
         ]
         # Should have at least 2 remove calls: one for stale cleanup, one for final cleanup
         assert len(remove_calls) >= 2
+
+    def test_verify_merge_passes_timeout_to_run_verification(self, tmp_path):
+        """_verify_merge forwards _verification_timeout to run_verification."""
+        success_result = MagicMock()
+        success_result.returncode = 0
+        success_result.stderr = ""
+
+        q = MergeQueue(verification_timeout=300)
+        with (
+            patch("golem.merge_queue._run_git", return_value=success_result),
+            patch(
+                "golem.merge_queue.run_verification", return_value=_PASSING_VR
+            ) as mock_rv,
+        ):
+            q._verify_merge(str(tmp_path), "merge-ready/1", session_id=5)
+
+        expected_wt = str(tmp_path / "data" / "agent" / "verify-worktrees" / "5")
+        mock_rv.assert_called_once_with(expected_wt, timeout=300)
+
+    def test_verify_merge_default_timeout_is_120(self):
+        """MergeQueue default verification_timeout is 120 seconds."""
+        q = MergeQueue()
+        assert q._verification_timeout == 120
 
 
 # ---------------------------------------------------------------------------
@@ -1621,3 +1702,173 @@ class TestSnapshotThreadSafe:
         assert "deferred" in snap
         assert "conflicts" in snap
         assert "history" in snap
+
+
+# ---------------------------------------------------------------------------
+# _format_verification_summary tests
+# ---------------------------------------------------------------------------
+
+
+class TestFormatVerificationSummary:
+    """_format_verification_summary produces the correct string from VerificationResult."""
+
+    def test_includes_black_output(self):
+        vr = VerificationResult(
+            passed=False,
+            black_ok=False,
+            black_output="reformatting needed",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="",
+        )
+        summary = MergeQueue._format_verification_summary(vr)
+        assert "Black: reformatting needed" in summary
+
+    def test_includes_pylint_output(self):
+        vr = VerificationResult(
+            passed=False,
+            black_ok=True,
+            black_output="",
+            pylint_ok=False,
+            pylint_output="E1101: Member 'x' has no attribute",
+            pytest_ok=True,
+            pytest_output="",
+        )
+        summary = MergeQueue._format_verification_summary(vr)
+        assert "Pylint: E1101" in summary
+
+    def test_includes_pytest_output(self):
+        vr = VerificationResult(
+            passed=False,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=False,
+            pytest_output="FAILED test_foo.py::test_bar",
+        )
+        summary = MergeQueue._format_verification_summary(vr)
+        assert "Pytest: FAILED" in summary
+
+    def test_truncates_pytest_output_to_2000(self):
+        long_output = "x" * 3000
+        vr = VerificationResult(
+            passed=False,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=False,
+            pytest_output=long_output,
+        )
+        summary = MergeQueue._format_verification_summary(vr)
+        assert "x" * 2000 in summary
+        assert "x" * 2001 not in summary
+
+    def test_header_always_present(self):
+        vr = VerificationResult(
+            passed=False,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="",
+        )
+        summary = MergeQueue._format_verification_summary(vr)
+        assert summary == "Verification failed after merge:"
+
+
+# ---------------------------------------------------------------------------
+# Second agent call exception handling tests
+# ---------------------------------------------------------------------------
+
+
+class TestVerifyFixCallbackExceptions:
+    """Exception in second agent call (verify-fix) is handled gracefully."""
+
+    @patch(
+        "golem.merge_queue.merge_in_worktree",
+        side_effect=[
+            MergeOutcome(
+                sha="",
+                error="merge conflict",
+                merge_branch="merge-ready/1",
+            ),
+            MergeOutcome(
+                sha="resolved_sha",
+                merge_branch="merge-ready/1",
+            ),
+        ],
+    )
+    @patch("golem.merge_queue.get_changed_files", return_value=[])
+    async def test_conflict_path_verify_fix_callback_raises(
+        self, _gcf, _miw, base_entry
+    ):
+        """Exception in second agent call (conflict path) -> merge fails gracefully."""
+        call_count = 0
+
+        def handler(*_args, **_kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return ReconciliationResult(resolved=True)
+            raise RuntimeError("second call exploded")
+
+        q = MergeQueue(on_merge_agent=handler)
+        await q.enqueue(base_entry)
+        with patch.object(MergeQueue, "_verify_merge", return_value=_FAILING_VR):
+            results = await q.process_all()
+        assert results[0].success is False
+        assert "post-merge verification failed" in results[0].error
+
+    @patch("golem.merge_queue._run_git")
+    @patch("golem.merge_queue.fast_forward_if_safe", return_value=(True, ""))
+    @patch(
+        "golem.merge_queue.merge_in_worktree",
+        return_value=MergeOutcome(
+            sha="clean456",
+            agent_diff="diff",
+            merge_branch="merge-ready/1",
+        ),
+    )
+    @patch("golem.merge_queue.get_changed_files", return_value=[])
+    async def test_clean_path_verify_fix_callback_raises(
+        self, _gcf, _miw, _ff, _rg, base_entry
+    ):
+        """Exception in second agent call (clean path) -> merge fails gracefully."""
+        handler = MagicMock(side_effect=RuntimeError("verify-fix exploded"))
+        q = MergeQueue(on_merge_agent=handler)
+        await q.enqueue(base_entry)
+        with patch.object(MergeQueue, "_verify_merge", return_value=_FAILING_VR):
+            results = await q.process_all()
+        assert results[0].success is False
+        assert "post-merge verification failed" in results[0].error
+
+    @patch("golem.merge_queue._run_git")
+    @patch("golem.merge_queue.fast_forward_if_safe", return_value=(True, ""))
+    @patch(
+        "golem.merge_queue.merge_in_worktree",
+        return_value=MergeOutcome(
+            sha="clean789",
+            agent_diff="diff",
+            merge_branch="merge-ready/1",
+        ),
+    )
+    @patch("golem.merge_queue.get_changed_files", return_value=[])
+    async def test_clean_path_verify_fix_resolves_and_recheck_passes(
+        self, _gcf, _miw, _ff, _rg, base_entry
+    ):
+        """Second agent call resolves verify failure, re-check passes -> success."""
+        handler = MagicMock(return_value=ReconciliationResult(resolved=True))
+        q = MergeQueue(on_merge_agent=handler)
+        await q.enqueue(base_entry)
+        with patch.object(
+            MergeQueue,
+            "_verify_merge",
+            side_effect=[_FAILING_VR, _PASSING_VR],
+        ):
+            results = await q.process_all()
+        assert results[0].success is True
+        assert handler.call_count == 1

@@ -54,7 +54,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [ ] FEAT-003: **Dashboard prompt comparison UI** — table/chart for `/api/analytics/by-prompt` data; API exists, frontend missing (GH #82)
 - [ ] FEAT-004: **CLI `logs` command** — no `golem logs` / `golem logs --follow` subcommand; `status --watch` shows counters but not log output (GH #83)
 - [x] BUG-008: **prompts.py stale docstrings** — updated to reflect empty-string default behavior (GH #99, 2026-03-29)
-- [ ] BUG-009: **verification_summary always empty** — BUG-006 plumbing added but both merge queue call sites pass `""`; feature incomplete (GH #100)
+- [x] BUG-009: **verification_summary always empty** — second agent call with formatted verification output on post-merge verify failure (GH #100, 2026-03-29)
 - [ ] INFRA-008: **verification_timeout not propagated to MergeQueue** — `_verify_merge` still uses default timeout; INFRA-007 incomplete (GH #101)
 - [ ] TEST-002: **Mutation testing** — mutmut integration (GH #17)
 - [x] BUG-007: **Self-update review silently truncates large diffs** — added truncation notice in prompt and logger.warning (GH #91, 2026-03-29)
