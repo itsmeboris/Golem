@@ -131,11 +131,24 @@ run_pylint=0
 run_pytest_full=0
 run_pytest_tests_only=0
 run_yaml_check=0
+run_js_lint=0
 
 # black / pylint: any python or toolconfig change
 if [[ ${#py_all[@]} -gt 0 || ${#toolconfig[@]} -gt 0 ]]; then
     run_black=1
     run_pylint=1
+fi
+
+# js lint: any JS file changed (check `other` array for .js files)
+for f in "${other[@]+"${other[@]}"}"; do
+    if [[ "$f" =~ \.js$ ]]; then
+        run_js_lint=1
+        break
+    fi
+done
+# Also run js lint whenever Python files change (JS and Python ship together)
+if [[ $run_black -eq 1 ]]; then
+    run_js_lint=1
 fi
 
 # pytest: source or toolconfig => full suite; test-only => just those tests
@@ -198,6 +211,57 @@ if [[ $run_pylint -eq 1 ]]; then
     fi
 else
     printf "${YELLOW}pylint dead-code: skipped (no Python changes)${NC}\n"
+fi
+
+# --- state management audit (JS lint) ---
+printf "${BOLD}=== pre-push: state management audit ===${NC}\n"
+if [[ $run_js_lint -eq 1 ]]; then
+    audit_output=$("$PYTHON" -c "
+import sys
+from pathlib import Path
+from golem.lint.state_management import run_state_management_audit, format_audit_report
+results = run_state_management_audit(Path('golem/core'))
+if results:
+    print(format_audit_report(results))
+    sys.exit(1)
+" 2>/dev/null)
+    audit_rc=$?
+    if [[ $audit_rc -ne 0 ]]; then
+        printf "${YELLOW}state management audit: warnings found (non-blocking)${NC}\n"
+        if [[ -n "$audit_output" ]]; then
+            printf "%s\n" "$audit_output"
+        fi
+    else
+        printf "${GREEN}state management audit: ok${NC}\n"
+    fi
+else
+    printf "${YELLOW}state management audit: skipped (no Python/JS changes)${NC}\n"
+fi
+
+# --- contract linting ---
+printf "${BOLD}=== pre-push: contract lint ===${NC}\n"
+if [[ $run_black -eq 1 ]]; then
+    contract_output=$("$PYTHON" -c "
+import sys
+from pathlib import Path
+from golem.lint.contracts import check_consumer_producer_types
+findings = check_consumer_producer_types(Path('golem'))
+if findings:
+    for f in findings:
+        print(f'{f[\"file\"]}:{f[\"line\"]}: {f[\"message\"]}')
+    sys.exit(1)
+" 2>/dev/null)
+    contract_rc=$?
+    if [[ $contract_rc -ne 0 ]]; then
+        printf "${YELLOW}contract lint: warnings found (non-blocking)${NC}\n"
+        if [[ -n "$contract_output" ]]; then
+            printf "%s\n" "$contract_output"
+        fi
+    else
+        printf "${GREEN}contract lint: ok${NC}\n"
+    fi
+else
+    printf "${YELLOW}contract lint: skipped (no Python changes)${NC}\n"
 fi
 
 # --- pytest ---

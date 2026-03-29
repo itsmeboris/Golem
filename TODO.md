@@ -14,8 +14,8 @@ See https://github.com/itsmeboris/Golem/issues
 
 ### P2 — Normal
 
-- [ ] INFRA-001: **State management audit rule** — detect innerHTML without state preservation, polling without concurrency guards, shared mutable state in async code (GH #76)
-- [ ] INFRA-002: **Codebase contract linting** — static check that function return types match consumer expectations across module boundaries (GH #23)
+- [x] INFRA-001: **State management audit rule** — wired into pre-push hook as non-blocking warning (GH #76, 2026-03-29)
+- [x] INFRA-002: **Codebase contract linting** — wired into pre-push hook as non-blocking warning (GH #23, 2026-03-29)
 - [ ] FEAT-001: **Context budget system** — dynamic prompt content sizing (GH #13)
 - [ ] FEAT-002: **A-Mem knowledge graph** — structured knowledge graph for AGENTS.md (GH #14)
 - [x] FEAT-003: **Dashboard prompt comparison UI** — added Prompts tab with table showing hash, runs, success rate bar, cost, duration (GH #82, 2026-03-29)
