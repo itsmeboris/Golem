@@ -482,3 +482,68 @@ body{font-family:var(--font-sans);background:var(--bg-base);color:var(--text-pri
   border-radius:50%;animation:btn-spin 0.65s linear infinite
 }
 @keyframes btn-spin{to{transform:rotate(360deg)}}
+
+/* ── Mobile & Touch Responsive Layout ───────────────────── */
+
+@media (max-width: 1024px) {
+  /* Stack overview split-pane vertically */
+  .ov-split{flex-direction:column!important}
+  .ov-list-pane{width:100%!important;max-width:none!important;border-right:none!important;border-bottom:1px solid var(--border)}
+  .ov-preview-pane{width:100%!important;max-width:none!important}
+
+  /* Increase touch targets to iOS HIG minimum (44px) */
+  .nav-tab{min-height:44px;padding:0.6rem 0.85rem;display:inline-flex;align-items:center;justify-content:center}
+  .ov-task{min-height:44px;padding:0.6rem 0.75rem}
+  .tab-btn{min-height:44px;padding:0.6rem 0.9rem;display:inline-flex;align-items:center;justify-content:center}
+  .ov-page-btn{min-height:44px;padding:0.5rem 0.9rem}
+  .back-btn{min-height:44px;padding:0.5rem 0.9rem;display:inline-flex;align-items:center}
+  button,.btn{min-height:44px}
+
+  /* Make nav tabs horizontally scrollable on small screens */
+  .nav-bar,.tab-bar{overflow-x:auto;overflow-y:hidden;white-space:nowrap;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .nav-bar::-webkit-scrollbar,.tab-bar::-webkit-scrollbar{display:none}
+
+  /* Hide non-essential columns in task list */
+  .ov-task-cost{display:none}
+  .ov-task-activity{display:none}
+
+  /* Reduce padding on config/metrics */
+  .config-bar{flex-wrap:wrap;padding:0.5rem 0.75rem;font-size:0.78rem}
+  .metrics-row{gap:0.4rem}
+  .metric-card,.mr-card{padding:0.6rem 0.75rem}
+}
+
+@media (max-width: 600px) {
+  /* Body font size reduction */
+  body{font-size:14px}
+
+  /* Full-width layout */
+  .main-view{padding:0}
+
+  /* Task detail fills full width */
+  #view-detail{padding:0}
+  .tl-container{padding:0.5rem}
+
+  /* Compact header */
+  .nav-bar{padding:0 0.5rem}
+  .nav-tab{font-size:0.72rem;padding:0.5rem 0.6rem;min-height:44px}
+
+  /* Overview controls stack */
+  .ov-controls{flex-wrap:wrap;gap:0.35rem}
+  .ov-controls input,.ov-controls select{width:100%;font-size:0.82rem}
+
+  /* Task row compact */
+  .ov-task{padding:0.5rem 0.6rem;min-height:44px}
+  .ov-task-subject{font-size:0.78rem}
+
+  /* Preview panel full-width */
+  .ov-preview-pane{min-width:0!important;padding:0.5rem}
+
+  /* Validation / markdown */
+  .validation-card{padding:0.75rem}
+  .markdown-body{font-size:0.85rem}
+
+  /* Toast container repositioned */
+  .toast-container{right:0.5rem;bottom:0.75rem;left:0.5rem}
+  .toast{max-width:100%}
+}

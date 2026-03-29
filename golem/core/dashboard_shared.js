@@ -268,6 +268,85 @@ function getHashRoute() {
   return window.location.hash.slice(1) || '';
 }
 
+/* ── Keyboard Shortcuts ───────────────────────────────────── */
+
+/**
+ * Global keyboard shortcuts for the dashboard.
+ *
+ * Keys handled:
+ *   Escape      — close open modal; if detail view, go back to overview
+ *   ArrowDown   — select next task row in overview list
+ *   ArrowUp     — select previous task row in overview list
+ *   Ctrl/Cmd+K  — focus the task search input
+ *   1           — switch to overview tab
+ *   2           — switch to detail tab
+ *   3           — switch to merge-queue tab
+ *   4           — switch to config tab
+ *   5           — switch to prompts tab
+ *
+ * Arrow and digit shortcuts are suppressed when an input / textarea is focused
+ * (except Ctrl+K which always works).
+ */
+document.addEventListener('keydown', function(e) {
+  var inInput = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable;
+
+  /* Escape — close modal or navigate back from detail view */
+  if (e.key === 'Escape') {
+    var modal = document.getElementById('resubmit-modal');
+    if (modal && modal.style.display !== 'none' && modal.style.display !== '') {
+      if (typeof _closeResubmitModal === 'function') _closeResubmitModal();
+      return;
+    }
+    if (typeof S !== 'undefined' && S.view === 'detail') {
+      if (typeof showView === 'function') showView('overview');
+    }
+    return;
+  }
+
+  /* Ctrl+K / Cmd+K — focus search input regardless of focus state */
+  if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+    e.preventDefault();
+    var searchEl = document.getElementById('ov-search') || document.querySelector('#search-input');
+    if (searchEl) searchEl.focus();
+    return;
+  }
+
+  /* All remaining shortcuts are suppressed in inputs */
+  if (inInput) return;
+
+  /* ArrowDown / ArrowUp — navigate task list in overview */
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    var rows = Array.from(document.querySelectorAll('.ov-task'));
+    if (rows.length === 0) return;
+    var selectedIdx = rows.findIndex(function(r) { return r.classList.contains('selected'); });
+    var nextIdx;
+    if (e.key === 'ArrowDown') {
+      nextIdx = selectedIdx < rows.length - 1 ? selectedIdx + 1 : selectedIdx;
+    } else {
+      nextIdx = selectedIdx > 0 ? selectedIdx - 1 : 0;
+    }
+    if (nextIdx !== selectedIdx) {
+      rows.forEach(function(r) { r.classList.remove('selected'); });
+      rows[nextIdx].classList.add('selected');
+      var eventId = rows[nextIdx].dataset.eventId;
+      if (eventId) {
+        if (typeof S !== 'undefined') S.selectedTaskId = eventId;
+        if (typeof renderPreview === 'function') renderPreview(eventId);
+      }
+      rows[nextIdx].scrollIntoView({ block: 'nearest' });
+    }
+    return;
+  }
+
+  /* 1–5 — switch tabs */
+  var tabViews = ['overview', 'detail', 'merge-queue', 'config', 'prompts'];
+  var tabIdx = parseInt(e.key, 10) - 1;
+  if (!isNaN(tabIdx) && tabIdx >= 0 && tabIdx < tabViews.length && !e.ctrlKey && !e.metaKey) {
+    if (typeof showView === 'function') showView(tabViews[tabIdx]);
+  }
+});
+
 /* ── Copy to Clipboard ────────────────────────────────────── */
 
 /**

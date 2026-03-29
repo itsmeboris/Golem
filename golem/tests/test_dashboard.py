@@ -2954,3 +2954,196 @@ class TestHashRouting:
         assert (
             tab_hash in body
         ), f"task_live.js missing hash route support for #{tab_hash}"
+
+
+# ---------------------------------------------------------------------------
+# UX-008: Keyboard shortcuts
+# ---------------------------------------------------------------------------
+
+
+class TestKeyboardShortcuts:
+    """Verify keyboard shortcut handler in dashboard_shared.js."""
+
+    @pytest.fixture(autouse=True)
+    def _paths(self):
+        core = Path(__file__).resolve().parent.parent / "core"
+        self.shared_js_path = core / "dashboard_shared.js"
+
+    def test_keydown_listener_registered(self):
+        """dashboard_shared.js must register a keydown event listener."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        assert "keydown" in body, "Missing keydown listener in dashboard_shared.js"
+
+    def test_escape_key_handled(self):
+        """Escape key must be handled in the keydown listener."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        start = body.find("keydown")
+        assert start != -1, "keydown listener not found"
+        after = body[start:]
+        assert "Escape" in after, "Escape key not handled in keydown listener"
+
+    def test_arrow_down_handled(self):
+        """ArrowDown key must be handled in the keydown listener."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        start = body.find("keydown")
+        assert start != -1, "keydown listener not found"
+        after = body[start:]
+        assert "ArrowDown" in after, "ArrowDown key not handled in keydown listener"
+
+    def test_arrow_up_handled(self):
+        """ArrowUp key must be handled in the keydown listener."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        start = body.find("keydown")
+        assert start != -1, "keydown listener not found"
+        after = body[start:]
+        assert "ArrowUp" in after, "ArrowUp key not handled in keydown listener"
+
+    def test_ctrl_k_handled(self):
+        """Ctrl+K shortcut must be handled in the keydown listener."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        start = body.find("keydown")
+        assert start != -1, "keydown listener not found"
+        after = body[start:]
+        # Both ctrlKey/metaKey check and key 'k' must appear
+        assert "ctrlKey" in after, "ctrlKey not checked in keydown listener"
+        assert (
+            "'k'" in after or '"k"' in after
+        ), "Ctrl+K key not matched in keydown listener"
+
+    def test_ctrl_k_focuses_search(self):
+        """Ctrl+K handler must call focus() on the search input."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        start = body.find("ctrlKey")
+        assert start != -1, "ctrlKey check not found"
+        # The focus() call must appear after the ctrlKey check
+        after = body[start:]
+        assert ".focus()" in after, "Ctrl+K handler must call .focus() on search input"
+
+    def test_digit_tab_switching_present(self):
+        """Number keys 1–5 must switch tabs in the keydown listener."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        start = body.find("keydown")
+        assert start != -1, "keydown listener not found"
+        after = body[start:]
+        # The tab-views array must include all five views
+        assert (
+            "overview" in after
+        ), "Tab-switch: 'overview' not referenced in keydown handler"
+        assert (
+            "merge-queue" in after
+        ), "Tab-switch: 'merge-queue' not referenced in keydown handler"
+        assert (
+            "prompts" in after
+        ), "Tab-switch: 'prompts' not referenced in keydown handler"
+
+    def test_input_guard_present(self):
+        """Keydown handler must suppress arrow/digit shortcuts when an input is focused."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        start = body.find("keydown")
+        assert start != -1, "keydown listener not found"
+        after = body[start:]
+        # The handler must check tagName to detect input fields
+        assert (
+            "INPUT" in after or "tagName" in after
+        ), "keydown handler must guard against triggering shortcuts when an input is focused"
+
+    @pytest.mark.parametrize(
+        "view",
+        ["overview", "detail", "merge-queue", "config", "prompts"],
+        ids=["overview", "detail", "merge-queue", "config", "prompts"],
+    )
+    def test_tab_views_array_contains_all_tabs(self, view):
+        """The tabViews array in the keydown handler must include every dashboard tab."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        start = body.find("keydown")
+        assert start != -1, "keydown listener not found"
+        after = body[start:]
+        assert (
+            view in after
+        ), f"Tab view '{view}' missing from keydown tab-switch handler"
+
+
+# ---------------------------------------------------------------------------
+# UX-008: Mobile responsive CSS
+# ---------------------------------------------------------------------------
+
+
+class TestMobileResponsiveCSS:
+    """Verify @media queries and touch-target sizes in dashboard_shared.css."""
+
+    @pytest.fixture(autouse=True)
+    def _paths(self):
+        core = Path(__file__).resolve().parent.parent / "core"
+        self.shared_css_path = core / "dashboard_shared.css"
+
+    def test_media_query_1024_present(self):
+        """CSS must contain a @media query for max-width: 1024px."""
+        body = self.shared_css_path.read_text(encoding="utf-8")
+        assert (
+            "max-width" in body and "1024px" in body
+        ), "dashboard_shared.css missing @media (max-width: 1024px)"
+
+    def test_media_query_600_present(self):
+        """CSS must contain a @media query for max-width: 600px."""
+        body = self.shared_css_path.read_text(encoding="utf-8")
+        assert (
+            "max-width" in body and "600px" in body
+        ), "dashboard_shared.css missing @media (max-width: 600px)"
+
+    def test_touch_target_min_height_44px_in_media_query(self):
+        """Touch targets must have min-height: 44px inside a @media block."""
+        body = self.shared_css_path.read_text(encoding="utf-8")
+        # Find first @media block and confirm 44px appears inside it
+        media_idx = body.find("@media")
+        assert media_idx != -1, "@media rule not found in dashboard_shared.css"
+        after = body[media_idx:]
+        assert (
+            "44px" in after
+        ), "No 44px touch-target min-height found inside @media blocks"
+
+    def test_min_height_applied_to_nav_tab_in_media_query(self):
+        """nav-tab must get min-height: 44px inside the tablet media query."""
+        body = self.shared_css_path.read_text(encoding="utf-8")
+        media_idx = body.find("@media")
+        assert media_idx != -1, "@media rule not found"
+        after = body[media_idx:]
+        assert ".nav-tab" in after, ".nav-tab not styled inside @media block"
+        # Confirm 44px appears after .nav-tab mention within media section
+        nav_tab_idx = after.find(".nav-tab")
+        assert nav_tab_idx != -1
+        near = after[nav_tab_idx : nav_tab_idx + 200]
+        assert "44px" in near, ".nav-tab inside @media block must set min-height:44px"
+
+    def test_min_height_applied_to_ov_task_in_media_query(self):
+        """ov-task rows must get min-height: 44px inside the tablet media query."""
+        body = self.shared_css_path.read_text(encoding="utf-8")
+        media_idx = body.find("@media")
+        assert media_idx != -1, "@media rule not found"
+        after = body[media_idx:]
+        assert ".ov-task" in after, ".ov-task not styled inside @media block"
+        ov_task_idx = after.find(".ov-task")
+        assert ov_task_idx != -1
+        near = after[ov_task_idx : ov_task_idx + 200]
+        assert "44px" in near, ".ov-task inside @media block must set min-height:44px"
+
+    def test_tab_bar_scrollable_in_media_query(self):
+        """Tab bar must be horizontally scrollable inside a @media block."""
+        body = self.shared_css_path.read_text(encoding="utf-8")
+        media_idx = body.find("@media")
+        assert media_idx != -1, "@media rule not found"
+        after = body[media_idx:]
+        assert (
+            "overflow-x" in after
+        ), "Tab bar overflow-x scroll not set inside @media block"
+
+    @pytest.mark.parametrize(
+        "breakpoint",
+        ["1024px", "600px"],
+        ids=["tablet", "mobile"],
+    )
+    def test_both_breakpoints_present(self, breakpoint):
+        """Both responsive breakpoints must exist in dashboard_shared.css."""
+        body = self.shared_css_path.read_text(encoding="utf-8")
+        assert (
+            breakpoint in body
+        ), f"Breakpoint {breakpoint} missing from dashboard_shared.css"
