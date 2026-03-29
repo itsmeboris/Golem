@@ -341,6 +341,7 @@ if FASTAPI_AVAILABLE:
 
         Returns ``{"ok": true, "task_id": ..., "status": "cancelled"}``.
         """
+        _require_api_key(request)
         client_ip = request.client.host if request.client else "unknown"
         if not _submit_limiter.check(client_ip):
             raise HTTPException(status_code=429, detail="Rate limit exceeded")

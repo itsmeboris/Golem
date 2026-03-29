@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import DATA_DIR
+from .control_api import _require_api_key
 from .daemon_utils import read_pid
 from .live_state import LiveState, read_live_snapshot
 from .run_log import read_runs
@@ -44,7 +45,7 @@ async def _safe_to_thread(func, *args, **kwargs):
 
 
 try:
-    from fastapi import Query
+    from fastapi import Query, Request
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import (
         HTMLResponse,
@@ -58,6 +59,7 @@ except ImportError:  # pragma: no cover
     FASTAPI_AVAILABLE = False
     CORSMiddleware = None  # type: ignore[assignment,misc]
     Query = None
+    Request = None  # type: ignore[assignment,misc]
     HTMLResponse = None
     JSONResponse = None
     Response = None
@@ -624,7 +626,8 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
     )
 
     @app.get("/api/live")
-    async def api_live() -> JSONResponse:
+    async def api_live(request: Request) -> JSONResponse:
+        _require_api_key(request)
         if live_state_file is not None:
             snap = await _safe_to_thread(read_live_snapshot, live_state_file)
             if snap is None:
@@ -634,8 +637,9 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
         return JSONResponse(content=snap)
 
     @app.get("/api/sessions")
-    async def api_sessions() -> JSONResponse:
+    async def api_sessions(request: Request) -> JSONResponse:
         """Return golem session state from the sessions file."""
+        _require_api_key(request)
         try:
             data = await _safe_to_thread(_read_sessions)
             if data is None:
@@ -646,9 +650,11 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
 
     @app.get("/api/logs")
     async def api_logs(
+        request: Request,
         lines: int = Query(200, ge=10, le=2000),
     ) -> JSONResponse:
         """Return the tail of the daemon log file."""
+        _require_api_key(request)
         data = await _safe_to_thread(_read_log_tail, lines)
         if data is None:
             return JSONResponse(content={"lines": [], "file": "", "total_lines": 0})
@@ -659,7 +665,8 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
         return JSONResponse(content={"status": "ok", "timestamp": int(time.time())})
 
     @app.get("/api/events")
-    async def api_events() -> StreamingResponse:
+    async def api_events(request: Request) -> StreamingResponse:
+        _require_api_key(request)
         return StreamingResponse(
             _sse_event_stream(),
             media_type="text/event-stream",
@@ -667,8 +674,9 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
         )
 
     @app.get("/api/analytics")
-    async def api_analytics() -> JSONResponse:
-        from ..analytics import compute_analytics
+    async def api_analytics(request: Request) -> JSONResponse:
+        _require_api_key(request)
+        from ..analytics import compute_analytics  # noqa: PLC0415
 
         runs = await _safe_to_thread(read_runs, limit=1000)
         if runs is None:
@@ -676,8 +684,9 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
         return JSONResponse(content=compute_analytics(runs))
 
     @app.get("/api/analytics/by-prompt")
-    async def api_analytics_by_prompt() -> JSONResponse:
-        from ..analytics import compute_prompt_analytics
+    async def api_analytics_by_prompt(request: Request) -> JSONResponse:
+        _require_api_key(request)
+        from ..analytics import compute_prompt_analytics  # noqa: PLC0415
 
         runs = await _safe_to_thread(read_runs, limit=10_000)
         if runs is None:
@@ -685,8 +694,9 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
         return JSONResponse(content=compute_prompt_analytics(runs))
 
     @app.get("/api/cost-analytics")
-    async def api_cost_analytics() -> JSONResponse:
-        from ..cost_analytics import compute_cost_analytics
+    async def api_cost_analytics(request: Request) -> JSONResponse:
+        _require_api_key(request)
+        from ..cost_analytics import compute_cost_analytics  # noqa: PLC0415
 
         runs = await _safe_to_thread(read_runs, limit=10_000)
         sessions = await _safe_to_thread(load_sessions)
@@ -695,15 +705,19 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
         return JSONResponse(content=compute_cost_analytics(runs, sessions))
 
     @app.get("/api/trace-parsed/{event_id:path}")
-    async def api_trace_parsed(event_id: str, since_event: int = 0) -> JSONResponse:
+    async def api_trace_parsed(
+        request: Request, event_id: str, since_event: int = 0
+    ) -> JSONResponse:
         """Return parsed trace. Pass ?since_event=N for incremental updates."""
+        _require_api_key(request)
         result = await _safe_to_thread(_read_and_parse_trace, event_id, since_event)
         if result is None:
             return JSONResponse({"error": "Trace not found"}, status_code=404)
         return JSONResponse(result)
 
     @app.get("/api/trace/{event_id:path}")
-    async def api_trace(event_id: str) -> JSONResponse:
+    async def api_trace(request: Request, event_id: str) -> JSONResponse:
+        _require_api_key(request)
         paths = _resolve_paths(event_id)
         if not paths["trace"]:
             return JSONResponse(
@@ -716,7 +730,8 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
         return JSONResponse(content={"event_id": event_id, "sections": sections})
 
     @app.get("/api/prompt/{event_id:path}")
-    async def api_prompt(event_id: str) -> JSONResponse:
+    async def api_prompt(request: Request, event_id: str) -> JSONResponse:
+        _require_api_key(request)
         paths = _resolve_paths(event_id)
         if not paths["prompt"]:
             return JSONResponse(
@@ -735,7 +750,8 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
         )
 
     @app.get("/api/report/{event_id:path}")
-    async def api_report(event_id: str) -> JSONResponse:
+    async def api_report(request: Request, event_id: str) -> JSONResponse:
+        _require_api_key(request)
         paths = _resolve_paths(event_id)
         if not paths["report"]:
             return JSONResponse(
@@ -748,8 +764,9 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
         return JSONResponse(content={"event_id": event_id, "markdown": text})
 
     @app.get("/api/trace-terminal/{event_id:path}")
-    async def api_trace_terminal(event_id: str) -> JSONResponse:
+    async def api_trace_terminal(request: Request, event_id: str) -> JSONResponse:
         """Return parsed terminal-renderable trace events for a flow run."""
+        _require_api_key(request)
         paths = _resolve_paths(event_id)
         if not paths["trace"]:
             return JSONResponse(
@@ -896,7 +913,8 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
         return HTMLResponse(content=html, headers=_NO_CACHE_HEADERS)
 
     @app.get("/api/merge-queue")
-    async def api_merge_queue():
+    async def api_merge_queue(request: Request):
+        _require_api_key(request)
         if merge_queue is None:
             return {
                 "pending": [],
@@ -908,7 +926,8 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
         return merge_queue.snapshot()
 
     @app.post("/api/merge-queue/retry/{session_id}")
-    async def api_merge_queue_retry(session_id: int):
+    async def api_merge_queue_retry(request: Request, session_id: int):
+        _require_api_key(request)
         if merge_queue is None:
             return JSONResponse(
                 status_code=503,
@@ -921,7 +940,8 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
             return JSONResponse(status_code=404, content={"error": str(exc)})
 
     @app.get("/api/heartbeat")
-    async def api_heartbeat():
+    async def api_heartbeat(request: Request):
+        _require_api_key(request)
         if heartbeat is None:
             return {
                 "enabled": False,
@@ -938,7 +958,8 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
         return heartbeat.snapshot()
 
     @app.post("/api/heartbeat/trigger")
-    async def api_heartbeat_trigger():
+    async def api_heartbeat_trigger(request: Request):
+        _require_api_key(request)
         if heartbeat is None:
             return {"ok": False, "detail": "heartbeat disabled"}
         triggered = heartbeat.trigger()

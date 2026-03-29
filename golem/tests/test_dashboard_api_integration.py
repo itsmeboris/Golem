@@ -4,6 +4,8 @@
 Covers: /api/analytics, /api/analytics/by-prompt, /api/cost-analytics,
 /api/events, /api/merge-queue, /api/merge-queue/retry/{session_id},
 /api/trace/{event_id:path}.
+
+Also covers SEC-005: API key authentication on dashboard read endpoints.
 """
 
 from __future__ import annotations
@@ -379,3 +381,175 @@ class TestCorsMiddleware:
         resp = cors_client.get("/api/ping", headers={"Origin": origin})
         assert resp.status_code == 200
         assert "access-control-allow-origin" not in resp.headers
+
+
+# ---------------------------------------------------------------------------
+# SEC-005: API key authentication on dashboard read endpoints
+# ---------------------------------------------------------------------------
+
+
+class TestDashboardApiKeyAuth:
+    """Verify that /api/* endpoints require a valid API key when one is configured.
+
+    /api/ping is explicitly excluded from auth (health check must always work).
+    """
+
+    @pytest.fixture()
+    def secured_client(self, tmp_path):
+        """Dashboard with an API key configured; yields TestClient."""
+        from fastapi import FastAPI
+        from starlette.testclient import TestClient
+
+        sessions_file = tmp_path / "sessions.json"
+        sessions_file.write_text(json.dumps({"sessions": {}}), encoding="utf-8")
+        traces = tmp_path / "traces"
+        traces.mkdir(parents=True)
+        reports = tmp_path / "reports"
+        reports.mkdir()
+        logs = tmp_path / "logs"
+        logs.mkdir()
+
+        app = FastAPI()
+        _dashboard_module._parsed_trace_cache.clear()
+
+        with (
+            patch("golem.core.dashboard.FASTAPI_AVAILABLE", True),
+            patch("golem.core.dashboard.TRACES_DIR", traces),
+            patch("golem.core.dashboard.REPORTS_DIR", reports),
+            patch("golem.core.dashboard._LOG_DIR", logs),
+            patch("golem.core.dashboard._SESSIONS_FILE", sessions_file),
+            # Wire in a known API key via the control_api module-level state
+            patch("golem.core.control_api._api_key", "secret-key"),
+        ):
+            mount_dashboard(app)
+            with TestClient(app) as tc:
+                yield tc
+
+        _dashboard_module._parsed_trace_cache.clear()
+
+    @pytest.fixture()
+    def open_client(self, tmp_path):
+        """Dashboard with no API key configured; all reads are open."""
+        from fastapi import FastAPI
+        from starlette.testclient import TestClient
+
+        sessions_file = tmp_path / "sessions.json"
+        sessions_file.write_text(json.dumps({"sessions": {}}), encoding="utf-8")
+        traces = tmp_path / "traces"
+        traces.mkdir(parents=True)
+
+        app = FastAPI()
+        _dashboard_module._parsed_trace_cache.clear()
+
+        with (
+            patch("golem.core.dashboard.FASTAPI_AVAILABLE", True),
+            patch("golem.core.dashboard.TRACES_DIR", traces),
+            patch("golem.core.dashboard.REPORTS_DIR", tmp_path / "reports"),
+            patch("golem.core.dashboard._LOG_DIR", tmp_path / "logs"),
+            patch("golem.core.dashboard._SESSIONS_FILE", sessions_file),
+            patch("golem.core.control_api._api_key", ""),  # no key configured
+        ):
+            mount_dashboard(app)
+            with TestClient(app) as tc:
+                yield tc
+
+        _dashboard_module._parsed_trace_cache.clear()
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/api/live",
+            "/api/sessions",
+            "/api/logs",
+            "/api/analytics",
+            "/api/analytics/by-prompt",
+            "/api/cost-analytics",
+            "/api/merge-queue",
+            "/api/heartbeat",
+        ],
+        ids=[
+            "live",
+            "sessions",
+            "logs",
+            "analytics",
+            "analytics_by_prompt",
+            "cost_analytics",
+            "merge_queue",
+            "heartbeat",
+        ],
+    )
+    def test_protected_endpoint_returns_401_without_token(self, secured_client, path):
+        """When API key is set, GET requests without a token return 401."""
+        resp = secured_client.get(path)
+        assert resp.status_code == 401
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/api/live",
+            "/api/sessions",
+            "/api/logs",
+            "/api/analytics",
+            "/api/analytics/by-prompt",
+            "/api/cost-analytics",
+            "/api/merge-queue",
+            "/api/heartbeat",
+        ],
+        ids=[
+            "live",
+            "sessions",
+            "logs",
+            "analytics",
+            "analytics_by_prompt",
+            "cost_analytics",
+            "merge_queue",
+            "heartbeat",
+        ],
+    )
+    def test_protected_endpoint_accepts_bearer_token(self, secured_client, path):
+        """When API key is set, Bearer token in Authorization header grants access."""
+        resp = secured_client.get(path, headers={"Authorization": "Bearer secret-key"})
+        assert resp.status_code == 200
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/api/live",
+            "/api/sessions",
+            "/api/logs",
+            "/api/analytics",
+            "/api/analytics/by-prompt",
+            "/api/cost-analytics",
+            "/api/merge-queue",
+            "/api/heartbeat",
+        ],
+        ids=[
+            "live",
+            "sessions",
+            "logs",
+            "analytics",
+            "analytics_by_prompt",
+            "cost_analytics",
+            "merge_queue",
+            "heartbeat",
+        ],
+    )
+    def test_protected_endpoint_accepts_query_param_token(self, secured_client, path):
+        """When API key is set, ?token= query param grants access."""
+        resp = secured_client.get(path, params={"token": "secret-key"})
+        assert resp.status_code == 200
+
+    def test_ping_always_accessible_with_key_configured(self, secured_client):
+        """/api/ping returns 200 even when an API key is configured (health check)."""
+        resp = secured_client.get("/api/ping")
+        assert resp.status_code == 200
+
+    def test_ping_accessible_without_key(self, open_client):
+        """/api/ping returns 200 when no API key is configured."""
+        resp = open_client.get("/api/ping")
+        assert resp.status_code == 200
+
+    def test_no_key_configured_all_endpoints_open(self, open_client):
+        """When no API key is configured, endpoints are accessible without token."""
+        resp = open_client.get("/api/sessions")
+        assert resp.status_code == 200

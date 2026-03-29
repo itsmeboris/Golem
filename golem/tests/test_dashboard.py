@@ -1260,6 +1260,16 @@ class TestMountDashboard:
 class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
     """Test actual route handler logic by capturing the registered handlers."""
 
+    @pytest.fixture(autouse=True)
+    def _bypass_api_key(self):
+        """Patch _require_api_key to a no-op for all direct handler invocations.
+
+        These tests call route handlers as plain Python functions (bypassing the
+        FastAPI request pipeline), so authentication is irrelevant here.
+        """
+        with patch("golem.core.dashboard._require_api_key"):
+            yield
+
     @pytest.fixture()
     def handlers(self):
         """Mount dashboard on a mock app and return a dict of route handlers."""
@@ -1314,7 +1324,8 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             "golem.core.dashboard.read_live_snapshot",
             return_value={"active_count": 0},
         ):
-            resp = await routes["/api/live"]()
+            with patch("golem.core.dashboard._require_api_key"):
+                resp = await routes["/api/live"](MagicMock())
         body = json.loads(resp.body)
         assert body["active_count"] == 0
 
@@ -1322,7 +1333,7 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
         """When live_state_file is None, uses LiveState singleton."""
         with patch("golem.core.dashboard.LiveState") as mock_ls:
             mock_ls.get.return_value.snapshot.return_value = {"active_count": 1}
-            resp = await handlers["/api/live"]()
+            resp = await handlers["/api/live"](MagicMock())
         body = json.loads(resp.body)
         assert body["active_count"] == 1
 
@@ -1331,7 +1342,7 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             "golem.core.dashboard._read_sessions",
             return_value={"sessions": {"1": {}}},
         ):
-            resp = await handlers["/api/sessions"]()
+            resp = await handlers["/api/sessions"](MagicMock())
         body = json.loads(resp.body)
         assert "1" in body["sessions"]
 
@@ -1340,7 +1351,7 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             "golem.core.dashboard._read_sessions",
             side_effect=json.JSONDecodeError("bad", "", 0),
         ):
-            resp = await handlers["/api/sessions"]()
+            resp = await handlers["/api/sessions"](MagicMock())
         body = json.loads(resp.body)
         assert body == {"sessions": {}}
 
@@ -1353,7 +1364,7 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
                 "golem.core.dashboard._read_sessions",
                 side_effect=RuntimeError("Executor shutdown"),
             ):
-                resp = await handlers["/api/sessions"]()
+                resp = await handlers["/api/sessions"](MagicMock())
             body = json.loads(resp.body)
             assert body == {"sessions": {}}
         finally:
@@ -1364,7 +1375,7 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             "golem.core.dashboard._read_log_tail",
             return_value={"lines": ["hi"], "file": "test.log", "total_lines": 1},
         ):
-            resp = await handlers["/api/logs"](lines=200)
+            resp = await handlers["/api/logs"](MagicMock(), lines=200)
         body = json.loads(resp.body)
         assert body["lines"] == ["hi"]
 
@@ -1378,7 +1389,7 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             "golem.core.dashboard._resolve_paths",
             return_value={"trace": trace_path, "prompt": None, "report": None},
         ):
-            resp = await handlers["/api/trace/{event_id:path}"]("golem-1")
+            resp = await handlers["/api/trace/{event_id:path}"](MagicMock(), "golem-1")
         body = json.loads(resp.body)
         assert body["event_id"] == "golem-1"
         assert len(body["sections"]) == 1
@@ -1388,7 +1399,9 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             "golem.core.dashboard._resolve_paths",
             return_value={"trace": None, "prompt": None, "report": None},
         ):
-            resp = await handlers["/api/trace/{event_id:path}"]("golem-999")
+            resp = await handlers["/api/trace/{event_id:path}"](
+                MagicMock(), "golem-999"
+            )
         assert resp.status_code == 404
 
     async def test_api_prompt_found(self, handlers, tmp_path):
@@ -1398,7 +1411,7 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             "golem.core.dashboard._resolve_paths",
             return_value={"trace": None, "prompt": prompt_path, "report": None},
         ):
-            resp = await handlers["/api/prompt/{event_id:path}"]("golem-1")
+            resp = await handlers["/api/prompt/{event_id:path}"](MagicMock(), "golem-1")
         body = json.loads(resp.body)
         assert body["prompt"] == "Do the thing"
 
@@ -1407,7 +1420,7 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             "golem.core.dashboard._resolve_paths",
             return_value={"trace": None, "prompt": None, "report": None},
         ):
-            resp = await handlers["/api/prompt/{event_id:path}"]("golem-1")
+            resp = await handlers["/api/prompt/{event_id:path}"](MagicMock(), "golem-1")
         assert resp.status_code == 404
 
     async def test_api_report_found(self, handlers, tmp_path):
@@ -1417,7 +1430,7 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             "golem.core.dashboard._resolve_paths",
             return_value={"trace": None, "prompt": None, "report": report_path},
         ):
-            resp = await handlers["/api/report/{event_id:path}"]("golem-1")
+            resp = await handlers["/api/report/{event_id:path}"](MagicMock(), "golem-1")
         body = json.loads(resp.body)
         assert body["markdown"] == "# Report\nAll good"
 
@@ -1426,7 +1439,7 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             "golem.core.dashboard._resolve_paths",
             return_value={"trace": None, "prompt": None, "report": None},
         ):
-            resp = await handlers["/api/report/{event_id:path}"]("golem-1")
+            resp = await handlers["/api/report/{event_id:path}"](MagicMock(), "golem-1")
         assert resp.status_code == 404
 
     async def test_api_trace_terminal_found(self, handlers, tmp_path):
@@ -1440,7 +1453,9 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             "golem.core.dashboard._resolve_paths",
             return_value={"trace": trace_path, "prompt": None, "report": None},
         ):
-            resp = await handlers["/api/trace-terminal/{event_id:path}"]("golem-1")
+            resp = await handlers["/api/trace-terminal/{event_id:path}"](
+                MagicMock(), "golem-1"
+            )
         body = json.loads(resp.body)
         assert "events" in body
         assert "stats" in body
@@ -1450,7 +1465,9 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             "golem.core.dashboard._resolve_paths",
             return_value={"trace": None, "prompt": None, "report": None},
         ):
-            resp = await handlers["/api/trace-terminal/{event_id:path}"]("golem-1")
+            resp = await handlers["/api/trace-terminal/{event_id:path}"](
+                MagicMock(), "golem-1"
+            )
         assert resp.status_code == 404
 
     async def test_dashboard_html(self, handlers):
@@ -1550,7 +1567,7 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
 
     async def test_api_heartbeat_disabled(self, handlers):
         """When heartbeat is None, returns disabled stub."""
-        resp = await handlers["/api/heartbeat"]()
+        resp = await handlers["/api/heartbeat"](MagicMock())
         assert resp["enabled"] is False
         assert resp["state"] == "disabled"
         assert resp["daily_spend_usd"] == 0.0
@@ -1588,7 +1605,8 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             ):
                 mount_dashboard(app, heartbeat=mock_hb)
 
-        resp = await routes["/api/heartbeat"]()
+        with patch("golem.core.dashboard._require_api_key"):
+            resp = await routes["/api/heartbeat"](MagicMock())
         assert resp["enabled"] is True
         assert resp["state"] == "idle"
         mock_hb.snapshot.assert_called_once()
@@ -1613,7 +1631,8 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             ):
                 mount_dashboard(app, heartbeat=None)
 
-        resp = await routes["/api/heartbeat/trigger"]()
+        with patch("golem.core.dashboard._require_api_key"):
+            resp = await routes["/api/heartbeat/trigger"](MagicMock())
         assert resp["ok"] is False
 
     async def test_api_heartbeat_trigger_enabled(self):
@@ -1639,7 +1658,8 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             ):
                 mount_dashboard(app, heartbeat=mock_hb)
 
-        resp = await routes["/api/heartbeat/trigger"]()
+        with patch("golem.core.dashboard._require_api_key"):
+            resp = await routes["/api/heartbeat/trigger"](MagicMock())
         assert resp["ok"] is True
         mock_hb.trigger.assert_called_once()
 
@@ -1694,6 +1714,64 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             "toggleTheme" in body or "setTheme" in body
         ), "Missing theme toggle in shared JS"
 
+    # --- UX-001: Accessibility improvements ---
+
+    def test_html_has_main_landmark(self):
+        """Main content area has role=main for screen reader navigation."""
+        html = Path(__file__).resolve().parent.parent / "core" / "task_dashboard.html"
+        body = html.read_text(encoding="utf-8")
+        assert 'role="main"' in body, "Missing role=main landmark"
+
+    def test_html_nav_has_aria_label(self):
+        """Top navigation has aria-label for screen readers."""
+        html = Path(__file__).resolve().parent.parent / "core" / "task_dashboard.html"
+        body = html.read_text(encoding="utf-8")
+        assert 'aria-label="Main navigation"' in body, "Missing aria-label on nav"
+
+    def test_html_modal_has_dialog_role(self):
+        """Resubmit modal has role=dialog and aria-modal=true."""
+        html = Path(__file__).resolve().parent.parent / "core" / "task_dashboard.html"
+        body = html.read_text(encoding="utf-8")
+        assert 'role="dialog"' in body, "Missing role=dialog on modal"
+        assert 'aria-modal="true"' in body, "Missing aria-modal=true on modal"
+
+    def test_html_modal_has_aria_labelledby(self):
+        """Resubmit modal title is linked via aria-labelledby."""
+        html = Path(__file__).resolve().parent.parent / "core" / "task_dashboard.html"
+        body = html.read_text(encoding="utf-8")
+        assert "aria-labelledby=" in body, "Missing aria-labelledby on modal"
+        assert 'id="resubmit-modal-title"' in body, "Missing modal title id"
+
+    def test_html_theme_button_has_aria_label(self):
+        """Theme toggle button has aria-label describing its action."""
+        html = Path(__file__).resolve().parent.parent / "core" / "task_dashboard.html"
+        body = html.read_text(encoding="utf-8")
+        assert (
+            'aria-label="Toggle light/dark theme"' in body
+        ), "Missing aria-label on theme toggle button"
+
+    def test_css_has_focus_visible_rule(self):
+        """Shared CSS defines a :focus-visible outline for keyboard navigation."""
+        css = Path(__file__).resolve().parent.parent / "core" / "dashboard_shared.css"
+        body = css.read_text(encoding="utf-8")
+        assert ":focus-visible" in body, "Missing :focus-visible focus indicator"
+
+    def test_css_dark_text_muted_meets_wcag_aa(self):
+        """Dark theme --text-muted has sufficient contrast for WCAG AA (≥4.5:1).
+
+        Contrast is computed against --bg-base (#0c0c0e).
+        Previous value #605e56 gave ~3.1:1; updated to #7c7a72 (~4.9:1).
+        """
+        css = Path(__file__).resolve().parent.parent / "core" / "dashboard_shared.css"
+        body = css.read_text(encoding="utf-8")
+        # The updated muted colour must not be the old, too-dark value
+        assert (
+            "--text-muted: #605e56" not in body
+        ), "--text-muted reverted to low-contrast value"
+        assert (
+            "--text-muted: #7c7a72" in body
+        ), "--text-muted not updated to WCAG AA value"
+
     # --- shutdown-guard tests for _safe_to_thread returning None ---
 
     async def test_api_live_shutdown(self):
@@ -1716,23 +1794,24 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
                 mount_dashboard(app, live_state_file=Path("/fake"))
 
         with patch("golem.core.dashboard._safe_to_thread", return_value=None):
-            resp = await routes["/api/live"]()
+            with patch("golem.core.dashboard._require_api_key"):
+                resp = await routes["/api/live"](MagicMock())
         assert json.loads(resp.body) == {}
 
     async def test_api_logs_shutdown(self, handlers):
         with patch("golem.core.dashboard._safe_to_thread", return_value=None):
-            resp = await handlers["/api/logs"](lines=200)
+            resp = await handlers["/api/logs"](MagicMock(), lines=200)
         body = json.loads(resp.body)
         assert body == {"lines": [], "file": "", "total_lines": 0}
 
     async def test_api_analytics_shutdown(self, handlers):
         with patch("golem.core.dashboard._safe_to_thread", return_value=None):
-            resp = await handlers["/api/analytics"]()
+            resp = await handlers["/api/analytics"](MagicMock())
         assert json.loads(resp.body) == {}
 
     async def test_api_analytics_by_prompt_shutdown(self, handlers):
         with patch("golem.core.dashboard._safe_to_thread", return_value=None):
-            resp = await handlers["/api/analytics/by-prompt"]()
+            resp = await handlers["/api/analytics/by-prompt"](MagicMock())
         assert json.loads(resp.body) == {}
 
     async def test_api_trace_shutdown(self, handlers, tmp_path):
@@ -1743,7 +1822,9 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             return_value={"trace": trace_path, "prompt": None, "report": None},
         ):
             with patch("golem.core.dashboard._safe_to_thread", return_value=None):
-                resp = await handlers["/api/trace/{event_id:path}"]("golem-1")
+                resp = await handlers["/api/trace/{event_id:path}"](
+                    MagicMock(), "golem-1"
+                )
         assert json.loads(resp.body) == {}
 
     async def test_api_prompt_shutdown(self, handlers, tmp_path):
@@ -1754,7 +1835,9 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             return_value={"trace": None, "prompt": prompt_path, "report": None},
         ):
             with patch("golem.core.dashboard._safe_to_thread", return_value=None):
-                resp = await handlers["/api/prompt/{event_id:path}"]("golem-1")
+                resp = await handlers["/api/prompt/{event_id:path}"](
+                    MagicMock(), "golem-1"
+                )
         assert json.loads(resp.body) == {}
 
     async def test_api_report_shutdown(self, handlers, tmp_path):
@@ -1765,7 +1848,9 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             return_value={"trace": None, "prompt": None, "report": report_path},
         ):
             with patch("golem.core.dashboard._safe_to_thread", return_value=None):
-                resp = await handlers["/api/report/{event_id:path}"]("golem-1")
+                resp = await handlers["/api/report/{event_id:path}"](
+                    MagicMock(), "golem-1"
+                )
         assert json.loads(resp.body) == {}
 
     async def test_api_trace_terminal_shutdown(self, handlers, tmp_path):
@@ -1776,7 +1861,9 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             return_value={"trace": trace_path, "prompt": None, "report": None},
         ):
             with patch("golem.core.dashboard._safe_to_thread", return_value=None):
-                resp = await handlers["/api/trace-terminal/{event_id:path}"]("golem-1")
+                resp = await handlers["/api/trace-terminal/{event_id:path}"](
+                    MagicMock(), "golem-1"
+                )
         assert json.loads(resp.body) == {}
 
 
@@ -1787,6 +1874,12 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
 
 class TestCostAnalyticsEndpoint:
     """Test the /api/cost-analytics route handler."""
+
+    @pytest.fixture(autouse=True)
+    def _no_api_key_auth(self):
+        """Bypass API key authentication for direct handler call tests."""
+        with patch("golem.core.dashboard._require_api_key"):
+            yield
 
     @pytest.fixture()
     def handlers(self):
@@ -1832,7 +1925,7 @@ class TestCostAnalyticsEndpoint:
                 "golem.core.dashboard.load_sessions",
                 return_value={},
             ):
-                resp = await handlers["/api/cost-analytics"]()
+                resp = await handlers["/api/cost-analytics"](MagicMock())
         body = json.loads(resp.body)
         for key in (
             "cost_over_time",
@@ -1852,13 +1945,13 @@ class TestCostAnalyticsEndpoint:
                 "golem.core.dashboard.load_sessions",
                 return_value={},
             ):
-                resp = await handlers["/api/cost-analytics"]()
+                resp = await handlers["/api/cost-analytics"](MagicMock())
         body = json.loads(resp.body)
         assert isinstance(body, dict)
 
     async def test_shutdown_returns_empty(self, handlers):
         with patch("golem.core.dashboard._safe_to_thread", return_value=None):
-            resp = await handlers["/api/cost-analytics"]()
+            resp = await handlers["/api/cost-analytics"](MagicMock())
         assert json.loads(resp.body) == {}
 
 
@@ -2103,6 +2196,12 @@ class TestReadAndParseTrace:
 class TestApiTraceParsedHTTP:
     """Test the /api/trace-parsed/ route using the handler-capture pattern."""
 
+    @pytest.fixture(autouse=True)
+    def _no_api_key_auth(self):
+        """Bypass API key authentication for direct handler call tests."""
+        with patch("golem.core.dashboard._require_api_key"):
+            yield
+
     @pytest.fixture()
     def handlers(self):
         """Mount dashboard and capture route handlers."""
@@ -2137,7 +2236,9 @@ class TestApiTraceParsedHTTP:
             "golem.core.dashboard._read_and_parse_trace",
             return_value=None,
         ):
-            resp = await handlers["/api/trace-parsed/{event_id:path}"]("golem-999")
+            resp = await handlers["/api/trace-parsed/{event_id:path}"](
+                MagicMock(), "golem-999"
+            )
         assert resp.status_code == 404
         body = json.loads(resp.body)
         assert "error" in body
@@ -2151,7 +2252,7 @@ class TestApiTraceParsedHTTP:
         with patch("golem.core.dashboard.TRACES_DIR", tmp_path / "traces"):
             with patch("golem.core.dashboard.REPORTS_DIR", tmp_path / "reports"):
                 resp = await handlers["/api/trace-parsed/{event_id:path}"](
-                    "golem-42-20260101"
+                    MagicMock(), "golem-42-20260101"
                 )
 
         assert resp.status_code == 200
@@ -2168,7 +2269,7 @@ class TestApiTraceParsedHTTP:
         with patch("golem.core.dashboard.TRACES_DIR", tmp_path / "traces"):
             with patch("golem.core.dashboard.REPORTS_DIR", tmp_path / "reports"):
                 resp = await handlers["/api/trace-parsed/{event_id:path}"](
-                    "golem-42-20260101"
+                    MagicMock(), "golem-42-20260101"
                 )
 
         assert "application/json" in resp.media_type
@@ -2190,7 +2291,7 @@ class TestApiTraceParsedHTTP:
             side_effect=fake_read_and_parse,
         ):
             resp = await handlers["/api/trace-parsed/{event_id:path}"](
-                "golem-42-20260101", since_event=1
+                MagicMock(), "golem-42-20260101", since_event=1
             )
 
         assert resp.status_code == 200

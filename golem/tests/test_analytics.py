@@ -137,6 +137,11 @@ class TestComputeAnalytics:
 
 
 class TestAnalyticsEndpoint:
+    @pytest.fixture(autouse=True)
+    def _bypass_api_key(self):
+        with patch("golem.core.dashboard._require_api_key"):
+            yield
+
     @pytest.fixture()
     def handlers(self):
         from golem.core.dashboard import mount_dashboard
@@ -169,7 +174,7 @@ class TestAnalyticsEndpoint:
                 {"verdict": "PASS", "cost_usd": 5.0, "duration_s": 60},
             ],
         ):
-            resp = await handlers["/api/analytics"]()
+            resp = await handlers["/api/analytics"](MagicMock())
         body = json.loads(resp.body)
         assert body["total_tasks"] == 1
         assert body["pass_rate"] == 1.0
@@ -195,7 +200,7 @@ class TestAnalyticsEndpoint:
                 },
             ],
         ):
-            resp = await handlers["/api/analytics/by-prompt"]()
+            resp = await handlers["/api/analytics/by-prompt"](MagicMock())
         body = json.loads(resp.body)
         assert len(body) == 1
         assert body[0]["prompt_hash"] == "abc123def456"

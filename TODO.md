@@ -22,7 +22,10 @@ See https://github.com/itsmeboris/Golem/issues
 - [x] SEC-002: **Dashboard event_id path traversal** — added `_is_within()` guard on all resolved paths (GH #64, 2026-03-29)
 - [x] SEC-003: **API missing CORS protection** — added CORSMiddleware restricted to localhost/127.0.0.1 origins (GH #65, 2026-03-29)
 - [x] SEC-004: **API missing rate limiting** — added in-memory sliding-window rate limiter (10 req/min) on mutation endpoints (GH #66, 2026-03-29)
-- [ ] SEC-005: **Dashboard API unauthenticated** — all `/api/*` endpoints (traces, analytics, SSE) publicly accessible; no auth middleware (GH #67)
+- [x] SEC-005: **Dashboard API unauthenticated** — added _require_api_key to all dashboard /api/* read endpoints (GH #67, 2026-03-29)
+- [x] SEC-010: **cancel_task missing API key auth** — added _require_api_key check before rate limiter (GH #98, 2026-03-29)
+- [ ] BUG-010: **Supervisor verification pipeline gap** — `_run_overall_validation()` never passes `verification_result` to `run_validation()`; preflight result not stored in session; `_verification_feedback()` uses wrong dict keys (`stdout` vs `black_output`); validation always sees "(no independent verification)" (GH #102)
+- [ ] REL-009: **No graceful shutdown drain** — SIGTERM immediately cancels active tasks via `stop_tick_loop()` without draining; in-progress work aborted, worktrees left inconsistent, no checkpoint saved before cancel (GH #103)
 - [ ] SEC-006: **MCP tool schema validation** — poisoning defense (GH #18)
 - [ ] SEC-007: **Runtime subprocess sandboxing** — OS-level containment (GH #19)
 - [x] BUG-006: **Merge agent blind to verification failures** — added verification_summary parameter to run_merge_agent and callback type (GH #88, 2026-03-29)
@@ -50,12 +53,19 @@ See https://github.com/itsmeboris/Golem/issues
 - [ ] FEAT-002: **A-Mem knowledge graph** — structured knowledge graph for AGENTS.md (GH #14)
 - [ ] FEAT-003: **Dashboard prompt comparison UI** — table/chart for `/api/analytics/by-prompt` data; API exists, frontend missing (GH #82)
 - [ ] FEAT-004: **CLI `logs` command** — no `golem logs` / `golem logs --follow` subcommand; `status --watch` shows counters but not log output (GH #83)
+- [ ] BUG-008: **prompts.py stale docstrings** — says "missing placeholders left as-is" but `_SafeDict` now returns `""`; actively misleading (GH #99)
+- [ ] BUG-009: **verification_summary always empty** — BUG-006 plumbing added but both merge queue call sites pass `""`; feature incomplete (GH #100)
+- [ ] INFRA-008: **verification_timeout not propagated to MergeQueue** — `_verify_merge` still uses default timeout; INFRA-007 incomplete (GH #101)
 - [ ] TEST-002: **Mutation testing** — mutmut integration (GH #17)
 - [x] BUG-007: **Self-update review silently truncates large diffs** — added truncation notice in prompt and logger.warning (GH #91, 2026-03-29)
 - [ ] UX-001: **Dashboard accessibility gaps** — missing ARIA labels, keyboard navigation, `role="dialog"` on modals, focus indicators; `--text-muted` may fail WCAG AA contrast (GH #92)
 - [ ] UX-002: **Dashboard missing pagination and search** — overview renders all sessions without pagination; no search/filter by subject, ID, or state; unusable at scale (GH #93)
 - [x] UX-003: **No confirmation for destructive dashboard actions** — added confirm() dialogs to clear/cancel/trigger buttons (GH #94, 2026-03-29)
 - [ ] TEST-003: **Lint modules lack tests** — all 9 `golem/lint/` modules have no dedicated test files; pre-commit hooks can crash silently or produce false positives (GH #95)
+- [ ] INFRA-009: **Worktree orphans on crash recovery** — daemon restart doesn't clean up stale worktrees from previous crashed runs; orphaned dirs accumulate in `data/agent/worktrees/` (GH #104)
+- [ ] INFRA-010: **Trace/checkpoint data retention** — traces (`data/traces/`, 154M+) and checkpoints grow unbounded; `LoggingConfig.max_bytes`/`backup_count` defined but never wired to a handler; no cleanup policy (GH #105)
+- [ ] INFRA-011: **No startup dependency validation** — daemon starts without checking git/claude in PATH, disk space, port availability; missing tools cause cryptic subprocess errors on first task (GH #106)
+- [ ] BUG-011: **Explicit --config path silently falls back to defaults** — `load_config()` returns empty Config if path doesn't exist; user thinks config is applied when it's not (GH #107)
 
 ### P3 — Low Priority
 
@@ -63,6 +73,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [ ] FEAT-006: **OpenTelemetry tracing** — agent observability (GH #16)
 - [x] UX-004: **Frontend fetch calls lack timeout** — added AbortSignal.timeout (10s GET, 30s POST) to all fetch calls (GH #96, 2026-03-29)
 - [ ] TEST-004: **Multiple source modules lack test files** — 13+ modules (batch_cli, profile, prompts, core/slack, backends/github, notifiers, mcp_tools) have no dedicated tests; error paths unverified (GH #97)
+- [ ] BUG-012: **Env var expansion silently returns empty on missing var** — `os.environ.get(env_var, "")` in config YAML expansion returns empty string for unset vars; required fields (API keys) become empty without warning (GH #108)
 
 ---
 
