@@ -60,7 +60,7 @@ def _apply_rlimit(resource_id: int, soft: int, hard: int) -> None:
     except (ValueError, OSError) as exc:
         # Log but don't fail — some limits may not be settable
         # (e.g., non-root users can't raise limits above hard limits)
-        logger.debug("Could not set all sandbox limits: %s", exc)
+        logger.warning("Could not set sandbox limit %s: %s", resource_id, exc)
 
 
 def get_default_limits() -> SandboxLimits:

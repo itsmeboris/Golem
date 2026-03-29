@@ -69,32 +69,40 @@ class TestApplyRlimit:
             _apply_rlimit(resource.RLIMIT_CPU, 100, 100)
         mock_set.assert_called_once_with(resource.RLIMIT_CPU, (100, 100))
 
-    def test_os_error_logs_debug_does_not_raise(self, caplog):
-        with caplog.at_level(logging.DEBUG, logger="golem.sandbox"):
+    def test_os_error_logs_warning_does_not_raise(self, caplog):
+        with caplog.at_level(logging.WARNING, logger="golem.sandbox"):
             with patch(
                 "golem.sandbox.resource.setrlimit", side_effect=OSError("eperm")
             ):
                 _apply_rlimit(resource.RLIMIT_CPU, 999, 999)
-        assert any(
-            "Could not set all sandbox limits" in r.message for r in caplog.records
-        )
+        warn_records = [
+            r
+            for r in caplog.records
+            if r.levelno == logging.WARNING
+            and "Could not set sandbox limit" in r.message
+        ]
+        assert len(warn_records) == 1
 
-    def test_value_error_logs_debug_does_not_raise(self, caplog):
-        with caplog.at_level(logging.DEBUG, logger="golem.sandbox"):
+    def test_value_error_logs_warning_does_not_raise(self, caplog):
+        with caplog.at_level(logging.WARNING, logger="golem.sandbox"):
             with patch(
                 "golem.sandbox.resource.setrlimit", side_effect=ValueError("bad")
             ):
                 _apply_rlimit(resource.RLIMIT_NOFILE, 1, 1)
-        assert any(
-            "Could not set all sandbox limits" in r.message for r in caplog.records
-        )
+        warn_records = [
+            r
+            for r in caplog.records
+            if r.levelno == logging.WARNING
+            and "Could not set sandbox limit" in r.message
+        ]
+        assert len(warn_records) == 1
 
-    def test_success_emits_no_log(self, caplog):
-        with caplog.at_level(logging.DEBUG, logger="golem.sandbox"):
+    def test_success_emits_no_warning(self, caplog):
+        with caplog.at_level(logging.WARNING, logger="golem.sandbox"):
             with patch("golem.sandbox.resource.setrlimit"):
                 _apply_rlimit(resource.RLIMIT_CPU, 100, 100)
         assert not any(
-            "Could not set all sandbox limits" in r.message for r in caplog.records
+            "Could not set sandbox limit" in r.message for r in caplog.records
         )
 
 
