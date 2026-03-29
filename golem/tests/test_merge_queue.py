@@ -283,6 +283,7 @@ class TestMergeAgentResolvesConflict:
             "",
             ["a.py", "b.py"],
             [],
+            "",
         )
 
 

@@ -84,6 +84,7 @@ def run_merge_agent(  # pylint: disable=too-many-locals
     budget_usd: float = 1.0,
     timeout_seconds: int = 600,
     model: str = "sonnet",
+    verification_summary: str = "",
 ) -> ReconciliationResult:
     """Spawn a single merge agent to resolve conflicts or re-apply lost additions."""
     conflict_files = conflict_files or []
@@ -114,6 +115,9 @@ def run_merge_agent(  # pylint: disable=too-many-locals
     if missing:
         current_files += "\n\n## Missing additions\n\n"
         current_files += _format_missing_summary(missing)
+
+    if verification_summary:
+        current_files += "\n\n## Verification Results\n\n" + verification_summary
 
     prompt = format_prompt(
         "merge_agent.txt",

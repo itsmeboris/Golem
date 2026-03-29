@@ -717,6 +717,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         agent_diff: str,
         conflict_files: list[str],
         missing: list,
+        verification_summary: str = "",
     ) -> ReconciliationResult:
         """Callback for the merge queue — spawns the unified merge agent."""
         return run_merge_agent(
@@ -727,6 +728,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             missing=missing,
             budget_usd=self._task_config.merge_review_budget_usd,
             timeout_seconds=self._task_config.merge_review_timeout,
+            verification_summary=verification_summary,
         )
 
     async def _retry_deferred_merges(self) -> None:

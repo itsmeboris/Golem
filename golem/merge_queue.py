@@ -59,7 +59,9 @@ class MergeResult:
     timestamp: str = ""
 
 
-OnMergeAgent = Callable[[str, int, str, list[str], list], ReconciliationResult] | None
+OnMergeAgent = (
+    Callable[[str, int, str, list[str], list, str], ReconciliationResult] | None
+)
 
 
 class MergeQueue:
@@ -302,6 +304,7 @@ class MergeQueue:
                             outcome.agent_diff,
                             entry.changed_files,
                             [],
+                            "",
                         )
                     except Exception as exc:  # pylint: disable=broad-exception-caught
                         logger.error(
@@ -392,6 +395,7 @@ class MergeQueue:
                             outcome.agent_diff,
                             [m.file for m in outcome.missing_additions],
                             outcome.missing_additions,
+                            "",
                         )
                     except Exception as exc:  # pylint: disable=broad-exception-caught
                         logger.error(

@@ -186,3 +186,40 @@ class TestRunMergeAgent:
             missing=[],
         )
         assert result.resolved is True
+
+    @patch("golem.merge_review.invoke_cli")
+    def test_verification_summary_included_in_prompt(self, mock_cli, tmp_path):
+        """verification_summary is appended to the prompt when non-empty."""
+        (tmp_path / "c.py").write_text("content")
+        mock_cli.return_value = MagicMock(
+            output={"result": {"resolved": False, "explanation": "cannot fix"}}
+        )
+        run_merge_agent(
+            str(tmp_path),
+            123,
+            agent_diff="diff",
+            conflict_files=["c.py"],
+            missing=[],
+            verification_summary="black failed: E501 line too long",
+        )
+        called_prompt = mock_cli.call_args[0][0]
+        assert "Verification Results" in called_prompt
+        assert "black failed: E501 line too long" in called_prompt
+
+    @patch("golem.merge_review.invoke_cli")
+    def test_empty_verification_summary_not_included(self, mock_cli, tmp_path):
+        """An empty verification_summary does not add a section to the prompt."""
+        (tmp_path / "c.py").write_text("content")
+        mock_cli.return_value = MagicMock(
+            output={"result": {"resolved": False, "explanation": "n/a"}}
+        )
+        run_merge_agent(
+            str(tmp_path),
+            123,
+            agent_diff="diff",
+            conflict_files=["c.py"],
+            missing=[],
+            verification_summary="",
+        )
+        called_prompt = mock_cli.call_args[0][0]
+        assert "Verification Results" not in called_prompt
