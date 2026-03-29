@@ -2577,3 +2577,17 @@ class TestRunIntegrationValidation:
         # run_in_executor was used (at least for bisect)
         assert call_log
         assert bisect_calls
+
+
+class TestMergeQueueVerificationTimeout:
+    """GolemFlow passes verification_timeout_seconds from config to MergeQueue."""
+
+    def test_merge_queue_uses_config_verification_timeout(self, monkeypatch, tmp_path):
+        """MergeQueue._verification_timeout is set from GolemFlowConfig."""
+        flow = _make_flow(monkeypatch, tmp_path, verification_timeout_seconds=300)
+        assert flow._merge_queue._verification_timeout == 300
+
+    def test_merge_queue_uses_default_verification_timeout(self, monkeypatch, tmp_path):
+        """MergeQueue._verification_timeout defaults to 120 when not configured."""
+        flow = _make_flow(monkeypatch, tmp_path)
+        assert flow._merge_queue._verification_timeout == 120

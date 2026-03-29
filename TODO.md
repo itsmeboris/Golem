@@ -55,7 +55,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [ ] FEAT-004: **CLI `logs` command** — no `golem logs` / `golem logs --follow` subcommand; `status --watch` shows counters but not log output (GH #83)
 - [x] BUG-008: **prompts.py stale docstrings** — updated to reflect empty-string default behavior (GH #99, 2026-03-29)
 - [x] BUG-009: **verification_summary always empty** — second agent call with formatted verification output on post-merge verify failure (GH #100, 2026-03-29)
-- [ ] INFRA-008: **verification_timeout not propagated to MergeQueue** — `_verify_merge` still uses default timeout; INFRA-007 incomplete (GH #101)
+- [x] INFRA-008: **verification_timeout not propagated to MergeQueue** — _verify_merge now uses configurable timeout via constructor param (GH #101, 2026-03-29)
 - [ ] TEST-002: **Mutation testing** — mutmut integration (GH #17)
 - [x] BUG-007: **Self-update review silently truncates large diffs** — added truncation notice in prompt and logger.warning (GH #91, 2026-03-29)
 - [x] UX-001: **Dashboard accessibility gaps** — added ARIA roles/labels, role=dialog on modal, focus-visible outline, raised --text-muted to WCAG AA (GH #92, 2026-03-29)

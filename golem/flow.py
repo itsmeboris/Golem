@@ -109,6 +109,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         self._merge_queue = MergeQueue(
             on_merge_agent=self._handle_merge_agent,
             on_state_change=self._touch_merge_sentinel,
+            verification_timeout=self._task_config.verification_timeout_seconds,
         )
         self._max_infra_retries = getattr(self._task_config, "max_infra_retries", 2)
         self._batch_monitor = BatchMonitor()
