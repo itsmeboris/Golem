@@ -1083,6 +1083,56 @@ def cmd_detach(args) -> int:
     return 0
 
 
+def cmd_logs(args) -> int:
+    """Handler for the 'logs' subcommand — view daemon log output."""
+    log_dir = args.log_dir or DEFAULT_DAEMON_LOG_DIR
+
+    log_files = sorted(
+        log_dir.glob("*.log"), key=lambda f: f.stat().st_mtime, reverse=True
+    )
+    if not log_files:
+        print("No log files found in %s" % log_dir)
+        return 1
+
+    log_file = log_files[0]
+    lines = args.lines or 50
+
+    if args.follow:
+        try:
+            with open(log_file, "r", encoding="utf-8") as f:
+                f.seek(0, 2)
+                file_size = f.tell()
+                if file_size > 0:
+                    read_size = min(file_size, lines * 200)
+                    f.seek(max(0, file_size - read_size))
+                    tail = f.read()
+                    tail_lines = tail.splitlines()[-lines:]
+                    for line in tail_lines:
+                        print(line)
+
+                print("--- following %s (Ctrl+C to stop) ---" % log_file.name)
+                while True:
+                    line = f.readline()
+                    if line:
+                        print(line, end="")
+                    else:
+                        time.sleep(0.5)
+        except KeyboardInterrupt:
+            print("\n--- stopped following ---")
+            return 0
+    else:
+        try:
+            content = log_file.read_text(encoding="utf-8")
+            lines_list = content.splitlines()
+            for line in lines_list[-lines:]:
+                print(line)
+        except OSError as exc:
+            print("Error reading log file: %s" % exc)
+            return 1
+
+    return 0
+
+
 def _add_run_subparser(sub: argparse._SubParsersAction) -> None:
     run_p = sub.add_parser("run", help="Execute a task via single agent")
     run_p.add_argument(
@@ -1222,6 +1272,28 @@ def _build_parser() -> argparse.ArgumentParser:
     dash_p = sub.add_parser("dashboard", help="Launch standalone dashboard")
     dash_p.add_argument("--port", type=int)
     dash_p.set_defaults(func=cmd_dashboard)
+
+    # logs
+    logs_p = sub.add_parser("logs", help="View daemon log output")
+    logs_p.add_argument(
+        "-n",
+        "--lines",
+        type=int,
+        default=50,
+        help="Number of lines to show (default: 50)",
+    )
+    logs_p.add_argument(
+        "-f",
+        "--follow",
+        action="store_true",
+        help="Follow log output (like tail -f)",
+    )
+    logs_p.add_argument(
+        "--log-dir",
+        type=Path,
+        help="Log directory (default: data/logs/)",
+    )
+    logs_p.set_defaults(func=cmd_logs)
 
     _add_batch_subparser(sub)
 

@@ -21,7 +21,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [x] FEAT-001: **Context budget system** — ContextBudget with token estimation, priority-based section fitting, and configurable budget (GH #13, 2026-03-29)
 - [ ] FEAT-002: **A-Mem knowledge graph** — structured knowledge graph for AGENTS.md (GH #14)
 - [x] FEAT-003: **Dashboard prompt comparison UI** — added Prompts tab with table showing hash, runs, success rate bar, cost, duration (GH #82, 2026-03-29)
-- [ ] FEAT-004: **CLI `logs` command** — no `golem logs` / `golem logs --follow` subcommand; `status --watch` shows counters but not log output (GH #83)
+- [x] FEAT-004: **CLI `logs` command** — golem logs -n 50 --follow with tail and follow modes (GH #83, 2026-03-29)
 - [ ] TEST-002: **Mutation testing** — mutmut integration (GH #17)
 - [x] UX-002: **Dashboard missing pagination and search** — added client-side search, state filter, and 25-per-page pagination (GH #93, 2026-03-29)
 - [x] TEST-003: **Lint modules lack tests** — verified: all 9 modules have dedicated test files (10 test files total) (GH #95, 2026-03-29)

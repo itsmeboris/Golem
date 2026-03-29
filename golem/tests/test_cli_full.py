@@ -26,6 +26,7 @@ from golem.cli import (
     _wait_for_exit,
     cmd_daemon,
     cmd_dashboard,
+    cmd_logs,
     cmd_poll,
     cmd_run,
     cmd_status,
@@ -2046,3 +2047,164 @@ class TestStartDashboardServerAsync:
             await task
         except asyncio.CancelledError:
             pass
+
+
+class TestCmdLogs:
+    """Tests for the 'logs' subcommand."""
+
+    def test_no_log_files_returns_one(self, tmp_path, capsys):
+        """Returns 1 when no log files are found in the directory."""
+        args = MagicMock(log_dir=tmp_path, lines=50, follow=False)
+        result = cmd_logs(args)
+        assert result == 1
+        captured = capsys.readouterr()
+        assert str(tmp_path) in captured.out
+
+    def test_shows_last_n_lines(self, tmp_path, capsys):
+        """Shows the last N lines of the most recent log file."""
+        log_file = tmp_path / "golem.log"
+        log_file.write_text("\n".join(f"line {i}" for i in range(100)))
+        args = MagicMock(log_dir=tmp_path, lines=5, follow=False)
+        result = cmd_logs(args)
+        assert result == 0
+        captured = capsys.readouterr()
+        output_lines = [ln for ln in captured.out.splitlines() if ln]
+        assert len(output_lines) == 5
+        assert output_lines[-1] == "line 99"
+        assert output_lines[0] == "line 95"
+
+    def test_uses_most_recent_log(self, tmp_path, capsys):
+        """When multiple log files exist, uses the most recent by mtime."""
+        old_log = tmp_path / "golem-old.log"
+        old_log.write_text("old log line")
+        new_log = tmp_path / "golem-new.log"
+        new_log.write_text("new log line")
+        # Ensure new_log has a later mtime
+        old_log.touch()
+        import time as _time
+
+        _time.sleep(0.01)
+        new_log.touch()
+
+        args = MagicMock(log_dir=tmp_path, lines=10, follow=False)
+        result = cmd_logs(args)
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "new log line" in captured.out
+        assert "old log line" not in captured.out
+
+    def test_oserror_on_read_returns_one(self, tmp_path, capsys):
+        """Returns 1 and prints an error message when the file can't be read."""
+        log_file = tmp_path / "golem.log"
+        log_file.write_text("some content")
+        args = MagicMock(log_dir=tmp_path, lines=10, follow=False)
+        with patch.object(Path, "read_text", side_effect=OSError("permission denied")):
+            result = cmd_logs(args)
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "Error reading log file" in captured.out
+
+    def test_follow_mode_prints_tail_then_new_lines(self, tmp_path, capsys):
+        """Follow mode prints last N lines then reads new lines until interrupted."""
+        log_file = tmp_path / "golem.log"
+        initial_lines = "\n".join(f"line {i}" for i in range(10))
+        log_file.write_text(initial_lines)
+
+        new_line = "new arriving line\n"
+        read_returns = [new_line, "", KeyboardInterrupt()]
+
+        def fake_readline():
+            val = read_returns.pop(0)
+            if isinstance(val, type) and issubclass(val, BaseException):
+                raise val()
+            if isinstance(val, BaseException):
+                raise val
+            return val
+
+        args = MagicMock(log_dir=tmp_path, lines=3, follow=True)
+        with patch("golem.cli.time") as mock_time:
+            mock_time.sleep = MagicMock()
+            with patch("builtins.open", create=True) as mock_open:
+                mock_file = MagicMock()
+                mock_file.__enter__ = lambda s: mock_file
+                mock_file.__exit__ = MagicMock(return_value=False)
+                mock_file.seek = MagicMock()
+                mock_file.tell = MagicMock(return_value=len(initial_lines))
+                mock_file.read = MagicMock(return_value=initial_lines)
+                mock_file.readline = fake_readline
+                mock_open.return_value = mock_file
+                result = cmd_logs(args)
+
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "new arriving line" in captured.out
+        assert "stopped following" in captured.out
+
+    def test_follow_mode_empty_file(self, tmp_path, capsys):
+        """Follow mode handles empty log file without crashing."""
+        log_file = tmp_path / "golem.log"
+        log_file.write_text("")
+
+        args = MagicMock(log_dir=tmp_path, lines=5, follow=True)
+        with patch("golem.cli.time") as mock_time:
+            # Raise KeyboardInterrupt from sleep to terminate the follow loop
+            mock_time.sleep = MagicMock(side_effect=KeyboardInterrupt())
+            with patch("builtins.open", create=True) as mock_open:
+                mock_file = MagicMock()
+                mock_file.__enter__ = lambda s: mock_file
+                mock_file.__exit__ = MagicMock(return_value=False)
+                mock_file.seek = MagicMock()
+                mock_file.tell = MagicMock(return_value=0)
+                mock_file.read = MagicMock(return_value="")
+                mock_file.readline = MagicMock(return_value="")
+                mock_open.return_value = mock_file
+                result = cmd_logs(args)
+
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "stopped following" in captured.out
+
+    def test_logs_subparser_registered(self):
+        """The 'logs' subcommand is registered in the CLI argument parser."""
+        from golem.cli import _build_parser
+
+        parser = _build_parser()
+        # Parse a minimal 'logs' invocation to confirm the subcommand exists
+        args = parser.parse_args(["logs"])
+        assert args.func is cmd_logs
+        assert args.lines == 50
+        assert args.follow is False
+        assert args.log_dir is None
+
+    @pytest.mark.parametrize(
+        "flag,expected_lines,expected_follow",
+        [
+            (["-n", "20"], 20, False),
+            (["--lines", "100"], 100, False),
+            (["-f"], 50, True),
+            (["--follow"], 50, True),
+            (["-n", "10", "-f"], 10, True),
+        ],
+        ids=["short_n", "long_n", "short_f", "long_f", "combined"],
+    )
+    def test_logs_subparser_arguments(self, flag, expected_lines, expected_follow):
+        """CLI arguments for 'logs' are parsed with correct defaults."""
+        from golem.cli import _build_parser
+
+        parser = _build_parser()
+        args = parser.parse_args(["logs"] + flag)
+        assert args.lines == expected_lines
+        assert args.follow == expected_follow
+
+    def test_logs_uses_default_log_dir_when_none(self):
+        """When log_dir is None, falls back to DEFAULT_DAEMON_LOG_DIR."""
+        from golem.cli import DEFAULT_DAEMON_LOG_DIR
+
+        args = MagicMock(log_dir=None, lines=5, follow=False)
+        with patch.object(
+            type(DEFAULT_DAEMON_LOG_DIR),
+            "glob",
+            return_value=[],
+        ):
+            result = cmd_logs(args)
+        assert result == 1
