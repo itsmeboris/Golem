@@ -4,6 +4,39 @@ All notable changes to Golem will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.1] — 2026-03-29
+
+### Security
+- Sandbox config wired through CLIConfig to `make_sandbox_preexec()` — `sandbox_cpu_seconds`/`sandbox_memory_gb` now flow from config (SEC-007b)
+- Sandbox preexec applied to ~38 subprocess.run calls across all modules — verifier, flow, heartbeat, validation, self-update, worktree manager, committer, ast analysis, git utils, merge review, github backend, init wizard (SEC-007c, SEC-007d)
+- Sandbox `setrlimit()` failure logging upgraded from DEBUG to WARNING with resource ID context (INFRA-018)
+- XSS fix: `esc()` and `_esc()` now escape single quotes (`'` → `&#39;`) and double quotes (`"` → `&quot;`) to prevent injection in inline onclick handlers (SEC-012)
+
+### Added
+- **Toast notifications** — replaced 9 `alert()` calls with styled toast/snackbar; success/error/info variants; auto-dismiss after 4s (UX-006, UX-006b)
+- **Loading states** — CSS loading-spinner and loading-overlay classes; skeleton cards on initial load; spinners on fetch calls with cache guard (UX-007)
+- **Keyboard shortcuts** — Escape (close), ArrowUp/Down (navigate tasks), Ctrl/Cmd+K (focus search), 1-5 (switch tabs) (UX-008)
+- **Mobile-responsive layout** — `@media` queries at 1024px and 600px breakpoints; 44px touch targets; vertical stacking; scrollable tab bars (UX-008)
+- **Copy-to-clipboard** — click-to-copy for task IDs, prompt hashes, commit SHAs, and error text with toast feedback (UX-010)
+- **Deep linking** — hash-based URL routing (#overview, #merge-queue, #prompts, #task/<id>); supports browser back/forward and bookmarks (UX-011)
+- **Data visualizations** — sparkline() for inline SVG trend lines; barChart() for horizontal CSS bar charts; overview stats panel with success rate, cost-by-model, and phase duration charts (UX-009)
+- **Knowledge graph wiring** — `subject` now passed from session to `build_system_prompt()`; query-side punctuation stripping matches index-side (FEAT-002c)
+- **Structured logging installation** — `setup_logging()` installs `TaskContextFilter` on root logger; `json_logging` config option activates `JsonFormatter`; idempotent (FEAT-007b, FEAT-007c)
+- **Prompt evaluation loop** — periodic `_run_prompt_evaluation()` in detection loop; opt-in via `prompt_evaluation_enabled` config (FEAT-005b)
+- **OTel spans** — instrumented orchestrator tick/BUILD/VERIFY/REVIEW and flow detection/session lifecycle; GenAI semantic convention attributes for token accounting (FEAT-006b)
+- **Error handling rule** — `.claude/rules/error-handling.md` with retry, circuit breaker, fallback, and asyncio patterns (INFRA-012)
+- **Security patterns rule** — `.claude/rules/security.md` with path traversal, subprocess, XSS, secret handling, CORS patterns (INFRA-016)
+- **Git workflow rule** — `.claude/rules/git-workflow.md` with branch naming, commit format, FF-only merge, pre-push checks (INFRA-015)
+- **Error recovery skill** — `.claude/skills/error-recovery/` with failure classification, recovery protocol, phase-specific guidance (INFRA-013)
+- **Phase transition criteria** — exit criteria table and transient vs deterministic failure guidance in `orchestrate_task.txt` (INFRA-017)
+- **CLAUDE.md sections** — data models (TaskSession, Milestone, VerificationResult), state persistence table, dependency notes (INFRA-014b)
+
+### Fixed
+- Test quality audit — fixed 3 zero-assertion tests in test_flow; improved shallow assertions in test_heartbeat_worker (TEST-007)
+- `setup_logging()` idempotency — duplicate filter guard; `_tick_human_review` now sets task context (FEAT-007c)
+
+---
+
 ## [0.3.0] — 2026-03-29
 
 ### Security
@@ -16,6 +49,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Path traversal fix in merge_review `_read_file_content` (SEC-008)
 
 ### Added
+- **A-Mem knowledge graph** — `KnowledgeGraph` with keyword/file-ref indexing, relevance-scored queries, and selective pitfall injection into agent context (FEAT-002)
+- **CLI `logs` command** — `golem logs -n 50 --follow` with tail and follow modes, most-recent log file selection by mtime (FEAT-004)
+- **Evaluator-optimizer loop** — `PromptEvaluator` tracks per-prompt pass/fail rates; `PromptOptimizer` detects underperforming prompts and generates optimization suggestions (FEAT-005)
+- **OpenTelemetry tracing** — optional OTel integration with `init_tracing()`, `get_tracer()`, `trace_span()`; NoOp fallback when OTel SDK is absent; `otel_enabled`/`otel_endpoint`/`otel_console_export` config fields (FEAT-006)
+- **Structured logging** — `TaskContextFilter` injects `task_id`/`phase` via contextvars; `JsonFormatter` for machine-parseable logs; `json_logging` config option (FEAT-007)
+- **MCP tool schema validation** — `validate_tool_schema()` checks required fields, name format, description length, input schema, and prompt injection patterns; `validate_and_filter_tools()` in `KeywordToolProvider` (SEC-006)
+- **Subprocess sandboxing** — `SandboxLimits` + `make_sandbox_preexec()` using `resource.setrlimit` for CPU, memory, file size, process count, and open files; wired into `cli_wrapper.py` Popen calls; `sandbox_enabled`/`sandbox_cpu_seconds`/`sandbox_memory_gb` config (SEC-007)
+- **Mutation testing** — mutmut configured in `pyproject.toml`; `make mutation` and `make mutation-report` targets (TEST-002)
+- **Context budget system** — `ContextBudget` with token estimation, priority-based section fitting, and `context_budget_tokens` config field (FEAT-001)
+- **Dashboard prompt comparison** — Prompts tab with per-prompt analytics table showing hash, runs, success rate bar, cost, duration (FEAT-003)
+- **Dashboard empty states** — first-time guidance when no tasks; no-match feedback when filters return nothing (UX-005)
+- **Dashboard pagination and search** — client-side search by ID/subject/state, state dropdown filter, 25-per-page pagination (UX-002)
+- **Error handling rule** — `.claude/rules/error-handling.md` (INFRA-012)
+- **Security patterns rule** — `.claude/rules/security.md` (INFRA-016)
+- **Git workflow rule** — `.claude/rules/git-workflow.md` (INFRA-015)
+- **Error recovery skill** — `.claude/skills/error-recovery/` (INFRA-013)
+- **Phase transition criteria** — exit criteria and transient vs deterministic failure guidance in `orchestrate_task.txt` (INFRA-017)
+- **Expanded CLAUDE.md** — architecture overview, concurrency model, common pitfalls, async patterns, git workflow (INFRA-014)
+- State management and contract lint wired into pre-push hook as non-blocking warnings (INFRA-001, INFRA-002)
 - Graceful shutdown with state save, task drain, and `finally` block awaiting (REL-009, REL-011)
 - Notifier retry logic — 2 retries with 1s backoff on Slack/Teams (REL-001)
 - Subprocess timeouts — `_detect_base_branch` 30s, rsync 120s, GitHub CLI 60s (REL-002, REL-010)

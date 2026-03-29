@@ -477,6 +477,16 @@ tested mutants.
 | `heartbeat_tier1_every_n` | `3` | Force a GH issue after N Tier 2 completions |
 | `self_update_enabled` | `false` | Monitor own repo for upstream changes (see [Self-Update](#self-update--zero-downtime-upgrades)) |
 | `self_update_branch` | `master` | Remote branch to watch for updates |
+| `sandbox_enabled` | `true` | Apply OS-level resource limits (CPU, memory, file size, processes) to all subprocess calls |
+| `sandbox_cpu_seconds` | `3600` | CPU time limit for sandboxed subprocesses (1 hour) |
+| `sandbox_memory_gb` | `4` | Virtual memory limit for sandboxed subprocesses |
+| `context_budget_tokens` | `4000` | Max token budget for system prompt context injection (AGENTS.md, CLAUDE.md, knowledge graph) |
+| `otel_enabled` | `false` | Enable OpenTelemetry tracing (requires `opentelemetry-sdk` installed) |
+| `otel_endpoint` | `""` | OTLP exporter endpoint (e.g. `http://localhost:4317`); empty = console export only |
+| `otel_console_export` | `false` | Also export spans to console (useful for debugging alongside OTLP) |
+| `json_logging` | `false` | Activate JSON log formatter (structured logging with task_id/phase context) |
+| `prompt_evaluation_enabled` | `false` | Enable periodic prompt evaluation in the detection loop |
+| `prompt_evaluation_interval_ticks` | `10` | Run prompt evaluation every N detection ticks |
 | `health.enabled` | `true` | Enable health monitoring with threshold-based alerts |
 | `health.merge_deferred_threshold` | `5` | Alert when deferred merges exceed this count |
 | `daemon.drain_timeout_seconds` | `300` | Grace period for active sessions during SIGHUP reload |

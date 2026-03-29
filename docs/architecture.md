@@ -269,6 +269,13 @@ Additional features:
 - **JSONL trace parsing** — raw agent traces are parsed into structured timelines with phase detection, subagent grouping, and per-tool usage visualization
 - **Polling with cache bypass** — the timeline endpoint accepts `?since_event=N`; when the trace hasn't grown since the last poll the server returns the cached result, avoiding a full re-parse
 - **Dark / light theme** — toggle in the header; preference persists via localStorage
+- **Toast notifications** — styled snackbar (success/error/info) replaces native `alert()`; auto-dismiss after 4s; button loading states during async operations
+- **Loading states** — CSS skeleton cards on initial load, loading spinners on fetch calls with parsed-trace cache guard to avoid redundant spinners
+- **Keyboard shortcuts** — Escape (close detail/modal), Arrow keys (task list navigation), Ctrl/Cmd+K (focus search), 1-5 (switch tabs); suppressed when an input field is focused
+- **Copy-to-clipboard** — click-to-copy for task IDs, prompt hashes, commit SHAs, and error text with toast confirmation (`navigator.clipboard.writeText`)
+- **Deep linking / URL sharing** — hash-based routing (`#overview`, `#merge-queue`, `#prompts`, `#task/<id>`); `hashchange` event listener for browser back/forward; `DOMContentLoaded` handler restores view from bookmarked URLs
+- **Data visualizations** — inline SVG sparklines for success-rate trends; CSS horizontal bar charts for cost-by-model and average phase duration; rendered in the overview stats panel
+- **Mobile-responsive layout** — `@media` queries at 1024px and 600px breakpoints; 44px touch targets; vertical stacking; scrollable tab bars
 
 ---
 

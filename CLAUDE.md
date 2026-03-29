@@ -162,7 +162,7 @@ to decide retry vs commit.
 ## Dependencies
 
 ### Required
-- Python 3.12+
+- Python 3.11+
 - `git` in PATH
 - `claude` CLI (optional but needed for agent execution)
 

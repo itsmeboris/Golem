@@ -44,6 +44,7 @@ pyrightconfig.json
 
 # Testing
 .coverage
+coverage.json
 htmlcov/
 .pytest_cache/
 pytest-of-*/
