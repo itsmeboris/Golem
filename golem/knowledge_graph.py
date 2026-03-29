@@ -205,7 +205,9 @@ class KnowledgeGraph:
             self.build()
 
         files = files or []
-        subject_words = set(subject.lower().split()) - _STOP_WORDS
+        subject_words = {
+            w.strip(".,;:!?()[]{}\"'") for w in subject.lower().split()
+        } - _STOP_WORDS
         subject_ids = {
             tok
             for tok in _IDENTIFIER_PATTERN.findall(subject.lower())

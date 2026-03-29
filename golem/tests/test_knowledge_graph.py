@@ -326,6 +326,29 @@ class TestQuery:
         texts = " ".join(n.text for n in results)
         assert expected_present in texts
 
+    @pytest.mark.parametrize(
+        "subject",
+        [
+            "fix the subprocess. bug!",
+            "subprocess, testing?",
+            '(subprocess) "testing"',
+        ],
+        ids=["trailing_period", "comma_question", "parens_quotes"],
+    )
+    def test_query_strips_punctuation_from_subject(self, tmp_path, subject):
+        """query() strips punctuation from subject words so they match index."""
+        from golem.knowledge_graph import KnowledgeGraph
+
+        store = _make_store(tmp_path)
+        _add_instinct(store, "always mock subprocess calls in tests")
+
+        kg = KnowledgeGraph(store)
+        kg.build()
+
+        results = kg.query(subject)
+        assert len(results) > 0
+        assert "subprocess" in results[0].text
+
 
 # ---------------------------------------------------------------------------
 # KnowledgeGraph.query_for_context()
