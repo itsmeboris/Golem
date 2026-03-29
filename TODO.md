@@ -19,7 +19,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [x] INFRA-001: **State management audit rule** — wired into pre-push hook as non-blocking warning (GH #76, 2026-03-29)
 - [x] INFRA-002: **Codebase contract linting** — wired into pre-push hook as non-blocking warning (GH #23, 2026-03-29)
 - [x] FEAT-001: **Context budget system** — ContextBudget with token estimation, priority-based section fitting, and configurable budget (GH #13, 2026-03-29)
-- [ ] FEAT-002: **A-Mem knowledge graph** — structured knowledge graph for AGENTS.md (GH #14)
+- [x] FEAT-002: **A-Mem knowledge graph** — KnowledgeGraph with keyword/file indexing and relevance-scored query (GH #14, 2026-03-29)
 - [x] FEAT-003: **Dashboard prompt comparison UI** — added Prompts tab with table showing hash, runs, success rate bar, cost, duration (GH #82, 2026-03-29)
 - [x] FEAT-004: **CLI `logs` command** — golem logs -n 50 --follow with tail and follow modes (GH #83, 2026-03-29)
 - [ ] TEST-002: **Mutation testing** — mutmut integration (GH #17)
