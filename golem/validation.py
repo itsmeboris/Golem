@@ -23,6 +23,7 @@ from typing import Any
 
 from .types import MilestoneDict
 
+from .sandbox import make_sandbox_preexec
 from .core.cli_wrapper import (
     CLIConfig,
     CLIType,
@@ -66,6 +67,7 @@ def _find_merge_base(work_dir: str) -> str:
             text=True,
             timeout=10,
             check=False,
+            preexec_fn=make_sandbox_preexec(),
         )
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
@@ -84,6 +86,7 @@ def _get_branch_diff(work_dir: str) -> str:
         text=True,
         timeout=10,
         check=False,
+        preexec_fn=make_sandbox_preexec(),
     )
     branch_changes = branch_stat.stdout.strip()
     if not branch_changes:
@@ -95,6 +98,7 @@ def _get_branch_diff(work_dir: str) -> str:
         text=True,
         timeout=10,
         check=False,
+        preexec_fn=make_sandbox_preexec(),
     )
     bdiff = branch_diff.stdout
     log = subprocess.run(
@@ -104,6 +108,7 @@ def _get_branch_diff(work_dir: str) -> str:
         text=True,
         timeout=10,
         check=False,
+        preexec_fn=make_sandbox_preexec(),
     )
     log_text = log.stdout.strip()
     return (
@@ -133,6 +138,7 @@ def get_git_diff(work_dir: str) -> str:
             text=True,
             timeout=10,
             check=False,
+            preexec_fn=make_sandbox_preexec(),
         )
         uncommitted = stat.stdout.strip()
         if uncommitted:
@@ -143,6 +149,7 @@ def get_git_diff(work_dir: str) -> str:
                 text=True,
                 timeout=10,
                 check=False,
+                preexec_fn=make_sandbox_preexec(),
             )
             parts.append(
                 f"### Uncommitted changes\n```\n{uncommitted}\n```"

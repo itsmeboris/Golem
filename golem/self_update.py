@@ -15,6 +15,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from golem.sandbox import make_sandbox_preexec
+
 logger = logging.getLogger(__name__)
 
 _STATE_FILE = "self_update_state.json"
@@ -164,6 +166,7 @@ class SelfUpdateManager:
                 check=True,
                 capture_output=True,
                 text=True,
+                preexec_fn=make_sandbox_preexec(),
             )
             logger.info("Rolled back to %s", sha)
         except subprocess.CalledProcessError as exc:
@@ -178,6 +181,7 @@ class SelfUpdateManager:
                 capture_output=True,
                 text=True,
                 check=True,
+                preexec_fn=make_sandbox_preexec(),
             )
             return result.stdout.strip()
         except subprocess.CalledProcessError as exc:
@@ -192,6 +196,7 @@ class SelfUpdateManager:
                 capture_output=True,
                 text=True,
                 check=True,
+                preexec_fn=make_sandbox_preexec(),
             )
             return result.stdout.strip()
         except subprocess.CalledProcessError as exc:
@@ -205,6 +210,7 @@ class SelfUpdateManager:
                 check=True,
                 capture_output=True,
                 text=True,
+                preexec_fn=make_sandbox_preexec(),
             )
             return True
         except subprocess.CalledProcessError as exc:
@@ -217,6 +223,7 @@ class SelfUpdateManager:
                 ["git", "merge-base", "--is-ancestor", "HEAD", remote_sha],
                 capture_output=True,
                 text=True,
+                preexec_fn=make_sandbox_preexec(),
             )
             return result.returncode == 0
         except subprocess.CalledProcessError as exc:
@@ -230,6 +237,7 @@ class SelfUpdateManager:
                 capture_output=True,
                 text=True,
                 check=True,
+                preexec_fn=make_sandbox_preexec(),
             )
             return result.stdout
         except subprocess.CalledProcessError as exc:
@@ -243,6 +251,7 @@ class SelfUpdateManager:
                 capture_output=True,
                 text=True,
                 check=True,
+                preexec_fn=make_sandbox_preexec(),
             )
             return result.stdout
         except subprocess.CalledProcessError as exc:
@@ -387,6 +396,7 @@ class SelfUpdateManager:
             capture_output=True,
             text=True,
             timeout=300,
+            preexec_fn=make_sandbox_preexec(),
         )
         if result.returncode != 0:
             raise RuntimeError("Claude review failed: %s" % result.stderr)
@@ -403,6 +413,7 @@ class SelfUpdateManager:
                 check=True,
                 capture_output=True,
                 text=True,
+                preexec_fn=make_sandbox_preexec(),
             )
             # Run verification
             from golem.verifier import run_verification
@@ -422,6 +433,7 @@ class SelfUpdateManager:
                     ["git", "worktree", "remove", "--force", worktree_path],
                     capture_output=True,
                     text=True,
+                    preexec_fn=make_sandbox_preexec(),
                 )
             except Exception as exc:
                 logger.debug("Failed to remove verify worktree: %s", exc)
@@ -442,6 +454,7 @@ class SelfUpdateManager:
                     check=True,
                     capture_output=True,
                     text=True,
+                    preexec_fn=make_sandbox_preexec(),
                 )
             else:
                 await asyncio.to_thread(
@@ -450,6 +463,7 @@ class SelfUpdateManager:
                     check=True,
                     capture_output=True,
                     text=True,
+                    preexec_fn=make_sandbox_preexec(),
                 )
             self._last_update_sha = sha
             self._last_update_timestamp = datetime.now(timezone.utc).isoformat()

@@ -2887,3 +2887,60 @@ class TestMergeQueueVerificationTimeout:
         """MergeQueue._verification_timeout defaults to 120 when not configured."""
         flow = _make_flow(monkeypatch, tmp_path)
         assert flow._merge_queue._verification_timeout == 120
+
+
+class TestFlowSandboxPreexec:
+    """Verify subprocess.run calls in flow.py (_bisect_merges) use preexec_fn sandbox."""
+
+    def test_bisect_subprocess_calls_have_preexec_fn(self, monkeypatch, tmp_path):
+        """All subprocess.run calls in _bisect_merges must include preexec_fn."""
+        from unittest.mock import patch
+
+        from golem.verifier import VerificationResult
+
+        flow = _make_flow(monkeypatch, tmp_path)
+
+        passing = VerificationResult(
+            passed=True,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="",
+        )
+        failing = VerificationResult(
+            passed=False,
+            black_ok=False,
+            black_output="error",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="",
+        )
+        verify_calls = [0]
+
+        def fake_verify(_wt_path):
+            result = passing if verify_calls[0] == 0 else failing
+            verify_calls[0] += 1
+            return result
+
+        subprocess_kwargs_list = []
+
+        def fake_run(_cmd, **kwargs):
+            subprocess_kwargs_list.append(kwargs)
+            mock = MagicMock()
+            mock.returncode = 0
+            return mock
+
+        with patch("golem.flow.subprocess.run", side_effect=fake_run):
+            with patch("golem.flow.run_verification", side_effect=fake_verify):
+                flow._bisect_merges(str(tmp_path), ["sha0", "sha1", "sha2"])
+
+        assert subprocess_kwargs_list, "subprocess.run was not called"
+        for kwargs in subprocess_kwargs_list:
+            assert "preexec_fn" in kwargs, (
+                "preexec_fn missing from subprocess.run call in _bisect_merges: %s"
+                % kwargs
+            )
+            assert callable(kwargs["preexec_fn"])

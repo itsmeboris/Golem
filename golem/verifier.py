@@ -16,6 +16,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from golem.sandbox import make_sandbox_preexec
 from golem.types import (
     CoverageDataDict,
     MutationResultDict,
@@ -222,6 +223,7 @@ def _run_cmd(cmd: list[str], cwd: str, timeout: int) -> tuple[bool, str]:
             text=True,
             timeout=timeout,
             check=False,
+            preexec_fn=make_sandbox_preexec(),
         )
         output = (result.stdout + "\n" + result.stderr).strip()
         return result.returncode == 0, output
@@ -337,6 +339,7 @@ def _get_changed_files(work_dir: str) -> list[str]:
             text=True,
             timeout=10,
             check=False,
+            preexec_fn=make_sandbox_preexec(),
         )
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip().splitlines()

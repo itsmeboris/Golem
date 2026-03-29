@@ -1577,3 +1577,67 @@ class TestWorkerTickBudgetExhausted:
             )
             assert candidates == []
             assert tier == 0
+
+
+class TestHeartbeatWorkerSandboxPreexec:
+    """Verify subprocess.run calls in heartbeat_worker use preexec_fn sandbox."""
+
+    @pytest.mark.parametrize(
+        "method,mock_return",
+        [
+            (
+                "_scan_todos",
+                MagicMock(returncode=0, stdout="file.py\n"),
+            ),
+            (
+                "_get_recent_batch_categories",
+                MagicMock(returncode=0, stdout="abc [HEARTBEAT] batch:coverage\n"),
+            ),
+            (
+                "_get_recently_resolved_ids",
+                MagicMock(returncode=0, stdout="fix [HEARTBEAT] [pitfall:abc123]\n"),
+            ),
+        ],
+        ids=["scan_todos", "get_recent_batch_categories", "get_recently_resolved_ids"],
+    )
+    @patch("golem.heartbeat_worker.is_git_repo", return_value=True)
+    @patch("golem.heartbeat_worker.detect_github_remote", return_value="owner/repo")
+    def test_git_scan_calls_have_preexec_fn(
+        self, _mock_remote, _mock_git, tmp_path, method, mock_return
+    ):
+        """Subprocess calls in git scan helpers must include preexec_fn."""
+        w = HeartbeatWorker("/fake/repo", _make_config(), state_dir=tmp_path)
+        with patch("golem.heartbeat_worker.subprocess.run") as mock_run:
+            mock_run.return_value = mock_return
+            getattr(w, method)()
+        assert mock_run.called
+        for call in mock_run.call_args_list:
+            kwargs = call[1]
+            assert (
+                "preexec_fn" in kwargs
+            ), "preexec_fn missing in %s subprocess.run call: %s" % (method, call)
+            assert callable(kwargs["preexec_fn"])
+
+    @patch("golem.heartbeat_worker.is_git_repo", return_value=True)
+    @patch("golem.heartbeat_worker.detect_github_remote", return_value="owner/repo")
+    def test_scan_coverage_subprocess_calls_have_preexec_fn(
+        self, _mock_remote, _mock_git, tmp_path
+    ):
+        """All subprocess.run calls in _scan_coverage must include preexec_fn."""
+        w = HeartbeatWorker("/fake/repo", _make_config(), state_dir=tmp_path)
+        with patch("golem.heartbeat_worker.subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                MagicMock(returncode=0, stdout="abc123\n"),  # git rev-parse
+                MagicMock(  # pytest --cov
+                    returncode=0,
+                    stdout="golem/fresh.py  50  10  80%\n",
+                ),
+            ]
+            w._scan_coverage()
+        assert mock_run.called
+        for call in mock_run.call_args_list:
+            kwargs = call[1]
+            assert "preexec_fn" in kwargs, (
+                "preexec_fn missing from _scan_coverage subprocess.run call: %s" % call
+            )
+            assert callable(kwargs["preexec_fn"])

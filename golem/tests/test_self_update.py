@@ -738,3 +738,128 @@ class TestDisabled:
         config.self_update_enabled = False
         mgr = SelfUpdateManager(config, state_dir=state_dir)
         assert mgr._config.self_update_enabled is False
+
+
+class TestSelfUpdateAsyncSandboxPreexec:
+    """Verify asyncio.to_thread(subprocess.run, ...) calls in self_update use preexec_fn."""
+
+    async def test_verify_in_worktree_create_has_preexec_fn(self, manager):
+        """git worktree add call in _verify_in_worktree must include preexec_fn."""
+        mock_vr = MagicMock(passed=True)
+        with (
+            patch("golem.self_update.subprocess.run") as mock_run,
+            patch("golem.verifier.run_verification", return_value=mock_vr),
+        ):
+            mock_run.return_value = MagicMock(returncode=0)
+            await manager._verify_in_worktree("abc123")
+        for call in mock_run.call_args_list:
+            kwargs = call[1]
+            assert "preexec_fn" in kwargs, (
+                "preexec_fn missing in _verify_in_worktree subprocess call: %s" % call
+            )
+            assert callable(kwargs["preexec_fn"])
+
+    async def test_apply_update_merged_only_has_preexec_fn(self, manager):
+        """git merge --ff-only call in apply_update must include preexec_fn."""
+        manager._verified_sha = "abc123"
+        manager._config.self_update_strategy = "merged_only"
+        with patch("golem.self_update.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            await manager.apply_update()
+        for call in mock_run.call_args_list:
+            kwargs = call[1]
+            assert "preexec_fn" in kwargs, (
+                "preexec_fn missing in apply_update subprocess call: %s" % call
+            )
+            assert callable(kwargs["preexec_fn"])
+
+    async def test_apply_update_any_commit_has_preexec_fn(self, manager):
+        """git reset --hard call in apply_update must include preexec_fn."""
+        manager._verified_sha = "abc123"
+        manager._config.self_update_strategy = "any_commit"
+        with patch("golem.self_update.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            await manager.apply_update()
+        for call in mock_run.call_args_list:
+            kwargs = call[1]
+            assert "preexec_fn" in kwargs, (
+                "preexec_fn missing in apply_update subprocess call: %s" % call
+            )
+            assert callable(kwargs["preexec_fn"])
+
+
+class TestSelfUpdateSandboxPreexec:
+    """Verify subprocess.run calls in self_update use preexec_fn sandbox."""
+
+    @pytest.mark.parametrize(
+        "method,mock_return,call_args",
+        [
+            (
+                "_get_head_sha",
+                MagicMock(stdout="abc123\n", returncode=0),
+                (),
+            ),
+            (
+                "_get_remote_sha",
+                MagicMock(stdout="def456\n", returncode=0),
+                (),
+            ),
+            (
+                "_fetch",
+                MagicMock(returncode=0),
+                (),
+            ),
+            (
+                "_is_fast_forward",
+                MagicMock(returncode=0),
+                ("abc123",),
+            ),
+            (
+                "_get_diff",
+                MagicMock(stdout="diff\n", returncode=0),
+                ("abc123",),
+            ),
+            (
+                "_get_commit_log",
+                MagicMock(stdout="log\n", returncode=0),
+                ("abc123",),
+            ),
+            (
+                "_rollback_to",
+                MagicMock(returncode=0),
+                ("abc123",),
+            ),
+            (
+                "_run_review_agent",
+                MagicMock(returncode=0, stdout="ACCEPT\nok"),
+                ("prompt text",),
+            ),
+        ],
+        ids=[
+            "get_head_sha",
+            "get_remote_sha",
+            "fetch",
+            "is_fast_forward",
+            "get_diff",
+            "get_commit_log",
+            "rollback_to",
+            "run_review_agent",
+        ],
+    )
+    def test_git_method_calls_have_preexec_fn(
+        self, manager, method, mock_return, call_args
+    ):
+        """Direct subprocess.run calls in self_update git methods must include preexec_fn."""
+        with patch("golem.self_update.subprocess.run") as mock_run:
+            mock_run.return_value = mock_return
+            try:
+                getattr(manager, method)(*call_args)
+            except (RuntimeError, Exception):  # pylint: disable=broad-exception-caught
+                pass  # Some methods raise on failure; we just need to check the call
+        assert mock_run.called
+        for call in mock_run.call_args_list:
+            kwargs = call[1]
+            assert (
+                "preexec_fn" in kwargs
+            ), "preexec_fn missing in %s subprocess.run call: %s" % (method, call)
+            assert callable(kwargs["preexec_fn"])

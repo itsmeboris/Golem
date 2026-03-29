@@ -26,6 +26,7 @@ from typing import Any
 
 from .core.config import Config, DATA_DIR, GolemFlowConfig
 from .data_retention import cleanup_old_data
+from .sandbox import make_sandbox_preexec
 from .health import STATUS_UNHEALTHY, HealthMonitor, compute_status
 from .core.live_state import LiveState
 from .core.triggers.base import TriggerEvent
@@ -1189,6 +1190,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                     cwd=work_dir,
                     check=False,
                     capture_output=True,
+                    preexec_fn=make_sandbox_preexec(),
                 )
                 result = run_verification(wt_path)
             except Exception:  # pylint: disable=broad-exception-caught
@@ -1198,6 +1200,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                     cwd=work_dir,
                     check=False,
                     capture_output=True,
+                    preexec_fn=make_sandbox_preexec(),
                 )
                 return None
             else:
@@ -1206,6 +1209,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                     cwd=work_dir,
                     check=False,
                     capture_output=True,
+                    preexec_fn=make_sandbox_preexec(),
                 )
 
             if result.passed:
@@ -1225,6 +1229,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                 cwd=work_dir,
                 check=False,
                 capture_output=True,
+                preexec_fn=make_sandbox_preexec(),
             )
             result = run_verification(wt_path)
         except Exception:  # pylint: disable=broad-exception-caught
@@ -1234,6 +1239,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                 cwd=work_dir,
                 check=False,
                 capture_output=True,
+                preexec_fn=make_sandbox_preexec(),
             )
             return None
         else:
@@ -1242,6 +1248,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                 cwd=work_dir,
                 check=False,
                 capture_output=True,
+                preexec_fn=make_sandbox_preexec(),
             )
         return lo if not result.passed else None
 

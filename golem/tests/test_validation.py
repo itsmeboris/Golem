@@ -1415,3 +1415,33 @@ class TestRunValidationWithDocConcern:
         )
         assert not any("documentation" in c.lower() for c in v.concerns)
         assert v.confidence == pytest.approx(0.90)
+
+
+class TestValidationSandboxPreexec:
+    """Verify subprocess.run calls in validation use preexec_fn sandbox."""
+
+    @pytest.mark.parametrize(
+        "git_func,args",
+        [
+            ("_find_merge_base", ("/tmp/work",)),
+            ("get_git_diff", ("/tmp/work",)),
+        ],
+        ids=["find_merge_base", "get_git_diff"],
+    )
+    @patch("golem.validation.subprocess.run")
+    def test_git_calls_have_preexec_fn(self, mock_run, git_func, args):
+        """All subprocess.run calls in validation git helpers must include preexec_fn."""
+        from golem.validation import _find_merge_base, get_git_diff
+
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=""
+        )
+        func_map = {"_find_merge_base": _find_merge_base, "get_git_diff": get_git_diff}
+        func_map[git_func](*args)
+        assert mock_run.called
+        for call in mock_run.call_args_list:
+            kwargs = call[1]
+            assert (
+                "preexec_fn" in kwargs
+            ), "preexec_fn missing from subprocess.run in %s: %s" % (git_func, call)
+            assert callable(kwargs["preexec_fn"])

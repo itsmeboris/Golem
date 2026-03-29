@@ -22,6 +22,7 @@ from typing import Any
 from .core.cli_wrapper import CLIConfig, CLIError, CLIType, invoke_cli
 from .core.config import DATA_DIR, GolemFlowConfig
 from .git_utils import detect_github_remote, is_git_repo
+from .sandbox import make_sandbox_preexec
 from .types import (
     CoverageCacheDict,
     DedupEntryDict,
@@ -585,6 +586,7 @@ class HeartbeatWorker:
                 timeout=30,
                 check=False,
                 cwd=self.repo_path,
+                preexec_fn=make_sandbox_preexec(),
             )
             if result.returncode != 0:
                 return []
@@ -614,6 +616,7 @@ class HeartbeatWorker:
                 timeout=10,
                 check=False,
                 cwd=self.repo_path,
+                preexec_fn=make_sandbox_preexec(),
             ).stdout.strip()
         except (OSError, subprocess.TimeoutExpired) as exc:
             logger.debug("git rev-parse HEAD failed: %s", exc)
@@ -651,6 +654,7 @@ class HeartbeatWorker:
                     timeout=300,
                     check=False,
                     cwd=self.repo_path,
+                    preexec_fn=make_sandbox_preexec(),
                 )
             except (OSError, subprocess.TimeoutExpired):
                 logger.warning("Tier 2: coverage scan timed out")
@@ -736,6 +740,7 @@ class HeartbeatWorker:
                 timeout=30,
                 check=False,
                 cwd=self.repo_path,
+                preexec_fn=make_sandbox_preexec(),
             )
             if result.returncode != 0:
                 return set()
@@ -775,6 +780,7 @@ class HeartbeatWorker:
                 timeout=30,
                 check=False,
                 cwd=self.repo_path,
+                preexec_fn=make_sandbox_preexec(),
             )
             if result.returncode != 0:
                 return set()
