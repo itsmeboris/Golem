@@ -129,6 +129,55 @@ async with lock:
 
 ---
 
+## Key Data Models
+
+### TaskSession
+Central state object for each tracked task. Persisted in `data/state.json`.
+Key fields: `parent_issue_id`, `state` (DETECTED → RUNNING → COMPLETED/FAILED),
+`budget_usd`, `parent_subject`, `checkpoint_phase`, `human_feedback`.
+Serialized via `to_dict()`/`from_dict()` — add new fields to both.
+
+### Milestone
+Event log entry from `TaskEventTracker`. Fields: `kind` (tool_call, text,
+phase_change), `summary`, `timestamp`, `duration_ms`. Stored in trace files.
+
+### VerificationResult
+Output from `verifier.run_verification()`. Fields: `passed`, `test_count`,
+`test_failures`, `lint_errors`, `coverage_pct`, `error`. Used by orchestrator
+to decide retry vs commit.
+
+## State Persistence
+
+| Data | Location | Format |
+|---|---|---|
+| Session state | `data/state.json` | JSON (two-phase atomic write) |
+| Batch state | `data/batches.json` | JSON (two-phase atomic write) |
+| Checkpoints | `data/checkpoints/` | JSON per session |
+| Traces | `data/traces/golem/` | JSONL per session |
+| Instincts | `.golem/instincts.json` | JSON (InstinctStore) |
+| Repos | `~/.golem/repos.json` | JSON (RepoRegistry) |
+| Daemon logs | `data/logs/` | Rotated text logs |
+| Prompt runs | `data/prompt_runs/` | JSON per run |
+
+## Dependencies
+
+### Required
+- Python 3.12+
+- `git` in PATH
+- `claude` CLI (optional but needed for agent execution)
+
+### Python packages (core)
+- `pyyaml` — config parsing
+- `fastapi` + `uvicorn` — dashboard API
+- `aiofiles` — async file I/O in dashboard
+
+### Python packages (optional)
+- `opentelemetry-api` + `opentelemetry-sdk` — tracing (NoOp fallback if absent)
+- `mutmut` — mutation testing
+- `playwright` — e2e dashboard tests
+
+---
+
 ## Coding Conventions
 
 ### Formatting and lint
