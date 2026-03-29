@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from .core.config import Config, DATA_DIR, GolemFlowConfig
+from .data_retention import cleanup_old_data
 from .health import STATUS_UNHEALTHY, HealthMonitor, compute_status
 from .core.live_state import LiveState
 from .core.triggers.base import TriggerEvent
@@ -40,7 +41,12 @@ from .errors import (
 from .event_tracker import Milestone, TaskEventTracker
 from .merge_queue import MergeEntry, MergeQueue, MergeResult
 from .merge_review import ReconciliationResult, run_merge_agent
-from .worktree_manager import _run_git, cleanup_worktree, fast_forward_if_safe
+from .worktree_manager import (
+    _run_git,
+    cleanup_orphaned_worktrees,
+    cleanup_worktree,
+    fast_forward_if_safe,
+)
 import os
 import tempfile
 
@@ -313,6 +319,23 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         if self._detection_task is not None:
             return self._detection_task
         self._running = True
+        # Clean up orphaned worktrees left by any previous crashed run
+        _wt_base = self._task_config.default_work_dir
+        if _wt_base:
+            try:
+                cleaned = cleanup_orphaned_worktrees(_wt_base)
+                if cleaned:
+                    logger.info(
+                        "Cleaned up %d orphaned worktree(s) on startup", cleaned
+                    )
+            except Exception:  # pylint: disable=broad-exception-caught
+                logger.warning(
+                    "Worktree orphan cleanup failed (non-fatal)", exc_info=True
+                )
+        try:
+            cleanup_old_data(str(DATA_DIR.parent))
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.warning("Data retention cleanup failed (non-fatal)", exc_info=True)
         self._spawn_existing_sessions()
         self._detection_task = asyncio.create_task(self._detection_loop())
         if self._heartbeat is not None:
@@ -361,6 +384,62 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         killed = kill_all_active()
         if killed:
             logger.info("Killed %d orphaned CLI subprocess(es)", killed)
+
+    async def graceful_stop(self, timeout: float = 30.0) -> None:
+        """Stop detection loop, save checkpoints, drain active tasks.
+
+        Phases:
+        1. Stop detection (no new tasks are started).
+        2. Save state for all active sessions.
+        3. Wait up to *timeout* seconds for active session tasks to finish.
+        4. Cancel any tasks that did not finish within the timeout.
+        5. Kill lingering CLI subprocesses and perform a final state save.
+        """
+        logger.info("Graceful shutdown initiated (timeout=%.0fs)", timeout)
+
+        # Phase 1: stop detection (no new tasks)
+        self._running = False
+        if self._detection_task is not None:
+            self._detection_task.cancel()
+            self._detection_task = None
+
+        if self._heartbeat is not None:
+            self._heartbeat.stop()
+        if self._self_update is not None:
+            self._self_update.stop()
+
+        # Phase 2: save state for all active sessions
+        self._save_state()
+
+        # Phase 3: wait for active session tasks (with timeout)
+        active_tasks = list(self._session_tasks.values())
+        if active_tasks:
+            logger.info(
+                "Waiting up to %.0fs for %d active session(s) to complete",
+                timeout,
+                len(active_tasks),
+            )
+            _done, pending = await asyncio.wait(active_tasks, timeout=timeout)
+            if pending:
+                logger.warning(
+                    "Shutdown timeout: cancelling %d remaining session(s)",
+                    len(pending),
+                )
+                for task in pending:
+                    task.cancel()
+
+        self._session_tasks.clear()
+
+        # Phase 4: kill CLI subprocesses
+        from .core.cli_wrapper import kill_all_active
+
+        killed = kill_all_active()
+        if killed:
+            logger.info("Killed %d CLI subprocess(es) during shutdown", killed)
+
+        # Phase 5: final state save
+        self._save_state()
+        logger.info("Graceful shutdown complete")
 
     # -- Detection loop (runs independently of session execution) -----------
 
