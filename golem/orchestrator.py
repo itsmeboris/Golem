@@ -762,6 +762,9 @@ class TaskOrchestrator:
             mcp_servers=mcp_servers,
             cwd=work_dir,
             system_prompt=system_prompt,
+            sandbox_enabled=self.task_config.sandbox_enabled,
+            sandbox_cpu_seconds=self.task_config.sandbox_cpu_seconds,
+            sandbox_memory_gb=self.task_config.sandbox_memory_gb,
         )
         callback = self._chain_event_callback(_streaming_callback)
         try:
@@ -799,6 +802,9 @@ class TaskOrchestrator:
             budget_usd=self.task_config.validation_budget_usd,
             timeout_seconds=self.task_config.validation_timeout_seconds,
             callback=callback,
+            sandbox_enabled=self.task_config.sandbox_enabled,
+            sandbox_cpu_seconds=self.task_config.sandbox_cpu_seconds,
+            sandbox_memory_gb=self.task_config.sandbox_memory_gb,
         )
         self._apply_verdict(verdict)
 
@@ -1082,6 +1088,9 @@ class TaskOrchestrator:
             timeout_seconds=self.task_config.task_timeout_seconds,
             mcp_servers=mcp_servers,
             cwd=work_dir,
+            sandbox_enabled=self.task_config.sandbox_enabled,
+            sandbox_cpu_seconds=self.task_config.sandbox_cpu_seconds,
+            sandbox_memory_gb=self.task_config.sandbox_memory_gb,
         )
 
         retry_start = time.time()
@@ -1131,6 +1140,9 @@ class TaskOrchestrator:
             budget_usd=self.task_config.validation_budget_usd,
             timeout_seconds=self.task_config.validation_timeout_seconds,
             callback=retry_val_callback,
+            sandbox_enabled=self.task_config.sandbox_enabled,
+            sandbox_cpu_seconds=self.task_config.sandbox_cpu_seconds,
+            sandbox_memory_gb=self.task_config.sandbox_memory_gb,
         )
         self._apply_verdict(retry_verdict)
 

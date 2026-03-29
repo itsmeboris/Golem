@@ -367,11 +367,23 @@ class SubagentSupervisor:
         """Phases 0-3: clarity gate, build prompt, invoke CLI, parse report."""
         # Phase 0: clarity gate (opt-in)
         if self.task_config.clarity_check:
-            from .clarity import check_clarity
+            from functools import partial  # pylint: disable=import-outside-toplevel
+
+            from .clarity import (
+                check_clarity,
+            )  # pylint: disable=import-outside-toplevel
 
             loop = asyncio.get_running_loop()
             cr = await loop.run_in_executor(
-                None, check_clarity, self.session.parent_subject, description
+                None,
+                partial(
+                    check_clarity,
+                    self.session.parent_subject,
+                    description,
+                    sandbox_enabled=self.task_config.sandbox_enabled,
+                    sandbox_cpu_seconds=self.task_config.sandbox_cpu_seconds,
+                    sandbox_memory_gb=self.task_config.sandbox_memory_gb,
+                ),
             )
             self.session.total_cost_usd += cr.cost_usd
             if not cr.is_clear(self.task_config.clarity_threshold):
@@ -595,6 +607,9 @@ class SubagentSupervisor:
             mcp_servers=mcp_servers,
             cwd=work_dir,
             system_prompt=system_prompt,
+            sandbox_enabled=self.task_config.sandbox_enabled,
+            sandbox_cpu_seconds=self.task_config.sandbox_cpu_seconds,
+            sandbox_memory_gb=self.task_config.sandbox_memory_gb,
         )
 
         tracker = TaskEventTracker(
@@ -694,6 +709,9 @@ class SubagentSupervisor:
                 budget_usd=self.task_config.validation_budget_usd,
                 timeout_seconds=self.task_config.validation_timeout_seconds,
                 ast_analysis=self.task_config.ast_analysis,
+                sandbox_enabled=self.task_config.sandbox_enabled,
+                sandbox_cpu_seconds=self.task_config.sandbox_cpu_seconds,
+                sandbox_memory_gb=self.task_config.sandbox_memory_gb,
             ),
         )
         self.session.validation_verdict = verdict.verdict
@@ -766,6 +784,9 @@ class SubagentSupervisor:
                 mcp_servers=self._get_mcp_servers(self.session.parent_subject),
                 cwd=work_dir,
                 resume_session_id=resume_id,
+                sandbox_enabled=self.task_config.sandbox_enabled,
+                sandbox_cpu_seconds=self.task_config.sandbox_cpu_seconds,
+                sandbox_memory_gb=self.task_config.sandbox_memory_gb,
             )
 
             tracker = TaskEventTracker(
@@ -918,6 +939,9 @@ class SubagentSupervisor:
             mcp_servers=self._get_mcp_servers(self.session.parent_subject),
             cwd=work_dir,
             resume_session_id=resume_id,
+            sandbox_enabled=self.task_config.sandbox_enabled,
+            sandbox_cpu_seconds=self.task_config.sandbox_cpu_seconds,
+            sandbox_memory_gb=self.task_config.sandbox_memory_gb,
         )
 
         tracker = TaskEventTracker(
@@ -1050,6 +1074,9 @@ class SubagentSupervisor:
                 timeout_seconds=self.task_config.orchestrate_timeout_seconds,
                 mcp_servers=self._get_mcp_servers(self.session.parent_subject),
                 cwd=cand_work_dir,
+                sandbox_enabled=self.task_config.sandbox_enabled,
+                sandbox_cpu_seconds=self.task_config.sandbox_cpu_seconds,
+                sandbox_memory_gb=self.task_config.sandbox_memory_gb,
             )
             _write_prompt("golem", "golem-%s-ensemble%d" % (issue_id, idx), prompt)
             loop = asyncio.get_running_loop()
@@ -1087,6 +1114,9 @@ class SubagentSupervisor:
                         budget_usd=self.task_config.validation_budget_usd,
                         timeout_seconds=self.task_config.validation_timeout_seconds,
                         ast_analysis=self.task_config.ast_analysis,
+                        sandbox_enabled=self.task_config.sandbox_enabled,
+                        sandbox_cpu_seconds=self.task_config.sandbox_cpu_seconds,
+                        sandbox_memory_gb=self.task_config.sandbox_memory_gb,
                     ),
                 )
                 self.session.total_cost_usd += val_verdict.cost_usd

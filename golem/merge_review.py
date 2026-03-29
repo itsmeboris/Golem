@@ -85,6 +85,9 @@ def run_merge_agent(  # pylint: disable=too-many-locals
     timeout_seconds: int = 600,
     model: str = "sonnet",
     verification_summary: str = "",
+    sandbox_enabled: bool = True,
+    sandbox_cpu_seconds: int = 3600,
+    sandbox_memory_gb: int = 4,
 ) -> ReconciliationResult:
     """Spawn a single merge agent to resolve conflicts or re-apply lost additions."""
     conflict_files = conflict_files or []
@@ -134,6 +137,9 @@ def run_merge_agent(  # pylint: disable=too-many-locals
         timeout_seconds=timeout_seconds,
         mcp_servers=[],
         cwd=work_dir,
+        sandbox_enabled=sandbox_enabled,
+        sandbox_cpu_seconds=sandbox_cpu_seconds,
+        sandbox_memory_gb=sandbox_memory_gb,
     )
 
     try:

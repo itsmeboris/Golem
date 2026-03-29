@@ -405,6 +405,9 @@ class HeartbeatWorker:
             model=self.HAIKU_MODEL,
             timeout_seconds=120,
             system_prompt="Respond with raw JSON only. No markdown, no explanation.",
+            sandbox_enabled=self._config.sandbox_enabled,
+            sandbox_cpu_seconds=self._config.sandbox_cpu_seconds,
+            sandbox_memory_gb=self._config.sandbox_memory_gb,
         )
 
         def _sync_call():

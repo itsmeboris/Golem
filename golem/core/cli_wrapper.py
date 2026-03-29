@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
-from golem.sandbox import make_sandbox_preexec
+from golem.sandbox import SandboxLimits, make_sandbox_preexec
 
 from .stream_printer import StreamPrinter as _StreamPrinter
 
@@ -114,6 +114,8 @@ class CLIConfig:
     cwd: str = ""  # Override working directory (empty = project root for Claude)
     resume_session_id: str = ""  # --resume <session_id> for warm retries
     sandbox_enabled: bool = True  # Apply OS-level resource limits via preexec_fn
+    sandbox_cpu_seconds: int = 3600  # CPU time limit passed to SandboxLimits
+    sandbox_memory_gb: int = 4  # Memory limit (GB) passed to SandboxLimits
 
 
 @dataclass
@@ -138,6 +140,23 @@ class CLIError(Exception):
         super().__init__(message)
         self.returncode = returncode
         self.stderr = stderr
+
+
+def _sandbox_preexec(config: CLIConfig):
+    """Return a preexec_fn from config sandbox settings, or None if disabled.
+
+    Constructs a SandboxLimits from the config's sandbox_cpu_seconds and
+    sandbox_memory_gb fields so that GolemFlowConfig values flow through
+    to the OS resource limits applied to child processes.
+    """
+    if not config.sandbox_enabled:
+        return None
+    return make_sandbox_preexec(
+        SandboxLimits(
+            cpu_seconds=config.sandbox_cpu_seconds,
+            memory_bytes=config.sandbox_memory_gb * 1024**3,
+        )
+    )
 
 
 class _ScopedHome:
@@ -707,7 +726,7 @@ def _invoke_cli_quiet(prompt: str, config: CLIConfig) -> CLIResult:
             text=True,
             env=env,
             cwd=sandbox,
-            preexec_fn=make_sandbox_preexec() if config.sandbox_enabled else None,
+            preexec_fn=_sandbox_preexec(config),
         )
         _track_proc(proc)
         stdout, stderr = proc.communicate(input=prompt, timeout=config.timeout_seconds)
@@ -777,7 +796,7 @@ def _invoke_cli_verbose(prompt: str, config: CLIConfig) -> CLIResult:
             bufsize=1,
             env=env,
             cwd=sandbox,
-            preexec_fn=make_sandbox_preexec() if config.sandbox_enabled else None,
+            preexec_fn=_sandbox_preexec(config),
         ) as proc:
             _track_proc(proc)
             try:
@@ -855,7 +874,7 @@ def invoke_cli_raw(prompt: str, config: CLIConfig) -> str:
             stderr=subprocess.PIPE,
             text=True,
             cwd=cwd,
-            preexec_fn=make_sandbox_preexec() if config.sandbox_enabled else None,
+            preexec_fn=_sandbox_preexec(config),
         )
         _track_proc(proc)
         stdout, stderr = proc.communicate(input=prompt, timeout=config.timeout_seconds)
@@ -912,7 +931,7 @@ def invoke_cli_streaming(
             text=True,
             bufsize=1,
             cwd=cwd,
-            preexec_fn=make_sandbox_preexec() if config.sandbox_enabled else None,
+            preexec_fn=_sandbox_preexec(config),
         ) as proc:
             _track_proc(proc)
             try:
@@ -996,7 +1015,7 @@ def invoke_cli_monitored(
             bufsize=1,
             env=env,
             cwd=cwd,
-            preexec_fn=make_sandbox_preexec() if config.sandbox_enabled else None,
+            preexec_fn=_sandbox_preexec(config),
         ) as proc:
             _track_proc(proc)
             try:

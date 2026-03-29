@@ -52,6 +52,9 @@ def check_clarity(
     model: str = "haiku",
     budget_usd: float = 0.05,
     timeout_seconds: int = 30,
+    sandbox_enabled: bool = True,
+    sandbox_cpu_seconds: int = 3600,
+    sandbox_memory_gb: int = 4,
 ) -> ClarityResult:
     """Score task clarity using a cheap LLM call. Fail-open on errors."""
     prompt = _CLARITY_PROMPT.format(
@@ -64,6 +67,9 @@ def check_clarity(
         max_budget_usd=budget_usd,
         timeout_seconds=timeout_seconds,
         mcp_servers=[],
+        sandbox_enabled=sandbox_enabled,
+        sandbox_cpu_seconds=sandbox_cpu_seconds,
+        sandbox_memory_gb=sandbox_memory_gb,
     )
 
     try:

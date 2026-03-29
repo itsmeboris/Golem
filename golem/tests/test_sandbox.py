@@ -4,10 +4,11 @@
 
 import logging
 import resource
-from unittest.mock import call, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+from golem.core.cli_wrapper import CLIConfig, _sandbox_preexec
 from golem.sandbox import (
     SandboxLimits,
     _apply_rlimit,
@@ -182,3 +183,137 @@ class TestMakeSandboxPreexec:
         fn1 = make_sandbox_preexec()
         fn2 = make_sandbox_preexec()
         assert fn1 is not fn2
+
+
+class TestCLIConfigSandboxFields:
+    """CLIConfig exposes sandbox_cpu_seconds and sandbox_memory_gb fields."""
+
+    def test_default_sandbox_cpu_seconds(self):
+        cfg = CLIConfig()
+        assert cfg.sandbox_cpu_seconds == 3600
+
+    def test_default_sandbox_memory_gb(self):
+        cfg = CLIConfig()
+        assert cfg.sandbox_memory_gb == 4
+
+    def test_custom_sandbox_cpu_seconds(self):
+        cfg = CLIConfig(sandbox_cpu_seconds=7200)
+        assert cfg.sandbox_cpu_seconds == 7200
+
+    def test_custom_sandbox_memory_gb(self):
+        cfg = CLIConfig(sandbox_memory_gb=8)
+        assert cfg.sandbox_memory_gb == 8
+
+    def test_sandbox_enabled_default_true(self):
+        cfg = CLIConfig()
+        assert cfg.sandbox_enabled is True
+
+
+class TestSandboxPreexecHelper:
+    """_sandbox_preexec returns None when disabled, callable when enabled."""
+
+    def test_returns_none_when_sandbox_disabled(self):
+        cfg = CLIConfig(sandbox_enabled=False)
+        assert _sandbox_preexec(cfg) is None
+
+    def test_returns_callable_when_sandbox_enabled(self):
+        cfg = CLIConfig(sandbox_enabled=True)
+        result = _sandbox_preexec(cfg)
+        assert callable(result)
+
+    def test_config_values_flow_to_sandbox_limits(self):
+        """Custom cpu_seconds and memory_gb are forwarded to SandboxLimits."""
+        cfg = CLIConfig(sandbox_cpu_seconds=7200, sandbox_memory_gb=8)
+        with patch("golem.core.cli_wrapper.make_sandbox_preexec") as mock_make:
+            mock_make.return_value = lambda: None
+            _sandbox_preexec(cfg)
+        mock_make.assert_called_once()
+        limits_arg = mock_make.call_args[0][0]
+        assert isinstance(limits_arg, SandboxLimits)
+        assert limits_arg.cpu_seconds == 7200
+        assert limits_arg.memory_bytes == 8 * 1024**3
+
+    def test_default_config_uses_default_limits(self):
+        """Default CLIConfig values produce limits matching GolemFlowConfig defaults."""
+        cfg = CLIConfig()  # sandbox_cpu_seconds=3600, sandbox_memory_gb=4
+        with patch("golem.core.cli_wrapper.make_sandbox_preexec") as mock_make:
+            mock_make.return_value = lambda: None
+            _sandbox_preexec(cfg)
+        limits_arg = mock_make.call_args[0][0]
+        assert limits_arg.cpu_seconds == 3600
+        assert limits_arg.memory_bytes == 4 * 1024**3
+
+
+class TestSandboxPreexecIntegration:
+    """invoke_cli passes the correct preexec_fn to subprocess.Popen."""
+
+    def test_invoke_cli_quiet_uses_sandbox_limits(self):
+        """_invoke_cli_quiet passes SandboxLimits-configured preexec_fn to Popen."""
+        cfg = CLIConfig(
+            sandbox_enabled=True,
+            sandbox_cpu_seconds=7200,
+            sandbox_memory_gb=8,
+        )
+        mock_proc = MagicMock()
+        mock_proc.__enter__ = MagicMock(return_value=mock_proc)
+        mock_proc.__exit__ = MagicMock(return_value=False)
+        mock_proc.returncode = 0
+        mock_proc.communicate.return_value = (
+            '{"type":"result","result":"ok","cost_usd":0,"duration_ms":1,'
+            '"input_tokens":0,"output_tokens":0}\n',
+            "",
+        )
+
+        captured_preexec = []
+
+        def fake_popen(_cmd, **kwargs):
+            captured_preexec.append(kwargs.get("preexec_fn"))
+            mock_proc.pid = 12345
+            return mock_proc
+
+        with patch("golem.core.cli_wrapper.subprocess.Popen", side_effect=fake_popen):
+            with patch(
+                "golem.core.cli_wrapper._get_subprocess_env",
+                return_value=(None, "/tmp/sandbox", lambda: None),
+            ):
+                with patch(
+                    "golem.core.cli_wrapper._build_command", return_value=["echo"]
+                ):
+                    from golem.core.cli_wrapper import _invoke_cli_quiet
+
+                    _invoke_cli_quiet("prompt", cfg)
+
+        assert len(captured_preexec) == 1
+        assert callable(captured_preexec[0])
+
+    def test_invoke_cli_quiet_no_preexec_when_disabled(self):
+        """_invoke_cli_quiet passes None preexec_fn when sandbox_enabled=False."""
+        cfg = CLIConfig(sandbox_enabled=False)
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.communicate.return_value = (
+            '{"type":"result","result":"ok","cost_usd":0,"duration_ms":1,'
+            '"input_tokens":0,"output_tokens":0}\n',
+            "",
+        )
+        captured_preexec = []
+
+        def fake_popen(_cmd, **kwargs):
+            captured_preexec.append(kwargs.get("preexec_fn"))
+            mock_proc.pid = 12346
+            return mock_proc
+
+        with patch("golem.core.cli_wrapper.subprocess.Popen", side_effect=fake_popen):
+            with patch(
+                "golem.core.cli_wrapper._get_subprocess_env",
+                return_value=(None, "/tmp/sandbox", lambda: None),
+            ):
+                with patch(
+                    "golem.core.cli_wrapper._build_command", return_value=["echo"]
+                ):
+                    from golem.core.cli_wrapper import _invoke_cli_quiet
+
+                    _invoke_cli_quiet("prompt", cfg)
+
+        assert len(captured_preexec) == 1
+        assert captured_preexec[0] is None

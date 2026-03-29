@@ -814,6 +814,9 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             budget_usd=self._task_config.merge_review_budget_usd,
             timeout_seconds=self._task_config.merge_review_timeout,
             verification_summary=verification_summary,
+            sandbox_enabled=self._task_config.sandbox_enabled,
+            sandbox_cpu_seconds=self._task_config.sandbox_cpu_seconds,
+            sandbox_memory_gb=self._task_config.sandbox_memory_gb,
         )
 
     async def _retry_deferred_merges(self) -> None:
@@ -1279,6 +1282,9 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                 model=self._task_config.validation_model,
                 budget_usd=self._task_config.validation_budget_usd,
                 timeout_seconds=self._task_config.validation_timeout_seconds,
+                sandbox_enabled=self._task_config.sandbox_enabled,
+                sandbox_cpu_seconds=self._task_config.sandbox_cpu_seconds,
+                sandbox_memory_gb=self._task_config.sandbox_memory_gb,
             ),
         )
 

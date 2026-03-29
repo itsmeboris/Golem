@@ -627,6 +627,9 @@ def run_validation(  # pylint: disable=too-many-locals
     callback: ProgressCallback | None = None,
     verification_result: Any = None,
     ast_analysis: bool = True,
+    sandbox_enabled: bool = True,
+    sandbox_cpu_seconds: int = 3600,
+    sandbox_memory_gb: int = 4,
 ) -> ValidationVerdict:
     """Run the validation agent and return a structured verdict.
 
@@ -672,6 +675,9 @@ def run_validation(  # pylint: disable=too-many-locals
         timeout_seconds=timeout_seconds,
         mcp_servers=[],
         cwd=work_dir,
+        sandbox_enabled=sandbox_enabled,
+        sandbox_cpu_seconds=sandbox_cpu_seconds,
+        sandbox_memory_gb=sandbox_memory_gb,
     )
 
     verdict = _invoke_with_retry(prompt, cli_config, callback)
