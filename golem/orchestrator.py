@@ -694,7 +694,10 @@ class TaskOrchestrator:
         # Pre-flight verification: ensure base branch is healthy
         if getattr(self.task_config, "preflight_verify", True):
             self._slog.info("Running pre-flight verification on base branch...")
-            vr = run_verification(work_dir, timeout=120)
+            vr = run_verification(
+                work_dir,
+                timeout=getattr(self.task_config, "verification_timeout_seconds", 120),
+            )
             if not vr.passed:
                 failures = []
                 if not vr.black_ok:

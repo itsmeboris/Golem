@@ -5,6 +5,52 @@ from unittest.mock import MagicMock, patch
 from golem.core.config import GolemFlowConfig
 
 
+class TestVerificationTimeoutConfig:
+    def test_default_verification_timeout(self):
+        """GolemFlowConfig.verification_timeout_seconds defaults to 120."""
+        cfg = GolemFlowConfig()
+        assert cfg.verification_timeout_seconds == 120
+
+    def test_custom_verification_timeout(self):
+        """GolemFlowConfig.verification_timeout_seconds can be set."""
+        cfg = GolemFlowConfig(verification_timeout_seconds=300)
+        assert cfg.verification_timeout_seconds == 300
+
+    def test_orchestrator_uses_config_timeout(self):
+        """_preflight_check passes verification_timeout_seconds to run_verification."""
+        from golem.orchestrator import TaskOrchestrator, TaskSession
+
+        session = TaskSession(parent_issue_id=99)
+        cfg = GolemFlowConfig(preflight_verify=True, verification_timeout_seconds=300)
+        orch = TaskOrchestrator(session, MagicMock(), cfg, profile=MagicMock())
+
+        mock_result = MagicMock(passed=True, duration_s=1.0)
+        with patch(
+            "golem.orchestrator.run_verification", return_value=mock_result
+        ) as mock_rv:
+            with patch("pathlib.Path.is_dir", return_value=True):
+                with patch("pathlib.Path.exists", return_value=True):
+                    orch._preflight_check("/tmp/fake")
+        mock_rv.assert_called_once_with("/tmp/fake", timeout=300)
+
+    def test_orchestrator_default_timeout_is_120(self):
+        """_preflight_check uses 120 when verification_timeout_seconds is not set."""
+        from golem.orchestrator import TaskOrchestrator, TaskSession
+
+        session = TaskSession(parent_issue_id=99)
+        cfg = GolemFlowConfig(preflight_verify=True)
+        orch = TaskOrchestrator(session, MagicMock(), cfg, profile=MagicMock())
+
+        mock_result = MagicMock(passed=True, duration_s=1.0)
+        with patch(
+            "golem.orchestrator.run_verification", return_value=mock_result
+        ) as mock_rv:
+            with patch("pathlib.Path.is_dir", return_value=True):
+                with patch("pathlib.Path.exists", return_value=True):
+                    orch._preflight_check("/tmp/fake")
+        mock_rv.assert_called_once_with("/tmp/fake", timeout=120)
+
+
 class TestPreflightVerification:
     def test_preflight_enabled_by_default(self):
         """GolemFlowConfig.preflight_verify defaults to True."""

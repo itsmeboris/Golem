@@ -156,6 +156,28 @@ class TestFindConfigPath:
         assert result is None
 
 
+class TestVerificationTimeoutConfig:
+    def test_default_value(self):
+        """verification_timeout_seconds defaults to 120."""
+        cfg = GolemFlowConfig()
+        assert cfg.verification_timeout_seconds == 120
+
+    def test_custom_value_from_yaml(self, tmp_path, monkeypatch):
+        """verification_timeout_seconds is parsed from YAML config."""
+        config_content = """\
+flows:
+  golem:
+    projects:
+      - test
+    verification_timeout_seconds: 300
+"""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(config_content, encoding="utf-8")
+        monkeypatch.setattr("golem.core.config.load_dotenv", lambda p: None)
+        config = load_config(config_file)
+        assert config.golem.verification_timeout_seconds == 300
+
+
 class TestLoadConfig:
     def test_returns_default_when_no_config(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)

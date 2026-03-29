@@ -1081,6 +1081,26 @@ class TestCheckpointHelpers:
 class TestPreflightSupervisor:
     """Cover preflight verification failure branches in _setup_work_dir."""
 
+    async def test_preflight_uses_config_timeout(self):
+        """_setup_work_dir passes verification_timeout_seconds from config to run_verification."""
+        cfg = _make_config(
+            preflight_verify=True,
+            use_worktrees=False,
+            verification_timeout_seconds=300,
+        )
+        sup = _make_supervisor(config=cfg)
+        mock_vr = MagicMock(passed=True, duration_s=1.0)
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.run_verification", return_value=mock_vr
+            ) as mock_rv,
+            patch("pathlib.Path.is_dir", return_value=True),
+        ):
+            await sup._setup_work_dir(42, "desc")
+        # Verify that run_verification was called with timeout=300 (from config)
+        _call_kwargs = mock_rv.call_args[1]
+        assert _call_kwargs.get("timeout") == 300
+
     async def test_preflight_all_checks_fail(self):
         from golem.errors import InfrastructureError
 

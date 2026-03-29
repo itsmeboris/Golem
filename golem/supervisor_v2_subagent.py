@@ -279,8 +279,9 @@ class SubagentSupervisor:
             )
             self._slog.info("Running pre-flight verification on base branch...")
             loop = asyncio.get_running_loop()
+            _vt = getattr(self.task_config, "verification_timeout_seconds", 120)
             vr = await loop.run_in_executor(
-                None, lambda: run_verification(work_dir, timeout=120)
+                None, lambda: run_verification(work_dir, timeout=_vt)
             )
             if not vr.passed:
                 failures = []

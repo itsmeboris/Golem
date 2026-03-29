@@ -45,7 +45,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [x] INFRA-004: **AGENTS.md growth bound** — entries with seen >= 10 and age > 90 days now removed by _apply_decay() (GH #78, 2026-03-29)
 - [x] INFRA-005: **Self-update worktree temp file leak** — use unique temp path per SHA instead of hardcoded /tmp/golem-verify (GH #79, 2026-03-29)
 - [x] INFRA-006: **Clarity check fail-open silently** — upgraded to logger.error for operator visibility (GH #80, 2026-03-29)
-- [ ] INFRA-007: **Hardcoded verification timeout** — `run_verification()` uses fixed 120s in both `orchestrator.py` and `supervisor_v2_subagent.py`; not configurable (GH #81)
+- [x] INFRA-007: **Hardcoded verification timeout** — added verification_timeout_seconds config field; callers use config instead of hardcoded 120 (GH #81, 2026-03-29)
 - [ ] FEAT-001: **Context budget system** — dynamic prompt content sizing (GH #13)
 - [ ] FEAT-002: **A-Mem knowledge graph** — structured knowledge graph for AGENTS.md (GH #14)
 - [ ] FEAT-003: **Dashboard prompt comparison UI** — table/chart for `/api/analytics/by-prompt` data; API exists, frontend missing (GH #82)
