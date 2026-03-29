@@ -93,7 +93,7 @@ async function resubmitTask(prompt, subject) {
 // ── Navigation ─────────────────────────────────
 async function showView(view) {
   S.view = view;
-  const views = ['overview', 'detail', 'merge-queue', 'config'];
+  const views = ['overview', 'detail', 'merge-queue', 'config', 'prompts'];
   views.forEach(v => {
     const el = document.getElementById(`view-${v}`);
     if (el) el.style.display = (v === view) ? 'flex' : 'none';
@@ -128,6 +128,9 @@ async function showView(view) {
   }
   if (view === 'config' && typeof window.initConfigTab === 'function') {
     window.initConfigTab();
+  }
+  if (view === 'prompts' && typeof renderPromptAnalytics === 'function') {
+    renderPromptAnalytics();
   }
 }
 

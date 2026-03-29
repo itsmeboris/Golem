@@ -317,4 +317,70 @@ body{font-family:var(--font-sans);background:var(--bg-base);color:var(--text-pri
 }
 .ov-page-btn:hover:not(:disabled){background:var(--bg-hover);color:var(--text-primary)}
 .ov-page-btn:disabled{opacity:0.4;cursor:default}
+
+/* ── Prompt Analytics Tab ─────────────────────────────────── */
+.pa-container {
+  padding: 1rem;
+}
+.pa-subtitle {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin-bottom: 1rem;
+}
+.pa-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+.pa-table th {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 2px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.pa-table td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.pa-table tr:hover {
+  background: var(--bg-hover);
+}
+.pa-hash code {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--accent);
+}
+.pa-runs {
+  font-family: var(--font-mono);
+  text-align: right;
+}
+.pa-success {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.pa-bar-bg {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+.pa-bar {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+.pa-good .pa-bar { background: var(--green); }
+.pa-warn .pa-bar { background: var(--orange); }
+.pa-bad .pa-bar { background: var(--red); }
+.pa-cost, .pa-duration {
+  font-family: var(--font-mono);
+  text-align: right;
+  color: var(--text-secondary);
+}
 .ov-page-info{color:var(--text-muted)}

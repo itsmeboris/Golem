@@ -26,6 +26,7 @@
     <button class="nav-tab" data-view="detail">Task Detail</button>
     <button class="nav-tab" data-view="merge-queue">Merge Queue</button>
     <button class="nav-tab" data-view="config">Config</button>
+    <button class="nav-tab" data-view="prompts">Prompts</button>
   </nav>
   <div class="top-stats" id="top-stats" aria-live="polite" aria-label="Daemon status"><span id="top-stats-inner"></span><span class="hb-container" id="hb-container"></span></div>
   <button class="theme-btn" title="Toggle theme" id="theme-toggle" aria-label="Toggle light/dark theme" onclick="toggleTheme()">&#9789;</button>
@@ -83,6 +84,15 @@
     <div class="mq-content" id="mq-content"></div>
   </div>
 
+  <!-- Prompts Analytics View -->
+  <div id="view-prompts" class="view-section" style="display:none" role="region" aria-label="Prompt analytics">
+    <div class="pa-container">
+      <h3>Prompt Performance Comparison</h3>
+      <p class="pa-subtitle">Success rates, costs, and durations grouped by prompt hash</p>
+      <div id="pa-table-container"></div>
+    </div>
+  </div>
+
   <!-- Config View -->
   <div id="view-config" class="config-view" style="display:none" role="region" aria-label="Configuration">
     <div class="config-container">
@@ -122,5 +132,6 @@
 <script src="/dashboard/merge_queue.js"></script>
 <link rel="stylesheet" href="/dashboard/config_tab.css">
 <script src="/dashboard/config_tab.js"></script>
+<script src="/dashboard/prompt_analytics.js"></script>
 </body>
 </html>

@@ -885,6 +885,14 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
             headers=_NO_CACHE_HEADERS,
         )
 
+    @app.get("/dashboard/prompt_analytics.js")
+    async def prompt_analytics_js() -> Response:
+        return Response(
+            content=_prompt_analytics_js_cache.read(),
+            media_type="application/javascript",
+            headers=_NO_CACHE_HEADERS,
+        )
+
     @app.get("/dashboard")
     async def dashboard() -> HTMLResponse:
         html = _task_dashboard_cache.read()
@@ -903,6 +911,7 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
             (_merge_queue_css_cache, "merge_queue.css"),
             (_config_tab_js_cache, "config_tab.js"),
             (_config_tab_css_cache, "config_tab.css"),
+            (_prompt_analytics_js_cache, "prompt_analytics.js"),
         ]:
             # Trigger a read so .version reflects current mtime
             cache.read()
@@ -1013,6 +1022,7 @@ _merge_queue_js_cache = _FileCache(Path(__file__).parent / "task_merge_queue.js"
 _merge_queue_css_cache = _FileCache(Path(__file__).parent / "task_merge_queue.css")
 _config_tab_js_cache = _FileCache(Path(__file__).parent / "config_tab.js")
 _config_tab_css_cache = _FileCache(Path(__file__).parent / "config_tab.css")
+_prompt_analytics_js_cache = _FileCache(Path(__file__).parent / "prompt_analytics.js")
 
 
 _PID_FILE = DATA_DIR / "daemon.pid"

@@ -18,7 +18,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [ ] INFRA-002: **Codebase contract linting** — static check that function return types match consumer expectations across module boundaries (GH #23)
 - [ ] FEAT-001: **Context budget system** — dynamic prompt content sizing (GH #13)
 - [ ] FEAT-002: **A-Mem knowledge graph** — structured knowledge graph for AGENTS.md (GH #14)
-- [ ] FEAT-003: **Dashboard prompt comparison UI** — table/chart for `/api/analytics/by-prompt` data; API exists, frontend missing (GH #82)
+- [x] FEAT-003: **Dashboard prompt comparison UI** — added Prompts tab with table showing hash, runs, success rate bar, cost, duration (GH #82, 2026-03-29)
 - [ ] FEAT-004: **CLI `logs` command** — no `golem logs` / `golem logs --follow` subcommand; `status --watch` shows counters but not log output (GH #83)
 - [ ] TEST-002: **Mutation testing** — mutmut integration (GH #17)
 - [x] UX-002: **Dashboard missing pagination and search** — added client-side search, state filter, and 25-per-page pagination (GH #93, 2026-03-29)
