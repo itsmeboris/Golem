@@ -57,10 +57,11 @@ def format_prompt(name: str, **kwargs) -> str:
 
 
 class _SafeDict(dict):
-    """dict subclass that returns the placeholder for missing keys."""
+    """dict subclass that returns empty string for missing keys."""
 
     def __missing__(self, key: str) -> str:
-        return f"{{{key}}}"
+        logger.debug("Prompt placeholder {%s} not provided — defaulting to empty", key)
+        return ""
 
 
 class FilePromptProvider:

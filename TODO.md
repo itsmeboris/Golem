@@ -41,7 +41,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [ ] REL-007: **Session state save not atomic** — crash between `save_sessions()` and `batch_monitor.save()` in `flow.py` leaves inconsistent state (GH #75)
 - [ ] INFRA-001: **State management audit rule** — detect innerHTML without state preservation, polling without concurrency guards, shared mutable state in async code (GH #76)
 - [ ] INFRA-002: **Codebase contract linting** — static check that function return types match consumer expectations across module boundaries (GH #23)
-- [ ] INFRA-003: **Prompt placeholder fallbacks** — conditional placeholders (`{simplify_section}`, `{enhanced_review_section}`) render as literal text when conditions unmet (GH #77)
+- [x] INFRA-003: **Prompt placeholder fallbacks** — _SafeDict returns empty string for missing keys instead of literal placeholder text (GH #77, 2026-03-29)
 - [x] INFRA-004: **AGENTS.md growth bound** — entries with seen >= 10 and age > 90 days now removed by _apply_decay() (GH #78, 2026-03-29)
 - [x] INFRA-005: **Self-update worktree temp file leak** — use unique temp path per SHA instead of hardcoded /tmp/golem-verify (GH #79, 2026-03-29)
 - [x] INFRA-006: **Clarity check fail-open silently** — upgraded to logger.error for operator visibility (GH #80, 2026-03-29)

@@ -35,7 +35,7 @@ from golem.orchestrator import (
     save_sessions,
 )
 from golem.poller import get_issue_subject, is_agent_task
-from golem.prompts import compute_prompt_hash, format_prompt, load_prompt
+from golem.prompts import _SafeDict, compute_prompt_hash, format_prompt, load_prompt
 
 # -- Config parsing ---------------------------------------------------------
 
@@ -796,6 +796,35 @@ class TestPrompts:
         )
         assert "Add feature X" in result
         assert "task_description" not in result  # placeholder should not remain
+
+    def test_safe_dict_returns_empty_for_missing_key(self):
+        """_SafeDict.__missing__ returns empty string for absent keys (INFRA-003)."""
+        sd = _SafeDict({"present": "value"})
+        assert sd["present"] == "value"
+        assert sd["absent"] == ""
+
+    def test_safe_dict_missing_does_not_leave_literal_placeholder(self):
+        """format_map with _SafeDict produces no literal {key} text for missing keys."""
+        result = "Hello {name}, your score is {score}.".format_map(
+            _SafeDict({"name": "Alice"})
+        )
+        assert result == "Hello Alice, your score is ."
+        assert "{score}" not in result
+
+    def test_format_prompt_missing_placeholder_produces_no_literal_brace_text(self):
+        """format_prompt with missing optional placeholder leaves no {key} literal."""
+        result = format_prompt(
+            "orchestrate_task.txt",
+            issue_id=42,
+            parent_subject="My task",
+            task_description="Do a thing",
+            work_dir="/work",
+            inner_retry_max=3,
+            # simplify_section, enhanced_review_section, role_contexts intentionally omitted
+        )
+        assert "{simplify_section}" not in result
+        assert "{enhanced_review_section}" not in result
+        assert "{role_contexts}" not in result
 
     def test_compute_prompt_hash_returns_12_chars(self):
         h = compute_prompt_hash("hello world")
