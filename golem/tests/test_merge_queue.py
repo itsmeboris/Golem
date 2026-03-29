@@ -517,14 +517,18 @@ class TestTransientRetry:
     )
     @patch("golem.merge_queue.get_changed_files", return_value=[])
     async def test_retry_exhausted_returns_failure(self, _gcf, _miw, queue, base_entry):
-        mock_sleep = AsyncMock()
-        with patch("golem.merge_queue.asyncio.sleep", mock_sleep):
+        retry_delays: list[float] = []
+
+        async def _tracking_sleep(delay):
+            retry_delays.append(delay)
+
+        with patch("golem.merge_queue.asyncio.sleep", _tracking_sleep):
             await queue.enqueue(base_entry)
             results = await queue.process_all()
         assert results[0].success is False
         assert "timed out" in results[0].error
-        # Should retry INFRA_RETRIES times
-        assert mock_sleep.call_count == MergeQueue.INFRA_RETRIES
+        # Should retry INFRA_RETRIES times with the configured delay
+        assert retry_delays.count(MergeQueue.INFRA_RETRY_DELAY) == MergeQueue.INFRA_RETRIES
 
     @patch("golem.merge_queue.get_changed_files", return_value=[])
     async def test_all_attempts_return_none_hits_fallback(

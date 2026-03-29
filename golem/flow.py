@@ -427,6 +427,8 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                 )
                 for task in pending:
                     task.cancel()
+                # Await cancelled tasks so their finally blocks run
+                await asyncio.gather(*pending, return_exceptions=True)
 
         self._session_tasks.clear()
 

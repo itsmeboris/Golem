@@ -355,6 +355,33 @@ class TestGracefulStop:
         assert slow_task.cancelled()
         assert not flow._session_tasks
 
+    async def test_cancelled_tasks_finally_blocks_run(self, monkeypatch, tmp_path):
+        """REL-011: cancelled tasks are awaited so their finally blocks execute."""
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow._running = True
+
+        finally_ran = asyncio.Event()
+
+        async def task_with_finally():
+            try:
+                await asyncio.sleep(100)
+            finally:
+                finally_ran.set()
+
+        session_task = asyncio.create_task(task_with_finally())
+        flow._session_tasks[7] = session_task
+
+        monkeypatch.setattr(flow, "_save_state", lambda: None)
+        monkeypatch.setattr(
+            "golem.core.cli_wrapper.kill_all_active",
+            lambda: 0,
+        )
+
+        await flow.graceful_stop(timeout=0.01)
+
+        # Finally block must have run — no sleep needed because graceful_stop awaits
+        assert finally_ran.is_set()
+
     async def test_kills_cli_subprocesses(self, monkeypatch, tmp_path):
         """graceful_stop calls kill_all_active to clean up CLI subprocesses."""
         flow = _make_flow(monkeypatch, tmp_path)
