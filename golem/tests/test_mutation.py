@@ -7,7 +7,9 @@ import sys
 class TestMutmutAvailable:
     def test_mutmut_importable(self):
         """mutmut package is installed and importable."""
-        import mutmut  # noqa: F401  # pylint: disable=unused-import
+        import mutmut  # noqa: F401
+
+        assert mutmut is not None
 
     def test_mutmut_cli_available(self):
         """mutmut CLI is callable."""
