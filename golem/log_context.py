@@ -48,3 +48,17 @@ class JsonFormatter(logging.Formatter):
         if record.exc_info and record.exc_info[0]:
             data["exception"] = self.formatException(record.exc_info)
         return json.dumps(data)
+
+
+def setup_logging(json_mode: bool = False) -> None:
+    """Install TaskContextFilter on the root logger.
+
+    If json_mode is True, also replace the formatter on all existing
+    handlers with JsonFormatter.
+    """
+    root = logging.getLogger()
+    root.addFilter(TaskContextFilter())
+    if json_mode:
+        fmt = JsonFormatter()
+        for handler in root.handlers:
+            handler.setFormatter(fmt)

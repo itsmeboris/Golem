@@ -48,6 +48,7 @@ from .orchestrator import (
 )
 from .profile import build_profile
 from .repo_registry import RepoRegistry
+from .log_context import setup_logging
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -61,6 +62,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+setup_logging()
 
 logger = logging.getLogger("golem.cli")
 
@@ -460,6 +462,7 @@ async def _start_dashboard_server(
 
 async def run_daemon(args, config) -> int:
     """Start the golem daemon with tick loop and dashboard."""
+    setup_logging(json_mode=config.golem.json_logging)
     tasks: list[asyncio.Task] = []
     shutdown_event = asyncio.Event()
     reload_event = asyncio.Event()

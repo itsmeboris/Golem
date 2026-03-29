@@ -547,6 +547,7 @@ class TestRunDaemon:
     async def test_returns_1_when_flow_none(self, capsys):
         args = SimpleNamespace(port=8080)
         config = MagicMock()
+        config.golem.json_logging = False
 
         with (
             patch("golem.cli.LiveState", create=True) as mock_ls,
@@ -561,11 +562,30 @@ class TestRunDaemon:
         err = capsys.readouterr().err
         assert "not enabled" in err
 
+    async def test_setup_logging_called_with_json_mode_from_config(self):
+        """run_daemon calls setup_logging(json_mode=config.golem.json_logging)."""
+        args = SimpleNamespace(port=8080)
+        config = MagicMock()
+        config.golem.json_logging = True
+
+        with (
+            patch("golem.cli.LiveState", create=True) as mock_ls,
+            patch("golem.cli._manage_golem_tick", return_value=None),
+            patch("golem.cli.setup_logging") as mock_setup,
+        ):
+            mock_live = MagicMock()
+            mock_ls.get.return_value = mock_live
+
+            await run_daemon(args, config)
+
+        mock_setup.assert_called_with(json_mode=True)
+
     async def test_runs_until_shutdown(self):
         args = SimpleNamespace(port=8080, config="config.yaml")
         config = MagicMock()
         config.dashboard.port = 8080
         config.daemon.drain_timeout_seconds = 300
+        config.golem.json_logging = False
 
         mock_flow = MagicMock()
         mock_flow._self_update = None
@@ -612,6 +632,7 @@ class TestRunDaemon:
         config = MagicMock()
         config.dashboard.port = 8080
         config.daemon.drain_timeout_seconds = 300
+        config.golem.json_logging = False
 
         mock_flow = MagicMock()
         mock_flow._self_update = None
@@ -662,6 +683,7 @@ class TestRunDaemon:
         config.dashboard.port = 8080
         config.dashboard.api_key = "testkey"
         config.daemon.drain_timeout_seconds = 300
+        config.golem.json_logging = False
 
         mock_flow = MagicMock()
         mock_self_update = MagicMock()
@@ -706,6 +728,7 @@ class TestRunDaemon:
         config = MagicMock()
         config.dashboard.port = 8080
         config.daemon.drain_timeout_seconds = 300
+        config.golem.json_logging = False
 
         mock_flow = MagicMock()
         mock_flow._self_update = None

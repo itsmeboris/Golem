@@ -45,6 +45,7 @@ from .core.flow_base import _StreamingTraceWriter, _write_prompt, _write_trace
 from .checkpoint import delete_checkpoint, save_checkpoint
 from .committer import commit_changes
 from .core.log_context import SessionLogAdapter
+from .log_context import clear_task_context, set_task_context
 from .errors import InfrastructureError
 from .event_tracker import Milestone, TaskEventTracker, TrackerState
 from .interfaces import TaskStatus
@@ -409,6 +410,7 @@ class TaskOrchestrator:
         self.session.state = TaskSessionState.RUNNING
         self.session.updated_at = _now_iso()
         self.session.started_at = self.session.updated_at
+        set_task_context(str(self.session.parent_issue_id), phase="BUILD")
 
         await self._run_agent()
 
@@ -674,6 +676,7 @@ class TaskOrchestrator:
                 )
             self._write_report()
             self._record_run()
+            clear_task_context()
 
     def _preflight_check(self, work_dir: str) -> None:
         """Validate environment before agent execution."""
@@ -786,6 +789,7 @@ class TaskOrchestrator:
         """Phase 3: Spawn the validation agent and store the verdict."""
         self.session.state = TaskSessionState.VALIDATING
         self.session.updated_at = _now_iso()
+        set_task_context(str(issue_id), phase="REVIEW")
 
         tracker = TaskEventTracker(
             session_id=issue_id,
@@ -848,6 +852,7 @@ class TaskOrchestrator:
         """Phase 3: Run deterministic verification (black, pylint, pytest)."""
         self.session.state = TaskSessionState.VERIFYING
         self.session.updated_at = _now_iso()
+        set_task_context(str(self.session.parent_issue_id), phase="VERIFY")
 
         self._slog.info("Running deterministic verification")
         result = await asyncio.get_running_loop().run_in_executor(

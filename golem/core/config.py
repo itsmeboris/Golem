@@ -133,6 +133,8 @@ class GolemFlowConfig(FlowConfig):
     sandbox_enabled: bool = True
     sandbox_cpu_seconds: int = 3600
     sandbox_memory_gb: int = 4
+    # Structured logging: emit JSON lines instead of text
+    json_logging: bool = False
 
 
 @dataclass
@@ -381,6 +383,8 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
         sandbox_enabled=data.get("sandbox_enabled", True),
         sandbox_cpu_seconds=data.get("sandbox_cpu_seconds", 3600),
         sandbox_memory_gb=data.get("sandbox_memory_gb", 4),
+        # Structured logging
+        json_logging=data.get("json_logging", False),
     )
 
 

@@ -3449,3 +3449,147 @@ class TestPromotedSignals:
 
         assert result is True
         assert session.state == TaskSessionState.FAILED
+
+
+class TestOrchestratorPhaseContext:
+    """Verify set_task_context is called with correct phases during pipeline."""
+
+    async def test_tick_detected_sets_build_phase(self):
+        """_tick_detected must set phase to 'BUILD' when transitioning to RUNNING."""
+        session = TaskSession(
+            parent_issue_id=99,
+            state=TaskSessionState.DETECTED,
+            grace_deadline="",
+        )
+        orch = _make_orch(session)
+        orch._run_agent = AsyncMock()
+
+        with patch("golem.orchestrator.set_task_context") as mock_set:
+            await orch._tick_detected()
+
+        phases_set = [
+            c.kwargs.get("phase") or (c.args[1] if len(c.args) > 1 else None)
+            for c in mock_set.call_args_list
+        ]
+        assert "BUILD" in phases_set, (
+            "set_task_context not called with phase='BUILD'; calls=%r"
+            % mock_set.call_args_list
+        )
+
+    async def test_run_verification_sets_verify_phase(self):
+        """_run_verification must set phase to 'VERIFY' before running checks."""
+        from golem.verifier import VerificationResult
+
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        orch = _make_orch(session)
+        pass_result = VerificationResult(
+            passed=True,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="5 passed",
+            duration_s=1.0,
+        )
+        with (
+            patch("golem.orchestrator.run_verification", return_value=pass_result),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch("golem.orchestrator.set_task_context") as mock_set,
+        ):
+            await orch._run_verification("/work")
+
+        phases_set = [
+            c.kwargs.get("phase") or (c.args[1] if len(c.args) > 1 else None)
+            for c in mock_set.call_args_list
+        ]
+        assert "VERIFY" in phases_set, (
+            "set_task_context not called with phase='VERIFY'; calls=%r"
+            % mock_set.call_args_list
+        )
+
+    async def test_run_validation_sets_review_phase(self):
+        """_run_validation must set phase to 'REVIEW' before running validation."""
+        from golem.verifier import VerificationResult
+
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        orch = _make_orch(session)
+        pass_vr = VerificationResult(
+            passed=True,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="5 passed",
+            duration_s=1.0,
+        )
+        pass_verdict = ValidationVerdict(verdict="PASS", confidence=0.95, summary="ok")
+        with (
+            patch("golem.orchestrator.run_verification", return_value=pass_vr),
+            patch("golem.orchestrator.run_validation", return_value=pass_verdict),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch("golem.orchestrator.set_task_context") as mock_set,
+        ):
+            await orch._run_validation(42, "/work")
+
+        phases_set = [
+            c.kwargs.get("phase") or (c.args[1] if len(c.args) > 1 else None)
+            for c in mock_set.call_args_list
+        ]
+        assert "REVIEW" in phases_set, (
+            "set_task_context not called with phase='REVIEW'; calls=%r"
+            % mock_set.call_args_list
+        )
+
+    async def test_run_agent_monolithic_clears_context_on_completion(self):
+        """clear_task_context must be called after the monolithic pipeline ends."""
+        from golem.committer import CommitResult
+        from golem.verifier import VerificationResult
+
+        session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+        profile = MagicMock()
+        profile.task_source.get_task_description.return_value = "desc"
+        profile.prompt_provider.format.return_value = "prompt"
+        profile.tool_provider.servers_for_subject.return_value = []
+        orch = _make_orch(session, profile=profile)
+
+        pass_vr = VerificationResult(
+            passed=True,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="5 passed",
+            duration_s=1.0,
+        )
+        with (
+            patch("golem.orchestrator.resolve_work_dir", return_value="/work"),
+            patch(
+                "golem.orchestrator.invoke_cli_monitored",
+                return_value=CLIResult(output={}, cost_usd=0.1, trace_events=[]),
+            ),
+            patch("golem.orchestrator.run_verification", return_value=pass_vr),
+            patch(
+                "golem.orchestrator.run_validation",
+                return_value=ValidationVerdict(
+                    verdict="PASS", confidence=0.9, summary="ok"
+                ),
+            ),
+            patch(
+                "golem.orchestrator.commit_changes",
+                return_value=CommitResult(committed=False, sha=""),
+            ),
+            patch("golem.orchestrator._write_prompt"),
+            patch("golem.orchestrator._write_trace", return_value="/trace"),
+            patch.object(orch, "_preflight_check"),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch("golem.orchestrator.delete_checkpoint"),
+            patch.object(orch, "_write_report"),
+            patch.object(orch, "_record_run"),
+            patch("golem.orchestrator.clear_task_context") as mock_clear,
+        ):
+            await orch._run_agent_monolithic()
+
+        mock_clear.assert_called()

@@ -19,6 +19,7 @@ from golem.log_context import (
     clear_task_context,
     phase_var,
     set_task_context,
+    setup_logging,
     task_id_var,
 )
 
@@ -276,3 +277,63 @@ class TestContextIsolation:
 
         # But the parent's context is unaffected by mutation in the copy
         assert task_id_var.get() == "parent-task"
+
+
+class TestSetupLogging:
+    """setup_logging() installs TaskContextFilter and optionally JsonFormatter."""
+
+    def setup_method(self):
+        """Snapshot root logger state before each test so we can restore it."""
+        root = logging.getLogger()
+        self._original_filters = list(root.filters)
+        self._original_formatters = {h: h.formatter for h in root.handlers}
+
+    def teardown_method(self):
+        """Restore root logger to pre-test state."""
+        root = logging.getLogger()
+        root.filters = list(self._original_filters)
+        for handler, fmt in self._original_formatters.items():
+            handler.setFormatter(fmt)
+
+    def test_setup_logging_adds_task_context_filter(self):
+        """setup_logging() must install TaskContextFilter on the root logger."""
+        root = logging.getLogger()
+        before = sum(1 for f in root.filters if isinstance(f, TaskContextFilter))
+        setup_logging()
+        after = sum(1 for f in root.filters if isinstance(f, TaskContextFilter))
+        assert after == before + 1
+
+    def test_setup_logging_json_mode_false_does_not_change_formatters(self):
+        """setup_logging(json_mode=False) must not replace existing formatters."""
+        root = logging.getLogger()
+        original_formatters = {h: h.formatter for h in root.handlers}
+        setup_logging(json_mode=False)
+        for handler, original_fmt in original_formatters.items():
+            assert handler.formatter is original_fmt
+
+    def test_setup_logging_json_mode_true_replaces_formatters_with_json(self):
+        """setup_logging(json_mode=True) must replace all handler formatters."""
+        root = logging.getLogger()
+        if not root.handlers:
+            # Ensure there is at least one handler to verify against
+            pytest.skip(
+                "Root logger has no handlers — cannot test formatter replacement"
+            )
+        setup_logging(json_mode=True)
+        for handler in root.handlers:
+            assert isinstance(handler.formatter, JsonFormatter), (
+                f"Handler {handler!r} did not get a JsonFormatter; "
+                f"got {handler.formatter!r}"
+            )
+
+    def test_setup_logging_default_is_not_json_mode(self):
+        """setup_logging() called without arguments must not install JsonFormatter."""
+        root = logging.getLogger()
+        if not root.handlers:
+            pytest.skip(
+                "Root logger has no handlers — cannot test formatter preservation"
+            )
+        original_formatters = {h: h.formatter for h in root.handlers}
+        setup_logging()
+        for handler, original_fmt in original_formatters.items():
+            assert handler.formatter is original_fmt

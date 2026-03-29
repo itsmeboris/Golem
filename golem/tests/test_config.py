@@ -550,3 +550,30 @@ class TestOtelConfigFields:
         assert config.golem.otel_enabled is False
         assert config.golem.otel_endpoint == ""
         assert config.golem.otel_console_export is False
+
+
+class TestJsonLoggingConfig:
+    """Tests for json_logging field on GolemFlowConfig."""
+
+    def test_json_logging_default_is_false(self):
+        """json_logging defaults to False (text format by default)."""
+        cfg = GolemFlowConfig()
+        assert cfg.json_logging is False
+
+    def test_json_logging_parsed_true_from_yaml(self, tmp_path):
+        """json_logging: true in YAML is read correctly."""
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(
+            "flows:\n" "  golem:\n" "    profile: local\n" "    json_logging: true\n"
+        )
+        config = load_config(cfg_file)
+        assert config.golem.json_logging is True
+
+    def test_json_logging_absent_from_yaml_defaults_false(self, tmp_path):
+        """When json_logging is absent from YAML, default of False applies."""
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(
+            "flows:\n" "  golem:\n" "    profile: local\n" "    projects: [repo]\n"
+        )
+        config = load_config(cfg_file)
+        assert config.golem.json_logging is False
