@@ -160,25 +160,34 @@ async def test_sse_merge_queue_sentinel_oserror_init():
 
 
 async def test_sse_merge_queue_sentinel_oserror_poll():
-    """SSE poll loop survives OSError when reading sentinel mtime (lines 535-536)."""
+    """SSE poll loop survives OSError when reading sentinel mtime (lines 564-565)."""
     # First call (init): stat succeeds.  Second call (poll): stat raises OSError.
+    init_stat = MagicMock(st_mtime=1000.0)
+    poll_count = 0
+
+    def _stat_side_effect():
+        nonlocal poll_count
+        poll_count += 1
+        if poll_count == 1:
+            return init_stat
+        raise OSError("simulated poll error")
+
     mock_sentinel = MagicMock(spec=Path)
     mock_sentinel.exists.return_value = True
-    mock_sentinel.stat.side_effect = [
-        MagicMock(st_mtime=1000.0),  # init read succeeds
-        OSError("simulated poll error"),  # first poll read fails
-        OSError("simulated poll error"),  # guard against extra calls
-    ]
+    mock_sentinel.stat.side_effect = _stat_side_effect
 
-    with patch.object(dash_mod, "_MERGE_QUEUE_SENTINEL", mock_sentinel):
+    # Patch asyncio.sleep to return immediately so the poll loop iterates fast
+    with (
+        patch.object(dash_mod, "_MERGE_QUEUE_SENTINEL", mock_sentinel),
+        patch("golem.core.dashboard.asyncio.sleep", new_callable=AsyncMock),
+    ):
         gen = dash_mod._sse_event_stream()
         events = []
         try:
-            async with asyncio.timeout(3):
+            async with asyncio.timeout(1):
                 async for event in gen:
                     events.append(event)
-                    if len(events) >= 1:
-                        break
+                    break
         except TimeoutError:
             pass
         await gen.aclose()
