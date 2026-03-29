@@ -62,7 +62,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [ ] UX-002: **Dashboard missing pagination and search** — overview renders all sessions without pagination; no search/filter by subject, ID, or state; unusable at scale (GH #93)
 - [x] UX-003: **No confirmation for destructive dashboard actions** — added confirm() dialogs to clear/cancel/trigger buttons (GH #94, 2026-03-29)
 - [ ] TEST-003: **Lint modules lack tests** — all 9 `golem/lint/` modules have no dedicated test files; pre-commit hooks can crash silently or produce false positives (GH #95)
-- [ ] INFRA-009: **Worktree orphans on crash recovery** — daemon restart doesn't clean up stale worktrees from previous crashed runs; orphaned dirs accumulate in `data/agent/worktrees/` (GH #104)
+- [x] INFRA-009: **Worktree orphans on crash recovery** — cleanup_orphaned_worktrees() runs at startup, prunes stale refs and orphaned dirs (GH #104, 2026-03-29)
 - [ ] INFRA-010: **Trace/checkpoint data retention** — traces (`data/traces/`, 154M+) and checkpoints grow unbounded; `LoggingConfig.max_bytes`/`backup_count` defined but never wired to a handler; no cleanup policy (GH #105)
 - [x] INFRA-011: **No startup dependency validation** — added validate_dependencies() checking git/claude in PATH at daemon start (GH #106, 2026-03-29)
 - [x] BUG-011: **Explicit --config path silently falls back to defaults** — raise FileNotFoundError for explicit nonexistent path (GH #107, 2026-03-29)

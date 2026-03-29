@@ -463,6 +463,58 @@ def cleanup_worktree(
     _cleanup_worktree_impl(base_dir, worktree_path, branch_name)
 
 
+def cleanup_orphaned_worktrees(base_dir: str) -> int:
+    """Remove orphaned worktrees left by crashed daemon runs.
+
+    Prunes stale git worktree references, then scans the
+    ``data/agent/worktrees/``, ``data/agent/verify-worktrees/``, and
+    ``data/agent/bisect-worktrees/`` directories for directories that are
+    not registered git worktrees and removes them.
+
+    Returns the number of cleaned-up directories.
+    """
+    cleaned = 0
+
+    # Phase 1: prune stale git worktree references
+    _run_git(["worktree", "prune"], cwd=base_dir)
+
+    # Phase 2: scan data/agent/worktrees/ for orphaned directories
+    worktrees_dir = Path(base_dir) / "data" / "agent" / "worktrees"
+    if worktrees_dir.exists():
+        # Get list of active worktree paths from git
+        result = _run_git(["worktree", "list", "--porcelain"], cwd=base_dir)
+        active_paths: set[str] = set()
+        for line in result.stdout.splitlines():
+            if line.startswith("worktree "):
+                active_paths.add(line[9:].strip())
+
+        for entry in worktrees_dir.iterdir():
+            if entry.is_dir() and str(entry.resolve()) not in active_paths:
+                try:
+                    shutil.rmtree(entry)
+                    cleaned += 1
+                    logger.info("Removed orphaned worktree: %s", entry)
+                except OSError as exc:
+                    logger.warning(
+                        "Failed to remove orphaned worktree %s: %s", entry, exc
+                    )
+
+    # Also check verify-worktrees and bisect-worktrees
+    for subdir in ("verify-worktrees", "bisect-worktrees"):
+        verify_dir = Path(base_dir) / "data" / "agent" / subdir
+        if verify_dir.exists():
+            for entry in verify_dir.iterdir():
+                if entry.is_dir():
+                    try:
+                        shutil.rmtree(entry)
+                        cleaned += 1
+                        logger.info("Removed orphaned %s: %s", subdir, entry)
+                    except OSError as exc:
+                        logger.warning("Failed to remove %s: %s", entry, exc)
+
+    return cleaned
+
+
 def _cleanup_worktree_impl(
     base_dir: str,
     worktree_path: str,

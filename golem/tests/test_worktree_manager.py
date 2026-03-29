@@ -736,3 +736,112 @@ class TestFastForwardIfSafe:
         ok, reason = fast_forward_if_safe(str(git_repo), "merge-ready/nonexistent")
         assert ok is False
         assert "ref not found" in reason
+
+
+class TestCleanupOrphanedWorktrees:
+    """Tests for cleanup_orphaned_worktrees."""
+
+    def test_returns_zero_when_no_dirs(self, git_repo):
+        """Returns 0 when there are no worktree directories to clean."""
+        from golem.worktree_manager import cleanup_orphaned_worktrees
+
+        count = cleanup_orphaned_worktrees(str(git_repo))
+        assert count == 0
+
+    def test_removes_unregistered_worktree_dir(self, git_repo):
+        """Dirs in data/agent/worktrees/ that are not registered git worktrees
+        are removed and counted."""
+        from golem.worktree_manager import cleanup_orphaned_worktrees
+
+        orphan_dir = git_repo / "data" / "agent" / "worktrees" / "orphan-123"
+        orphan_dir.mkdir(parents=True)
+        (orphan_dir / "some_file.py").write_text("orphaned content")
+
+        count = cleanup_orphaned_worktrees(str(git_repo))
+        assert count == 1
+        assert not orphan_dir.exists()
+
+    def test_keeps_registered_worktree(self, git_repo):
+        """Active git worktrees are NOT removed."""
+        from golem.worktree_manager import cleanup_orphaned_worktrees, create_worktree
+
+        wt_root = str(git_repo / "data" / "agent" / "worktrees")
+        wt_path = create_worktree(str(git_repo), 7001, worktree_root=wt_root)
+
+        count = cleanup_orphaned_worktrees(str(git_repo))
+        assert count == 0
+        assert Path(wt_path).exists()
+
+        # Cleanup
+        _run_git(["worktree", "remove", "--force", wt_path], cwd=str(git_repo))
+        _run_git(["branch", "-D", "agent/7001"], cwd=str(git_repo))
+
+    def test_removes_verify_worktrees(self, git_repo):
+        """Dirs under data/agent/verify-worktrees/ are always removed."""
+        from golem.worktree_manager import cleanup_orphaned_worktrees
+
+        verify_dir = git_repo / "data" / "agent" / "verify-worktrees" / "stale-456"
+        verify_dir.mkdir(parents=True)
+
+        count = cleanup_orphaned_worktrees(str(git_repo))
+        assert count == 1
+        assert not verify_dir.exists()
+
+    def test_removes_bisect_worktrees(self, git_repo):
+        """Dirs under data/agent/bisect-worktrees/ are always removed."""
+        from golem.worktree_manager import cleanup_orphaned_worktrees
+
+        bisect_dir = git_repo / "data" / "agent" / "bisect-worktrees" / "stale-789"
+        bisect_dir.mkdir(parents=True)
+
+        count = cleanup_orphaned_worktrees(str(git_repo))
+        assert count == 1
+        assert not bisect_dir.exists()
+
+    def test_counts_all_removed_dirs(self, git_repo):
+        """Returns the total count across all subdirectories."""
+        from golem.worktree_manager import cleanup_orphaned_worktrees
+
+        for subdir in ("worktrees", "verify-worktrees", "bisect-worktrees"):
+            d = git_repo / "data" / "agent" / subdir / "orphan-x"
+            d.mkdir(parents=True)
+
+        count = cleanup_orphaned_worktrees(str(git_repo))
+        assert count == 3
+
+    def test_handles_oserror_gracefully(self, git_repo, monkeypatch):
+        """OSError during removal is logged as a warning and does not raise."""
+        from golem.worktree_manager import cleanup_orphaned_worktrees
+
+        orphan_dir = git_repo / "data" / "agent" / "worktrees" / "fail-dir"
+        orphan_dir.mkdir(parents=True)
+
+        original_rmtree = __import__("shutil").rmtree
+
+        def failing_rmtree(path, **kwargs):
+            if "fail-dir" in str(path):
+                raise OSError("permission denied")
+            original_rmtree(path, **kwargs)
+
+        monkeypatch.setattr("golem.worktree_manager.shutil.rmtree", failing_rmtree)
+        # Should not raise
+        count = cleanup_orphaned_worktrees(str(git_repo))
+        assert count == 0
+
+    def test_handles_oserror_in_verify_worktrees(self, git_repo, monkeypatch):
+        """OSError during verify-worktrees removal is logged and not raised."""
+        from golem.worktree_manager import cleanup_orphaned_worktrees
+
+        fail_dir = git_repo / "data" / "agent" / "verify-worktrees" / "fail-dir"
+        fail_dir.mkdir(parents=True)
+
+        original_rmtree = __import__("shutil").rmtree
+
+        def failing_rmtree(path, **kwargs):
+            if "fail-dir" in str(path):
+                raise OSError("permission denied")
+            original_rmtree(path, **kwargs)
+
+        monkeypatch.setattr("golem.worktree_manager.shutil.rmtree", failing_rmtree)
+        count = cleanup_orphaned_worktrees(str(git_repo))
+        assert count == 0
