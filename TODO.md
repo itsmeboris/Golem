@@ -58,7 +58,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [x] FEAT-005: **Evaluator-optimizer loop** — PromptEvaluator + PromptOptimizer with scoring, underperforming detection, and suggestion generation (GH #15, 2026-03-29)
 - [x] FEAT-006: **OpenTelemetry tracing** — optional OTel with init_tracing(), get_tracer(), trace_span(), NoOp fallback (GH #16, 2026-03-29)
 - [x] TEST-004: **Multiple source modules lack test files** — verified: all 90 modules have coverage (76 dedicated + 14 via integration tests); 100% coverage enforced (GH #97, 2026-03-29)
-- [ ] UX-009: **Data visualization** — sparklines for success rate trend, phase duration waterfall chart, cost breakdown by model, agent activity heatmap (GH #125)
+- [x] UX-009: **Data visualization** — added sparkline() and barChart(); renderOverviewStats with success rate, cost-by-model, and phase duration charts (GH #125, 2026-03-29)
 - [x] INFRA-014b: **CLAUDE.md missing sections** — added data models, state persistence table, dependency notes (GH #136, 2026-03-29)
 
 ---
