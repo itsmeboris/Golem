@@ -1,8 +1,8 @@
 """Load and format golem prompt templates.
 
 Reads ``.txt`` template files from the ``prompts/`` subdirectory and fills in
-placeholders using Python's ``str.format_map``.  Missing placeholders are left
-as-is so callers can supply only the fields they need.
+placeholders using Python's ``str.format_map``.  Missing placeholders default
+to empty string so callers can supply only the fields they need.
 
 Key exports:
 - ``load_prompt`` — reads a raw template file by name.
@@ -48,8 +48,8 @@ def _apply_description_guard(name: str, kwargs: dict) -> None:
 def format_prompt(name: str, **kwargs) -> str:
     """Load a prompt template and fill in *kwargs* placeholders.
 
-    Unrecognised placeholders are left as-is so templates can contain
-    optional fields that callers don't always supply.
+    Missing placeholders are replaced with empty string so templates can
+    contain optional fields that callers don't always supply.
     """
     _apply_description_guard(name, kwargs)
     template = load_prompt(name)
