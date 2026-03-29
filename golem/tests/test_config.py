@@ -1,6 +1,7 @@
 # pylint: disable=too-few-public-methods
 """Tests for golem.core.config."""
 
+import pytest
 from unittest.mock import patch
 
 from golem.core.config import (
@@ -30,6 +31,24 @@ class TestExpandEnvVars:
     def test_missing_env_var_returns_empty(self, monkeypatch):
         monkeypatch.delenv("NONEXISTENT_VAR_XYZ", raising=False)
         assert _expand_env_vars("${NONEXISTENT_VAR_XYZ}") == ""
+
+    def test_missing_env_var_logs_warning(self, monkeypatch, caplog):
+        import logging
+
+        monkeypatch.delenv("MISSING_VAR_ABC", raising=False)
+        with caplog.at_level(logging.WARNING, logger="golem.core.config"):
+            result = _expand_env_vars("${MISSING_VAR_ABC}")
+        assert result == ""
+        assert "MISSING_VAR_ABC" in caplog.text
+
+    def test_set_env_var_no_warning(self, monkeypatch, caplog):
+        import logging
+
+        monkeypatch.setenv("SET_VAR_XYZ", "value123")
+        with caplog.at_level(logging.WARNING, logger="golem.core.config"):
+            result = _expand_env_vars("${SET_VAR_XYZ}")
+        assert result == "value123"
+        assert "SET_VAR_XYZ" not in caplog.text
 
     def test_plain_string_unchanged(self):
         assert _expand_env_vars("plain") == "plain"
@@ -185,8 +204,25 @@ class TestLoadConfig:
             config = load_config()
         assert isinstance(config, Config)
 
-    def test_returns_default_for_nonexistent_path(self, tmp_path):
-        config = load_config(tmp_path / "nonexistent.yaml")
+    def test_raises_for_explicit_nonexistent_path(self, tmp_path):
+        with pytest.raises(FileNotFoundError, match="nonexistent.yaml"):
+            load_config(tmp_path / "nonexistent.yaml")
+
+    def test_returns_default_when_auto_discovered_path_missing(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr("golem.core.config.GOLEM_HOME", tmp_path / "no_golem")
+        # No config.yaml or config.yml in cwd — auto-discovery finds nothing
+        config = load_config()
+        assert isinstance(config, Config)
+
+    def test_returns_default_when_auto_discovered_path_race(self, tmp_path):
+        """Auto-discovered path returned but gone before open (race condition)."""
+        vanishing = tmp_path / "config.yaml"
+        # Path returned by _find_config_path but does NOT exist (race)
+        with patch("golem.core.config._find_config_path", return_value=vanishing):
+            config = load_config()  # config_path=None so no explicit path
         assert isinstance(config, Config)
 
     def test_permission_error_on_dotenv(self, tmp_path, monkeypatch):

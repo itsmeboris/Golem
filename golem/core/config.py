@@ -248,7 +248,15 @@ class Config:
 def _expand_env_vars(value: Any) -> Any:
     if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
         env_var = value[2:-1]
-        return os.environ.get(env_var, "")
+        result = os.environ.get(env_var)
+        if result is None:
+            logger.warning(
+                "Environment variable %s referenced in config but not set"
+                " — defaulting to empty",
+                env_var,
+            )
+            return ""
+        return result
     if isinstance(value, dict):
         return {k: _expand_env_vars(v) for k, v in value.items()}
     if isinstance(value, list):
@@ -491,8 +499,12 @@ def load_config(config_path: str | Path | None = None) -> Config:
             )
 
     resolved_path = _find_config_path(config_path)
-    if resolved_path is None or not resolved_path.exists():
-        return Config()
+    if resolved_path is None:
+        return Config()  # No config specified and auto-discovery found nothing
+    if not resolved_path.exists():
+        if config_path is not None:
+            raise FileNotFoundError("Config file not found: %s" % resolved_path)
+        return Config()  # Auto-discovered path no longer exists, use defaults
 
     with open(
         resolved_path, encoding="utf-8"
