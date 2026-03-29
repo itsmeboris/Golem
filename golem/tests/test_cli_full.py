@@ -569,6 +569,11 @@ class TestRunDaemon:
         mock_flow = MagicMock()
         mock_flow._self_update = None
 
+        async def _noop_graceful_stop(*_a, **_kw):
+            return None
+
+        mock_flow.graceful_stop = _noop_graceful_stop
+
         tick_task = asyncio.ensure_future(asyncio.sleep(100))
 
         def fake_manage(_cfg, tasks, **_kw):
@@ -609,6 +614,7 @@ class TestRunDaemon:
 
         mock_flow = MagicMock()
         mock_flow._self_update = None
+        mock_flow.graceful_stop = AsyncMock()
 
         def fake_manage(_cfg, tasks, **_kw):
             tasks.append(asyncio.ensure_future(asyncio.sleep(100)))
@@ -659,6 +665,7 @@ class TestRunDaemon:
         mock_flow = MagicMock()
         mock_self_update = MagicMock()
         mock_flow._self_update = mock_self_update
+        mock_flow.graceful_stop = AsyncMock()
 
         def fake_manage(_cfg, tasks, **_kw):
             tasks.append(asyncio.ensure_future(asyncio.sleep(100)))
@@ -701,6 +708,7 @@ class TestRunDaemon:
 
         mock_flow = MagicMock()
         mock_flow._self_update = None
+        mock_flow.graceful_stop = AsyncMock()
 
         def fake_manage(_cfg, tasks, **_kw):
             tasks.append(asyncio.ensure_future(asyncio.sleep(100)))

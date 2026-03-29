@@ -527,8 +527,8 @@ async def run_daemon(args, config) -> int:
         _dash_mod._shutting_down = True
         dash_server.should_exit = True
         reload_task.cancel()
-        if flow and hasattr(flow, "stop_tick_loop"):
-            flow.stop_tick_loop()
+        if flow is not None:
+            await flow.graceful_stop()
         for task in tasks:
             task.cancel()
         if tasks:

@@ -25,7 +25,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [x] SEC-005: **Dashboard API unauthenticated** — added _require_api_key to all dashboard /api/* read endpoints (GH #67, 2026-03-29)
 - [x] SEC-010: **cancel_task missing API key auth** — added _require_api_key check before rate limiter (GH #98, 2026-03-29)
 - [x] BUG-010: **Supervisor verification pipeline gap** — fixed _verification_feedback() to use correct dict keys (black_output/pylint_output/pytest_output) (GH #102, 2026-03-29)
-- [ ] REL-009: **No graceful shutdown drain** — SIGTERM immediately cancels active tasks via `stop_tick_loop()` without draining; in-progress work aborted, worktrees left inconsistent, no checkpoint saved before cancel (GH #103)
+- [x] REL-009: **No graceful shutdown drain** — added graceful_stop() with state save, task drain, and timeout (GH #103, 2026-03-29)
 - [ ] SEC-006: **MCP tool schema validation** — poisoning defense (GH #18)
 - [ ] SEC-007: **Runtime subprocess sandboxing** — OS-level containment (GH #19)
 - [x] BUG-006: **Merge agent blind to verification failures** — added verification_summary parameter to run_merge_agent and callback type (GH #88, 2026-03-29)

@@ -286,6 +286,275 @@ class TestStopTickLoop:
         assert len(killed) == 1
 
 
+class TestGracefulStop:
+    """Tests for GolemFlow.graceful_stop."""
+
+    async def test_stops_detection_and_saves_state(self, monkeypatch, tmp_path):
+        """graceful_stop sets _running=False, cancels detection, saves state."""
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow._running = True
+
+        detection_task = asyncio.create_task(asyncio.sleep(100))
+        flow._detection_task = detection_task
+
+        saved = []
+        monkeypatch.setattr(flow, "_save_state", lambda: saved.append(1))
+        monkeypatch.setattr(
+            "golem.core.cli_wrapper.kill_all_active",
+            lambda: 0,
+        )
+
+        await flow.graceful_stop(timeout=0.1)
+
+        assert not flow._running
+        assert flow._detection_task is None
+        assert len(saved) == 2  # once before wait, once after
+
+    async def test_waits_for_active_sessions(self, monkeypatch, tmp_path):
+        """graceful_stop awaits active session tasks before returning."""
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow._running = True
+
+        completed = []
+
+        async def short_task():
+            await asyncio.sleep(0)
+            completed.append(1)
+
+        session_task = asyncio.create_task(short_task())
+        flow._session_tasks[10] = session_task
+
+        monkeypatch.setattr(flow, "_save_state", lambda: None)
+        monkeypatch.setattr(
+            "golem.core.cli_wrapper.kill_all_active",
+            lambda: 0,
+        )
+
+        await flow.graceful_stop(timeout=5.0)
+
+        assert len(completed) == 1
+        assert not flow._session_tasks
+
+    async def test_cancels_tasks_that_exceed_timeout(self, monkeypatch, tmp_path):
+        """graceful_stop cancels session tasks that don't finish within timeout."""
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow._running = True
+
+        slow_task = asyncio.create_task(asyncio.sleep(100))
+        flow._session_tasks[99] = slow_task
+
+        monkeypatch.setattr(flow, "_save_state", lambda: None)
+        monkeypatch.setattr(
+            "golem.core.cli_wrapper.kill_all_active",
+            lambda: 0,
+        )
+
+        await flow.graceful_stop(timeout=0.01)
+
+        await asyncio.sleep(0)
+        assert slow_task.cancelled()
+        assert not flow._session_tasks
+
+    async def test_kills_cli_subprocesses(self, monkeypatch, tmp_path):
+        """graceful_stop calls kill_all_active to clean up CLI subprocesses."""
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow._running = True
+
+        killed = []
+        monkeypatch.setattr(flow, "_save_state", lambda: None)
+        monkeypatch.setattr(
+            "golem.core.cli_wrapper.kill_all_active",
+            lambda: killed.append(1) or 2,
+        )
+
+        await flow.graceful_stop(timeout=0.1)
+
+        assert len(killed) == 1
+
+    async def test_stops_heartbeat_and_self_update(self, monkeypatch, tmp_path):
+        """graceful_stop stops heartbeat and self_update managers."""
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow._running = True
+
+        mock_heartbeat = MagicMock()
+        mock_self_update = MagicMock()
+        flow._heartbeat = mock_heartbeat
+        flow._self_update = mock_self_update
+
+        monkeypatch.setattr(flow, "_save_state", lambda: None)
+        monkeypatch.setattr(
+            "golem.core.cli_wrapper.kill_all_active",
+            lambda: 0,
+        )
+
+        await flow.graceful_stop(timeout=0.1)
+
+        mock_heartbeat.stop.assert_called_once()
+        mock_self_update.stop.assert_called_once()
+
+    async def test_no_active_sessions_completes_immediately(
+        self, monkeypatch, tmp_path
+    ):
+        """graceful_stop completes without waiting when no sessions are active."""
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow._running = True
+
+        monkeypatch.setattr(flow, "_save_state", lambda: None)
+        monkeypatch.setattr(
+            "golem.core.cli_wrapper.kill_all_active",
+            lambda: 0,
+        )
+
+        # Should complete without error even with no session tasks
+        await flow.graceful_stop(timeout=0.1)
+        assert not flow._running
+
+
+class TestStartTickLoopOrphanCleanup:
+    """start_tick_loop runs orphan cleanup and data retention on startup."""
+
+    async def test_orphan_cleanup_called_when_work_dir_set(self, monkeypatch, tmp_path):
+        """cleanup_orphaned_worktrees is called when default_work_dir is set."""
+        cleanup_calls = []
+        monkeypatch.setattr(
+            "golem.flow.cleanup_orphaned_worktrees",
+            lambda base_dir: cleanup_calls.append(base_dir) or 0,
+        )
+        monkeypatch.setattr(
+            "golem.flow.cleanup_old_data",
+            lambda base_dir: {"traces": 0, "checkpoints": 0},
+        )
+
+        flow = _make_flow(
+            monkeypatch, tmp_path, default_work_dir=str(tmp_path / "repo")
+        )
+        detection_task = flow.start_tick_loop()
+        detection_task.cancel()
+        try:
+            await detection_task
+        except asyncio.CancelledError:
+            pass
+
+        assert cleanup_calls == [str(tmp_path / "repo")]
+
+    async def test_orphan_cleanup_logs_when_cleaned(
+        self, monkeypatch, tmp_path, caplog
+    ):
+        """cleanup_orphaned_worktrees returning >0 triggers a log message."""
+        import logging
+
+        monkeypatch.setattr(
+            "golem.flow.cleanup_orphaned_worktrees",
+            lambda base_dir: 3,
+        )
+        monkeypatch.setattr(
+            "golem.flow.cleanup_old_data",
+            lambda base_dir: {"traces": 0, "checkpoints": 0},
+        )
+
+        flow = _make_flow(
+            monkeypatch, tmp_path, default_work_dir=str(tmp_path / "repo")
+        )
+        with caplog.at_level(logging.INFO, logger="golem.flow"):
+            detection_task = flow.start_tick_loop()
+            detection_task.cancel()
+            try:
+                await detection_task
+            except asyncio.CancelledError:
+                pass
+
+        assert any("3 orphaned worktree" in r.message for r in caplog.records)
+
+    async def test_orphan_cleanup_skipped_when_no_work_dir(self, monkeypatch, tmp_path):
+        """cleanup_orphaned_worktrees is not called when default_work_dir is empty."""
+        cleanup_calls = []
+        monkeypatch.setattr(
+            "golem.flow.cleanup_orphaned_worktrees",
+            lambda base_dir: cleanup_calls.append(base_dir) or 0,
+        )
+        monkeypatch.setattr(
+            "golem.flow.cleanup_old_data",
+            lambda base_dir: {"traces": 0, "checkpoints": 0},
+        )
+
+        flow = _make_flow(monkeypatch, tmp_path, default_work_dir="")
+        detection_task = flow.start_tick_loop()
+        detection_task.cancel()
+        try:
+            await detection_task
+        except asyncio.CancelledError:
+            pass
+
+        assert cleanup_calls == []
+
+    async def test_data_retention_called_on_startup(self, monkeypatch, tmp_path):
+        """cleanup_old_data is called during start_tick_loop."""
+        retention_calls = []
+        monkeypatch.setattr(
+            "golem.flow.cleanup_orphaned_worktrees",
+            lambda base_dir: 0,
+        )
+        monkeypatch.setattr(
+            "golem.flow.cleanup_old_data",
+            lambda base_dir: retention_calls.append(base_dir)
+            or {"traces": 0, "checkpoints": 0},
+        )
+
+        flow = _make_flow(monkeypatch, tmp_path)
+        detection_task = flow.start_tick_loop()
+        detection_task.cancel()
+        try:
+            await detection_task
+        except asyncio.CancelledError:
+            pass
+
+        assert len(retention_calls) == 1
+
+    async def test_orphan_cleanup_exception_is_non_fatal(self, monkeypatch, tmp_path):
+        """Exceptions from cleanup_orphaned_worktrees do not prevent startup."""
+        monkeypatch.setattr(
+            "golem.flow.cleanup_orphaned_worktrees",
+            lambda base_dir: (_ for _ in ()).throw(RuntimeError("git error")),
+        )
+        monkeypatch.setattr(
+            "golem.flow.cleanup_old_data",
+            lambda base_dir: {"traces": 0, "checkpoints": 0},
+        )
+
+        flow = _make_flow(
+            monkeypatch, tmp_path, default_work_dir=str(tmp_path / "repo")
+        )
+        # Should not raise
+        detection_task = flow.start_tick_loop()
+        detection_task.cancel()
+        try:
+            await detection_task
+        except asyncio.CancelledError:
+            pass
+        assert flow._running
+
+    async def test_data_retention_exception_is_non_fatal(self, monkeypatch, tmp_path):
+        """Exceptions from cleanup_old_data do not prevent startup."""
+        monkeypatch.setattr(
+            "golem.flow.cleanup_orphaned_worktrees",
+            lambda base_dir: 0,
+        )
+        monkeypatch.setattr(
+            "golem.flow.cleanup_old_data",
+            lambda base_dir: (_ for _ in ()).throw(OSError("disk error")),
+        )
+
+        flow = _make_flow(monkeypatch, tmp_path)
+        # Should not raise
+        detection_task = flow.start_tick_loop()
+        detection_task.cancel()
+        try:
+            await detection_task
+        except asyncio.CancelledError:
+            pass
+        assert flow._running
+
+
 class TestDetectionLoop:
     async def test_runs_one_iteration_then_stops(self, monkeypatch, tmp_path):
         flow = _make_flow(monkeypatch, tmp_path, tick_interval=0)
