@@ -33,7 +33,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [ ] UX-007: **Loading states** — skeleton loader CSS exists but never used; no spinners on any API call or page transition (GH #120)
 - [ ] UX-008: **Keyboard shortcuts and mobile layout** — no keyboard nav (Ctrl+K, arrows, Escape); zero `@media` queries for <1024px; touch targets too small (GH #121)
 - [ ] INFRA-013: **Error recovery skill** — agents can't systematically recover from transient failures; needs retry/backoff/circuit-breaker patterns + orchestration prompt update with recovery phase (GH #122)
-- [ ] INFRA-014: **Expand CLAUDE.md** — add architecture overview (5-phase pipeline, data models, concurrency), common pitfalls & debugging, git workflow, async patterns (GH #123)
+- [x] INFRA-014: **Expand CLAUDE.md** — added architecture overview, concurrency model, data flow, common pitfalls, debugging tips, async patterns, git workflow (GH #123, 2026-03-29)
 - [ ] FEAT-007: **Structured logging with task correlation** — 403 logger calls but no cross-task tracing; add task_id/phase via contextvars; JSON format option (GH #124)
 - [ ] INFRA-015: **Git workflow rule** — no rule for branch naming, commit message format, FF-only merge strategy, fixup! conventions (GH #126)
 - [ ] INFRA-017: **Phase transition criteria in prompts** — orchestrate_task.txt lacks explicit exit criteria per phase; ambiguity on when to retry vs escalate; transient vs deterministic failure distinction missing (GH #128)
