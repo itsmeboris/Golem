@@ -528,7 +528,9 @@ class TestTransientRetry:
         assert results[0].success is False
         assert "timed out" in results[0].error
         # Should retry INFRA_RETRIES times with the configured delay
-        assert retry_delays.count(MergeQueue.INFRA_RETRY_DELAY) == MergeQueue.INFRA_RETRIES
+        assert (
+            retry_delays.count(MergeQueue.INFRA_RETRY_DELAY) == MergeQueue.INFRA_RETRIES
+        )
 
     @patch("golem.merge_queue.get_changed_files", return_value=[])
     async def test_all_attempts_return_none_hits_fallback(
