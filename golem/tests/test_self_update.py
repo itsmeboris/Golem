@@ -448,6 +448,47 @@ class TestGitHelpers:
 
 
 class TestReviewMethod:
+    async def test_diff_short_no_truncation_notice(self, manager):
+        """Prompt contains full diff text when diff is under the limit."""
+        captured = {}
+
+        def _capture_prompt(prompt):
+            captured["prompt"] = prompt
+            return "ACCEPT\nok"
+
+        short_diff = "x" * 100
+        with patch.object(manager, "_run_review_agent", side_effect=_capture_prompt):
+            await manager._review(short_diff, "log")
+        assert "TRUNCATED" not in captured["prompt"]
+        assert short_diff in captured["prompt"]
+
+    async def test_diff_over_limit_adds_truncation_notice(self, manager):
+        """Prompt contains TRUNCATED notice when diff exceeds 50 000 chars."""
+        captured = {}
+
+        def _capture_prompt(prompt):
+            captured["prompt"] = prompt
+            return "ACCEPT\nok"
+
+        long_diff = "y" * 60_000
+        with patch.object(manager, "_run_review_agent", side_effect=_capture_prompt):
+            await manager._review(long_diff, "log")
+        assert "TRUNCATED" in captured["prompt"]
+        assert "60000 characters" in captured["prompt"]
+        assert "10000 characters manually" in captured["prompt"]
+
+    async def test_diff_over_limit_logs_warning(self, manager):
+        """A warning is logged when the diff is truncated."""
+        long_diff = "z" * 60_000
+        with (
+            patch.object(manager, "_run_review_agent", return_value="ACCEPT\nok"),
+            patch("golem.self_update.logger") as mock_logger,
+        ):
+            await manager._review(long_diff, "log")
+        mock_logger.warning.assert_called_once()
+        warning_args = mock_logger.warning.call_args[0]
+        assert "truncated" in warning_args[0].lower()
+
     async def test_accept_response(self, manager):
         with patch.object(
             manager, "_run_review_agent", return_value="ACCEPT\nLooks good"

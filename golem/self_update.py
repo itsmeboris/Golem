@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 _STATE_FILE = "self_update_state.json"
 _MAX_HISTORY = 50
+_MAX_DIFF_CHARS = 50_000
 
 
 class SelfUpdateManager:
@@ -346,6 +347,18 @@ class SelfUpdateManager:
 
     async def _review(self, diff: str, commit_log: str) -> tuple[str, str]:
         """Dispatch a Claude agent to review the diff. Returns (verdict, reasoning)."""
+        diff_text = diff[:_MAX_DIFF_CHARS]
+        if len(diff) > _MAX_DIFF_CHARS:
+            diff_text += (
+                "\n\n--- TRUNCATED: diff was %d characters, showing first %d. "
+                "Review the remaining %d characters manually before accepting. ---"
+                % (len(diff), _MAX_DIFF_CHARS, len(diff) - _MAX_DIFF_CHARS)
+            )
+            logger.warning(
+                "Self-update diff truncated: %d chars → %d chars",
+                len(diff),
+                _MAX_DIFF_CHARS,
+            )
         prompt = (
             "You are reviewing a code update to the Golem daemon. "
             "Assess whether this change is safe to apply.\n\n"
@@ -353,7 +366,7 @@ class SelfUpdateManager:
             "Evaluate: Does it break existing functionality? "
             "Does it introduce bugs? Is it safe?\n"
             "Respond with exactly ACCEPT or REJECT on the first line, "
-            "followed by your reasoning." % (commit_log, diff[:50000])
+            "followed by your reasoning." % (commit_log, diff_text)
         )
         try:
             result = await asyncio.to_thread(self._run_review_agent, prompt)

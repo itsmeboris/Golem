@@ -51,7 +51,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [ ] FEAT-003: **Dashboard prompt comparison UI** — table/chart for `/api/analytics/by-prompt` data; API exists, frontend missing (GH #82)
 - [ ] FEAT-004: **CLI `logs` command** — no `golem logs` / `golem logs --follow` subcommand; `status --watch` shows counters but not log output (GH #83)
 - [ ] TEST-002: **Mutation testing** — mutmut integration (GH #17)
-- [ ] BUG-007: **Self-update review silently truncates large diffs** — diff truncated to 50,000 chars without warning; review agent sees incomplete picture; truncated portion could hide malicious changes (GH #91)
+- [x] BUG-007: **Self-update review silently truncates large diffs** — added truncation notice in prompt and logger.warning (GH #91, 2026-03-29)
 - [ ] UX-001: **Dashboard accessibility gaps** — missing ARIA labels, keyboard navigation, `role="dialog"` on modals, focus indicators; `--text-muted` may fail WCAG AA contrast (GH #92)
 - [ ] UX-002: **Dashboard missing pagination and search** — overview renders all sessions without pagination; no search/filter by subject, ID, or state; unusable at scale (GH #93)
 - [ ] UX-003: **No confirmation for destructive dashboard actions** — "Clear failed", admin "Stop"/"Restart" execute immediately; one accidental click clears data or stops flow (GH #94)
