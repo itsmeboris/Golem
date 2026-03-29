@@ -153,7 +153,7 @@ class TestBuildRetryPrompt:
         session = TaskSession(
             parent_issue_id=42,
             parent_subject="Test",
-            verification_result={"passed": False, "stdout": "FAILED test_x"},
+            verification_result={"passed": False, "pytest_output": "FAILED test_x"},
         )
         profile = _make_profile()
         sup = _make_supervisor(session=session, profile=profile)
@@ -194,20 +194,53 @@ class TestVerificationFeedback:
         sup = _make_supervisor(session=session)
         assert sup._verification_feedback() == "(verification passed)"
 
-    def test_failed_verification_with_output(self):
+    def test_failed_verification_with_all_outputs(self):
         session = TaskSession(
             parent_issue_id=1,
             parent_subject="t",
             verification_result={
                 "passed": False,
-                "stdout": "FAIL test_foo",
-                "stderr": "error details",
+                "black_output": "would reformat foo.py",
+                "pylint_output": "E0001: syntax error",
+                "pytest_output": "FAILED test_foo\n" * 10,
             },
         )
         sup = _make_supervisor(session=session)
         result = sup._verification_feedback()
-        assert "FAIL test_foo" in result
-        assert "error details" in result
+        assert "would reformat foo.py" in result
+        assert "E0001: syntax error" in result
+        assert "FAILED test_foo" in result
+
+    def test_failed_verification_pytest_output_truncated(self):
+        long_output = "FAILED test_line\n" * 300
+        session = TaskSession(
+            parent_issue_id=1,
+            parent_subject="t",
+            verification_result={
+                "passed": False,
+                "pytest_output": long_output,
+            },
+        )
+        sup = _make_supervisor(session=session)
+        result = sup._verification_feedback()
+        assert len(result) < len(long_output)
+
+    def test_failed_verification_empty_outputs_skipped(self):
+        session = TaskSession(
+            parent_issue_id=1,
+            parent_subject="t",
+            verification_result={
+                "passed": False,
+                "black_output": "",
+                "pylint_output": "E0001: error",
+                "pytest_output": "",
+            },
+        )
+        sup = _make_supervisor(session=session)
+        result = sup._verification_feedback()
+        assert "E0001: error" in result
+        assert "Black:" not in result
+        assert "Pytest:" not in result
 
 
 # -- Report parsing ---------------------------------------------------------

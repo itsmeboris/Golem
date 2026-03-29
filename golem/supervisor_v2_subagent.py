@@ -850,10 +850,12 @@ class SubagentSupervisor:
             return "(no verification failures)"
         parts = []
         if not vr.get("passed", True):
-            if vr.get("stdout"):
-                parts.append(f"stdout:\n{vr['stdout']}")
-            if vr.get("stderr"):
-                parts.append(f"stderr:\n{vr['stderr']}")
+            if vr.get("black_output"):
+                parts.append("Black:\n%s" % vr["black_output"])
+            if vr.get("pylint_output"):
+                parts.append("Pylint:\n%s" % vr["pylint_output"])
+            if vr.get("pytest_output"):
+                parts.append("Pytest:\n%s" % vr["pytest_output"][:3000])
         return "\n".join(parts) if parts else "(verification passed)"
 
     async def _retry_with_resume(

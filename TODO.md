@@ -24,7 +24,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [x] SEC-004: **API missing rate limiting** — added in-memory sliding-window rate limiter (10 req/min) on mutation endpoints (GH #66, 2026-03-29)
 - [x] SEC-005: **Dashboard API unauthenticated** — added _require_api_key to all dashboard /api/* read endpoints (GH #67, 2026-03-29)
 - [x] SEC-010: **cancel_task missing API key auth** — added _require_api_key check before rate limiter (GH #98, 2026-03-29)
-- [ ] BUG-010: **Supervisor verification pipeline gap** — `_run_overall_validation()` never passes `verification_result` to `run_validation()`; preflight result not stored in session; `_verification_feedback()` uses wrong dict keys (`stdout` vs `black_output`); validation always sees "(no independent verification)" (GH #102)
+- [x] BUG-010: **Supervisor verification pipeline gap** — fixed _verification_feedback() to use correct dict keys (black_output/pylint_output/pytest_output) (GH #102, 2026-03-29)
 - [ ] REL-009: **No graceful shutdown drain** — SIGTERM immediately cancels active tasks via `stop_tick_loop()` without draining; in-progress work aborted, worktrees left inconsistent, no checkpoint saved before cancel (GH #103)
 - [ ] SEC-006: **MCP tool schema validation** — poisoning defense (GH #18)
 - [ ] SEC-007: **Runtime subprocess sandboxing** — OS-level containment (GH #19)
