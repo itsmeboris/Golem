@@ -470,6 +470,7 @@ function updateTopStats(sessions) {
   const btn = inner.querySelector('.ov-clear-failed-btn');
   if (btn) {
     btn.addEventListener('click', async () => {
+      if (!confirm('Clear all failed sessions? This cannot be undone.')) return;
       const result = await clearFailedSessions();
       if (result.ok) renderOverview();
     });

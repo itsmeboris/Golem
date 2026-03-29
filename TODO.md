@@ -54,7 +54,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [x] BUG-007: **Self-update review silently truncates large diffs** — added truncation notice in prompt and logger.warning (GH #91, 2026-03-29)
 - [ ] UX-001: **Dashboard accessibility gaps** — missing ARIA labels, keyboard navigation, `role="dialog"` on modals, focus indicators; `--text-muted` may fail WCAG AA contrast (GH #92)
 - [ ] UX-002: **Dashboard missing pagination and search** — overview renders all sessions without pagination; no search/filter by subject, ID, or state; unusable at scale (GH #93)
-- [ ] UX-003: **No confirmation for destructive dashboard actions** — "Clear failed", admin "Stop"/"Restart" execute immediately; one accidental click clears data or stops flow (GH #94)
+- [x] UX-003: **No confirmation for destructive dashboard actions** — added confirm() dialogs to clear/cancel/trigger buttons (GH #94, 2026-03-29)
 - [ ] TEST-003: **Lint modules lack tests** — all 9 `golem/lint/` modules have no dedicated test files; pre-commit hooks can crash silently or produce false positives (GH #95)
 
 ### P3 — Low Priority

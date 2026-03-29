@@ -233,6 +233,7 @@ function _getTaskId(session) {
 async function handleCancel(session) {
   const taskId = _getTaskId(session);
   if (!taskId) return;
+  if (!confirm('Cancel this task? This cannot be undone.')) return;
   const btn = document.querySelector('[data-action="cancel"]');
   if (btn) { btn.disabled = true; btn.textContent = 'Cancelling\u2026'; }
   try {

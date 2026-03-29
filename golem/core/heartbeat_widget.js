@@ -26,7 +26,7 @@ const _HB_STATES = {
 
 async function fetchHeartbeat() {
   try {
-    const res = await fetch('/api/heartbeat');
+    const res = await fetch('/api/heartbeat', { signal: AbortSignal.timeout(10000) });
     if (!res.ok) return null;
     return await res.json();
   } catch (_e) {
@@ -205,8 +205,9 @@ function _hbPopoverHTML(data) {
 /* ── Trigger ────────────────────────────────────────────── */
 
 async function _hbTrigger() {
+  if (!confirm('Trigger heartbeat scan now?')) return;
   try {
-    await fetch('/api/heartbeat/trigger', { method: 'POST' });
+    await fetch('/api/heartbeat/trigger', { method: 'POST', signal: AbortSignal.timeout(30000) });
     await updateHeartbeat();
   } catch (_e) { /* ignore */ }
 }
