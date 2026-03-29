@@ -36,7 +36,18 @@
   <div class="overview-layout" id="view-overview" role="region" aria-label="Task overview">
     <div class="ov-left">
       <div class="ov-header">Tasks <span class="count" id="ov-task-count" aria-live="polite"></span></div>
+      <div class="ov-controls">
+        <input type="text" id="ov-search" placeholder="Search by ID, subject, or state\u2026" aria-label="Search tasks">
+        <select id="ov-state-filter" aria-label="Filter by state">
+          <option value="">All states</option>
+          <option value="running">Running</option>
+          <option value="completed">Completed</option>
+          <option value="failed">Failed</option>
+          <option value="detected">Detected</option>
+        </select>
+      </div>
       <div class="ov-list" id="ov-task-list" role="list" aria-label="Task list"></div>
+      <div class="ov-pagination" id="ov-pagination"></div>
       <div class="ov-legend-bar" aria-label="Status legend">
         <span class="ov-legend-label">Status</span>
         <span class="legend-item"><span class="legend-dot" style="background:var(--blue)" aria-hidden="true"></span> Running / Verifying</span>

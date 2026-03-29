@@ -21,7 +21,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [ ] FEAT-003: **Dashboard prompt comparison UI** — table/chart for `/api/analytics/by-prompt` data; API exists, frontend missing (GH #82)
 - [ ] FEAT-004: **CLI `logs` command** — no `golem logs` / `golem logs --follow` subcommand; `status --watch` shows counters but not log output (GH #83)
 - [ ] TEST-002: **Mutation testing** — mutmut integration (GH #17)
-- [ ] UX-002: **Dashboard missing pagination and search** — overview renders all sessions without pagination; no search/filter by subject, ID, or state; unusable at scale (GH #93)
+- [x] UX-002: **Dashboard missing pagination and search** — added client-side search, state filter, and 25-per-page pagination (GH #93, 2026-03-29)
 - [ ] TEST-003: **Lint modules lack tests** — all 9 `golem/lint/` modules have no dedicated test files; pre-commit hooks can crash silently or produce false positives (GH #95)
 
 ### P3 — Low Priority

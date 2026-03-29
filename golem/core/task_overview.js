@@ -3,6 +3,11 @@
  */
 'use strict';
 
+let _ovPage = 0;
+const _OV_PAGE_SIZE = 25;
+let _ovFilter = '';
+let _ovStateFilter = '';  // '' = all, 'running', 'completed', 'failed', 'detected'
+
 async function renderOverview() {
   const sessions = await fetchSessions();
   S.sessions = sessions;
@@ -12,19 +17,56 @@ async function renderOverview() {
   listEl.innerHTML = '';
 
   // Sort: running first, then by updated_at desc
-  const sorted = Object.entries(sessions).sort(([, a], [, b]) => {
+  let sorted = Object.entries(sessions).sort(([, a], [, b]) => {
     const aRun = isTaskRunning(a);
     const bRun = isTaskRunning(b);
     if (aRun !== bRun) return bRun - aRun;
     return (b.updated_at || '').localeCompare(a.updated_at || '');
   });
 
-  for (const [eventId, session] of sorted) {
+  // Apply search filter
+  if (_ovFilter) {
+    const q = _ovFilter.toLowerCase();
+    sorted = sorted.filter(([eventId, session]) => {
+      const id = String(session.parent_issue_id || session.id || eventId).toLowerCase();
+      const subject = (session.parent_subject || '').toLowerCase();
+      const state = (session.state || '').toLowerCase();
+      return id.includes(q) || subject.includes(q) || state.includes(q);
+    });
+  }
+
+  // Apply state filter
+  if (_ovStateFilter) {
+    sorted = sorted.filter(([, session]) => {
+      return (session.state || '').toLowerCase() === _ovStateFilter;
+    });
+  }
+
+  // Pagination
+  const totalItems = sorted.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / _OV_PAGE_SIZE));
+  _ovPage = Math.min(_ovPage, totalPages - 1);
+  const start = _ovPage * _OV_PAGE_SIZE;
+  const pageItems = sorted.slice(start, start + _OV_PAGE_SIZE);
+
+  for (const [eventId, session] of pageItems) {
     listEl.appendChild(renderTaskRow(eventId, session));
   }
 
+  // Update count with filter info
   const countEl = document.getElementById('ov-task-count');
-  if (countEl) countEl.textContent = `${sorted.length} tasks`;
+  if (countEl) {
+    const total = Object.keys(sessions).length;
+    if (totalItems < total) {
+      countEl.textContent = `${totalItems} of ${total} tasks`;
+    } else {
+      countEl.textContent = `${total} tasks`;
+    }
+  }
+
+  // Render pagination controls
+  _renderPagination(totalPages, totalItems);
+
   updateTopStats(sessions);
 
   if (S.selectedTaskId) {
@@ -33,12 +75,56 @@ async function renderOverview() {
     listEl.querySelectorAll('.ov-task').forEach(r => {
       r.classList.toggle('selected', r.dataset.eventId === S.selectedTaskId);
     });
-  } else if (sorted.length > 0) {
-    S.selectedTaskId = sorted[0][0];
+  } else if (pageItems.length > 0) {
+    S.selectedTaskId = pageItems[0][0];
     renderPreview(S.selectedTaskId);
     const firstRow = listEl.querySelector('.ov-task');
     if (firstRow) firstRow.classList.add('selected');
   }
+}
+
+function _renderPagination(totalPages, totalItems) {
+  const el = document.getElementById('ov-pagination');
+  if (!el) return;
+  if (totalPages <= 1) { el.innerHTML = ''; return; }
+
+  let html = '';
+  html += `<button class="ov-page-btn" ${_ovPage === 0 ? 'disabled' : ''} data-page="${_ovPage - 1}">\u2190 Prev</button>`;
+  html += `<span class="ov-page-info">Page ${_ovPage + 1} of ${totalPages}</span>`;
+  html += `<button class="ov-page-btn" ${_ovPage >= totalPages - 1 ? 'disabled' : ''} data-page="${_ovPage + 1}">Next \u2192</button>`;
+  el.innerHTML = html;
+
+  el.querySelectorAll('.ov-page-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _ovPage = parseInt(btn.dataset.page, 10);
+      renderOverview();
+    });
+  });
+}
+
+function _initOverviewControls() {
+  const searchEl = document.getElementById('ov-search');
+  if (searchEl) {
+    searchEl.addEventListener('input', () => {
+      _ovFilter = searchEl.value.trim();
+      _ovPage = 0;
+      renderOverview();
+    });
+  }
+  const stateEl = document.getElementById('ov-state-filter');
+  if (stateEl) {
+    stateEl.addEventListener('change', () => {
+      _ovStateFilter = stateEl.value;
+      _ovPage = 0;
+      renderOverview();
+    });
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _initOverviewControls);
+} else {
+  _initOverviewControls();
 }
 
 function renderTaskRow(eventId, session) {

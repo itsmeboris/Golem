@@ -287,3 +287,34 @@ body{font-family:var(--font-sans);background:var(--bg-base);color:var(--text-pri
 
 /* ── Stagger Animations ──────────────────────────────────── */
 @keyframes listEntrance{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:translateX(0)}}
+
+/* ── Overview Controls (search + state filter) ───────────── */
+.ov-controls{
+  display:flex;gap:0.5rem;padding:0.5rem 0.75rem;
+  border-bottom:1px solid var(--border-subtle);background:var(--bg-surface)
+}
+.ov-controls input,
+.ov-controls select{
+  background:var(--bg-elevated);border:1px solid var(--border-subtle);
+  color:var(--text-primary);padding:0.35rem 0.6rem;border-radius:var(--radius-sm);
+  font:inherit;font-size:0.75rem
+}
+.ov-controls input{flex:1}
+.ov-controls input::placeholder{color:var(--text-muted)}
+.ov-controls select{cursor:pointer}
+.ov-controls input:focus-visible,
+.ov-controls select:focus-visible{outline:2px solid var(--border-focus);outline-offset:1px}
+
+/* ── Overview Pagination ─────────────────────────────────── */
+.ov-pagination{
+  display:flex;align-items:center;justify-content:center;gap:0.75rem;
+  padding:0.5rem;border-top:1px solid var(--border-subtle);font-size:0.75rem
+}
+.ov-page-btn{
+  background:var(--bg-elevated);border:1px solid var(--border-subtle);
+  color:var(--text-secondary);padding:0.25rem 0.6rem;border-radius:var(--radius-sm);
+  cursor:pointer;font:inherit;font-size:0.72rem;transition:all var(--transition)
+}
+.ov-page-btn:hover:not(:disabled){background:var(--bg-hover);color:var(--text-primary)}
+.ov-page-btn:disabled{opacity:0.4;cursor:default}
+.ov-page-info{color:var(--text-muted)}
