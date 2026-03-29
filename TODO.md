@@ -64,7 +64,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [ ] TEST-003: **Lint modules lack tests** — all 9 `golem/lint/` modules have no dedicated test files; pre-commit hooks can crash silently or produce false positives (GH #95)
 - [ ] INFRA-009: **Worktree orphans on crash recovery** — daemon restart doesn't clean up stale worktrees from previous crashed runs; orphaned dirs accumulate in `data/agent/worktrees/` (GH #104)
 - [ ] INFRA-010: **Trace/checkpoint data retention** — traces (`data/traces/`, 154M+) and checkpoints grow unbounded; `LoggingConfig.max_bytes`/`backup_count` defined but never wired to a handler; no cleanup policy (GH #105)
-- [ ] INFRA-011: **No startup dependency validation** — daemon starts without checking git/claude in PATH, disk space, port availability; missing tools cause cryptic subprocess errors on first task (GH #106)
+- [x] INFRA-011: **No startup dependency validation** — added validate_dependencies() checking git/claude in PATH at daemon start (GH #106, 2026-03-29)
 - [x] BUG-011: **Explicit --config path silently falls back to defaults** — raise FileNotFoundError for explicit nonexistent path (GH #107, 2026-03-29)
 
 ### P3 — Low Priority

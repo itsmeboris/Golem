@@ -1168,8 +1168,10 @@ class TestCmdDaemon:
     @patch("golem.cli.remove_pid")
     @patch("golem.cli.read_pid", return_value=None)
     @patch("golem.cli.load_config")
+    @patch("golem.cli.validate_dependencies", return_value=[])
     def test_foreground_mode(
         self,
+        _mock_validate,
         _mock_config,
         _mock_read_pid,
         mock_remove,
@@ -1196,8 +1198,9 @@ class TestCmdDaemon:
     @patch("golem.cli.remove_pid")
     @patch("golem.cli.read_pid", return_value=9999)
     @patch("golem.cli.load_config")
+    @patch("golem.cli.validate_dependencies", return_value=[])
     def test_stale_pid_removed(
-        self, _mock_config, _mock_read_pid, mock_remove, _mock_kill
+        self, _mock_validate, _mock_config, _mock_read_pid, mock_remove, _mock_kill
     ):
         args = SimpleNamespace(
             config=None,
@@ -1219,7 +1222,10 @@ class TestCmdDaemon:
     @patch("os.kill")
     @patch("golem.cli.read_pid", return_value=9999)
     @patch("golem.cli.load_config")
-    def test_already_running(self, _mock_config, _mock_read_pid, _mock_kill, capsys):
+    @patch("golem.cli.validate_dependencies", return_value=[])
+    def test_already_running(
+        self, _mock_validate, _mock_config, _mock_read_pid, _mock_kill, capsys
+    ):
         args = SimpleNamespace(
             config=None,
             log_dir=None,
@@ -1237,8 +1243,16 @@ class TestCmdDaemon:
     @patch("golem.cli.write_pid")
     @patch("golem.cli.remove_pid")
     @patch("golem.cli.load_config")
+    @patch("golem.cli.validate_dependencies", return_value=[])
     def test_own_pid_skips_already_running(
-        self, _mock_config, _mock_remove, mock_write, mock_asyncio, mock_tee, tmp_path
+        self,
+        _mock_validate,
+        _mock_config,
+        _mock_remove,
+        mock_write,
+        mock_asyncio,
+        mock_tee,
+        tmp_path,
     ):
         """After os.execv the PID file contains our own PID — should NOT abort."""
         own_pid = os.getpid()
@@ -1263,8 +1277,10 @@ class TestCmdDaemon:
     @patch("golem.cli.remove_pid")
     @patch("golem.cli.read_pid", return_value=None)
     @patch("golem.cli.load_config")
+    @patch("golem.cli.validate_dependencies", return_value=[])
     def test_background_mode(
         self,
+        _mock_validate,
         _mock_config,
         _mock_read_pid,
         mock_remove,
@@ -1288,6 +1304,25 @@ class TestCmdDaemon:
         mock_daemonize.assert_called_once()
         mock_write.assert_called_once()
         mock_remove.assert_called_once()
+
+    def test_missing_required_tool_returns_exit_code_1(self, capsys):
+        with patch(
+            "golem.cli.validate_dependencies",
+            side_effect=RuntimeError(
+                "git not found in PATH — required for Golem operation"
+            ),
+        ):
+            args = SimpleNamespace(
+                config=None,
+                log_dir=None,
+                pid_file=None,
+                foreground=True,
+                port=None,
+            )
+            result = cmd_daemon(args)
+        assert result == 1
+        err = capsys.readouterr().err
+        assert "git not found in PATH" in err
 
 
 class TestWaitForExit:

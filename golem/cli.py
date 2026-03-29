@@ -38,6 +38,7 @@ from .utils import format_duration
 from .core.stream_printer import StreamPrinter as _StreamPrinter
 from .core.control_api import wire_control_api
 from .core.triggers import FASTAPI_AVAILABLE
+from .startup import validate_dependencies
 from .orchestrator import (
     TaskOrchestrator,
     TaskSession,
@@ -738,6 +739,11 @@ def cmd_poll(args) -> int:
 
 def cmd_daemon(args) -> int:
     """Handler for the 'daemon' subcommand — start tick loop and dashboard."""
+    try:
+        validate_dependencies()
+    except RuntimeError as exc:
+        print("Startup error: %s" % exc, file=sys.stderr)
+        return 1
     config = load_config(getattr(args, "config", None))
 
     log_dir = Path(getattr(args, "log_dir", None) or DEFAULT_DAEMON_LOG_DIR)
