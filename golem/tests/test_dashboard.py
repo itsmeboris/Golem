@@ -3235,3 +3235,254 @@ class TestXssEscaping:
         # Verify the replace chain pattern: innerHTML followed by .replace(...)
         assert ".replace(/'/g" in body, f"{js_file} must have single-quote replace"
         assert '.replace(/"/g' in body, f"{js_file} must have double-quote replace"
+
+
+# ---------------------------------------------------------------------------
+# UX-009: Data visualizations — sparkline, barChart, CSS, and overview stats
+# ---------------------------------------------------------------------------
+
+
+class TestDataVisualizations:
+    """Verify sparkline, barChart functions and CSS in shared files; stats wiring
+    in task_overview.js."""
+
+    @pytest.fixture(autouse=True)
+    def _paths(self):
+        core = Path(__file__).resolve().parent.parent / "core"
+        self.shared_js_path = core / "dashboard_shared.js"
+        self.shared_css_path = core / "dashboard_shared.css"
+        self.overview_path = core / "task_overview.js"
+        self.html_path = core / "task_dashboard.html"
+
+    # --- JS: sparkline function ---
+
+    def test_sparkline_function_defined(self):
+        """sparkline() must be defined in dashboard_shared.js."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        assert (
+            "function sparkline(" in body
+        ), "Missing sparkline function in dashboard_shared.js"
+
+    def test_sparkline_returns_svg(self):
+        """sparkline() must return an SVG element."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        idx = body.find("function sparkline(")
+        assert idx != -1, "sparkline function not found"
+        after = body[idx : idx + 600]
+        assert "<svg" in after, "sparkline must return an SVG element"
+        assert "polyline" in after, "sparkline must use a polyline element"
+
+    def test_sparkline_uses_green_stroke(self):
+        """sparkline() must use --green color for the line stroke."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        idx = body.find("function sparkline(")
+        assert idx != -1, "sparkline function not found"
+        after = body[idx : idx + 600]
+        assert (
+            "var(--green)" in after
+        ), "sparkline must use var(--green) as stroke color"
+
+    def test_sparkline_returns_empty_for_no_values(self):
+        """sparkline() must return empty string when values array is empty."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        idx = body.find("function sparkline(")
+        assert idx != -1, "sparkline function not found"
+        # Must have an early-return guard for empty/falsy input
+        after = body[idx : idx + 200]
+        assert (
+            "return ''" in after or 'return ""' in after
+        ), "sparkline must return empty string for empty input"
+
+    def test_sparkline_has_sparkline_class(self):
+        """sparkline() SVG must have the 'sparkline' CSS class."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        idx = body.find("function sparkline(")
+        assert idx != -1, "sparkline function not found"
+        after = body[idx : idx + 600]
+        assert 'class="sparkline"' in after, "sparkline SVG must have class='sparkline'"
+
+    # --- JS: barChart function ---
+
+    def test_bar_chart_function_defined(self):
+        """barChart() must be defined in dashboard_shared.js."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        assert (
+            "function barChart(" in body
+        ), "Missing barChart function in dashboard_shared.js"
+
+    def test_bar_chart_uses_bar_row_class(self):
+        """barChart() must produce elements with class 'bar-row'."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        idx = body.find("function barChart(")
+        assert idx != -1, "barChart function not found"
+        after = body[idx : idx + 500]
+        assert "bar-row" in after, "barChart must use .bar-row class"
+
+    def test_bar_chart_uses_bar_track_class(self):
+        """barChart() must produce elements with class 'bar-track'."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        idx = body.find("function barChart(")
+        assert idx != -1, "barChart function not found"
+        after = body[idx : idx + 500]
+        assert "bar-track" in after, "barChart must use .bar-track class"
+
+    def test_bar_chart_uses_bar_fill_class(self):
+        """barChart() must produce elements with class 'bar-fill'."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        idx = body.find("function barChart(")
+        assert idx != -1, "barChart function not found"
+        after = body[idx : idx + 500]
+        assert "bar-fill" in after, "barChart must use .bar-fill class"
+
+    def test_bar_chart_uses_bar_label_class(self):
+        """barChart() must produce elements with class 'bar-label'."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        idx = body.find("function barChart(")
+        assert idx != -1, "barChart function not found"
+        after = body[idx : idx + 500]
+        assert "bar-label" in after, "barChart must use .bar-label class"
+
+    def test_bar_chart_returns_empty_for_no_items(self):
+        """barChart() must return empty string when items array is empty."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        idx = body.find("function barChart(")
+        assert idx != -1, "barChart function not found"
+        after = body[idx : idx + 200]
+        assert (
+            "return ''" in after or 'return ""' in after
+        ), "barChart must return empty string for empty input"
+
+    def test_bar_chart_applies_item_color(self):
+        """barChart() must use item.color for bar fill background."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        idx = body.find("function barChart(")
+        assert idx != -1, "barChart function not found"
+        after = body[idx : idx + 500]
+        assert (
+            "item.color" in after
+        ), "barChart must apply item.color as bar-fill background"
+
+    # --- CSS: visualization classes ---
+
+    @pytest.mark.parametrize(
+        "css_class",
+        [
+            ".sparkline",
+            ".bar-row",
+            ".bar-track",
+            ".bar-fill",
+            ".bar-label",
+            ".bar-value",
+        ],
+        ids=["sparkline", "bar-row", "bar-track", "bar-fill", "bar-label", "bar-value"],
+    )
+    def test_visualization_css_class_present(self, css_class):
+        """Each visualization CSS class must be defined in dashboard_shared.css."""
+        body = self.shared_css_path.read_text(encoding="utf-8")
+        assert (
+            css_class in body
+        ), f"Missing {css_class} CSS class in dashboard_shared.css"
+
+    def test_bar_track_has_background(self):
+        """.bar-track must define a background color."""
+        body = self.shared_css_path.read_text(encoding="utf-8")
+        idx = body.find(".bar-track")
+        assert idx != -1, ".bar-track not found in CSS"
+        after = body[idx : idx + 120]
+        assert "background" in after, ".bar-track must set background color"
+
+    def test_bar_fill_has_transition(self):
+        """.bar-fill must define a CSS transition for smooth animation."""
+        body = self.shared_css_path.read_text(encoding="utf-8")
+        idx = body.find(".bar-fill")
+        assert idx != -1, ".bar-fill not found in CSS"
+        after = body[idx : idx + 120]
+        assert (
+            "transition" in after
+        ), ".bar-fill must have transition for width animation"
+
+    def test_bar_row_uses_flex_layout(self):
+        """.bar-row must use display:flex for alignment."""
+        body = self.shared_css_path.read_text(encoding="utf-8")
+        idx = body.find(".bar-row")
+        assert idx != -1, ".bar-row not found in CSS"
+        after = body[idx : idx + 120]
+        assert "flex" in after, ".bar-row must use flex layout"
+
+    def test_ov_stats_section_class_defined(self):
+        """.ov-stats-section must be defined for the analytics panel wrapper."""
+        body = self.shared_css_path.read_text(encoding="utf-8")
+        assert (
+            ".ov-stats-section" in body
+        ), "Missing .ov-stats-section class in dashboard_shared.css"
+
+    # --- task_overview.js: renderOverviewStats wired up ---
+
+    def test_render_overview_stats_function_defined(self):
+        """renderOverviewStats() must be defined in task_overview.js."""
+        body = self.overview_path.read_text(encoding="utf-8")
+        assert (
+            "function renderOverviewStats(" in body
+        ), "Missing renderOverviewStats function in task_overview.js"
+
+    def test_render_overview_stats_called_from_update_top_stats(self):
+        """renderOverviewStats must be called from updateTopStats."""
+        body = self.overview_path.read_text(encoding="utf-8")
+        idx = body.find("function updateTopStats(")
+        assert idx != -1, "updateTopStats function not found"
+        # Find the next function definition to bound the search window
+        next_fn = body.find("\nfunction ", idx + 10)
+        end = next_fn if next_fn != -1 else idx + 1200
+        after = body[idx:end]
+        assert (
+            "renderOverviewStats(" in after
+        ), "updateTopStats must call renderOverviewStats to render analytics panel"
+
+    def test_render_overview_stats_uses_sparkline(self):
+        """renderOverviewStats must call sparkline() for the success trend chart."""
+        body = self.overview_path.read_text(encoding="utf-8")
+        idx = body.find("function renderOverviewStats(")
+        assert idx != -1, "renderOverviewStats function not found"
+        after = body[idx : idx + 2000]
+        assert (
+            "sparkline(" in after
+        ), "renderOverviewStats must call sparkline() for success-rate trend"
+
+    def test_render_overview_stats_uses_bar_chart(self):
+        """renderOverviewStats must call barChart() for the cost and/or phase charts."""
+        body = self.overview_path.read_text(encoding="utf-8")
+        idx = body.find("function renderOverviewStats(")
+        assert idx != -1, "renderOverviewStats function not found"
+        after = body[idx : idx + 2000]
+        assert (
+            "barChart(" in after
+        ), "renderOverviewStats must call barChart() for cost/phase charts"
+
+    def test_render_overview_stats_targets_ov_stats_panel(self):
+        """renderOverviewStats must target the ov-stats-panel DOM element."""
+        body = self.overview_path.read_text(encoding="utf-8")
+        idx = body.find("function renderOverviewStats(")
+        assert idx != -1, "renderOverviewStats function not found"
+        after = body[idx : idx + 2000]
+        assert (
+            "ov-stats-panel" in after
+        ), "renderOverviewStats must target the 'ov-stats-panel' element"
+
+    # --- task_dashboard.html: ov-stats-panel anchor present ---
+
+    def test_html_has_ov_stats_panel(self):
+        """task_dashboard.html must contain the ov-stats-panel element."""
+        body = self.html_path.read_text(encoding="utf-8")
+        assert (
+            "ov-stats-panel" in body
+        ), "task_dashboard.html must contain an element with id='ov-stats-panel'"
+
+    def test_html_ov_stats_panel_has_aria_label(self):
+        """ov-stats-panel must have an aria-label for accessibility."""
+        body = self.html_path.read_text(encoding="utf-8")
+        idx = body.find("ov-stats-panel")
+        assert idx != -1, "ov-stats-panel not found"
+        context = body[max(0, idx - 20) : idx + 80]
+        assert (
+            "aria-label" in context
+        ), "ov-stats-panel must have an aria-label attribute"

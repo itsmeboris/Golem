@@ -347,6 +347,47 @@ document.addEventListener('keydown', function(e) {
   }
 });
 
+/* ── Data Visualizations ──────────────────────────────────── */
+
+/**
+ * Render a small inline SVG sparkline from an array of numbers.
+ * @param {number[]} values - Data points to plot
+ * @param {number} width - SVG width in pixels
+ * @param {number} height - SVG height in pixels
+ * @returns {string} SVG HTML string, or empty string if no values
+ */
+function sparkline(values, width, height) {
+  if (!values || !values.length) return '';
+  if (values.length === 1) {
+    const y = height / 2;
+    return `<svg width="${width}" height="${height}" class="sparkline" aria-hidden="true"><polyline points="0,${y} ${width},${y}" fill="none" stroke="var(--green)" stroke-width="1.5"/></svg>`;
+  }
+  const max = Math.max.apply(null, values.concat([1]));
+  const points = values.map(function(v, i) {
+    return (i / (values.length - 1)) * width + ',' + (height - (v / max) * height);
+  }).join(' ');
+  return `<svg width="${width}" height="${height}" class="sparkline" aria-hidden="true"><polyline points="${points}" fill="none" stroke="var(--green)" stroke-width="1.5"/></svg>`;
+}
+
+/**
+ * Render a horizontal CSS bar chart from an array of items.
+ * @param {{label: string, value: number, color: string}[]} items
+ * @returns {string} HTML string with bar rows
+ */
+function barChart(items) {
+  if (!items || !items.length) return '';
+  const values = items.map(function(i) { return i.value; }).concat([1]);
+  const max = Math.max.apply(null, values);
+  return items.map(function(item) {
+    const pct = (item.value / max) * 100;
+    return `<div class="bar-row">
+      <span class="bar-label">${esc(item.label)}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${item.color}"></div></div>
+      <span class="bar-value">${item.value}</span>
+    </div>`;
+  }).join('');
+}
+
 /* ── Copy to Clipboard ────────────────────────────────────── */
 
 /**

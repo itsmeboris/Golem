@@ -597,4 +597,98 @@ function updateTopStats(sessions) {
       if (result.ok) renderOverview();
     });
   }
+  renderOverviewStats(sessions);
+}
+
+function renderOverviewStats(sessions) {
+  const el = document.getElementById('ov-stats-panel');
+  if (!el) return;
+
+  const entries = Object.values(sessions);
+  if (entries.length === 0) { el.innerHTML = ''; return; }
+
+  // Success-rate sparkline: sort by updated_at, take last 20, compute 1=success 0=fail
+  const sorted = entries
+    .filter(s => {
+      const st = (s.state || '').toLowerCase();
+      return st === 'completed' || st === 'failed';
+    })
+    .sort((a, b) => (a.updated_at || '').localeCompare(b.updated_at || ''))
+    .slice(-20);
+  const successValues = sorted.map(s => (s.state || '').toLowerCase() === 'completed' ? 1 : 0);
+  const sparkHtml = typeof sparkline === 'function' && successValues.length > 0
+    ? sparkline(successValues, 80, 20)
+    : '';
+
+  // Cost by model bar chart
+  const modelCosts = {};
+  for (const s of entries) {
+    const model = s.model || 'unknown';
+    modelCosts[model] = (modelCosts[model] || 0) + (s.total_cost_usd || 0);
+  }
+  const modelItems = Object.entries(modelCosts)
+    .filter(([, v]) => v > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([label, value]) => ({
+      label: label.length > 10 ? label.slice(-10) : label,
+      value: Math.round(value * 1000) / 1000,
+      color: 'var(--accent)',
+    }));
+  const costChartHtml = typeof barChart === 'function' && modelItems.length > 0
+    ? barChart(modelItems)
+    : '';
+
+  // Phase duration bar chart: collect avg durations across all traced sessions
+  const phaseTotals = {};
+  const phaseCounts = {};
+  for (const s of entries) {
+    const phases = (s.phases) || [];
+    for (const p of phases) {
+      const name = (p.name || '').toUpperCase();
+      if (!name) continue;
+      phaseTotals[name] = (phaseTotals[name] || 0) + (p.duration_ms || 0);
+      phaseCounts[name] = (phaseCounts[name] || 0) + 1;
+    }
+  }
+  const phaseOrder = ['UNDERSTAND', 'PLAN', 'BUILD', 'REVIEW', 'VERIFY'];
+  const phaseColors = typeof PHASE_COLORS !== 'undefined' ? PHASE_COLORS : {};
+  const phaseItems = phaseOrder
+    .filter(name => phaseCounts[name])
+    .map(name => ({
+      label: name.slice(0, 6),
+      value: Math.round(phaseTotals[name] / phaseCounts[name] / 1000),
+      color: phaseColors[name] || 'var(--blue)',
+    }));
+  const phaseChartHtml = typeof barChart === 'function' && phaseItems.length > 0
+    ? barChart(phaseItems)
+    : '';
+
+  let html = '<div class="ov-stats-section">';
+  html += '<div class="ov-stats-title">Analytics</div>';
+  html += '<div class="ov-stats-grid">';
+
+  if (sparkHtml) {
+    html += `<div class="ov-stats-card">
+      <div class="ov-stats-card-label">Success trend</div>
+      ${sparkHtml}
+    </div>`;
+  }
+
+  if (costChartHtml) {
+    html += `<div class="ov-stats-card">
+      <div class="ov-stats-card-label">Cost by model ($)</div>
+      ${costChartHtml}
+    </div>`;
+  }
+
+  if (phaseChartHtml) {
+    html += `<div class="ov-stats-card">
+      <div class="ov-stats-card-label">Avg phase duration (s)</div>
+      ${phaseChartHtml}
+    </div>`;
+  }
+
+  html += '</div></div>';
+  el.innerHTML = html;
 }

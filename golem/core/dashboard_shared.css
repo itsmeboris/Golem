@@ -483,6 +483,21 @@ body{font-family:var(--font-sans);background:var(--bg-base);color:var(--text-pri
 }
 @keyframes btn-spin{to{transform:rotate(360deg)}}
 
+/* ── Data Visualizations ─────────────────────────────────── */
+.sparkline { vertical-align:middle; }
+.bar-row { display:flex; align-items:center; gap:0.5rem; font-size:0.75rem; margin-bottom:0.25rem; }
+.bar-label { width:4rem; text-align:right; color:var(--text-secondary); flex-shrink:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.bar-track { flex:1; height:0.5rem; background:var(--bg-elevated); border-radius:2px; overflow:hidden; }
+.bar-fill { height:100%; border-radius:2px; transition:width 0.3s; }
+.bar-value { width:2rem; color:var(--text-muted); font-size:0.65rem; font-family:var(--font-mono); text-align:right; flex-shrink:0; }
+
+/* Stats/analytics overview panel */
+.ov-stats-section { padding:0.75rem 1rem; border-top:1px solid var(--border-subtle); background:var(--bg-surface); }
+.ov-stats-title { font-size:0.65rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); font-weight:600; margin-bottom:0.5rem; }
+.ov-stats-grid { display:flex; gap:1rem; flex-wrap:wrap; }
+.ov-stats-card { flex:1; min-width:120px; }
+.ov-stats-card-label { font-size:0.62rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-muted); margin-bottom:0.35rem; }
+
 /* ── Mobile & Touch Responsive Layout ───────────────────── */
 
 @media (max-width: 1024px) {
