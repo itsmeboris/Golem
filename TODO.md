@@ -58,7 +58,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [ ] INFRA-008: **verification_timeout not propagated to MergeQueue** — `_verify_merge` still uses default timeout; INFRA-007 incomplete (GH #101)
 - [ ] TEST-002: **Mutation testing** — mutmut integration (GH #17)
 - [x] BUG-007: **Self-update review silently truncates large diffs** — added truncation notice in prompt and logger.warning (GH #91, 2026-03-29)
-- [ ] UX-001: **Dashboard accessibility gaps** — missing ARIA labels, keyboard navigation, `role="dialog"` on modals, focus indicators; `--text-muted` may fail WCAG AA contrast (GH #92)
+- [x] UX-001: **Dashboard accessibility gaps** — added ARIA roles/labels, role=dialog on modal, focus-visible outline, raised --text-muted to WCAG AA (GH #92, 2026-03-29)
 - [ ] UX-002: **Dashboard missing pagination and search** — overview renders all sessions without pagination; no search/filter by subject, ID, or state; unusable at scale (GH #93)
 - [x] UX-003: **No confirmation for destructive dashboard actions** — added confirm() dialogs to clear/cancel/trigger buttons (GH #94, 2026-03-29)
 - [ ] TEST-003: **Lint modules lack tests** — all 9 `golem/lint/` modules have no dedicated test files; pre-commit hooks can crash silently or produce false positives (GH #95)

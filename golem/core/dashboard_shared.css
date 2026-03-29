@@ -20,7 +20,7 @@
   --border-focus: #e8a832;
   --text-primary: #e4e2dc;
   --text-secondary: #9a978e;
-  --text-muted: #605e56;
+  --text-muted: #7c7a72;
   --text-dim: #3e3c36;
   --accent: #e8a832;
   --accent-hover: #f0b848;
@@ -123,6 +123,9 @@
   --transition: 0.16s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: 0.28s cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/* ── Focus Indicators (WCAG 2.1 AA) ──────────────────────── */
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
 
 /* ── Body & Layout ───────────────────────────────────────── */
 body{font-family:var(--font-sans);background:var(--bg-base);color:var(--text-primary);line-height:1.55;overflow:hidden;height:100vh;display:flex;flex-direction:column;font-size:15px;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}

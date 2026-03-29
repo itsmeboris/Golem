@@ -15,34 +15,34 @@
 
 <!-- Top Bar -->
 <header class="top-bar">
-  <div class="top-brand">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+  <div class="top-brand" aria-label="Golem Dashboard">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true" focusable="false">
       <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
     </svg>
     <span>Golem</span>
   </div>
-  <nav class="top-nav">
-    <button class="nav-tab active" data-view="overview">Overview</button>
+  <nav class="top-nav" aria-label="Main navigation">
+    <button class="nav-tab active" data-view="overview" aria-current="page">Overview</button>
     <button class="nav-tab" data-view="detail">Task Detail</button>
     <button class="nav-tab" data-view="merge-queue">Merge Queue</button>
     <button class="nav-tab" data-view="config">Config</button>
   </nav>
-  <div class="top-stats" id="top-stats"><span id="top-stats-inner"></span><span class="hb-container" id="hb-container"></span></div>
-  <button class="theme-btn" title="Theme" id="theme-toggle" onclick="toggleTheme()">&#9789;</button>
+  <div class="top-stats" id="top-stats" aria-live="polite" aria-label="Daemon status"><span id="top-stats-inner"></span><span class="hb-container" id="hb-container"></span></div>
+  <button class="theme-btn" title="Toggle theme" id="theme-toggle" aria-label="Toggle light/dark theme" onclick="toggleTheme()">&#9789;</button>
 </header>
 
-<div class="layout">
+<main class="layout" role="main">
   <!-- Overview View -->
-  <div class="overview-layout" id="view-overview">
+  <div class="overview-layout" id="view-overview" role="region" aria-label="Task overview">
     <div class="ov-left">
-      <div class="ov-header">Tasks <span class="count" id="ov-task-count"></span></div>
-      <div class="ov-list" id="ov-task-list"></div>
-      <div class="ov-legend-bar">
+      <div class="ov-header">Tasks <span class="count" id="ov-task-count" aria-live="polite"></span></div>
+      <div class="ov-list" id="ov-task-list" role="list" aria-label="Task list"></div>
+      <div class="ov-legend-bar" aria-label="Status legend">
         <span class="ov-legend-label">Status</span>
-        <span class="legend-item"><span class="legend-dot" style="background:var(--blue)"></span> Running / Verifying</span>
-        <span class="legend-item"><span class="legend-dot" style="background:var(--green)"></span> Completed</span>
-        <span class="legend-item"><span class="legend-dot" style="background:var(--red)"></span> Failed / Review</span>
-        <span class="legend-item"><span class="legend-dot" style="background:var(--yellow)"></span> Detected</span>
+        <span class="legend-item"><span class="legend-dot" style="background:var(--blue)" aria-hidden="true"></span> Running / Verifying</span>
+        <span class="legend-item"><span class="legend-dot" style="background:var(--green)" aria-hidden="true"></span> Completed</span>
+        <span class="legend-item"><span class="legend-dot" style="background:var(--red)" aria-hidden="true"></span> Failed / Review</span>
+        <span class="legend-item"><span class="legend-dot" style="background:var(--yellow)" aria-hidden="true"></span> Detected</span>
       </div>
     </div>
     <div class="ov-right">
@@ -51,13 +51,13 @@
   </div>
 
   <!-- Task Detail View -->
-  <div class="task-detail" id="view-detail" style="display:none">
-    <div class="td-back"><a id="td-back-link">&larr; Dashboard</a></div>
+  <div class="task-detail" id="view-detail" style="display:none" role="region" aria-label="Task detail">
+    <div class="td-back"><a id="td-back-link" aria-label="Back to dashboard overview">&larr; Dashboard</a></div>
     <div class="td-header" id="td-header"></div>
-    <div class="metrics" id="td-metrics"></div>
-    <div class="td-live-strip" id="td-live-strip" style="display:none"></div>
+    <div class="metrics" id="td-metrics" aria-label="Task metrics"></div>
+    <div class="td-live-strip" id="td-live-strip" style="display:none" aria-live="polite"></div>
     <div class="timeline-container">
-      <div class="phase-sidebar"><nav class="phase-nav" id="phase-nav"></nav></div>
+      <div class="phase-sidebar"><nav class="phase-nav" id="phase-nav" aria-label="Task phases"></nav></div>
       <div class="timeline-main">
         <div class="tl-toolbar" id="tl-toolbar"></div>
         <div class="timeline-scroll" id="timeline-scroll"></div>
@@ -67,26 +67,26 @@
   </div>
 
   <!-- Merge Queue View -->
-  <div class="mq-view" id="view-merge-queue" style="display:none">
+  <div class="mq-view" id="view-merge-queue" style="display:none" role="region" aria-label="Merge queue">
     <div class="mq-metrics" id="mq-metrics"></div>
     <div class="mq-content" id="mq-content"></div>
   </div>
 
   <!-- Config View -->
-  <div id="view-config" class="config-view" style="display:none">
+  <div id="view-config" class="config-view" style="display:none" role="region" aria-label="Configuration">
     <div class="config-container">
       <div id="config-categories" class="config-categories"></div>
       <div id="config-fields" class="config-fields"></div>
     </div>
   </div>
-</div>
+</main>
 
 <!-- Edit & Re-run Modal -->
-<div class="modal-overlay" id="resubmit-modal" style="display:none">
+<div class="modal-overlay" id="resubmit-modal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="resubmit-modal-title">
   <div class="modal-dialog">
     <div class="modal-header">
-      <h3>Edit &amp; Re-run Task</h3>
-      <button class="modal-close" id="resubmit-modal-close">&times;</button>
+      <h3 id="resubmit-modal-title">Edit &amp; Re-run Task</h3>
+      <button class="modal-close" id="resubmit-modal-close" aria-label="Close dialog">&times;</button>
     </div>
     <div class="modal-body">
       <label class="modal-label" for="resubmit-subject">Subject</label>
