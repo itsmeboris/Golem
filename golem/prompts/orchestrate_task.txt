@@ -135,6 +135,22 @@ measure per-phase duration and display content correctly.
 
 ## 5-Phase Workflow
 
+## Phase Exit Criteria
+
+Each phase has explicit exit criteria. Do NOT proceed until met.
+
+| Phase | Exit when... | Retry if... | Escalate if... |
+|---|---|---|---|
+| UNDERSTAND | You can name the 3-5 key files and their roles | Files are unclear — re-read or dispatch Scout | After 2 Scout attempts, mark BLOCKED |
+| PLAN | Specs are written and impl approach is decided | Requirements are ambiguous — re-read task description | Task is fundamentally unclear — report NEEDS_CLARITY |
+| BUILD | All Builders report success and targeted tests pass | Tests fail with a fixable error — dispatch fix Builder | Same error 3 times — circuit breaker, go to VERIFY |
+| REVIEW | Both Spec and Quality reviewers report APPROVED | NEEDS_FIXES with confidence >= 80 — fix and re-review | After 3 review cycles, proceed to VERIFY with concerns |
+| VERIFY | Full suite passes (black + pylint + pytest 100%) | Test failure is a transient/flaky error — retry once | Same failure after {inner_retry_max} attempts — BLOCKED |
+
+**Transient vs deterministic failures:**
+- **Transient**: timeout, flaky test (passes on retry), resource exhaustion → retry with backoff
+- **Deterministic**: syntax error, missing import, logic bug → fix the code, don't just retry
+
 ### Phase 1: Understand
 
 Write: ``## Phase: UNDERSTAND``
