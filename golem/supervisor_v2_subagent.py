@@ -24,6 +24,7 @@ from .core.config import PROJECT_ROOT, GolemFlowConfig
 from .core.flow_base import _StreamingTraceWriter, _write_prompt, _write_trace
 from .core.json_extract import extract_json
 from .core.log_context import SessionLogAdapter
+from .log_context import phase_var, set_task_context
 from .event_tracker import TaskEventTracker
 from .interfaces import TaskStatus
 from .orchestrator import (
@@ -124,6 +125,32 @@ class SubagentSupervisor:
             servers = servers[:max_servers]
         return servers
 
+    def _handle_mcp_tool_validation(self, event: dict) -> None:
+        """Validate MCP tool definitions received in a CLI session init event.
+
+        When the CLI session emits a ``{"type":"system","subtype":"init"}`` event,
+        it includes a ``tools`` list of MCP tool definitions advertised by the
+        configured servers.  This method calls ``validate_tools`` on the active
+        tool provider so that invalid tool definitions are logged before the
+        agent uses them.
+
+        No-op for non-init events or when the tool provider is absent.
+        """
+        if event.get("type") != "system" or event.get("subtype") != "init":
+            return
+        tools = event.get("tools")
+        if tools is None:
+            return
+        provider = getattr(self.profile, "tool_provider", None)
+        if provider is None:
+            return
+        _valid, warnings = provider.validate_tools(tools)
+        if warnings:
+            self._slog.warning(
+                "MCP tool validation: %d tool(s) rejected from init event",
+                len(warnings),
+            )
+
     def _chain_event_callback(self, tracker_callback):
         if not self._event_callback:
             return tracker_callback
@@ -151,6 +178,7 @@ class SubagentSupervisor:
         resume_phase = self.session.checkpoint_phase
         self.session.checkpoint_phase = ""  # consumed
 
+        set_task_context(str(issue_id))
         start = time.time()
 
         # Create trace writer early so pre-flight events are visible in dashboard
@@ -195,12 +223,14 @@ class SubagentSupervisor:
             #   FAIL  → escalate
             if verdict.verdict == "PASS":
                 self.session.supervisor_phase = "committing"
+                phase_var.set("committing")
                 self._emit_event("Finalizing task...")
                 await self._commit_and_complete(issue_id, work_dir, verdict)
             elif verdict.verdict == "PARTIAL":
                 verdict = await self._fix_loop(verdict, work_dir, issue_id, description)
                 if verdict.verdict == "PASS":
                     self.session.supervisor_phase = "committing"
+                    phase_var.set("committing")
                     self._emit_event("Finalizing task...")
                     await self._commit_and_complete(issue_id, work_dir, verdict)
                 elif (
@@ -398,6 +428,7 @@ class SubagentSupervisor:
             return verdict
 
         self.session.supervisor_phase = "validating"
+        phase_var.set("validating")
         self._emit_event("Running external validation...")
         verdict = await self._run_overall_validation(issue_id, description, work_dir)
         self._emit_event(
@@ -577,11 +608,13 @@ class SubagentSupervisor:
         def _streaming_callback(event: dict) -> None:
             if self._trace_writer:
                 self._trace_writer.append(event)
+            self._handle_mcp_tool_validation(event)
             tracker.handle_event(event)
 
         callback = self._chain_event_callback(_streaming_callback)
 
         self.session.supervisor_phase = "orchestrating"
+        phase_var.set("orchestrating")
         self._emit_event("Starting single-session orchestration...")
 
         async with self._work_dir_lock:
@@ -921,6 +954,7 @@ class SubagentSupervisor:
 
         if retry_verdict.verdict == "PASS":
             self.session.supervisor_phase = "committing"
+            phase_var.set("committing")
             await self._commit_and_complete(issue_id, work_dir, retry_verdict)
         elif (
             self.task_config.ensemble_on_second_retry
@@ -1132,6 +1166,7 @@ class SubagentSupervisor:
                 summary=best.summary,
             )
             self.session.supervisor_phase = "committing"
+            phase_var.set("committing")
             await self._commit_and_complete(issue_id, work_dir, winning_verdict)
 
         finally:

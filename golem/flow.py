@@ -32,6 +32,7 @@ from .core.triggers.base import TriggerEvent
 from .core.flow_base import BaseFlow, FlowResult, PollableFlow, WebhookableFlow
 
 from .backends.local import LocalFileTaskSource, NullStateBackend, NullToolProvider
+from .log_context import clear_task_context, set_task_context
 from .errors import (
     InfrastructureError,
     TaskExecutionError,
@@ -602,6 +603,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             if session.execution_mode == "prompt"
             else self._profile
         )
+        set_task_context(str(session_id))
         try:
             # Wait for dependencies before starting
             if session.depends_on:
@@ -674,6 +676,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             self._handle_state_transition(session, TaskSessionState.RUNNING)
             self._save_state()
         finally:
+            clear_task_context()
             self._session_tasks.pop(session_id, None)
 
     async def _wait_for_dependencies(self, session: TaskSession) -> None:

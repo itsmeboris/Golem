@@ -784,3 +784,250 @@ class TestSupervisorRoleContextInjection:
         sup._build_prompt(issue_id=1, description="test task", work_dir=str(tmp_path))
         role_contexts = captured.get("role_contexts", "MISSING")
         assert role_contexts == ""
+
+
+# ---------------------------------------------------------------------------
+# FEAT-002b: Knowledge graph integration in build_system_prompt
+# ---------------------------------------------------------------------------
+
+
+class TestQueryKnowledgeGraph:
+    """Tests for the _query_knowledge_graph helper function."""
+
+    def test_returns_empty_when_no_store_file(self, tmp_path):
+        """_query_knowledge_graph returns '' when instincts.json does not exist."""
+        from golem.context_injection import _query_knowledge_graph
+
+        result = _query_knowledge_graph(str(tmp_path), "test subject", None)
+        assert result == ""
+
+    def test_returns_knowledge_when_store_has_matching_instinct(self, tmp_path):
+        """_query_knowledge_graph returns formatted text when a matching instinct exists."""
+        from golem.context_injection import _query_knowledge_graph
+        from golem.instinct_store import InstinctStore
+
+        store_path = tmp_path / ".golem" / "instincts.json"
+        store_path.parent.mkdir(parents=True)
+        store = InstinctStore(store_path)
+        store.add(
+            "always mock subprocess calls in tests",
+            "antipatterns",
+            initial_confidence=0.7,
+        )
+
+        result = _query_knowledge_graph(str(tmp_path), "mock subprocess testing", None)
+        assert result != ""
+        assert "subprocess" in result
+
+    def test_returns_empty_when_no_matching_instinct(self, tmp_path):
+        """_query_knowledge_graph returns '' when no instincts match the subject."""
+        from golem.context_injection import _query_knowledge_graph
+        from golem.instinct_store import InstinctStore
+
+        store_path = tmp_path / ".golem" / "instincts.json"
+        store_path.parent.mkdir(parents=True)
+        store = InstinctStore(store_path)
+        store.add("database migration pitfall", "antipatterns", initial_confidence=0.7)
+
+        result = _query_knowledge_graph(
+            str(tmp_path), "xyz_totally_unrelated_zzz_qwerty", None
+        )
+        assert result == ""
+
+    def test_returns_empty_on_exception(self, tmp_path):
+        """_query_knowledge_graph returns '' and does not raise when an error occurs."""
+        from golem.context_injection import _query_knowledge_graph
+
+        store_path = tmp_path / ".golem" / "instincts.json"
+        store_path.parent.mkdir(parents=True)
+        store_path.write_text("not valid json")
+
+        result = _query_knowledge_graph(str(tmp_path), "any subject", None)
+        assert result == ""
+
+    def test_passes_files_to_knowledge_graph(self, tmp_path):
+        """Files parameter is passed to query_for_context."""
+        from golem.context_injection import _query_knowledge_graph
+        from golem.instinct_store import InstinctStore
+
+        store_path = tmp_path / ".golem" / "instincts.json"
+        store_path.parent.mkdir(parents=True)
+        store = InstinctStore(store_path)
+        store.add(
+            "watch out for bugs in verifier.py async handling",
+            "antipatterns",
+            initial_confidence=0.7,
+        )
+
+        result = _query_knowledge_graph(
+            str(tmp_path), "async handling", ["golem/verifier.py"]
+        )
+        assert result != ""
+        assert "verifier.py" in result
+
+    def test_max_results_limits_output(self, tmp_path):
+        """_query_knowledge_graph with max_results=2 returns at most 2 results."""
+        from golem.context_injection import _query_knowledge_graph
+        from golem.instinct_store import InstinctStore
+
+        store_path = tmp_path / ".golem" / "instincts.json"
+        store_path.parent.mkdir(parents=True)
+        store = InstinctStore(store_path)
+        for i in range(5):
+            store.add(
+                "testing pitfall number %d subprocess coverage check" % i,
+                "antipatterns",
+                initial_confidence=0.7,
+            )
+
+        result = _query_knowledge_graph(
+            str(tmp_path), "testing subprocess coverage", None, max_results=2
+        )
+        bullet_count = result.count("\n- ")
+        assert bullet_count <= 2
+
+
+class TestBuildSystemPromptWithKnowledgeGraph:
+    """Tests for knowledge graph integration in build_system_prompt."""
+
+    def test_includes_knowledge_graph_section_when_matching_instincts(self, tmp_path):
+        """build_system_prompt with subject includes knowledge graph content."""
+        from golem.context_injection import build_system_prompt
+        from golem.instinct_store import InstinctStore
+
+        store_path = tmp_path / ".golem" / "instincts.json"
+        store_path.parent.mkdir(parents=True)
+        store = InstinctStore(store_path)
+        store.add(
+            "always mock subprocess calls in tests",
+            "antipatterns",
+            initial_confidence=0.7,
+        )
+
+        result = build_system_prompt(str(tmp_path), subject="mock subprocess testing")
+        assert "subprocess" in result
+        assert "Relevant Knowledge" in result
+
+    def test_no_knowledge_graph_section_when_no_matching_instincts(self, tmp_path):
+        """build_system_prompt excludes knowledge section when no instincts match."""
+        from golem.context_injection import build_system_prompt
+        from golem.instinct_store import InstinctStore
+
+        store_path = tmp_path / ".golem" / "instincts.json"
+        store_path.parent.mkdir(parents=True)
+        store = InstinctStore(store_path)
+        store.add("database migration pitfall", "antipatterns", initial_confidence=0.7)
+
+        result = build_system_prompt(str(tmp_path), subject="xyz_unrelated_qwerty_zzzz")
+        assert "Relevant Knowledge" not in result
+
+    def test_no_knowledge_graph_section_when_no_store(self, tmp_path):
+        """build_system_prompt without instinct store doesn't add knowledge section."""
+        from golem.context_injection import build_system_prompt
+
+        result = build_system_prompt(str(tmp_path), subject="any subject")
+        assert "Relevant Knowledge" not in result
+
+    def test_knowledge_graph_section_has_lower_priority_than_agents_md(self, tmp_path):
+        """Knowledge graph section has priority 4 — appears after AGENTS.md (priority 2)."""
+        from golem.context_injection import build_system_prompt
+        from golem.instinct_store import InstinctStore
+
+        store_path = tmp_path / ".golem" / "instincts.json"
+        store_path.parent.mkdir(parents=True)
+        store = InstinctStore(store_path)
+        store.add(
+            "always mock subprocess calls in tests",
+            "antipatterns",
+            initial_confidence=0.7,
+        )
+        (tmp_path / "AGENTS.md").write_text("# Guidelines\n- use TDD\n")
+
+        result = build_system_prompt(str(tmp_path), subject="mock subprocess testing")
+        assert result.index("AGENTS.md") < result.index("Relevant Knowledge")
+
+    def test_build_system_prompt_accepts_files_parameter(self, tmp_path):
+        """build_system_prompt accepts files parameter and passes to knowledge graph."""
+        from golem.context_injection import build_system_prompt
+        from golem.instinct_store import InstinctStore
+
+        store_path = tmp_path / ".golem" / "instincts.json"
+        store_path.parent.mkdir(parents=True)
+        store = InstinctStore(store_path)
+        store.add(
+            "watch out for verifier.py subprocess handling",
+            "antipatterns",
+            initial_confidence=0.7,
+        )
+
+        result = build_system_prompt(
+            str(tmp_path),
+            subject="async handling",
+            files=["golem/verifier.py"],
+        )
+        assert "verifier.py" in result
+
+    def test_backward_compatible_no_subject_no_knowledge(self, tmp_path):
+        """build_system_prompt without subject still works as before."""
+        from golem.context_injection import build_system_prompt
+        from golem.instinct_store import InstinctStore
+
+        store_path = tmp_path / ".golem" / "instincts.json"
+        store_path.parent.mkdir(parents=True)
+        store = InstinctStore(store_path)
+        store.add("some pitfall text here", "antipatterns", initial_confidence=0.7)
+
+        # No subject passed — knowledge graph not queried (empty subject = poor match)
+        result = build_system_prompt(str(tmp_path))
+        # Doesn't crash, still returns context (role contexts at minimum)
+        assert isinstance(result, str)
+
+
+# ---------------------------------------------------------------------------
+# Punctuation stripping in keyword extraction
+# ---------------------------------------------------------------------------
+
+
+class TestKeywordExtractionPunctuationStripping:
+    """Tests for punctuation stripping in KnowledgeGraph keyword extraction."""
+
+    @pytest.mark.parametrize(
+        "text,expected_keyword",
+        [
+            ("avoid circular imports.", "imports"),
+            ("run tests, always!", "always"),
+            ("check the (migrations) carefully.", "migrations"),
+            ("use pathlib.Path; not os.path", "pathlib"),
+            ('never do "unsafe" things', "unsafe"),
+            ("avoid imports:", "imports"),
+        ],
+        ids=[
+            "trailing_period",
+            "trailing_comma_exclamation",
+            "parentheses",
+            "semicolon",
+            "double_quotes",
+            "colon",
+        ],
+    )
+    def test_punctuation_stripped_from_bag_of_words(
+        self, tmp_path, text, expected_keyword
+    ):
+        """Words with trailing/surrounding punctuation are properly indexed."""
+        from golem.knowledge_graph import KnowledgeGraph
+        from golem.instinct_store import InstinctStore
+
+        store = InstinctStore(tmp_path / "instincts.json")
+        store.add(text, "antipatterns", initial_confidence=0.7)
+
+        kg = KnowledgeGraph(store)
+        kg.build()
+
+        all_keywords = set(kg._keyword_index.keys())
+        assert (
+            expected_keyword in all_keywords
+        ), "Expected '%s' in keyword index for text %r, got: %s" % (
+            expected_keyword,
+            text,
+            all_keywords,
+        )

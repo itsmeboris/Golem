@@ -133,7 +133,7 @@ class KnowledgeGraph:
         Loads all active instincts, extracts keywords and file references,
         and populates the keyword and file indexes.
         """
-        instincts = self._store._load()  # pylint: disable=protected-access
+        instincts = self._store.get_all()
         self._nodes.clear()
         self._keyword_index.clear()
         self._file_index.clear()
@@ -150,7 +150,8 @@ class KnowledgeGraph:
             )
 
             # Extract bag-of-words keywords (length > 2, not stop words)
-            words = set(inst.text.lower().split())
+            # Strip punctuation so "imports." and "imports" map to the same keyword
+            words = {w.strip(".,;:!?()[]{}\"'") for w in inst.text.lower().split()}
             keywords = {w for w in words if len(w) > 2 and w not in _STOP_WORDS}
             # Also extract identifiers (function names, variable names, etc.)
             # Identifiers are also filtered against stop words

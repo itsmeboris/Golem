@@ -3184,3 +3184,150 @@ class TestValidationBudgetGuard:
             verdict = await sup._run_overall_validation(42, "desc", "/work")
 
         assert verdict.verdict == "PASS"
+
+
+# -- MCP tool validation wiring (SEC-006b) ----------------------------------
+
+
+class TestMCPToolValidationWiring:
+    """Verify that validate_tools is called from the production streaming path."""
+
+    def _make_init_event(self, tools):
+        """Return a stream-json init event with the given tools list."""
+        return {"type": "system", "subtype": "init", "tools": tools, "session_id": "s1"}
+
+    def test_validate_tools_called_on_init_event_with_valid_tools(self):
+        """When init event has tool defs, validate_tools is called on the provider."""
+        profile = _make_profile()
+        profile.tool_provider.validate_tools.return_value = (
+            [{"name": "my_tool"}],
+            [],
+        )
+        sup = _make_supervisor(profile=profile)
+
+        valid_tool = {
+            "name": "my_tool",
+            "description": "does something",
+            "inputSchema": {"type": "object", "properties": {}},
+        }
+        event = self._make_init_event([valid_tool])
+
+        sup._handle_mcp_tool_validation(event)
+
+        profile.tool_provider.validate_tools.assert_called_once_with([valid_tool])
+
+    def test_validate_tools_not_called_for_non_init_event(self):
+        """Non-init events do not trigger tool validation."""
+        profile = _make_profile()
+        sup = _make_supervisor(profile=profile)
+
+        event = {"type": "assistant", "message": "hello"}
+        sup._handle_mcp_tool_validation(event)
+
+        profile.tool_provider.validate_tools.assert_not_called()
+
+    def test_validate_tools_not_called_when_init_has_no_tools(self):
+        """Init event without 'tools' key does not trigger validation."""
+        profile = _make_profile()
+        sup = _make_supervisor(profile=profile)
+
+        event = {"type": "system", "subtype": "init", "session_id": "s1"}
+        sup._handle_mcp_tool_validation(event)
+
+        profile.tool_provider.validate_tools.assert_not_called()
+
+    def test_validate_tools_called_with_empty_tools_list(self):
+        """Init event with empty tools list triggers validation with empty list."""
+        profile = _make_profile()
+        profile.tool_provider.validate_tools.return_value = ([], [])
+        sup = _make_supervisor(profile=profile)
+
+        event = self._make_init_event([])
+        sup._handle_mcp_tool_validation(event)
+
+        profile.tool_provider.validate_tools.assert_called_once_with([])
+
+    def test_validation_warnings_logged_for_invalid_tools(self, caplog):
+        """Warnings from validate_tools are logged at WARNING level."""
+        import logging
+
+        profile = _make_profile()
+        profile.tool_provider.validate_tools.return_value = (
+            [],
+            ["Rejected bad_tool: bad name format"],
+        )
+        sup = _make_supervisor(profile=profile)
+
+        bad_tool = {"name": "bad tool", "description": "x", "inputSchema": {}}
+        event = self._make_init_event([bad_tool])
+
+        with caplog.at_level(logging.WARNING, logger="golem.supervisor_v2_subagent"):
+            sup._handle_mcp_tool_validation(event)
+
+        assert any(
+            "bad_tool" in r.message or "bad tool" in r.message or "MCP" in r.message
+            for r in caplog.records
+        )
+
+    def test_validate_tools_not_called_when_no_tool_provider(self):
+        """Gracefully handles None tool_provider."""
+        profile = _make_profile()
+        profile.tool_provider = None
+        sup = _make_supervisor(profile=profile)
+
+        valid_tool = {
+            "name": "my_tool",
+            "description": "does something",
+            "inputSchema": {"type": "object", "properties": {}},
+        }
+        event = self._make_init_event([valid_tool])
+        # Should not raise
+        sup._handle_mcp_tool_validation(event)
+
+    async def test_streaming_callback_triggers_validation(self):
+        """The _invoke_orchestrator streaming callback calls _handle_mcp_tool_validation."""
+        profile = _make_profile()
+        profile.tool_provider.validate_tools.return_value = ([], [])
+        session = TaskSession(parent_issue_id=42, parent_subject="Test")
+        sup = _make_supervisor(session=session, profile=profile)
+
+        captured_callbacks = []
+
+        def fake_invoke_cli_monitored(prompt, config, callback):  # noqa: W0613
+            del prompt, config  # not needed in this stub
+            captured_callbacks.append(callback)
+            # Simulate emitting an init event
+            init_event = {
+                "type": "system",
+                "subtype": "init",
+                "tools": [
+                    {
+                        "name": "tool_a",
+                        "description": "x",
+                        "inputSchema": {"type": "object", "properties": {}},
+                    }
+                ],
+                "session_id": "sess-x",
+            }
+            callback(init_event)
+            return CLIResult(
+                output={"result": '{"status": "COMPLETE", "summary": "done"}'},
+                cost_usd=0.1,
+                trace_events=[init_event],
+                session_id="sess-x",
+            )
+
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.invoke_cli_monitored",
+                side_effect=fake_invoke_cli_monitored,
+            ),
+            patch("golem.supervisor_v2_subagent._write_prompt"),
+            patch("golem.supervisor_v2_subagent._StreamingTraceWriter"),
+        ):
+            await sup._invoke_orchestrator("prompt", "/work", 42, 0.0)
+
+        profile.tool_provider.validate_tools.assert_called_once()
+        called_tools = profile.tool_provider.validate_tools.call_args[0][0]
+        assert len(called_tools) == 1
+        assert called_tools[0]["name"] == "tool_a"

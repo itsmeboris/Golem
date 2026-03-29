@@ -119,12 +119,20 @@ def _find_and_read(base: Path, filename: str) -> str:
         return ""
 
 
-def build_system_prompt(work_dir: str, max_tokens: int = 8000) -> str:
+def build_system_prompt(
+    work_dir: str,
+    max_tokens: int = 8000,
+    subject: str = "",
+    files: list[str] | None = None,
+) -> str:
     """Build a system prompt appendix from workspace context files.
 
     Args:
         work_dir: Workspace directory to search for context files.
         max_tokens: Token budget for the combined context content.
+        subject: Optional task subject used to query the knowledge graph.
+        files: Optional list of files involved in the task; used by the
+            knowledge graph to score relevance.
 
     Returns:
         The formatted prompt to pass via --append-system-prompt,
@@ -149,6 +157,12 @@ def build_system_prompt(work_dir: str, max_tokens: int = 8000) -> str:
     if role_section:
         sections.append((3, "Role Contexts", role_section))
 
+    # Priority 4: Relevant knowledge from graph (if instinct store exists)
+    if subject:
+        kg_section = _query_knowledge_graph(work_dir, subject, files)
+        if kg_section:
+            sections.append((4, "Relevant Knowledge", kg_section))
+
     if not sections:
         return ""
 
@@ -167,6 +181,43 @@ def build_system_prompt(work_dir: str, max_tokens: int = 8000) -> str:
         "Use a clear heading and bullet points. Only add genuinely useful "
         "discoveries — do not repeat what is already documented."
     )
+
+
+def _query_knowledge_graph(
+    work_dir: str,
+    subject: str,
+    files: list[str] | None,
+    max_results: int = 5,
+) -> str:
+    """Query the knowledge graph for task-relevant pitfalls.
+
+    Returns a markdown-formatted section of relevant pitfalls, or an
+    empty string if the instinct store does not exist, has no matching
+    knowledge, or an error occurs.
+
+    Args:
+        work_dir: Workspace directory; the store is at ``<work_dir>/.golem/instincts.json``.
+        subject: Task subject string to match against indexed keywords.
+        files: Optional list of file paths for file-reference scoring.
+        max_results: Maximum number of pitfall results to include.
+    """
+    store_path = Path(work_dir).resolve() / ".golem" / "instincts.json"
+    if not store_path.exists():
+        return ""
+    try:
+        from .instinct_store import (
+            InstinctStore,
+        )  # pylint: disable=import-outside-toplevel
+        from .knowledge_graph import (
+            KnowledgeGraph,
+        )  # pylint: disable=import-outside-toplevel
+
+        store = InstinctStore(store_path)
+        graph = KnowledgeGraph(store)
+        return graph.query_for_context(subject, files, max_results=max_results)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        logger.debug("Knowledge graph query failed: %s", exc)
+        return ""
 
 
 # Role-specific context for subagent dispatch

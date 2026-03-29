@@ -10,8 +10,9 @@ See https://github.com/itsmeboris/Golem/issues
 ### P1 — Important
 
 - [x] SEC-006: **MCP tool schema validation** — validate_and_filter_tools() in KeywordToolProvider (GH #18, 2026-03-29)
-- [ ] SEC-006b: **MCP validation not wired into registration** — `validate_tools()`/`filter_tool_definitions()` exist but are dead code; not called from any production path (GH #131)
+- [x] SEC-006b: **MCP validation not wired into registration** — wired _handle_mcp_tool_validation into supervisor event callback (GH #131, 2026-03-29)
 - [x] SEC-007: **Runtime subprocess sandboxing** — SandboxLimits + make_sandbox_preexec wired into cli_wrapper (GH #19, 2026-03-29)
+- [ ] SEC-007b: **Sandbox config dead code** — `sandbox_cpu_seconds`/`sandbox_memory_gb` not passed to `make_sandbox_preexec()`; `CLIConfig.sandbox_enabled` not threaded from flow config; no `preexec_fn` integration test (GH #133)
 - [ ] TEST-007: **Test quality audit** — 13+ tests with zero assertions in test_flow.py; test_heartbeat_worker avg 1.9 assert/test; tautological patterns in test_live_state; over-mocking (15.7 patches/test in test_merge_queue) (GH #116)
 - [ ] INFRA-012: **Error handling and async patterns rules** — agents lack retry/fallback/circuit-breaker patterns and asyncio best practices (gather, timeouts, lock usage, no sleep in tests) (GH #117)
 - [ ] INFRA-016: **Security patterns rule** — no reusable rule for input validation, path traversal prevention, secret handling, subprocess sanitization; review_security.txt is a prompt, not a rule (GH #127)
@@ -26,7 +27,9 @@ See https://github.com/itsmeboris/Golem/issues
 - [x] FEAT-002: **A-Mem knowledge graph** — KnowledgeGraph with keyword/file indexing and relevance-scored query (GH #14, 2026-03-29)
 - [x] FEAT-003: **Dashboard prompt comparison UI** — added Prompts tab with table showing hash, runs, success rate bar, cost, duration (GH #82, 2026-03-29)
 - [x] FEAT-004: **CLI `logs` command** — golem logs -n 50 --follow with tail and follow modes (GH #83, 2026-03-29)
-- [ ] FEAT-002b: **Knowledge graph not integrated** — `query_for_context()` not wired into context_injection; uses private `_store._load()`; keyword tokenization doesn't strip punctuation (GH #132)
+- [x] FEAT-002b: **Knowledge graph not integrated** — wired into context_injection as priority-4 section; fixed punctuation stripping (GH #132, 2026-03-29)
+- [ ] FEAT-005b: **Evaluator-optimizer not wired into daemon** — PromptEvaluator/PromptOptimizer are dead code; no periodic evaluation or auto-tuning loop (GH #134)
+- [ ] FEAT-006b: **OTel spans not instrumented** — no spans in orchestrator/flow; no token accounting or GenAI semantic conventions (GH #135)
 - [x] TEST-002: **Mutation testing** — mutmut config in pyproject.toml + Makefile targets + smoke test (GH #17, 2026-03-29)
 - [ ] UX-005: **Dashboard empty states** — blank screen when no tasks; no first-time guidance; no feedback when filters match nothing (GH #118)
 - [ ] UX-006: **Toast notification system** — replace browser `alert()` (9 instances) with styled toast/snackbar; add button loading states during async ops (GH #119)
@@ -48,6 +51,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [x] FEAT-006: **OpenTelemetry tracing** — optional OTel with init_tracing(), get_tracer(), trace_span(), NoOp fallback (GH #16, 2026-03-29)
 - [ ] TEST-004: **Multiple source modules lack test files** — 13+ modules (batch_cli, profile, prompts, core/slack, backends/github, notifiers, mcp_tools) have no dedicated tests; error paths unverified (GH #97)
 - [ ] UX-009: **Data visualization** — sparklines for success rate trend, phase duration waterfall chart, cost breakdown by model, agent activity heatmap (GH #125)
+- [ ] INFRA-014b: **CLAUDE.md missing sections** — dependency notes, data models (TaskSession, Milestone, VerificationResult), state persistence locations (GH #136)
 
 ---
 
