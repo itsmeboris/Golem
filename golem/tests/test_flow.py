@@ -164,7 +164,10 @@ class TestPollHeartbeatDedup:
 class TestOnItemSuccess:
     def test_on_item_success_is_noop(self, monkeypatch, tmp_path):
         flow = _make_flow(monkeypatch, tmp_path)
+        sessions_before = dict(flow._sessions)
         flow.on_item_success(123)
+        # on_item_success is a no-op; session state must be unchanged
+        assert flow._sessions == sessions_before
 
 
 class TestParseWebhookPayload:
@@ -1248,6 +1251,8 @@ class TestScanSubmissions:
     def test_empty_dir(self, monkeypatch, tmp_path):
         flow = _make_flow(monkeypatch, tmp_path)
         flow._scan_submissions()
+        # Empty submissions directory must not create any sessions
+        assert not flow._sessions
 
     def test_invalid_id_skipped(self, monkeypatch, tmp_path):
         flow = _make_flow(monkeypatch, tmp_path)
@@ -1327,6 +1332,8 @@ class TestScanSubmissionsEdgeCases:
         flow = _make_flow(monkeypatch, tmp_path)
         flow._submissions_dir = tmp_path / "nonexistent"
         flow._scan_submissions()
+        # Nonexistent submissions directory must not create any sessions
+        assert not flow._sessions
 
 
 class TestDetectNewIssuesWithSubmissions:

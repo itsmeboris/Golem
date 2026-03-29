@@ -233,7 +233,7 @@ class TestWorkerDedup:
             "verdict": "submitted",
         }
         ids = w.get_claimed_issue_ids()
-        assert len(ids) == 0
+        assert ids == set()
 
     def test_prune_dedup_removes_expired(self, tmp_path):
         w = _make_worker(tmp_path)
@@ -702,7 +702,7 @@ class TestWorkerValidateCandidates:
             ]
         }
         result = w._validate_candidates(raw, tier=1)
-        assert len(result) == 0
+        assert result == []
 
     def test_filters_non_automatable(self, tmp_path):
         w = _make_worker(tmp_path)
@@ -719,7 +719,7 @@ class TestWorkerValidateCandidates:
             ]
         }
         result = w._validate_candidates(raw, tier=1)
-        assert len(result) == 0
+        assert result == []
 
     def test_filters_invalid_complexity(self, tmp_path):
         w = _make_worker(tmp_path)
@@ -736,7 +736,7 @@ class TestWorkerValidateCandidates:
             ]
         }
         result = w._validate_candidates(raw, tier=1)
-        assert len(result) == 0
+        assert result == []
 
     def test_filters_empty_id(self, tmp_path):
         w = _make_worker(tmp_path)
@@ -753,7 +753,7 @@ class TestWorkerValidateCandidates:
             ]
         }
         result = w._validate_candidates(raw, tier=1)
-        assert len(result) == 0
+        assert result == []
 
     def test_filters_no_category_and_no_parseable_id(self, tmp_path):
         w = _make_worker(tmp_path)
@@ -770,7 +770,7 @@ class TestWorkerValidateCandidates:
             ]
         }
         result = w._validate_candidates(raw, tier=1)
-        assert len(result) == 0
+        assert result == []
 
     def test_sorts_by_confidence_desc(self, tmp_path):
         w = _make_worker(tmp_path)
@@ -1297,7 +1297,8 @@ class TestTickMethod:
                     task_source, record_spend, budget_allows
                 )
                 assert tier == 2
-                assert len(result_candidates) > 0
+                assert len(result_candidates) == 1
+                assert result_candidates[0]["id"] == "todo:abc"
 
     async def test_tick_tier1_owed_no_budget_after_promoted(self, tmp_path):
         w = _make_worker(tmp_path)
@@ -1449,7 +1450,7 @@ class TestWorkerValidateCandidatesEdgeCases:
         }
         # Only allow "small" complexity
         result = w._validate_candidates(raw, valid_complexities=("small",), tier=1)
-        assert len(result) == 0
+        assert result == []
 
 
 class TestWorkerCoverageCacheEdgeCases:
@@ -1523,7 +1524,7 @@ class TestWorkerTier2RecentCategories:
                             ):
                                 result = await w._run_tier2(record_spend)
                                 # Should be filtered out because "coverage" is recent
-                                assert len(result) == 0
+                                assert result == []
 
 
 class TestWorkerTier1NotAutomatable:
