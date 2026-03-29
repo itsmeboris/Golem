@@ -327,3 +327,80 @@ class TestToolProviderProtocolWithRole:
         dummy = DummyToolProvider()
         result = dummy.servers_for_subject("some task", role="reviewer")
         assert result == []
+
+
+# ---------------------------------------------------------------------------
+# KeywordToolProvider — validate_tools and filter_tool_definitions (SEC-006)
+# ---------------------------------------------------------------------------
+
+_VALID_TOOL = {
+    "name": "my_tool",
+    "description": "A short description.",
+    "inputSchema": {"type": "object", "properties": {}},
+}
+
+_INVALID_TOOL = {"name": "bad tool"}  # bad name format + missing required fields
+
+
+class TestKeywordToolProviderValidateTools:
+    def test_valid_tools_all_returned(self):
+        tp = KeywordToolProvider()
+        valid, warnings = tp.validate_tools([dict(_VALID_TOOL)])
+        assert len(valid) == 1
+        assert warnings == []
+
+    def test_invalid_tool_rejected_and_not_in_valid(self):
+        tp = KeywordToolProvider()
+        valid, warnings = tp.validate_tools([dict(_INVALID_TOOL)])
+        assert valid == []
+        assert len(warnings) == 1
+
+    def test_warning_message_contains_tool_name(self):
+        tp = KeywordToolProvider()
+        _, warnings = tp.validate_tools([dict(_INVALID_TOOL)])
+        assert any("bad tool" in w for w in warnings)
+
+    def test_unnamed_non_dict_tool_uses_placeholder(self):
+        tp = KeywordToolProvider()
+        _, warnings = tp.validate_tools(["not a dict"])  # type: ignore[list-item]
+        assert any("<unnamed>" in w for w in warnings)
+
+    def test_mixed_list_separates_valid_and_invalid(self):
+        tp = KeywordToolProvider()
+        valid, warnings = tp.validate_tools([dict(_VALID_TOOL), dict(_INVALID_TOOL)])
+        assert len(valid) == 1
+        assert valid[0]["name"] == "my_tool"
+        assert len(warnings) == 1
+
+    def test_empty_list_returns_empty_valid_and_no_warnings(self):
+        tp = KeywordToolProvider()
+        valid, warnings = tp.validate_tools([])
+        assert valid == []
+        assert warnings == []
+
+    def test_warning_logged_for_invalid_tool(self, caplog):
+        tp = KeywordToolProvider()
+        with caplog.at_level(logging.WARNING, logger="golem.backends.mcp_tools"):
+            tp.validate_tools([dict(_INVALID_TOOL)])
+        assert any("bad tool" in r.message for r in caplog.records)
+
+
+class TestKeywordToolProviderFilterToolDefinitions:
+    def test_valid_tool_passes_through(self):
+        result = KeywordToolProvider.filter_tool_definitions([dict(_VALID_TOOL)])
+        assert len(result) == 1
+        assert result[0]["name"] == "my_tool"
+
+    def test_invalid_tool_excluded(self):
+        result = KeywordToolProvider.filter_tool_definitions([dict(_INVALID_TOOL)])
+        assert result == []
+
+    def test_mixed_list_returns_only_valid(self):
+        tools = [dict(_VALID_TOOL), dict(_INVALID_TOOL)]
+        result = KeywordToolProvider.filter_tool_definitions(tools)
+        assert len(result) == 1
+        assert result[0]["name"] == "my_tool"
+
+    def test_empty_list_returns_empty(self):
+        result = KeywordToolProvider.filter_tool_definitions([])
+        assert result == []

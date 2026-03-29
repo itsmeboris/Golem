@@ -9,8 +9,10 @@ See https://github.com/itsmeboris/Golem/issues
 
 ### P1 — Important
 
-- [ ] SEC-006: **MCP tool schema validation** — poisoning defense (GH #18)
+- [x] SEC-006: **MCP tool schema validation** — validate_and_filter_tools() in KeywordToolProvider (GH #18, 2026-03-29)
 - [ ] SEC-007: **Runtime subprocess sandboxing** — OS-level containment (GH #19)
+- [ ] TEST-005: **Context budget tautological test** — `test_second_section_skipped_when_no_budget_left` result is `""` so assertion passes trivially; also shallow assertion in `test_build_system_prompt_respects_budget` (GH #114)
+- [ ] TEST-006: **prompt_analytics.js route missing test** — new dashboard JS route has no coverage test; violates 100% requirement (GH #115)
 
 ### P2 — Normal
 
