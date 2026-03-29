@@ -38,7 +38,7 @@ See https://github.com/itsmeboris/Golem/issues
 
 ### P2 — Normal
 
-- [ ] REL-007: **Session state save not atomic** — crash between `save_sessions()` and `batch_monitor.save()` in `flow.py` leaves inconsistent state (GH #75)
+- [x] REL-007: **Session state save not atomic** — two-phase write: serialize both, write both to temp, rename both (GH #75, 2026-03-29)
 - [ ] INFRA-001: **State management audit rule** — detect innerHTML without state preservation, polling without concurrency guards, shared mutable state in async code (GH #76)
 - [ ] INFRA-002: **Codebase contract linting** — static check that function return types match consumer expectations across module boundaries (GH #23)
 - [x] INFRA-003: **Prompt placeholder fallbacks** — _SafeDict returns empty string for missing keys instead of literal placeholder text (GH #77, 2026-03-29)

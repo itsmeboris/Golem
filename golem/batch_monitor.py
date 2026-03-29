@@ -190,15 +190,19 @@ class BatchMonitor:
             reverse=True,
         )
 
-    def save(self, path: Path) -> None:
-        """Atomically persist all batches to a JSON file."""
-        path.parent.mkdir(parents=True, exist_ok=True)
-
+    def serialize(self) -> bytes:
+        """Return the JSON payload that would be written to disk by ``save()``."""
         data = {
             "batches": {gid: b.to_dict() for gid, b in self._batches.items()},
             "last_updated": _now_iso(),
         }
-        payload = _json.dumps(data, indent=2).encode("utf-8")
+        return _json.dumps(data, indent=2).encode("utf-8")
+
+    def save(self, path: Path) -> None:
+        """Atomically persist all batches to a JSON file."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        payload = self.serialize()
 
         fd, tmp_path = tempfile.mkstemp(
             dir=str(path.parent), prefix=".batches_", suffix=".tmp"

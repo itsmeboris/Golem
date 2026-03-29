@@ -6,6 +6,8 @@ import json
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
+import pytest
+
 
 from golem.core.config import Config, GolemFlowConfig
 from golem.core.triggers.base import TriggerEvent
@@ -675,6 +677,7 @@ class TestResetState:
         sessions_path.write_text("{}")
 
         monkeypatch.setattr("golem.orchestrator.SESSIONS_FILE", sessions_path)
+        monkeypatch.setattr("golem.flow.SESSIONS_FILE", sessions_path)
 
         flow.reset_state()
 
@@ -1466,22 +1469,228 @@ class TestCheckpointRecovery:
 
 
 class TestSaveState:
-    def test_delegates_to_save_sessions(self, monkeypatch, tmp_path):
-        flow = _make_flow(monkeypatch, tmp_path)
+    def test_save_state_writes_sessions_payload(self, monkeypatch, tmp_path):
+        """_save_state calls _serialize_sessions_payload with the current sessions."""
+        sessions_file = tmp_path / "sessions.json"
+        monkeypatch.setattr("golem.orchestrator.SESSIONS_FILE", sessions_file)
 
-        saved = []
-        monkeypatch.setattr(
-            "golem.flow.save_sessions",
-            lambda sessions: saved.append(dict(sessions)),
-        )
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow.SESSIONS_DIR = tmp_path
+
+        serialized = []
+        original_fn = __import__(
+            "golem.flow", fromlist=["_serialize_sessions_payload"]
+        )._serialize_sessions_payload
+
+        def _capturing(sessions):
+            serialized.append(dict(sessions))
+            return original_fn(sessions)
+
+        monkeypatch.setattr("golem.flow._serialize_sessions_payload", _capturing)
         flow._save_state()
-        assert len(saved) == 1
+        assert len(serialized) == 1
 
     def test_save_state_is_thread_safe(self, monkeypatch, tmp_path):
         import threading
 
         flow = _make_flow(monkeypatch, tmp_path)
         assert type(flow._save_lock) is type(threading.Lock())
+
+    def test_save_state_atomic_two_phase_both_files_written(
+        self, monkeypatch, tmp_path
+    ):
+        """REL-007: _save_state writes sessions AND batches atomically."""
+        sessions_file = tmp_path / "sessions.json"
+        batch_file = tmp_path / "golem_batches.json"
+        monkeypatch.setattr("golem.orchestrator.SESSIONS_FILE", sessions_file)
+        monkeypatch.setattr("golem.flow.SESSIONS_FILE", sessions_file)
+
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow.SESSIONS_DIR = tmp_path
+
+        flow._save_state()
+
+        # Both files must exist after a successful _save_state
+        assert sessions_file.exists(), "sessions file was not written"
+        assert batch_file.exists(), "batch file was not written"
+
+    def test_save_state_cleans_up_temps_on_sessions_error(self, monkeypatch, tmp_path):
+        """REL-007: Temp files are removed when sessions serialization raises."""
+        sessions_file = tmp_path / "sessions.json"
+        monkeypatch.setattr("golem.orchestrator.SESSIONS_FILE", sessions_file)
+        monkeypatch.setattr("golem.flow.SESSIONS_FILE", sessions_file)
+
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow.SESSIONS_DIR = tmp_path
+
+        # Make the sessions serialization fail
+        monkeypatch.setattr(
+            "golem.flow._serialize_sessions_payload",
+            lambda _sessions: (_ for _ in ()).throw(OSError("disk full")),
+        )
+
+        with pytest.raises(OSError, match="disk full"):
+            flow._save_state()
+
+        # No stray temp files left behind
+        leftover = list(tmp_path.glob(".sessions_*.tmp")) + list(
+            tmp_path.glob(".batches_*.tmp")
+        )
+        assert leftover == [], f"Temp files not cleaned up: {leftover}"
+
+    def test_save_state_cleans_up_temps_on_batch_error(self, monkeypatch, tmp_path):
+        """REL-007: Temp files are removed when batch serialization raises."""
+        sessions_file = tmp_path / "sessions.json"
+        monkeypatch.setattr("golem.orchestrator.SESSIONS_FILE", sessions_file)
+        monkeypatch.setattr("golem.flow.SESSIONS_FILE", sessions_file)
+
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow.SESSIONS_DIR = tmp_path
+
+        # Make batch serialization fail
+        monkeypatch.setattr(
+            "golem.flow.BatchMonitor.serialize",
+            lambda _self: (_ for _ in ()).throw(OSError("batch disk full")),
+        )
+
+        with pytest.raises(OSError, match="batch disk full"):
+            flow._save_state()
+
+        # No stray temp files left behind
+        leftover = list(tmp_path.glob(".sessions_*.tmp")) + list(
+            tmp_path.glob(".batches_*.tmp")
+        )
+        assert leftover == [], f"Temp files not cleaned up: {leftover}"
+
+    def test_save_state_cleans_up_temps_on_rename_error(self, monkeypatch, tmp_path):
+        """REL-007: Temp files are removed when os.replace raises after writes."""
+        import os as _os
+
+        sessions_file = tmp_path / "sessions.json"
+        monkeypatch.setattr("golem.orchestrator.SESSIONS_FILE", sessions_file)
+        monkeypatch.setattr("golem.flow.SESSIONS_FILE", sessions_file)
+
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow.SESSIONS_DIR = tmp_path
+
+        # Fail on os.replace to trigger except block after both fds are closed
+        original_replace = _os.replace
+        calls = []
+
+        def _fail_replace(src, dst):
+            calls.append(src)
+            if len(calls) == 1:  # fail on the first rename (sessions)
+                raise OSError("rename failed")
+            return original_replace(src, dst)
+
+        monkeypatch.setattr("golem.flow.os.replace", _fail_replace)
+
+        with pytest.raises(OSError, match="rename failed"):
+            flow._save_state()
+
+        # No stray temp files left behind
+        leftover = list(tmp_path.glob(".sessions_*.tmp")) + list(
+            tmp_path.glob(".batches_*.tmp")
+        )
+        assert leftover == [], f"Temp files not cleaned up: {leftover}"
+
+    def test_save_state_cleans_up_temps_on_sessions_write_error(
+        self, monkeypatch, tmp_path
+    ):
+        """REL-007: Both fds closed when error during sessions os.write (s_fd unclosed)."""
+        import os as _os
+
+        sessions_file = tmp_path / "sessions.json"
+        monkeypatch.setattr("golem.orchestrator.SESSIONS_FILE", sessions_file)
+        monkeypatch.setattr("golem.flow.SESSIONS_FILE", sessions_file)
+
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow.SESSIONS_DIR = tmp_path
+
+        original_write = _os.write
+        write_calls = []
+
+        def _fail_sessions_write(fd, data):
+            write_calls.append(fd)
+            if len(write_calls) == 1:  # first write is sessions fd
+                raise OSError("write error")
+            return original_write(fd, data)
+
+        monkeypatch.setattr("golem.flow.os.write", _fail_sessions_write)
+
+        with pytest.raises(OSError, match="write error"):
+            flow._save_state()
+
+        # No stray temp files left behind
+        leftover = list(tmp_path.glob(".sessions_*.tmp")) + list(
+            tmp_path.glob(".batches_*.tmp")
+        )
+        assert leftover == [], f"Temp files not cleaned up: {leftover}"
+
+    def test_save_state_cleans_up_temps_on_batch_write_error(
+        self, monkeypatch, tmp_path
+    ):
+        """REL-007: b_fd closed when error during batch os.write (b_fd unclosed)."""
+        import os as _os
+
+        sessions_file = tmp_path / "sessions.json"
+        monkeypatch.setattr("golem.orchestrator.SESSIONS_FILE", sessions_file)
+        monkeypatch.setattr("golem.flow.SESSIONS_FILE", sessions_file)
+
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow.SESSIONS_DIR = tmp_path
+
+        original_write = _os.write
+        write_calls = []
+
+        def _fail_batch_write(fd, data):
+            write_calls.append(fd)
+            if len(write_calls) == 2:  # second write is batch fd
+                raise OSError("batch write error")
+            return original_write(fd, data)
+
+        monkeypatch.setattr("golem.flow.os.write", _fail_batch_write)
+
+        with pytest.raises(OSError, match="batch write error"):
+            flow._save_state()
+
+        # No stray temp files left behind
+        leftover = list(tmp_path.glob(".sessions_*.tmp")) + list(
+            tmp_path.glob(".batches_*.tmp")
+        )
+        assert leftover == [], f"Temp files not cleaned up: {leftover}"
+
+    def test_save_state_silently_ignores_unlink_error_on_cleanup(
+        self, monkeypatch, tmp_path
+    ):
+        """REL-007: OSError from os.unlink during cleanup is suppressed."""
+        import os as _os
+
+        sessions_file = tmp_path / "sessions.json"
+        monkeypatch.setattr("golem.orchestrator.SESSIONS_FILE", sessions_file)
+        monkeypatch.setattr("golem.flow.SESSIONS_FILE", sessions_file)
+
+        flow = _make_flow(monkeypatch, tmp_path)
+        flow.SESSIONS_DIR = tmp_path
+
+        original_replace = _os.replace
+        replace_calls = []
+
+        def _fail_replace(src, dst):
+            replace_calls.append(src)
+            if len(replace_calls) == 1:
+                raise OSError("replace failed")
+            return original_replace(src, dst)
+
+        def _fail_unlink(path):
+            raise OSError("cannot remove")
+
+        monkeypatch.setattr("golem.flow.os.replace", _fail_replace)
+        monkeypatch.setattr("golem.flow.os.unlink", _fail_unlink)
+
+        # Raises the original rename error, NOT an unlink error
+        with pytest.raises(OSError, match="replace failed"):
+            flow._save_state()
 
 
 class TestHeartbeatIntegration:

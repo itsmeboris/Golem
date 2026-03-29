@@ -388,3 +388,51 @@ class TestBatchMonitorList:
         batches = mon.list_batches()
         ids = [b.group_id for b in batches]
         assert ids == ["new", "mid", "old"]
+
+
+# ---------------------------------------------------------------------------
+# REL-007: serialize() method
+# ---------------------------------------------------------------------------
+
+
+class TestBatchMonitorSerialize:
+    """Tests for BatchMonitor.serialize() — used for two-phase atomic saves."""
+
+    def test_serialize_returns_bytes(self):
+        """serialize() returns bytes (JSON-encoded payload)."""
+        mon = BatchMonitor()
+        payload = mon.serialize()
+        assert isinstance(payload, bytes)
+
+    def test_serialize_empty_monitor_has_batches_key(self):
+        """Empty monitor serializes with a 'batches' key."""
+        mon = BatchMonitor()
+        import json
+
+        data = json.loads(mon.serialize().decode("utf-8"))
+        assert "batches" in data
+        assert data["batches"] == {}
+
+    def test_serialize_includes_registered_batch(self):
+        """Registered batch appears in serialized output."""
+        import json
+
+        mon = BatchMonitor()
+        mon.register("grp-xyz", [11, 22])
+        data = json.loads(mon.serialize().decode("utf-8"))
+        assert "grp-xyz" in data["batches"]
+        assert data["batches"]["grp-xyz"]["group_id"] == "grp-xyz"
+
+    def test_serialize_round_trip_via_load(self, tmp_path):
+        """serialize() output can be written to disk and loaded back."""
+        mon = BatchMonitor()
+        mon.register("grp-rt", [55])
+
+        payload = mon.serialize()
+        target = tmp_path / "batches.json"
+        target.write_bytes(payload)
+
+        mon2 = BatchMonitor()
+        mon2.load(target)
+        assert mon2.get("grp-rt") is not None
+        assert mon2.get("grp-rt").group_id == "grp-rt"

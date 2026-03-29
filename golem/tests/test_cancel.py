@@ -186,21 +186,22 @@ class TestCancelSessionSavesState:
         mock_live = MagicMock()
         monkeypatch.setattr("golem.flow.LiveState.get", lambda: mock_live)
 
+        sessions_file = tmp_path / "sessions.json"
+        monkeypatch.setattr("golem.orchestrator.SESSIONS_FILE", sessions_file)
+        monkeypatch.setattr("golem.flow.SESSIONS_FILE", sessions_file)
+
         session = TaskSession(
             parent_issue_id=108,
             parent_subject="save test",
             state=TaskSessionState.DETECTED,
         )
         flow._sessions[108] = session
-
-        saved = []
-        monkeypatch.setattr(
-            "golem.flow.save_sessions",
-            lambda sessions: saved.append(True),
-        )
+        flow.SESSIONS_DIR = tmp_path
 
         flow.cancel_session(108)
-        assert saved
+
+        # _save_state writes the sessions file atomically
+        assert sessions_file.exists()
 
 
 # ---------------------------------------------------------------------------

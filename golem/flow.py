@@ -41,14 +41,18 @@ from .event_tracker import Milestone, TaskEventTracker
 from .merge_queue import MergeEntry, MergeQueue, MergeResult
 from .merge_review import ReconciliationResult, run_merge_agent
 from .worktree_manager import _run_git, cleanup_worktree, fast_forward_if_safe
+import os
+import tempfile
+
 from .batch_monitor import BatchMonitor
 from .orchestrator import (
     TaskOrchestrator,
     TaskSession,
     TaskSessionState,
+    SESSIONS_FILE,
     load_sessions,
     recover_sessions,
-    save_sessions,
+    _serialize_sessions_payload,
     _now_iso,
 )
 from .checkpoint import is_checkpoint_fresh, load_checkpoint
@@ -1429,10 +1433,55 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         self._batch_monitor.load(batch_file)
 
     def _save_state(self) -> None:
+        """Persist sessions and batch state atomically using two-phase write.
+
+        Phase 1 writes both payloads to temp files (no rename yet).
+        Phase 2 renames both in sequence, narrowing the inconsistency window
+        to a single ``os.replace`` call rather than the entire write duration.
+        """
         with self._save_lock:
-            save_sessions(self._sessions)
-            batch_file = self.SESSIONS_DIR / "golem_batches.json"
-            self._batch_monitor.save(batch_file)
+            sessions_path = SESSIONS_FILE
+            batch_path = self.SESSIONS_DIR / "golem_batches.json"
+
+            sessions_path.parent.mkdir(parents=True, exist_ok=True)
+            batch_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # --- Phase 1: serialize both payloads and write to temp files ---
+            sessions_payload = _serialize_sessions_payload(self._sessions)
+            batch_payload = self._batch_monitor.serialize()
+
+            s_fd, s_tmp = tempfile.mkstemp(
+                dir=str(sessions_path.parent), prefix=".sessions_", suffix=".tmp"
+            )
+            b_fd, b_tmp = tempfile.mkstemp(
+                dir=str(batch_path.parent), prefix=".batches_", suffix=".tmp"
+            )
+            s_closed = b_closed = False
+            try:
+                os.write(s_fd, sessions_payload)
+                os.fsync(s_fd)
+                os.close(s_fd)
+                s_closed = True
+
+                os.write(b_fd, batch_payload)
+                os.fsync(b_fd)
+                os.close(b_fd)
+                b_closed = True
+
+                # --- Phase 2: rename both (narrow crash window) ---
+                os.replace(s_tmp, str(sessions_path))
+                os.replace(b_tmp, str(batch_path))
+            except BaseException:
+                if not s_closed:
+                    os.close(s_fd)
+                if not b_closed:
+                    os.close(b_fd)
+                for tmp in (s_tmp, b_tmp):
+                    try:
+                        os.unlink(tmp)
+                    except OSError:
+                        pass
+                raise
 
     def reset_state(self) -> None:
         """Delete all session state."""
@@ -1444,8 +1493,6 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         batch_file = self.SESSIONS_DIR / "golem_batches.json"
         if batch_file.exists():
             batch_file.unlink()
-        from .orchestrator import SESSIONS_FILE
-
         if SESSIONS_FILE.exists():
             SESSIONS_FILE.unlink()
             logger.info("Golem session state reset")

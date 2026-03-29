@@ -1394,29 +1394,37 @@ def load_sessions(path: Path | None = None) -> dict[int, TaskSession]:
         return {}
 
 
-def save_sessions(sessions: dict[int, TaskSession], path: Path | None = None) -> None:
-    """Persist all task sessions to disk (atomic write via temp + rename)."""
-    path = path or SESSIONS_FILE
-    path.parent.mkdir(parents=True, exist_ok=True)
+def _serialize_sessions_payload(sessions: dict[int, TaskSession]) -> bytes:
+    """Serialize *sessions* to a JSON-encoded byte payload.
 
+    Extracted so callers can obtain the bytes without performing a rename,
+    enabling two-phase atomic saves that commit multiple files together.
+    """
     completed_ids = [
         sid
         for sid, s in sessions.items()
         if s.state in (TaskSessionState.COMPLETED, TaskSessionState.FAILED)
     ]
-
     data = {
         "sessions": {str(k): v.to_dict() for k, v in sessions.items()},
         "completed_ids": completed_ids,
         "last_updated": _now_iso(),
     }
-    payload = json.dumps(data, indent=2).encode("utf-8")
+    return json.dumps(data, indent=2).encode("utf-8")
 
-    # Atomic write: write to temp file, fsync, then rename over the target.
-    # This prevents partial/corrupt JSON if the process crashes mid-write.
+
+def save_sessions(sessions: dict[int, TaskSession], path: Path | None = None) -> None:
+    """Persist all task sessions to disk (atomic write via temp + rename)."""
     import os
     import tempfile
 
+    path = path or SESSIONS_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    payload = _serialize_sessions_payload(sessions)
+
+    # Atomic write: write to temp file, fsync, then rename over the target.
+    # This prevents partial/corrupt JSON if the process crashes mid-write.
     fd, tmp_path = tempfile.mkstemp(
         dir=str(path.parent), prefix=".sessions_", suffix=".tmp"
     )
