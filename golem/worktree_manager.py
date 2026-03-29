@@ -26,6 +26,8 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from golem.sandbox import make_sandbox_preexec
+
 logger = logging.getLogger("golem.worktree_manager")
 
 # Worktrees live under data/agent/worktrees/<issue_id>/
@@ -58,6 +60,7 @@ def _run_git(
         timeout=timeout,
         check=False,
         env=_clean_env(),
+        preexec_fn=make_sandbox_preexec(),
     )
 
 

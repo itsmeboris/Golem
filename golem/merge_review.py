@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .core.cli_wrapper import CLIConfig, CLIType, invoke_cli
+from .sandbox import make_sandbox_preexec
 from .core.json_extract import extract_json
 from .prompts import format_prompt
 from .worktree_manager import MissingAddition
@@ -70,6 +71,7 @@ def _get_short_sha(base_dir: str) -> str:
         text=True,
         timeout=10,
         check=False,
+        preexec_fn=make_sandbox_preexec(),
     )
     return result.stdout.strip()
 

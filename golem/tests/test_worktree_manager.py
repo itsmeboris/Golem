@@ -1,8 +1,9 @@
 # pylint: disable=too-few-public-methods,redefined-outer-name
 """Tests for golem.core.worktree_manager."""
 
+import subprocess
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -845,3 +846,22 @@ class TestCleanupOrphanedWorktrees:
         monkeypatch.setattr("golem.worktree_manager.shutil.rmtree", failing_rmtree)
         count = cleanup_orphaned_worktrees(str(git_repo))
         assert count == 0
+
+
+class TestWorktreeManagerSandboxPreexec:
+    """Verify _run_git in worktree_manager passes preexec_fn to subprocess.run."""
+
+    @patch("golem.worktree_manager.subprocess.run")
+    def test_preexec_fn_is_callable(self, mock_run):
+        """_run_git must pass a callable preexec_fn to subprocess.run."""
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=["git", "status"], returncode=0, stdout=""
+        )
+        from golem.worktree_manager import _run_git
+
+        _run_git(["status"], cwd="/tmp")
+        kwargs = mock_run.call_args[1]
+        assert (
+            "preexec_fn" in kwargs
+        ), "preexec_fn missing from worktree_manager _run_git"
+        assert callable(kwargs["preexec_fn"])

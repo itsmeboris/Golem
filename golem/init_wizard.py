@@ -8,6 +8,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from .sandbox import make_sandbox_preexec
+
 import yaml
 
 from .core.config import KNOWN_MODELS
@@ -230,6 +232,7 @@ def _setup_git_hooks() -> None:
             text=True,
             cwd=str(repo_root),
             check=False,
+            preexec_fn=make_sandbox_preexec(),
         ).stdout.strip()
         if cur == ".githooks":
             return
@@ -237,6 +240,7 @@ def _setup_git_hooks() -> None:
             ["git", "config", "core.hooksPath", ".githooks"],
             cwd=str(repo_root),
             check=True,
+            preexec_fn=make_sandbox_preexec(),
         )
         print("\nGit hooks configured (core.hooksPath = .githooks)")
     except (FileNotFoundError, OSError, subprocess.CalledProcessError):

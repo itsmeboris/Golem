@@ -2,7 +2,7 @@
 
 import json
 import logging
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import ANY, MagicMock, call, patch
 
 import pytest
 
@@ -23,39 +23,39 @@ class TestGhHelper:
     def test_basic_call(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
         result = _gh("issue", "list")
-        mock_run.assert_called_once_with(
-            ["gh", "issue", "list"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=60,
-        )
+        kwargs = mock_run.call_args[1]
+        assert mock_run.call_args[0][0] == ["gh", "issue", "list"]
+        assert kwargs["capture_output"] is True
+        assert kwargs["text"] is True
+        assert kwargs["check"] is False
+        assert kwargs["timeout"] == 60
         assert result.returncode == 0
 
     @patch("golem.backends.github.subprocess.run")
     def test_check_flag(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0)
         _gh("issue", "list", check=True)
-        mock_run.assert_called_once_with(
-            ["gh", "issue", "list"],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=60,
-        )
+        kwargs = mock_run.call_args[1]
+        assert mock_run.call_args[0][0] == ["gh", "issue", "list"]
+        assert kwargs["check"] is True
 
     @patch("golem.backends.github.subprocess.run")
     def test_custom_timeout(self, mock_run):
         """Custom timeout is forwarded to subprocess.run."""
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
         _gh("issue", "list", timeout=120)
-        mock_run.assert_called_once_with(
-            ["gh", "issue", "list"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=120,
-        )
+        kwargs = mock_run.call_args[1]
+        assert mock_run.call_args[0][0] == ["gh", "issue", "list"]
+        assert kwargs["timeout"] == 120
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_preexec_fn_is_callable(self, mock_run):
+        """subprocess.run in _gh must include a callable preexec_fn."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        _gh("issue", "list")
+        kwargs = mock_run.call_args[1]
+        assert "preexec_fn" in kwargs, "preexec_fn missing from _gh subprocess.run"
+        assert callable(kwargs["preexec_fn"])
 
     @patch("golem.backends.github.subprocess.run")
     def test_timeout_expired_returns_failed_process(self, mock_run, caplog):
@@ -203,13 +203,19 @@ class TestGitHubTaskSource:
         )
         source = GitHubTaskSource(repo="owner/repo")
         assert source.get_task_subject(42) == "My Issue"
-        mock_run.assert_called_once_with(
-            ["gh", "issue", "view", "42", "--json", "title", "--repo", "owner/repo"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=60,
-        )
+        call_kwargs = mock_run.call_args
+        assert call_kwargs[0][0] == [
+            "gh",
+            "issue",
+            "view",
+            "42",
+            "--json",
+            "title",
+            "--repo",
+            "owner/repo",
+        ]
+        assert call_kwargs[1]["timeout"] == 60
+        assert callable(call_kwargs[1].get("preexec_fn"))
 
     @patch("golem.backends.github.subprocess.run")
     def test_get_task_description_success(self, mock_run):
@@ -252,6 +258,7 @@ class TestGitHubTaskSource:
             text=True,
             check=False,
             timeout=60,
+            preexec_fn=ANY,
         )
 
     def test_get_child_tasks_returns_empty(self):
@@ -344,6 +351,7 @@ class TestGitHubTaskSource:
             text=True,
             check=False,
             timeout=60,
+            preexec_fn=ANY,
         )
 
 
@@ -370,6 +378,7 @@ class TestGitHubStateBackend:
             text=True,
             check=False,
             timeout=60,
+            preexec_fn=ANY,
         )
         assert add_call in mock_run.call_args_list
 
@@ -443,6 +452,7 @@ class TestGitHubStateBackend:
             text=True,
             check=False,
             timeout=60,
+            preexec_fn=ANY,
         )
         assert close_call in mock_run.call_args_list
 
@@ -484,6 +494,7 @@ class TestGitHubStateBackend:
             text=True,
             check=False,
             timeout=60,
+            preexec_fn=ANY,
         )
         assert reopen_call in mock_run.call_args_list
 
@@ -525,6 +536,7 @@ class TestGitHubStateBackend:
             text=True,
             check=False,
             timeout=60,
+            preexec_fn=ANY,
         )
         assert close_call in mock_run.call_args_list
         add_call = call(
@@ -542,6 +554,7 @@ class TestGitHubStateBackend:
             text=True,
             check=False,
             timeout=60,
+            preexec_fn=ANY,
         )
         assert add_call in mock_run.call_args_list
 
@@ -556,6 +569,7 @@ class TestGitHubStateBackend:
             text=True,
             check=False,
             timeout=60,
+            preexec_fn=ANY,
         )
 
     @patch("golem.backends.github.subprocess.run")
@@ -590,6 +604,7 @@ class TestGitHubStateBackend:
             text=True,
             check=False,
             timeout=60,
+            preexec_fn=ANY,
         )
 
     @patch("golem.backends.github.subprocess.run")
@@ -603,6 +618,7 @@ class TestGitHubStateBackend:
             text=True,
             check=False,
             timeout=60,
+            preexec_fn=ANY,
         )
 
     @patch("golem.backends.github.subprocess.run")
@@ -616,6 +632,7 @@ class TestGitHubStateBackend:
             text=True,
             check=False,
             timeout=60,
+            preexec_fn=ANY,
         )
 
     @patch("golem.backends.github.subprocess.run")
@@ -650,6 +667,7 @@ class TestGitHubStateBackend:
             text=True,
             check=False,
             timeout=60,
+            preexec_fn=ANY,
         )
 
     @patch("golem.backends.github.subprocess.run")
@@ -707,6 +725,7 @@ class TestGitHubStateBackend:
             text=True,
             check=False,
             timeout=60,
+            preexec_fn=ANY,
         )
 
 
@@ -889,6 +908,7 @@ class TestUpdateStatusClosedVerification:
             text=True,
             check=False,
             timeout=60,
+            preexec_fn=ANY,
         )
         assert view_call in mock_run.call_args_list
 

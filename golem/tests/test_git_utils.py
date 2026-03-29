@@ -1,8 +1,7 @@
 """Tests for golem.git_utils."""
 
-from unittest.mock import MagicMock, patch
-
 import pytest
+from unittest.mock import MagicMock, patch
 
 from golem.git_utils import detect_github_remote, is_git_repo
 
@@ -96,3 +95,29 @@ class TestDetectGithubRemote:
                 cmd="git", timeout=5
             )
             assert detect_github_remote("/some/path") is None
+
+
+class TestGitUtilsSandboxPreexec:
+    """Verify subprocess.run calls in git_utils include preexec_fn."""
+
+    @pytest.mark.parametrize(
+        "func,kwargs",
+        [
+            ("is_git_repo", {"path": "/some/path"}),
+            ("detect_github_remote", {"repo_path": "/some/path"}),
+        ],
+        ids=["is_git_repo", "detect_github_remote"],
+    )
+    @patch("golem.git_utils.subprocess.run")
+    def test_preexec_fn_is_callable(self, mock_run, func, kwargs):
+        """All subprocess.run calls in git_utils must include a callable preexec_fn."""
+        import golem.git_utils as git_utils
+
+        mock_run.return_value = MagicMock(returncode=0, stdout="owner/repo\n")
+        getattr(git_utils, func)(**kwargs)
+        for call in mock_run.call_args_list:
+            call_kwargs = call[1]
+            assert (
+                "preexec_fn" in call_kwargs
+            ), "preexec_fn missing from %s subprocess.run: %s" % (func, call)
+            assert callable(call_kwargs["preexec_fn"])

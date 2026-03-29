@@ -426,3 +426,25 @@ class TestRunAstAnalysisFiltering:
                 with patch("pathlib.Path.glob", return_value=iter([self._FAKE_RULE])):
                     result = run_ast_analysis(str(tmp_path), ["foo.py"])
         assert result == []
+
+
+class TestAstAnalysisSandboxPreexec:
+    """Verify subprocess.run in run_ast_analysis passes a callable preexec_fn."""
+
+    @patch("golem.ast_analysis.subprocess.run")
+    def test_preexec_fn_is_callable(self, mock_run, tmp_path):
+        """subprocess.run call for sg must include a callable preexec_fn."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="[]", stderr="")
+        with patch("golem.ast_analysis.is_ast_grep_available", return_value=True):
+            with patch(
+                "pathlib.Path.glob",
+                return_value=iter([tmp_path / "rule.yaml"]),
+            ):
+                run_ast_analysis(str(tmp_path), ["foo.py"])
+        assert mock_run.called, "subprocess.run should have been called"
+        for call in mock_run.call_args_list:
+            call_kwargs = call[1]
+            assert (
+                "preexec_fn" in call_kwargs
+            ), "preexec_fn missing from ast_analysis subprocess.run"
+            assert callable(call_kwargs["preexec_fn"])

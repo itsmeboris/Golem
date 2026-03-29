@@ -1,6 +1,7 @@
 # pylint: disable=too-few-public-methods,redefined-outer-name
 """Tests for golem.merge_review — agent-assisted reconciliation and conflict resolution."""
 
+import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -90,6 +91,21 @@ class TestGetShortSha:
             "golem.merge_review.subprocess.run", lambda *a, **kw: mock_result
         )
         assert _get_short_sha(str(tmp_path / "repo")) == "abc1234"
+
+    @patch("golem.merge_review.subprocess.run")
+    def test_preexec_fn_is_callable(self, mock_run):
+        """subprocess.run in _get_short_sha must include a callable preexec_fn."""
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=["git", "rev-parse", "--short", "HEAD"],
+            returncode=0,
+            stdout="abc1234\n",
+        )
+        _get_short_sha("/tmp/repo")
+        kwargs = mock_run.call_args[1]
+        assert (
+            "preexec_fn" in kwargs
+        ), "preexec_fn missing from merge_review subprocess.run"
+        assert callable(kwargs["preexec_fn"])
 
 
 class TestRunMergeAgent:

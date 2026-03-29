@@ -12,6 +12,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from golem.sandbox import make_sandbox_preexec
+
 logger = logging.getLogger("golem.ast_analysis")
 
 _UNUSED_IMPORT_PREFIX = "Potentially unused import: "
@@ -96,6 +98,7 @@ def run_ast_analysis(
                 text=True,
                 timeout=timeout,
                 check=False,
+                preexec_fn=make_sandbox_preexec(),
             )
             if result.stdout.strip():
                 matches = _parse_sg_output(result.stdout)

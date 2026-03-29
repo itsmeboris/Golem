@@ -7,6 +7,8 @@ import logging
 import re
 import subprocess
 
+from golem.sandbox import make_sandbox_preexec
+
 logger = logging.getLogger(__name__)
 
 # Matches github.com SSH (git@github.com:owner/repo.git)
@@ -24,6 +26,7 @@ def is_git_repo(path: str) -> bool:
             capture_output=True,
             text=True,
             timeout=5,
+            preexec_fn=make_sandbox_preexec(),
         )
         return result.returncode == 0
     except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
@@ -44,6 +47,7 @@ def detect_github_remote(repo_path: str) -> str | None:
             capture_output=True,
             text=True,
             timeout=5,
+            preexec_fn=make_sandbox_preexec(),
         )
         if result.returncode != 0:
             return None

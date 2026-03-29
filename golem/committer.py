@@ -16,6 +16,7 @@ import subprocess
 from dataclasses import dataclass
 
 from .core.commit_format import load_commit_format
+from .sandbox import make_sandbox_preexec
 
 logger = logging.getLogger("golem.committer")
 
@@ -40,6 +41,7 @@ def _run_git(
         text=True,
         timeout=timeout,
         check=False,
+        preexec_fn=make_sandbox_preexec(),
     )
 
 

@@ -8,6 +8,8 @@ import re
 import subprocess
 from typing import Any
 
+from golem.sandbox import make_sandbox_preexec
+
 logger = logging.getLogger("golem.backends.github")
 
 _STATUS_LABELS = {
@@ -31,6 +33,7 @@ def _gh(
             text=True,
             check=check,
             timeout=timeout,
+            preexec_fn=make_sandbox_preexec(),
         )
     except subprocess.TimeoutExpired:
         logger.warning("gh %s timed out after %ds", " ".join(args), timeout)

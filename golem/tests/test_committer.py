@@ -190,15 +190,25 @@ class TestRunGit:
             args=["git", "status"], returncode=0, stdout="clean\n"
         )
         result = _run_git(["status"], cwd="/tmp")
-        mock_run.assert_called_once_with(
-            ["git", "status"],
-            cwd="/tmp",
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-        )
+        call_kwargs = mock_run.call_args[1]
+        assert mock_run.call_args[0][0] == ["git", "status"]
+        assert call_kwargs["cwd"] == "/tmp"
+        assert call_kwargs["capture_output"] is True
+        assert call_kwargs["text"] is True
+        assert call_kwargs["timeout"] == 30
+        assert call_kwargs["check"] is False
         assert result.stdout == "clean\n"
+
+    @patch("golem.committer.subprocess.run")
+    def test_preexec_fn_is_callable(self, mock_run):
+        """subprocess.run in _run_git must include a callable preexec_fn."""
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=["git", "status"], returncode=0, stdout=""
+        )
+        _run_git(["status"], cwd="/tmp")
+        kwargs = mock_run.call_args[1]
+        assert "preexec_fn" in kwargs, "preexec_fn missing from _run_git subprocess.run"
+        assert callable(kwargs["preexec_fn"])
 
 
 class TestCommitResult:

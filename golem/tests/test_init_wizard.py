@@ -4,6 +4,7 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
 import yaml
 
 from golem.cli import cmd_init, main
@@ -559,3 +560,36 @@ class TestSetupGitHooks:
         ):
             _setup_git_hooks()
         mock_run.assert_not_called()
+
+
+class TestInitWizardSandboxPreexec:
+    """Verify subprocess.run calls in _setup_git_hooks include preexec_fn."""
+
+    @pytest.mark.parametrize(
+        "current_hooks,expected_calls",
+        [
+            (".git/hooks", 2),  # both the read and the set call
+            (".githooks", 1),  # only the read call (already configured)
+        ],
+        ids=["sets_hooks_path", "already_configured"],
+    )
+    def test_preexec_fn_is_callable(self, current_hooks, expected_calls):
+        """All subprocess.run calls in _setup_git_hooks must include a callable preexec_fn."""
+        from golem.init_wizard import _setup_git_hooks
+
+        side_effects = [MagicMock(stdout=current_hooks + "\n")]
+        if expected_calls == 2:
+            side_effects.append(MagicMock())
+
+        with patch(
+            "golem.init_wizard.subprocess.run", side_effect=side_effects
+        ) as mock_run:
+            _setup_git_hooks()
+
+        assert mock_run.call_count == expected_calls
+        for call in mock_run.call_args_list:
+            call_kwargs = call[1]
+            assert (
+                "preexec_fn" in call_kwargs
+            ), "preexec_fn missing from init_wizard subprocess.run: %s" % str(call)
+            assert callable(call_kwargs["preexec_fn"])
