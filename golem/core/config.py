@@ -125,6 +125,14 @@ class GolemFlowConfig(FlowConfig):
     self_update_branch: str = "master"
     self_update_interval_seconds: int = 600
     self_update_strategy: str = "merged_only"  # "merged_only" | "any_commit"
+    # OpenTelemetry tracing (opt-in)
+    otel_enabled: bool = False
+    otel_endpoint: str = ""
+    otel_console_export: bool = False
+    # Subprocess sandboxing (OS-level resource limits via preexec_fn)
+    sandbox_enabled: bool = True
+    sandbox_cpu_seconds: int = 3600
+    sandbox_memory_gb: int = 4
 
 
 @dataclass
@@ -365,6 +373,14 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
         self_update_branch=data.get("self_update_branch", "master"),
         self_update_interval_seconds=data.get("self_update_interval_seconds", 600),
         self_update_strategy=data.get("self_update_strategy", "merged_only"),
+        # OpenTelemetry
+        otel_enabled=data.get("otel_enabled", False),
+        otel_endpoint=data.get("otel_endpoint", ""),
+        otel_console_export=data.get("otel_console_export", False),
+        # Sandbox
+        sandbox_enabled=data.get("sandbox_enabled", True),
+        sandbox_cpu_seconds=data.get("sandbox_cpu_seconds", 3600),
+        sandbox_memory_gb=data.get("sandbox_memory_gb", 4),
     )
 
 

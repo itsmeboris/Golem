@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
+from golem.sandbox import make_sandbox_preexec
+
 from .stream_printer import StreamPrinter as _StreamPrinter
 
 logger = logging.getLogger("golem.core.cli_wrapper")
@@ -111,6 +113,7 @@ class CLIConfig:
     system_prompt: str = ""
     cwd: str = ""  # Override working directory (empty = project root for Claude)
     resume_session_id: str = ""  # --resume <session_id> for warm retries
+    sandbox_enabled: bool = True  # Apply OS-level resource limits via preexec_fn
 
 
 @dataclass
@@ -704,6 +707,7 @@ def _invoke_cli_quiet(prompt: str, config: CLIConfig) -> CLIResult:
             text=True,
             env=env,
             cwd=sandbox,
+            preexec_fn=make_sandbox_preexec() if config.sandbox_enabled else None,
         )
         _track_proc(proc)
         stdout, stderr = proc.communicate(input=prompt, timeout=config.timeout_seconds)
@@ -773,6 +777,7 @@ def _invoke_cli_verbose(prompt: str, config: CLIConfig) -> CLIResult:
             bufsize=1,
             env=env,
             cwd=sandbox,
+            preexec_fn=make_sandbox_preexec() if config.sandbox_enabled else None,
         ) as proc:
             _track_proc(proc)
             try:
@@ -850,6 +855,7 @@ def invoke_cli_raw(prompt: str, config: CLIConfig) -> str:
             stderr=subprocess.PIPE,
             text=True,
             cwd=cwd,
+            preexec_fn=make_sandbox_preexec() if config.sandbox_enabled else None,
         )
         _track_proc(proc)
         stdout, stderr = proc.communicate(input=prompt, timeout=config.timeout_seconds)
@@ -906,6 +912,7 @@ def invoke_cli_streaming(
             text=True,
             bufsize=1,
             cwd=cwd,
+            preexec_fn=make_sandbox_preexec() if config.sandbox_enabled else None,
         ) as proc:
             _track_proc(proc)
             try:
@@ -989,6 +996,7 @@ def invoke_cli_monitored(
             bufsize=1,
             env=env,
             cwd=cwd,
+            preexec_fn=make_sandbox_preexec() if config.sandbox_enabled else None,
         ) as proc:
             _track_proc(proc)
             try:

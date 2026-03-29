@@ -10,7 +10,11 @@ See https://github.com/itsmeboris/Golem/issues
 ### P1 — Important
 
 - [x] SEC-006: **MCP tool schema validation** — validate_and_filter_tools() in KeywordToolProvider (GH #18, 2026-03-29)
-- [ ] SEC-007: **Runtime subprocess sandboxing** — OS-level containment (GH #19)
+- [ ] SEC-006b: **MCP validation not wired into registration** — `validate_tools()`/`filter_tool_definitions()` exist but are dead code; not called from any production path (GH #131)
+- [x] SEC-007: **Runtime subprocess sandboxing** — SandboxLimits + make_sandbox_preexec wired into cli_wrapper (GH #19, 2026-03-29)
+- [ ] TEST-007: **Test quality audit** — 13+ tests with zero assertions in test_flow.py; test_heartbeat_worker avg 1.9 assert/test; tautological patterns in test_live_state; over-mocking (15.7 patches/test in test_merge_queue) (GH #116)
+- [ ] INFRA-012: **Error handling and async patterns rules** — agents lack retry/fallback/circuit-breaker patterns and asyncio best practices (gather, timeouts, lock usage, no sleep in tests) (GH #117)
+- [ ] INFRA-016: **Security patterns rule** — no reusable rule for input validation, path traversal prevention, secret handling, subprocess sanitization; review_security.txt is a prompt, not a rule (GH #127)
 - [x] TEST-005: **Context budget tautological test** — fixed assertions to verify actual content and budget effect (GH #114, 2026-03-29)
 - [x] TEST-006: **prompt_analytics.js route missing test** — added test for /dashboard/prompt_analytics.js route (GH #115, 2026-03-29)
 
@@ -22,7 +26,19 @@ See https://github.com/itsmeboris/Golem/issues
 - [x] FEAT-002: **A-Mem knowledge graph** — KnowledgeGraph with keyword/file indexing and relevance-scored query (GH #14, 2026-03-29)
 - [x] FEAT-003: **Dashboard prompt comparison UI** — added Prompts tab with table showing hash, runs, success rate bar, cost, duration (GH #82, 2026-03-29)
 - [x] FEAT-004: **CLI `logs` command** — golem logs -n 50 --follow with tail and follow modes (GH #83, 2026-03-29)
+- [ ] FEAT-002b: **Knowledge graph not integrated** — `query_for_context()` not wired into context_injection; uses private `_store._load()`; keyword tokenization doesn't strip punctuation (GH #132)
 - [ ] TEST-002: **Mutation testing** — mutmut integration (GH #17)
+- [ ] UX-005: **Dashboard empty states** — blank screen when no tasks; no first-time guidance; no feedback when filters match nothing (GH #118)
+- [ ] UX-006: **Toast notification system** — replace browser `alert()` (9 instances) with styled toast/snackbar; add button loading states during async ops (GH #119)
+- [ ] UX-007: **Loading states** — skeleton loader CSS exists but never used; no spinners on any API call or page transition (GH #120)
+- [ ] UX-008: **Keyboard shortcuts and mobile layout** — no keyboard nav (Ctrl+K, arrows, Escape); zero `@media` queries for <1024px; touch targets too small (GH #121)
+- [ ] INFRA-013: **Error recovery skill** — agents can't systematically recover from transient failures; needs retry/backoff/circuit-breaker patterns + orchestration prompt update with recovery phase (GH #122)
+- [ ] INFRA-014: **Expand CLAUDE.md** — add architecture overview (5-phase pipeline, data models, concurrency), common pitfalls & debugging, git workflow, async patterns (GH #123)
+- [ ] FEAT-007: **Structured logging with task correlation** — 403 logger calls but no cross-task tracing; add task_id/phase via contextvars; JSON format option (GH #124)
+- [ ] INFRA-015: **Git workflow rule** — no rule for branch naming, commit message format, FF-only merge strategy, fixup! conventions (GH #126)
+- [ ] INFRA-017: **Phase transition criteria in prompts** — orchestrate_task.txt lacks explicit exit criteria per phase; ambiguity on when to retry vs escalate; transient vs deterministic failure distinction missing (GH #128)
+- [ ] UX-010: **Copy-to-clipboard** — no click-to-copy for task IDs, prompt hashes, commit SHAs, or error text anywhere in dashboard (GH #129)
+- [ ] UX-011: **Deep linking / URL sharing** — task detail doesn't update URL; no hash routing (`#task/123`, `#merge-queue`); can't bookmark or share specific views (GH #130)
 - [x] UX-002: **Dashboard missing pagination and search** — added client-side search, state filter, and 25-per-page pagination (GH #93, 2026-03-29)
 - [x] TEST-003: **Lint modules lack tests** — verified: all 9 modules have dedicated test files (10 test files total) (GH #95, 2026-03-29)
 
@@ -31,6 +47,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [ ] FEAT-005: **Evaluator-optimizer loop** — prompt auto-tuning (GH #15)
 - [ ] FEAT-006: **OpenTelemetry tracing** — agent observability (GH #16)
 - [ ] TEST-004: **Multiple source modules lack test files** — 13+ modules (batch_cli, profile, prompts, core/slack, backends/github, notifiers, mcp_tools) have no dedicated tests; error paths unverified (GH #97)
+- [ ] UX-009: **Data visualization** — sparklines for success rate trend, phase duration waterfall chart, cost breakdown by model, agent activity heatmap (GH #125)
 
 ---
 

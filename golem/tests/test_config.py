@@ -511,3 +511,42 @@ class TestEnableSimplifyPassConfig:
         )
         config = load_config(cfg_file)
         assert config.golem.enable_simplify_pass is True
+
+
+class TestOtelConfigFields:
+    """Tests for otel_* fields on GolemFlowConfig."""
+
+    def test_otel_defaults(self):
+        """All otel_* fields have the correct off-by-default values."""
+        cfg = GolemFlowConfig()
+        assert cfg.otel_enabled is False
+        assert cfg.otel_endpoint == ""
+        assert cfg.otel_console_export is False
+
+    def test_otel_fields_parsed_from_yaml(self, tmp_path):
+        """otel_* fields are read from YAML config."""
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(
+            "flows:\n"
+            "  golem:\n"
+            "    profile: local\n"
+            "    projects: [test/repo]\n"
+            "    otel_enabled: true\n"
+            "    otel_endpoint: localhost:4317\n"
+            "    otel_console_export: true\n"
+        )
+        config = load_config(cfg_file)
+        assert config.golem.otel_enabled is True
+        assert config.golem.otel_endpoint == "localhost:4317"
+        assert config.golem.otel_console_export is True
+
+    def test_otel_disabled_by_default_in_yaml(self, tmp_path):
+        """When otel_* keys are absent from YAML, defaults remain False/empty."""
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(
+            "flows:\n" "  golem:\n" "    profile: local\n" "    projects: [test/repo]\n"
+        )
+        config = load_config(cfg_file)
+        assert config.golem.otel_enabled is False
+        assert config.golem.otel_endpoint == ""
+        assert config.golem.otel_console_export is False
