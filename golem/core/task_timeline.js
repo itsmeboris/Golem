@@ -249,6 +249,7 @@ async function handleCancel(session) {
   try {
     const result = await cancelTask(taskId);
     if (result.ok) {
+      showToast('Task cancelled', 'success');
       S.sessions = await fetchSessions();
       await renderDetail(S.selectedTaskId);
       return; // btn is now detached — skip finally re-enable
@@ -268,6 +269,7 @@ async function handleRerun(session) {
     if (!prompt) { showToast('Could not fetch task prompt.', 'error'); if (btn) { btn.disabled = false; btn.classList.remove('btn-loading'); btn.textContent = 'Re-run'; } return; }
     const result = await resubmitTask(prompt, subjectTitle(session));
     if (result.ok) {
+      showToast('Task resubmitted', 'success');
       S.sessions = await fetchSessions();
       if (S.view === 'overview') renderOverview();
       else await renderDetail(S.selectedTaskId);
@@ -313,6 +315,7 @@ async function _submitResubmitModal() {
   try {
     const result = await resubmitTask(prompt, subject);
     if (result.ok) {
+      showToast('Task submitted', 'success');
       _closeResubmitModal();
       S.sessions = await fetchSessions();
       if (S.view === 'overview') renderOverview();

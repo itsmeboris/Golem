@@ -2504,6 +2504,50 @@ class TestToastNotificationSystem:
             "btn-loading" in body
         ), "Missing btn-loading class usage in task_timeline.js"
 
+    @pytest.mark.parametrize(
+        "snippet",
+        [
+            "showToast('Task cancelled', 'success')",
+            "showToast('Task resubmitted', 'success')",
+            "showToast('Task submitted', 'success')",
+        ],
+        ids=[
+            "cancel_success",
+            "rerun_success",
+            "submit_success",
+        ],
+    )
+    def test_success_toasts_present_in_task_timeline(self, snippet):
+        """Each successful async operation must show a 'success' toast."""
+        body = self.timeline_path.read_text(encoding="utf-8")
+        assert snippet in body, f"Missing success showToast call: {snippet!r}"
+
+    def test_success_toasts_precede_rerender(self):
+        """Success toasts must be called before re-render (before fetchSessions)."""
+        body = self.timeline_path.read_text(encoding="utf-8")
+        # For cancel: showToast comes before fetchSessions in the ok branch
+        cancel_ok_idx = body.index("showToast('Task cancelled', 'success')")
+        cancel_fetch_idx = body.index(
+            "S.sessions = await fetchSessions();", cancel_ok_idx
+        )
+        assert cancel_ok_idx < cancel_fetch_idx, (
+            "Cancel success toast must appear before fetchSessions call"
+        )
+        # For rerun: showToast comes before fetchSessions in the ok branch
+        rerun_ok_idx = body.index("showToast('Task resubmitted', 'success')")
+        rerun_fetch_idx = body.index(
+            "S.sessions = await fetchSessions();", rerun_ok_idx
+        )
+        assert rerun_ok_idx < rerun_fetch_idx, (
+            "Rerun success toast must appear before fetchSessions call"
+        )
+        # For submit modal: showToast comes before _closeResubmitModal
+        submit_ok_idx = body.index("showToast('Task submitted', 'success')")
+        close_modal_idx = body.index("_closeResubmitModal();", submit_ok_idx)
+        assert submit_ok_idx < close_modal_idx, (
+            "Submit success toast must appear before _closeResubmitModal call"
+        )
+
 
 class TestSafeToThread:
     async def test_normal_call(self):
