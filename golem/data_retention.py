@@ -36,20 +36,29 @@ def cleanup_old_data(base_dir: str, max_age_days: int = 30) -> dict[str, int]:
     traces_dir = Path(base_dir) / "data" / "traces"
     if traces_dir.exists():
         for f in traces_dir.rglob("*.jsonl"):
-            if f.stat().st_mtime < cutoff:
-                f.unlink()
-                counts["traces"] += 1
+            try:
+                if f.stat().st_mtime < cutoff:
+                    f.unlink()
+                    counts["traces"] += 1
+            except (FileNotFoundError, PermissionError, OSError) as exc:
+                logger.debug("Skipping %s during cleanup: %s", f, exc)
         for f in traces_dir.rglob("*.prompt.txt"):
-            if f.stat().st_mtime < cutoff:
-                f.unlink()
-                counts["traces"] += 1
+            try:
+                if f.stat().st_mtime < cutoff:
+                    f.unlink()
+                    counts["traces"] += 1
+            except (FileNotFoundError, PermissionError, OSError) as exc:
+                logger.debug("Skipping %s during cleanup: %s", f, exc)
 
     checkpoints_dir = Path(base_dir) / "data" / "checkpoints"
     if checkpoints_dir.exists():
         for f in checkpoints_dir.rglob("*.json"):
-            if f.stat().st_mtime < cutoff:
-                f.unlink()
-                counts["checkpoints"] += 1
+            try:
+                if f.stat().st_mtime < cutoff:
+                    f.unlink()
+                    counts["checkpoints"] += 1
+            except (FileNotFoundError, PermissionError, OSError) as exc:
+                logger.debug("Skipping %s during cleanup: %s", f, exc)
 
     if counts["traces"] or counts["checkpoints"]:
         logger.info(

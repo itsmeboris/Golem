@@ -192,3 +192,193 @@ class TestCleanupOldDataLogging:
             cleanup_old_data(str(tmp_path), max_age_days=30)
 
         assert not any("Data retention cleanup" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# BUG-013: TOCTOU / permission-error handling
+# ---------------------------------------------------------------------------
+
+
+class TestCleanupToctouHandling:
+    """Stat and unlink errors are handled gracefully (TOCTOU / permission errors)."""
+
+    def test_file_not_found_during_stat_is_skipped(self, tmp_path):
+        """FileNotFoundError from stat() is swallowed and file is not counted.
+
+        Simulates TOCTOU: file exists at rglob time but is deleted before stat().
+        """
+        from pathlib import Path
+        from unittest.mock import patch
+
+        traces_dir = tmp_path / "data" / "traces"
+        traces_dir.mkdir(parents=True)
+        old_file = traces_dir / "gone.jsonl"
+        old_file.write_text("data")
+
+        real_rglob = Path.rglob
+
+        def rglob_then_delete(self, pattern):
+            results = list(real_rglob(self, pattern))
+            # Delete the file after rglob returns it (TOCTOU scenario)
+            for f in results:
+                if f.exists():
+                    f.unlink()
+            return iter(results)
+
+        with patch.object(Path, "rglob", rglob_then_delete):
+            counts = cleanup_old_data(str(tmp_path), max_age_days=30)
+        assert counts["traces"] == 0
+
+    def test_permission_error_during_unlink_is_skipped(self, tmp_path):
+        """PermissionError from unlink() is swallowed and file is not counted."""
+        import os
+        from pathlib import Path
+        from unittest.mock import patch
+
+        traces_dir = tmp_path / "data" / "traces"
+        traces_dir.mkdir(parents=True)
+        old_file = traces_dir / "protected.jsonl"
+        old_file.write_text("data")
+        old_mtime = time.time() - (31 * 86400)
+        os.utime(str(old_file), (old_mtime, old_mtime))
+
+        real_unlink = Path.unlink
+
+        def raising_unlink(self, *args, **kwargs):
+            if self.suffix == ".jsonl":
+                raise PermissionError("not allowed")
+            return real_unlink(self, *args, **kwargs)
+
+        with patch.object(Path, "unlink", raising_unlink):
+            counts = cleanup_old_data(str(tmp_path), max_age_days=30)
+        assert counts["traces"] == 0
+
+    def test_only_successfully_deleted_files_are_counted(self, tmp_path):
+        """Count reflects only files that were actually deleted.
+
+        One file is deleted successfully; the other raises FileNotFoundError
+        during stat() — only the successful deletion is counted.
+        """
+        import os
+        from pathlib import Path
+        from unittest.mock import patch
+
+        traces_dir = tmp_path / "data" / "traces"
+        traces_dir.mkdir(parents=True)
+        old_mtime = time.time() - (31 * 86400)
+
+        ok_file = traces_dir / "aaa_ok.jsonl"
+        ok_file.write_text("ok")
+        os.utime(str(ok_file), (old_mtime, old_mtime))
+
+        bad_file = traces_dir / "zzz_bad.jsonl"
+        bad_file.write_text("bad")
+        os.utime(str(bad_file), (old_mtime, old_mtime))
+
+        real_stat = Path.stat
+
+        def selective_stat(self, *args, **kwargs):
+            if self.name == "zzz_bad.jsonl":
+                raise FileNotFoundError("gone")
+            return real_stat(self, *args, **kwargs)
+
+        with patch.object(Path, "stat", selective_stat):
+            counts = cleanup_old_data(str(tmp_path), max_age_days=30)
+        assert counts["traces"] == 1
+
+    def test_file_not_found_during_stat_logged_at_debug(self, tmp_path, caplog):
+        """FileNotFoundError is logged at DEBUG level."""
+        import logging
+        from pathlib import Path
+        from unittest.mock import patch
+
+        traces_dir = tmp_path / "data" / "traces"
+        traces_dir.mkdir(parents=True)
+        old_file = traces_dir / "gone.jsonl"
+        old_file.write_text("data")
+
+        real_rglob = Path.rglob
+
+        def rglob_then_delete(self, pattern):
+            results = list(real_rglob(self, pattern))
+            for f in results:
+                if f.exists():
+                    f.unlink()
+            return iter(results)
+
+        with patch.object(Path, "rglob", rglob_then_delete):
+            with caplog.at_level(logging.DEBUG, logger="golem.data_retention"):
+                cleanup_old_data(str(tmp_path), max_age_days=30)
+
+        assert any("Skipping" in r.message for r in caplog.records)
+
+    def test_checkpoint_file_not_found_during_stat_is_skipped(self, tmp_path):
+        """FileNotFoundError from stat() in checkpoint loop is swallowed."""
+        from pathlib import Path
+        from unittest.mock import patch
+
+        ck_dir = tmp_path / "data" / "checkpoints"
+        ck_dir.mkdir(parents=True)
+        old_file = ck_dir / "task.json"
+        old_file.write_text("{}")
+
+        real_rglob = Path.rglob
+
+        def rglob_then_delete(self, pattern):
+            results = list(real_rglob(self, pattern))
+            for f in results:
+                if f.exists():
+                    f.unlink()
+            return iter(results)
+
+        with patch.object(Path, "rglob", rglob_then_delete):
+            counts = cleanup_old_data(str(tmp_path), max_age_days=30)
+        assert counts["checkpoints"] == 0
+
+    def test_prompt_txt_permission_error_is_skipped(self, tmp_path):
+        """PermissionError from unlink() on .prompt.txt files is swallowed."""
+        import os
+        from pathlib import Path
+        from unittest.mock import patch
+
+        traces_dir = tmp_path / "data" / "traces"
+        traces_dir.mkdir(parents=True)
+        old_file = traces_dir / "task.prompt.txt"
+        old_file.write_text("prompt")
+        old_mtime = time.time() - (31 * 86400)
+        os.utime(str(old_file), (old_mtime, old_mtime))
+
+        real_unlink = Path.unlink
+
+        def raising_unlink(self, *args, **kwargs):
+            if ".prompt.txt" in self.name:
+                raise PermissionError("locked")
+            return real_unlink(self, *args, **kwargs)
+
+        with patch.object(Path, "unlink", raising_unlink):
+            counts = cleanup_old_data(str(tmp_path), max_age_days=30)
+        assert counts["traces"] == 0
+
+    def test_oserror_during_unlink_is_skipped(self, tmp_path):
+        """Generic OSError from unlink() is also swallowed."""
+        import os
+        from pathlib import Path
+        from unittest.mock import patch
+
+        ck_dir = tmp_path / "data" / "checkpoints"
+        ck_dir.mkdir(parents=True)
+        old_file = ck_dir / "task.json"
+        old_file.write_text("{}")
+        old_mtime = time.time() - (31 * 86400)
+        os.utime(str(old_file), (old_mtime, old_mtime))
+
+        real_unlink = Path.unlink
+
+        def raising_unlink(self, *args, **kwargs):
+            if self.suffix == ".json":
+                raise OSError("I/O error")
+            return real_unlink(self, *args, **kwargs)
+
+        with patch.object(Path, "unlink", raising_unlink):
+            counts = cleanup_old_data(str(tmp_path), max_age_days=30)
+        assert counts["checkpoints"] == 0
