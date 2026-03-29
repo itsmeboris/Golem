@@ -22,7 +22,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [ ] FEAT-004: **CLI `logs` command** — no `golem logs` / `golem logs --follow` subcommand; `status --watch` shows counters but not log output (GH #83)
 - [ ] TEST-002: **Mutation testing** — mutmut integration (GH #17)
 - [x] UX-002: **Dashboard missing pagination and search** — added client-side search, state filter, and 25-per-page pagination (GH #93, 2026-03-29)
-- [ ] TEST-003: **Lint modules lack tests** — all 9 `golem/lint/` modules have no dedicated test files; pre-commit hooks can crash silently or produce false positives (GH #95)
+- [x] TEST-003: **Lint modules lack tests** — verified: all 9 modules have dedicated test files (10 test files total) (GH #95, 2026-03-29)
 
 ### P3 — Low Priority
 
