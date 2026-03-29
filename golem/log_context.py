@@ -51,13 +51,15 @@ class JsonFormatter(logging.Formatter):
 
 
 def setup_logging(json_mode: bool = False) -> None:
-    """Install TaskContextFilter on the root logger.
+    """Install TaskContextFilter on the root logger (idempotent).
 
     If json_mode is True, also replace the formatter on all existing
-    handlers with JsonFormatter.
+    handlers with JsonFormatter.  Safe to call multiple times — only
+    adds the filter once.
     """
     root = logging.getLogger()
-    root.addFilter(TaskContextFilter())
+    if not any(isinstance(f, TaskContextFilter) for f in root.filters):
+        root.addFilter(TaskContextFilter())
     if json_mode:
         fmt = JsonFormatter()
         for handler in root.handlers:

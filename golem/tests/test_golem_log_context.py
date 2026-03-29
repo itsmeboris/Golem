@@ -296,12 +296,11 @@ class TestSetupLogging:
             handler.setFormatter(fmt)
 
     def test_setup_logging_adds_task_context_filter(self):
-        """setup_logging() must install TaskContextFilter on the root logger."""
+        """setup_logging() must ensure TaskContextFilter is on the root logger."""
         root = logging.getLogger()
-        before = sum(1 for f in root.filters if isinstance(f, TaskContextFilter))
         setup_logging()
-        after = sum(1 for f in root.filters if isinstance(f, TaskContextFilter))
-        assert after == before + 1
+        count = sum(1 for f in root.filters if isinstance(f, TaskContextFilter))
+        assert count >= 1
 
     def test_setup_logging_json_mode_false_does_not_change_formatters(self):
         """setup_logging(json_mode=False) must not replace existing formatters."""
@@ -337,3 +336,16 @@ class TestSetupLogging:
         setup_logging()
         for handler, original_fmt in original_formatters.items():
             assert handler.formatter is original_fmt
+
+    def test_setup_logging_is_idempotent(self):
+        """Calling setup_logging() twice must not add duplicate filters."""
+        root = logging.getLogger()
+        setup_logging()
+        count_after_first = sum(
+            1 for f in root.filters if isinstance(f, TaskContextFilter)
+        )
+        setup_logging()
+        count_after_second = sum(
+            1 for f in root.filters if isinstance(f, TaskContextFilter)
+        )
+        assert count_after_second == count_after_first

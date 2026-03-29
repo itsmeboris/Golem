@@ -416,6 +416,7 @@ class TaskOrchestrator:
 
     async def _tick_human_review(self) -> None:
         """Re-attempt a task using human feedback as guidance."""
+        set_task_context(str(self.session.parent_issue_id), phase="BUILD")
         self._slog.info("Processing human feedback re-attempt")
         self.session.state = TaskSessionState.RUNNING
         self.session.updated_at = _now_iso()
