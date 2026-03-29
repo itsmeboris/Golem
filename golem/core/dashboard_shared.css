@@ -416,3 +416,51 @@ body{font-family:var(--font-sans);background:var(--bg-base);color:var(--text-pri
   margin: 0.25rem 0;
   display: inline-block;
 }
+
+/* ── Toast Notifications ─────────────────────────────────── */
+.toast-container{
+  position:fixed;bottom:1.25rem;right:1.25rem;z-index:9999;
+  display:flex;flex-direction:column;gap:0.5rem;pointer-events:none
+}
+.toast{
+  pointer-events:auto;
+  display:flex;align-items:center;gap:0.6rem;
+  padding:0.65rem 1rem;border-radius:var(--radius);
+  font-size:0.82rem;font-family:var(--font-sans);
+  box-shadow:var(--shadow-lg);
+  border:1px solid transparent;
+  max-width:360px;word-break:break-word;
+  animation:toast-slide-in 0.22s cubic-bezier(0.4,0,0.2,1) both
+}
+.toast.toast-exit{animation:toast-slide-out 0.18s cubic-bezier(0.4,0,0.2,1) both}
+.toast.success{
+  background:var(--bg-success);border-color:var(--border-success);
+  color:var(--green)
+}
+.toast.error{
+  background:var(--bg-danger);border-color:var(--border-danger);
+  color:var(--red)
+}
+.toast.info{
+  background:var(--accent-dim);border-color:var(--border-focus);
+  color:var(--accent)
+}
+@keyframes toast-slide-in{
+  from{opacity:0;transform:translateX(24px)}
+  to{opacity:1;transform:translateX(0)}
+}
+@keyframes toast-slide-out{
+  from{opacity:1;transform:translateX(0)}
+  to{opacity:0;transform:translateX(24px)}
+}
+
+/* ── Button Loading State ────────────────────────────────── */
+.btn-loading{position:relative;cursor:not-allowed!important;opacity:0.72}
+.btn-loading::after{
+  content:'';display:inline-block;
+  width:0.75em;height:0.75em;
+  margin-left:0.4em;vertical-align:middle;
+  border:2px solid currentColor;border-top-color:transparent;
+  border-radius:50%;animation:btn-spin 0.65s linear infinite
+}
+@keyframes btn-spin{to{transform:rotate(360deg)}}

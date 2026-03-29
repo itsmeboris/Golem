@@ -248,3 +248,34 @@ function el(tag, classes, attrs) {
   });
   return e;
 }
+
+/* ── Toast Notifications ──────────────────────────────────── */
+
+/**
+ * Show a brief toast notification at the bottom-right of the screen.
+ * @param {string} message - Text to display
+ * @param {'success'|'error'|'info'} type - Visual variant
+ * @param {number} [duration=4000] - Auto-dismiss delay in ms
+ */
+function showToast(message, type, duration) {
+  if (duration === undefined) duration = 4000;
+  var container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    container.className = 'toast-container';
+    document.body.appendChild(container);
+  }
+  var toast = document.createElement('div');
+  toast.className = 'toast ' + (type || 'info');
+  toast.setAttribute('role', 'alert');
+  toast.setAttribute('aria-live', 'assertive');
+  toast.textContent = message;
+  container.appendChild(toast);
+  setTimeout(function() {
+    toast.classList.add('toast-exit');
+    toast.addEventListener('animationend', function() {
+      if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }, { once: true });
+  }, duration);
+}

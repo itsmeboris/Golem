@@ -235,7 +235,7 @@ async function handleCancel(session) {
   if (!taskId) return;
   if (!confirm('Cancel this task? This cannot be undone.')) return;
   const btn = document.querySelector('[data-action="cancel"]');
-  if (btn) { btn.disabled = true; btn.textContent = 'Cancelling\u2026'; }
+  if (btn) { btn.disabled = true; btn.classList.add('btn-loading'); btn.textContent = 'Cancelling\u2026'; }
   try {
     const result = await cancelTask(taskId);
     if (result.ok) {
@@ -243,19 +243,19 @@ async function handleCancel(session) {
       await renderDetail(S.selectedTaskId);
       return; // btn is now detached — skip finally re-enable
     }
-    alert('Cancel failed: ' + (result.detail || 'Unknown error'));
+    showToast('Cancel failed: ' + (result.detail || 'Unknown error'), 'error');
   } catch (e) {
-    alert('Cancel failed: ' + e.message);
+    showToast('Cancel failed: ' + e.message, 'error');
   }
-  if (btn) { btn.disabled = false; btn.textContent = 'Cancel'; }
+  if (btn) { btn.disabled = false; btn.classList.remove('btn-loading'); btn.textContent = 'Cancel'; }
 }
 
 async function handleRerun(session) {
   const btn = document.querySelector('[data-action="rerun"]');
-  if (btn) { btn.disabled = true; btn.textContent = 'Submitting\u2026'; }
+  if (btn) { btn.disabled = true; btn.classList.add('btn-loading'); btn.textContent = 'Submitting\u2026'; }
   try {
     const prompt = await fetchPrompt(S.selectedTaskId);
-    if (!prompt) { alert('Could not fetch task prompt.'); if (btn) { btn.disabled = false; btn.textContent = 'Re-run'; } return; }
+    if (!prompt) { showToast('Could not fetch task prompt.', 'error'); if (btn) { btn.disabled = false; btn.classList.remove('btn-loading'); btn.textContent = 'Re-run'; } return; }
     const result = await resubmitTask(prompt, subjectTitle(session));
     if (result.ok) {
       S.sessions = await fetchSessions();
@@ -263,11 +263,11 @@ async function handleRerun(session) {
       else await renderDetail(S.selectedTaskId);
       return; // btn is now detached — skip re-enable
     }
-    alert('Re-run failed: ' + (result.detail || 'Unknown error'));
+    showToast('Re-run failed: ' + (result.detail || 'Unknown error'), 'error');
   } catch (e) {
-    alert('Re-run failed: ' + e.message);
+    showToast('Re-run failed: ' + e.message, 'error');
   }
-  if (btn) { btn.disabled = false; btn.textContent = 'Re-run'; }
+  if (btn) { btn.disabled = false; btn.classList.remove('btn-loading'); btn.textContent = 'Re-run'; }
 }
 
 async function handleEditAndRerun(session) {
@@ -282,7 +282,7 @@ async function handleEditAndRerun(session) {
     promptInput.value = prompt || '';
     modal.style.display = 'flex';
   } catch (e) {
-    alert('Could not load task prompt: ' + e.message);
+    showToast('Could not load task prompt: ' + e.message, 'error');
   }
 }
 
@@ -297,9 +297,9 @@ async function _submitResubmitModal() {
   const submitBtn = document.getElementById('resubmit-submit-btn');
   if (!promptInput) return;
   const prompt = promptInput.value.trim();
-  if (!prompt) { alert('Prompt cannot be empty.'); return; }
+  if (!prompt) { showToast('Prompt cannot be empty.', 'info'); return; }
   const subject = subjInput ? subjInput.value.trim() : '';
-  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Submitting\u2026'; }
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.classList.add('btn-loading'); submitBtn.textContent = 'Submitting\u2026'; }
   try {
     const result = await resubmitTask(prompt, subject);
     if (result.ok) {
@@ -309,11 +309,11 @@ async function _submitResubmitModal() {
       else await renderDetail(S.selectedTaskId);
       return;
     }
-    alert('Submit failed: ' + (result.detail || 'Unknown error'));
+    showToast('Submit failed: ' + (result.detail || 'Unknown error'), 'error');
   } catch (e) {
-    alert('Submit failed: ' + e.message);
+    showToast('Submit failed: ' + e.message, 'error');
   }
-  if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Submit'; }
+  if (submitBtn) { submitBtn.disabled = false; submitBtn.classList.remove('btn-loading'); submitBtn.textContent = 'Submit'; }
 }
 
 // ── Metrics ────────────────────────────────────

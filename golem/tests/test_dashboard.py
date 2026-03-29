@@ -2338,6 +2338,173 @@ class TestApiTraceParsedHTTP:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# UX-006: Toast notification system
+# ---------------------------------------------------------------------------
+
+
+class TestToastNotificationSystem:
+    """Verify toast CSS classes, showToast function, and alert() removal."""
+
+    @pytest.fixture(autouse=True)
+    def _paths(self):
+        core = Path(__file__).resolve().parent.parent / "core"
+        self.css_path = core / "dashboard_shared.css"
+        self.js_path = core / "dashboard_shared.js"
+        self.html_path = core / "task_dashboard.html"
+        self.timeline_path = core / "task_timeline.js"
+
+    # --- CSS ---
+
+    def test_toast_container_class_in_css(self):
+        """CSS must define .toast-container positioned at bottom-right."""
+        body = self.css_path.read_text(encoding="utf-8")
+        assert ".toast-container" in body, "Missing .toast-container rule in CSS"
+
+    def test_toast_class_in_css(self):
+        """CSS must define .toast base class."""
+        body = self.css_path.read_text(encoding="utf-8")
+        assert ".toast{" in body or ".toast {" in body, "Missing .toast rule in CSS"
+
+    @pytest.mark.parametrize("variant", ["success", "error", "info"])
+    def test_toast_variant_class_in_css(self, variant):
+        """CSS must define .toast.success, .toast.error, and .toast.info."""
+        body = self.css_path.read_text(encoding="utf-8")
+        assert f".toast.{variant}" in body, f"Missing .toast.{variant} rule in CSS"
+
+    def test_toast_slide_in_animation_in_css(self):
+        """CSS must define @keyframes toast-slide-in for the entrance animation."""
+        body = self.css_path.read_text(encoding="utf-8")
+        assert (
+            "toast-slide-in" in body
+        ), "Missing toast-slide-in keyframe animation in CSS"
+
+    def test_toast_fixed_position_in_css(self):
+        """Toast container must use position:fixed."""
+        body = self.css_path.read_text(encoding="utf-8")
+        # The rule is in the .toast-container block
+        idx = body.find(".toast-container")
+        assert idx != -1, "Missing .toast-container in CSS"
+        block = body[idx : idx + 200]
+        assert "position:fixed" in block, ".toast-container must use position:fixed"
+
+    def test_btn_loading_class_in_css(self):
+        """CSS must define .btn-loading for button loading states."""
+        body = self.css_path.read_text(encoding="utf-8")
+        assert ".btn-loading" in body, "Missing .btn-loading class in CSS"
+
+    def test_btn_loading_spinner_animation(self):
+        """CSS must define @keyframes btn-spin for the button loading spinner."""
+        body = self.css_path.read_text(encoding="utf-8")
+        assert "btn-spin" in body, "Missing btn-spin keyframe animation in CSS"
+
+    # --- JS ---
+
+    def test_show_toast_function_in_shared_js(self):
+        """showToast must be declared in dashboard_shared.js."""
+        body = self.js_path.read_text(encoding="utf-8")
+        assert "function showToast(" in body, "Missing showToast function in shared JS"
+
+    def test_show_toast_creates_toast_container(self):
+        """showToast must reference the toast-container element."""
+        body = self.js_path.read_text(encoding="utf-8")
+        assert (
+            "toast-container" in body
+        ), "showToast must reference toast-container element"
+
+    def test_show_toast_sets_role_alert(self):
+        """showToast must set role=alert for accessibility."""
+        body = self.js_path.read_text(encoding="utf-8")
+        assert (
+            "role" in body and "alert" in body
+        ), "showToast must set role=alert on toast element"
+
+    def test_show_toast_sets_aria_live(self):
+        """showToast must set aria-live=assertive for accessibility."""
+        body = self.js_path.read_text(encoding="utf-8")
+        assert "aria-live" in body, "showToast must set aria-live attribute"
+        assert "assertive" in body, "showToast must use aria-live=assertive"
+
+    def test_show_toast_auto_removes_after_duration(self):
+        """showToast must use setTimeout to auto-dismiss the toast."""
+        body = self.js_path.read_text(encoding="utf-8")
+        assert "setTimeout" in body, "showToast must use setTimeout for auto-dismiss"
+
+    # --- HTML ---
+
+    def test_html_has_toast_container_element(self):
+        """task_dashboard.html must include the toast-container div."""
+        body = self.html_path.read_text(encoding="utf-8")
+        assert (
+            'id="toast-container"' in body
+        ), "Missing toast-container div in task_dashboard.html"
+
+    def test_html_toast_container_has_aria_live(self):
+        """Toast container element must have aria-live for screen readers."""
+        body = self.html_path.read_text(encoding="utf-8")
+        idx = body.find('id="toast-container"')
+        assert idx != -1, "Missing toast-container in HTML"
+        snippet = body[idx : idx + 150]
+        assert "aria-live" in snippet, "toast-container must have aria-live attribute"
+
+    # --- alert() removal ---
+
+    def test_no_alert_calls_in_task_timeline(self):
+        """All alert() calls must have been replaced by showToast() in task_timeline.js."""
+        body = self.timeline_path.read_text(encoding="utf-8")
+        assert (
+            "alert(" not in body
+        ), "Found alert() call in task_timeline.js — replace with showToast()"
+
+    def test_no_alert_calls_in_task_dashboard_html(self):
+        """No alert() calls should remain in task_dashboard.html inline JS."""
+        body = self.html_path.read_text(encoding="utf-8")
+        assert "alert(" not in body, "Found alert() call in task_dashboard.html"
+
+    def test_show_toast_calls_in_task_timeline(self):
+        """task_timeline.js must use showToast() for user feedback."""
+        body = self.timeline_path.read_text(encoding="utf-8")
+        assert "showToast(" in body, "No showToast() calls found in task_timeline.js"
+
+    @pytest.mark.parametrize(
+        "snippet",
+        [
+            "showToast('Cancel failed:",
+            "showToast('Re-run failed:",
+            "showToast('Submit failed:",
+            "showToast('Could not fetch task prompt.",
+            "showToast('Could not load task prompt:",
+            "showToast('Prompt cannot be empty.",
+        ],
+        ids=[
+            "cancel_error",
+            "rerun_error",
+            "submit_error",
+            "prompt_fetch_error",
+            "prompt_load_error",
+            "empty_prompt_info",
+        ],
+    )
+    def test_specific_toast_messages_present(self, snippet):
+        """Each specific user-facing message must call showToast(), not alert()."""
+        body = self.timeline_path.read_text(encoding="utf-8")
+        assert snippet in body, f"Missing showToast call for: {snippet!r}"
+
+    def test_error_toasts_use_error_type(self):
+        """Error-type showToast calls must pass 'error' as the type argument."""
+        body = self.timeline_path.read_text(encoding="utf-8")
+        assert (
+            "showToast('Cancel failed:" in body and "'error'" in body
+        ), "Error toasts must use type 'error'"
+
+    def test_btn_loading_class_applied_on_cancel(self):
+        """Cancel button should gain btn-loading class during async operation."""
+        body = self.timeline_path.read_text(encoding="utf-8")
+        assert (
+            "btn-loading" in body
+        ), "Missing btn-loading class usage in task_timeline.js"
+
+
 class TestSafeToThread:
     async def test_normal_call(self):
         result = await _safe_to_thread(lambda: 42)
