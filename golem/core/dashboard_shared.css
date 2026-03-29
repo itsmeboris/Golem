@@ -384,3 +384,35 @@ body{font-family:var(--font-sans);background:var(--bg-base);color:var(--text-pri
   color: var(--text-secondary);
 }
 .ov-page-info{color:var(--text-muted)}
+
+/* ── Overview Empty States ───────────────────────────────── */
+.ov-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+.ov-empty-icon {
+  font-size: 2.5rem;
+  margin-bottom: 0.75rem;
+}
+.ov-empty-state h3 {
+  color: var(--text-secondary);
+  margin: 0 0 0.5rem;
+}
+.ov-empty-state p {
+  margin: 0.25rem 0;
+  font-size: 0.8rem;
+}
+.ov-empty-state code {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  background: var(--bg-elevated);
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+  margin: 0.25rem 0;
+  display: inline-block;
+}

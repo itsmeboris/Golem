@@ -16,6 +16,18 @@ async function renderOverview() {
   if (!listEl) return;
   listEl.innerHTML = '';
 
+  if (Object.keys(sessions).length === 0) {
+    listEl.innerHTML = `<div class="ov-empty-state">
+      <div class="ov-empty-icon">🚀</div>
+      <h3>No tasks yet</h3>
+      <p>Submit a task to get started:</p>
+      <code>golem run "Fix the bug in auth.py"</code>
+      <p>or use the API:</p>
+      <code>curl -X POST /api/submit -d '{"prompt":"..."}'</code>
+    </div>`;
+    return;
+  }
+
   // Sort: running first, then by updated_at desc
   let sorted = Object.entries(sessions).sort(([, a], [, b]) => {
     const aRun = isTaskRunning(a);
@@ -40,6 +52,17 @@ async function renderOverview() {
     sorted = sorted.filter(([, session]) => {
       return (session.state || '').toLowerCase() === _ovStateFilter;
     });
+  }
+
+  if (sorted.length === 0) {
+    listEl.innerHTML = `<div class="ov-empty-state">
+      <div class="ov-empty-icon">🔍</div>
+      <h3>No matching tasks</h3>
+      <p>Try adjusting your search or state filter.</p>
+    </div>`;
+    // Still render pagination (which will be empty)
+    _renderPagination(0, 0);
+    return;
   }
 
   // Pagination
