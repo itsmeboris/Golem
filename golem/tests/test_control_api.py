@@ -9,6 +9,7 @@ import pytest
 
 from golem.core import control_api
 from golem.core.control_api import (
+    _RateLimiter,
     _maybe_start_tick,
     _maybe_stop_tick,
     _require_admin,
@@ -971,12 +972,18 @@ class TestSubmitNoApiKey:
     reason="FastAPI not installed",
 )
 class TestCancelEndpoint:
+    def _make_cancel_request(self):
+        req = MagicMock()
+        req.client = MagicMock()
+        req.client.host = "127.0.0.1"
+        return req
+
     async def test_cancel_success(self, _wire_deps):
         from golem.core.control_api import cancel_task
 
         gf = control_api._golem_flow
         gf.cancel_session = MagicMock(return_value={"state": "cancelled"})
-        result = await cancel_task(task_id=42)
+        result = await cancel_task(task_id=42, request=self._make_cancel_request())
         assert result["ok"] is True
         gf.cancel_session.assert_called_once_with(42)
 
@@ -986,7 +993,7 @@ class TestCancelEndpoint:
         gf = control_api._golem_flow
         gf.cancel_session = MagicMock(side_effect=TaskNotFoundError("No task 99"))
         with pytest.raises(HTTPException) as exc_info:
-            await cancel_task(task_id=99)
+            await cancel_task(task_id=99, request=self._make_cancel_request())
         assert exc_info.value.status_code == 404
 
     async def test_cancel_not_cancelable(self, _wire_deps):
@@ -997,7 +1004,7 @@ class TestCancelEndpoint:
             side_effect=TaskNotCancelableError("Task already completed")
         )
         with pytest.raises(HTTPException) as exc_info:
-            await cancel_task(task_id=42)
+            await cancel_task(task_id=42, request=self._make_cancel_request())
         assert exc_info.value.status_code == 409
 
     async def test_cancel_no_flow(self):
@@ -1005,7 +1012,7 @@ class TestCancelEndpoint:
 
         wire_control_api()  # reset — no flow
         with pytest.raises(HTTPException) as exc_info:
-            await cancel_task(task_id=1)
+            await cancel_task(task_id=1, request=self._make_cancel_request())
         assert exc_info.value.status_code == 503
 
 
@@ -1111,3 +1118,140 @@ class TestNoFastapiFallback:
         else:
             assert control_api.control_router is None
             assert control_api.health_router is None
+
+
+# ---------------------------------------------------------------------------
+# _RateLimiter unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestRateLimiter:
+    def test_allows_requests_within_limit(self):
+        limiter = _RateLimiter(max_requests=3, window_seconds=60)
+        assert limiter.check("client-a") is True
+        assert limiter.check("client-a") is True
+        assert limiter.check("client-a") is True
+
+    def test_blocks_request_over_limit(self):
+        limiter = _RateLimiter(max_requests=3, window_seconds=60)
+        limiter.check("client-b")
+        limiter.check("client-b")
+        limiter.check("client-b")
+        # 4th request should be denied
+        assert limiter.check("client-b") is False
+
+    def test_different_clients_independent(self):
+        limiter = _RateLimiter(max_requests=1, window_seconds=60)
+        assert limiter.check("alice") is True
+        assert limiter.check("alice") is False
+        # bob is not affected by alice's limit
+        assert limiter.check("bob") is True
+
+    def test_window_expiry_allows_new_requests(self):
+        limiter = _RateLimiter(max_requests=1, window_seconds=1)
+        assert limiter.check("client-c") is True
+        assert limiter.check("client-c") is False
+        # Manually expire the window by back-dating the stored timestamp
+        limiter._requests["client-c"] = [limiter._requests["client-c"][0] - 2]
+        # Now the old entry is outside the window — should be allowed again
+        assert limiter.check("client-c") is True
+
+    def test_unknown_client_host_uses_unknown_key(self):
+        limiter = _RateLimiter(max_requests=5, window_seconds=60)
+        # Simulate None client — callers use "unknown" as the key
+        for _ in range(5):
+            assert limiter.check("unknown") is True
+        assert limiter.check("unknown") is False
+
+
+# ---------------------------------------------------------------------------
+# Rate limiting on mutation endpoints
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def _wire_deps_fresh_limiter():
+    """Wire deps and reset the module-level rate limiter to a fresh instance."""
+    gf = MagicMock()
+    gf.submit_task = MagicMock(return_value={"task_id": 1, "status": "submitted"})
+    gf.cancel_session = MagicMock(return_value={"state": "cancelled"})
+    gf.submit_batch = MagicMock(
+        return_value={"group_id": "g", "tasks": [{"task_id": 1, "status": "submitted"}]}
+    )
+    wire_control_api(golem_flow=gf)
+    # Replace the module-level limiter with a fresh 2-request instance for testing
+    original_limiter = control_api._submit_limiter
+    control_api._submit_limiter = _RateLimiter(max_requests=2, window_seconds=60)
+    yield
+    control_api._submit_limiter = original_limiter
+    wire_control_api()
+
+
+def _make_ip_request(ip="10.0.0.1", json_data=None):
+    req = AsyncMock()
+    req.headers = {}
+    req.query_params = {}
+    req.client = MagicMock()
+    req.client.host = ip
+    req.json = AsyncMock(return_value=json_data or {})
+    return req
+
+
+@pytest.mark.skipif(
+    not control_api.FASTAPI_AVAILABLE,
+    reason="FastAPI not installed",
+)
+class TestRateLimitingEndpoints:
+    async def test_submit_within_limit_succeeds(self, _wire_deps_fresh_limiter):
+        from golem.core.control_api import submit_task
+
+        req = _make_ip_request(json_data={"prompt": "task"})
+        result = await submit_task(req)
+        assert result["ok"] is True
+
+    async def test_submit_exceeds_limit_returns_429(self, _wire_deps_fresh_limiter):
+        from golem.core.control_api import submit_task
+
+        # Exhaust the 2-request limit
+        req1 = _make_ip_request(json_data={"prompt": "task1"})
+        req2 = _make_ip_request(json_data={"prompt": "task2"})
+        await submit_task(req1)
+        await submit_task(req2)
+        # 3rd request should be rate-limited
+        req3 = _make_ip_request(json_data={"prompt": "task3"})
+        with pytest.raises(Exception) as exc_info:
+            await submit_task(req3)
+        assert exc_info.value.status_code == 429
+        assert "Rate limit exceeded" in exc_info.value.detail
+
+    async def test_cancel_exceeds_limit_returns_429(self, _wire_deps_fresh_limiter):
+        from golem.core.control_api import cancel_task
+
+        req1 = _make_ip_request()
+        req2 = _make_ip_request()
+        await cancel_task(task_id=1, request=req1)
+        await cancel_task(task_id=2, request=req2)
+        req3 = _make_ip_request()
+        with pytest.raises(Exception) as exc_info:
+            await cancel_task(task_id=3, request=req3)
+        assert exc_info.value.status_code == 429
+
+    async def test_batch_exceeds_limit_returns_429(self, _wire_deps_fresh_limiter):
+        from golem.core.control_api import submit_batch
+
+        req1 = _make_ip_request(json_data={"tasks": [{"prompt": "A"}]})
+        req2 = _make_ip_request(json_data={"tasks": [{"prompt": "B"}]})
+        await submit_batch(req1)
+        await submit_batch(req2)
+        req3 = _make_ip_request(json_data={"tasks": [{"prompt": "C"}]})
+        with pytest.raises(Exception) as exc_info:
+            await submit_batch(req3)
+        assert exc_info.value.status_code == 429
+
+    async def test_none_client_uses_unknown_key(self, _wire_deps_fresh_limiter):
+        from golem.core.control_api import submit_task
+
+        req = _make_ip_request(json_data={"prompt": "task"})
+        req.client = None  # simulate missing client info
+        result = await submit_task(req)
+        assert result["ok"] is True

@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import time
+from collections import defaultdict
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -31,6 +32,29 @@ if TYPE_CHECKING:
     PollingTrigger = Any
 
 logger = logging.getLogger("golem.core.control_api")
+
+
+class _RateLimiter:
+    """Simple in-memory sliding-window rate limiter."""
+
+    def __init__(self, max_requests: int = 10, window_seconds: int = 60):
+        self._max = max_requests
+        self._window = window_seconds
+        self._requests: dict[str, list[float]] = defaultdict(list)
+
+    def check(self, key: str) -> bool:
+        """Return True if request is allowed, False if rate limited."""
+        now = time.monotonic()
+        window_start = now - self._window
+        # Prune old entries
+        self._requests[key] = [t for t in self._requests[key] if t > window_start]
+        if len(self._requests[key]) >= self._max:
+            return False
+        self._requests[key].append(now)
+        return True
+
+
+_submit_limiter = _RateLimiter(max_requests=10, window_seconds=60)
 
 if FASTAPI_AVAILABLE:
     from fastapi import APIRouter, HTTPException, Request
@@ -216,6 +240,9 @@ if FASTAPI_AVAILABLE:
         Returns ``{"ok": true, "task_id": ..., "status": "submitted"}``.
         """
         _require_api_key(request)
+        client_ip = request.client.host if request.client else "unknown"
+        if not _submit_limiter.check(client_ip):
+            raise HTTPException(status_code=429, detail="Rate limit exceeded")
         if _golem_flow is None:
             raise HTTPException(
                 status_code=503,
@@ -309,11 +336,14 @@ if FASTAPI_AVAILABLE:
         return {"ok": True, "cleared": cleared}
 
     @health_router.post("/cancel/{task_id}")
-    async def cancel_task(task_id: int):
+    async def cancel_task(task_id: int, request: Request):
         """Cancel a running task by ID.
 
         Returns ``{"ok": true, "task_id": ..., "status": "cancelled"}``.
         """
+        client_ip = request.client.host if request.client else "unknown"
+        if not _submit_limiter.check(client_ip):
+            raise HTTPException(status_code=429, detail="Rate limit exceeded")
         if _golem_flow is None:
             raise HTTPException(
                 status_code=503,
@@ -345,6 +375,9 @@ if FASTAPI_AVAILABLE:
         Returns ``{"ok": true, "group_id": ..., "tasks": [...]}``.
         """
         _require_api_key(request)
+        client_ip = request.client.host if request.client else "unknown"
+        if not _submit_limiter.check(client_ip):
+            raise HTTPException(status_code=429, detail="Rate limit exceeded")
         if _golem_flow is None:
             raise HTTPException(
                 status_code=503,

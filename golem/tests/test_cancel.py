@@ -218,6 +218,13 @@ def _wire_cancel_deps():
     wire_control_api()
 
 
+def _make_cancel_req(ip="127.0.0.1"):
+    req = MagicMock()
+    req.client = MagicMock()
+    req.client.host = ip
+    return req
+
+
 @pytest.mark.skipif(
     not control_api.FASTAPI_AVAILABLE,
     reason="FastAPI not installed",
@@ -226,7 +233,7 @@ class TestCancelEndpointSuccess:
     async def test_cancel_returns_ok(self, _wire_cancel_deps):
         from golem.core.control_api import cancel_task
 
-        result = await cancel_task(42)
+        result = await cancel_task(42, request=_make_cancel_req())
         assert result["ok"] is True
         assert result["task_id"] == 42
         assert result["status"] == "cancelled"
@@ -245,7 +252,7 @@ class TestCancelEndpoint404:
             "Task 999 not found"
         )
         with pytest.raises(Exception) as exc_info:
-            await cancel_task(999)
+            await cancel_task(999, request=_make_cancel_req())
         assert exc_info.value.status_code == 404
 
 
@@ -261,7 +268,7 @@ class TestCancelEndpoint409:
             "Task 105 is in terminal state 'completed'"
         )
         with pytest.raises(Exception) as exc_info:
-            await cancel_task(105)
+            await cancel_task(105, request=_make_cancel_req())
         assert exc_info.value.status_code == 409
 
 
@@ -275,7 +282,7 @@ class TestCancelEndpoint503:
 
         control_api._golem_flow = None
         with pytest.raises(Exception) as exc_info:
-            await cancel_task(42)
+            await cancel_task(42, request=_make_cancel_req())
         assert exc_info.value.status_code == 503
 
 
