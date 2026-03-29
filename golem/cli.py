@@ -746,6 +746,14 @@ def cmd_daemon(args) -> int:
         return 1
     config = load_config(getattr(args, "config", None))
 
+    if config.golem.otel_enabled:
+        from golem.tracing import init_tracing
+
+        init_tracing(
+            otlp_endpoint=config.golem.otel_endpoint,
+            console_export=config.golem.otel_console_export,
+        )
+
     log_dir = Path(getattr(args, "log_dir", None) or DEFAULT_DAEMON_LOG_DIR)
     pid_file = Path(getattr(args, "pid_file", None) or DEFAULT_PID_FILE)
 

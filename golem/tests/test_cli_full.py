@@ -1333,6 +1333,87 @@ class TestCmdDaemon:
         err = capsys.readouterr().err
         assert "git not found in PATH" in err
 
+    @patch("golem.cli.asyncio")
+    @patch("golem.cli.setup_daemon_tee")
+    @patch("golem.cli.write_pid")
+    @patch("golem.cli.remove_pid")
+    @patch("golem.cli.read_pid", return_value=None)
+    @patch("golem.cli.validate_dependencies", return_value=[])
+    def test_otel_init_called_when_enabled(
+        self,
+        _mock_validate,
+        _mock_read_pid,
+        _mock_remove,
+        _mock_write,
+        mock_tee,
+        mock_asyncio,
+    ):
+        """cmd_daemon() calls init_tracing when otel_enabled is True."""
+        mock_tee.return_value = ("/var/log/test.log", MagicMock())
+        mock_asyncio.run.return_value = 0
+
+        mock_config = MagicMock()
+        mock_config.golem.otel_enabled = True
+        mock_config.golem.otel_endpoint = "localhost:4317"
+        mock_config.golem.otel_console_export = False
+
+        args = SimpleNamespace(
+            config=None,
+            log_dir=None,
+            pid_file=None,
+            foreground=True,
+            port=None,
+        )
+        with (
+            patch("golem.cli.load_config", return_value=mock_config),
+            patch("golem.tracing.init_tracing") as mock_init,
+        ):
+            result = cmd_daemon(args)
+
+        assert result == 0
+        mock_init.assert_called_once_with(
+            otlp_endpoint="localhost:4317",
+            console_export=False,
+        )
+
+    @patch("golem.cli.asyncio")
+    @patch("golem.cli.setup_daemon_tee")
+    @patch("golem.cli.write_pid")
+    @patch("golem.cli.remove_pid")
+    @patch("golem.cli.read_pid", return_value=None)
+    @patch("golem.cli.validate_dependencies", return_value=[])
+    def test_otel_init_not_called_when_disabled(
+        self,
+        _mock_validate,
+        _mock_read_pid,
+        _mock_remove,
+        _mock_write,
+        mock_tee,
+        mock_asyncio,
+    ):
+        """cmd_daemon() skips init_tracing when otel_enabled is False."""
+        mock_tee.return_value = ("/var/log/test.log", MagicMock())
+        mock_asyncio.run.return_value = 0
+
+        mock_config = MagicMock()
+        mock_config.golem.otel_enabled = False
+
+        args = SimpleNamespace(
+            config=None,
+            log_dir=None,
+            pid_file=None,
+            foreground=True,
+            port=None,
+        )
+        with (
+            patch("golem.cli.load_config", return_value=mock_config),
+            patch("golem.tracing.init_tracing") as mock_init,
+        ):
+            result = cmd_daemon(args)
+
+        assert result == 0
+        mock_init.assert_not_called()
+
 
 class TestWaitForExit:
     @patch("time.sleep")

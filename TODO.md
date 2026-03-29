@@ -44,8 +44,8 @@ See https://github.com/itsmeboris/Golem/issues
 
 ### P3 — Low Priority
 
-- [ ] FEAT-005: **Evaluator-optimizer loop** — prompt auto-tuning (GH #15)
-- [ ] FEAT-006: **OpenTelemetry tracing** — agent observability (GH #16)
+- [x] FEAT-005: **Evaluator-optimizer loop** — PromptEvaluator + PromptOptimizer with scoring, underperforming detection, and suggestion generation (GH #15, 2026-03-29)
+- [x] FEAT-006: **OpenTelemetry tracing** — optional OTel with init_tracing(), get_tracer(), trace_span(), NoOp fallback (GH #16, 2026-03-29)
 - [ ] TEST-004: **Multiple source modules lack test files** — 13+ modules (batch_cli, profile, prompts, core/slack, backends/github, notifiers, mcp_tools) have no dedicated tests; error paths unverified (GH #97)
 - [ ] UX-009: **Data visualization** — sparklines for success rate trend, phase duration waterfall chart, cost breakdown by model, agent activity heatmap (GH #125)
 
