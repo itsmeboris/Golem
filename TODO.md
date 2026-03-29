@@ -28,7 +28,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [x] BUG-010: **Supervisor verification pipeline gap** — fixed _verification_feedback() to use correct dict keys (black_output/pylint_output/pytest_output) (GH #102, 2026-03-29)
 - [x] REL-009: **No graceful shutdown drain** — added graceful_stop() with state save, task drain, and timeout (GH #103, 2026-03-29)
 - [x] BUG-013: **data_retention cleanup crashes on TOCTOU/permission errors** — wrapped stat/unlink in try/except for FileNotFoundError/PermissionError/OSError (GH #112, 2026-03-29)
-- [ ] REL-010: **GitHub `_gh()` wrapper missing subprocess timeout** — all GitHub CLI operations (poll_tasks, close_task, reopen_task) can hang indefinitely; critical polling path blocks entire daemon (GH #109)
+- [x] REL-010: **GitHub `_gh()` wrapper missing subprocess timeout** — added timeout=60 with TimeoutExpired handling (GH #109, 2026-03-29)
 - [ ] REL-011: **graceful_stop doesn't await cancelled tasks** — `task.cancel()` called but not awaited; `finally` blocks (state flush, worktree locks) may not run (GH #113)
 - [ ] SEC-006: **MCP tool schema validation** — poisoning defense (GH #18)
 - [ ] SEC-007: **Runtime subprocess sandboxing** — OS-level containment (GH #19)

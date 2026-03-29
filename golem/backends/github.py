@@ -20,15 +20,23 @@ _STATUS_LABELS = {
 def _gh(
     *args: str,
     check: bool = False,
+    timeout: int = 60,
 ) -> subprocess.CompletedProcess[str]:
     """Run a ``gh`` CLI command and return the result."""
     cmd = ["gh", *args]
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        check=check,
-    )
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=check,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        logger.warning("gh %s timed out after %ds", " ".join(args), timeout)
+        return subprocess.CompletedProcess(
+            cmd, returncode=-1, stdout="", stderr="timeout"
+        )
     if result.returncode != 0 and not check:
         logger.debug(
             "gh %s failed (rc=%d): %s",

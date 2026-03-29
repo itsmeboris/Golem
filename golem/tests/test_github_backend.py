@@ -28,6 +28,7 @@ class TestGhHelper:
             capture_output=True,
             text=True,
             check=False,
+            timeout=60,
         )
         assert result.returncode == 0
 
@@ -40,7 +41,44 @@ class TestGhHelper:
             capture_output=True,
             text=True,
             check=True,
+            timeout=60,
         )
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_custom_timeout(self, mock_run):
+        """Custom timeout is forwarded to subprocess.run."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        _gh("issue", "list", timeout=120)
+        mock_run.assert_called_once_with(
+            ["gh", "issue", "list"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=120,
+        )
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_timeout_expired_returns_failed_process(self, mock_run, caplog):
+        """TimeoutExpired returns a CompletedProcess with rc=-1 and logs a warning."""
+        import subprocess
+
+        mock_run.side_effect = subprocess.TimeoutExpired(["gh", "issue", "list"], 60)
+        with caplog.at_level(logging.WARNING, logger="golem.backends.github"):
+            result = _gh("issue", "list")
+        assert result.returncode == -1
+        assert result.stdout == ""
+        assert result.stderr == "timeout"
+        assert "timed out" in caplog.text
+
+    @patch("golem.backends.github.subprocess.run")
+    def test_timeout_expired_includes_args_in_warning(self, mock_run, caplog):
+        """Timeout warning message includes the gh subcommand args."""
+        import subprocess
+
+        mock_run.side_effect = subprocess.TimeoutExpired(["gh", "pr", "create"], 60)
+        with caplog.at_level(logging.WARNING, logger="golem.backends.github"):
+            _gh("pr", "create")
+        assert "pr create" in caplog.text
 
     @patch("golem.backends.github.subprocess.run")
     def test_nonzero_returncode_logs_debug(self, mock_run, caplog):
@@ -170,6 +208,7 @@ class TestGitHubTaskSource:
             capture_output=True,
             text=True,
             check=False,
+            timeout=60,
         )
 
     @patch("golem.backends.github.subprocess.run")
@@ -212,6 +251,7 @@ class TestGitHubTaskSource:
             capture_output=True,
             text=True,
             check=False,
+            timeout=60,
         )
 
     def test_get_child_tasks_returns_empty(self):
@@ -303,6 +343,7 @@ class TestGitHubTaskSource:
             capture_output=True,
             text=True,
             check=False,
+            timeout=60,
         )
 
 
@@ -328,6 +369,7 @@ class TestGitHubStateBackend:
             capture_output=True,
             text=True,
             check=False,
+            timeout=60,
         )
         assert add_call in mock_run.call_args_list
 
@@ -400,6 +442,7 @@ class TestGitHubStateBackend:
             capture_output=True,
             text=True,
             check=False,
+            timeout=60,
         )
         assert close_call in mock_run.call_args_list
 
@@ -440,6 +483,7 @@ class TestGitHubStateBackend:
             capture_output=True,
             text=True,
             check=False,
+            timeout=60,
         )
         assert reopen_call in mock_run.call_args_list
 
@@ -480,6 +524,7 @@ class TestGitHubStateBackend:
             capture_output=True,
             text=True,
             check=False,
+            timeout=60,
         )
         assert close_call in mock_run.call_args_list
         add_call = call(
@@ -496,6 +541,7 @@ class TestGitHubStateBackend:
             capture_output=True,
             text=True,
             check=False,
+            timeout=60,
         )
         assert add_call in mock_run.call_args_list
 
@@ -509,6 +555,7 @@ class TestGitHubStateBackend:
             capture_output=True,
             text=True,
             check=False,
+            timeout=60,
         )
 
     @patch("golem.backends.github.subprocess.run")
@@ -542,6 +589,7 @@ class TestGitHubStateBackend:
             capture_output=True,
             text=True,
             check=False,
+            timeout=60,
         )
 
     @patch("golem.backends.github.subprocess.run")
@@ -554,6 +602,7 @@ class TestGitHubStateBackend:
             capture_output=True,
             text=True,
             check=False,
+            timeout=60,
         )
 
     @patch("golem.backends.github.subprocess.run")
@@ -566,6 +615,7 @@ class TestGitHubStateBackend:
             capture_output=True,
             text=True,
             check=False,
+            timeout=60,
         )
 
     @patch("golem.backends.github.subprocess.run")
@@ -599,6 +649,7 @@ class TestGitHubStateBackend:
             capture_output=True,
             text=True,
             check=False,
+            timeout=60,
         )
 
     @patch("golem.backends.github.subprocess.run")
@@ -655,6 +706,7 @@ class TestGitHubStateBackend:
             capture_output=True,
             text=True,
             check=False,
+            timeout=60,
         )
 
 
@@ -836,6 +888,7 @@ class TestUpdateStatusClosedVerification:
             capture_output=True,
             text=True,
             check=False,
+            timeout=60,
         )
         assert view_call in mock_run.call_args_list
 
