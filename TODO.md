@@ -73,7 +73,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [ ] FEAT-006: **OpenTelemetry tracing** — agent observability (GH #16)
 - [x] UX-004: **Frontend fetch calls lack timeout** — added AbortSignal.timeout (10s GET, 30s POST) to all fetch calls (GH #96, 2026-03-29)
 - [ ] TEST-004: **Multiple source modules lack test files** — 13+ modules (batch_cli, profile, prompts, core/slack, backends/github, notifiers, mcp_tools) have no dedicated tests; error paths unverified (GH #97)
-- [ ] BUG-012: **Env var expansion silently returns empty on missing var** — `os.environ.get(env_var, "")` in config YAML expansion returns empty string for unset vars; required fields (API keys) become empty without warning (GH #108)
+- [x] BUG-012: **Env var expansion silently returns empty on missing var** — added logger.warning when env var is unset (GH #108, 2026-03-29)
 
 ---
 
