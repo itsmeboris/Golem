@@ -3229,3 +3229,102 @@ class TestPromptEvaluationInDetectionLoop:
         await flow._detection_loop()
 
         assert evaluation_calls == []
+
+
+class TestFlowTracing:
+    """Verify that key flow methods create OTel spans via trace_span."""
+
+    async def test_detection_loop_creates_tick_span(self, monkeypatch, tmp_path):
+        """_detection_loop() wraps each poll tick in a flow.detection_tick span."""
+        from unittest.mock import patch
+
+        flow = _make_flow(monkeypatch, tmp_path)
+
+        captured_spans: list = []
+
+        def fake_trace_span(_tracer, name, **_attrs):  # pylint: disable=unused-argument
+            import contextlib
+
+            @contextlib.contextmanager
+            def _cm():
+                captured_spans.append(name)
+                yield _make_flow_noop_span()
+
+            return _cm()
+
+        monkeypatch.setattr(flow._health._config, "check_interval_seconds", 0)
+        monkeypatch.setattr(flow, "_detect_new_issues", lambda: None)
+        monkeypatch.setattr(flow, "_check_human_feedback", lambda: None)
+        monkeypatch.setattr(flow._health, "record_poll_success", lambda: None)
+        monkeypatch.setattr(flow._health, "record_heartbeat", lambda: None)
+        monkeypatch.setattr(flow._health, "check", lambda: [])
+
+        tick_count = 0
+
+        async def fake_retry_deferred():
+            pass
+
+        monkeypatch.setattr(flow, "_retry_deferred_merges", fake_retry_deferred)
+
+        async def fake_sleep(_):
+            nonlocal tick_count
+            tick_count += 1
+            if tick_count >= 1:
+                flow._running = False
+
+        monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+
+        with patch("golem.flow.trace_span", side_effect=fake_trace_span):
+            flow._running = True
+            await flow._detection_loop()
+
+        assert "flow.detection_tick" in captured_spans
+
+    async def test_run_session_creates_session_span(self, monkeypatch, tmp_path):
+        """_run_session() wraps the session lifecycle in a flow.session span."""
+        from unittest.mock import patch
+
+        from golem.orchestrator import TaskSession, TaskSessionState
+
+        flow = _make_flow(monkeypatch, tmp_path)
+
+        session = TaskSession(
+            parent_issue_id=42,
+            state=TaskSessionState.COMPLETED,
+        )
+        flow._sessions[42] = session
+
+        captured_spans: list = []
+
+        def fake_trace_span(_tracer, name, **_attrs):  # pylint: disable=unused-argument
+            import contextlib
+
+            @contextlib.contextmanager
+            def _cm():
+                captured_spans.append(name)
+                yield _make_flow_noop_span()
+
+            return _cm()
+
+        with patch("golem.flow.trace_span", side_effect=fake_trace_span):
+            await flow._run_session(42)
+
+        assert "flow.session" in captured_spans
+
+    def test_noop_fallback_no_crash_in_flow(self):
+        """trace_span with no-op tracer in flow module does not raise."""
+        import golem.tracing as tracing
+
+        noop_tracer = tracing._NoOpTracer()
+        with tracing.trace_span(noop_tracer, "flow.detection_tick") as span:
+            span.set_attribute("tick", 1)
+
+
+def _make_flow_noop_span():
+    """Return a lightweight span substitute for flow tracing tests."""
+
+    class _Span:
+        def set_attribute(self, _key, _value):
+            pass
+
+    return _Span()

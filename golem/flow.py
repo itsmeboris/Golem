@@ -70,6 +70,7 @@ from .priority_gate import PriorityGate
 from .self_update import SelfUpdateManager
 from .profile import GolemProfile, build_profile
 from .prompts import FilePromptProvider
+from .tracing import get_tracer, trace_span
 from .validation import ValidationVerdict
 from .verifier import run_verification
 
@@ -78,6 +79,7 @@ SUBMISSIONS_DIR = DATA_DIR / "submissions"
 _MAX_MERGE_RETRIES = 3
 
 logger = logging.getLogger("golem.flow")
+_tracer = get_tracer("golem.flow")
 
 
 class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
@@ -477,9 +479,10 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                 continue
 
             try:
-                self._detect_new_issues()
-                self._check_human_feedback()
-                await self._retry_deferred_merges()
+                with trace_span(_tracer, "flow.detection_tick"):
+                    self._detect_new_issues()
+                    self._check_human_feedback()
+                    await self._retry_deferred_merges()
                 self._health.record_poll_success()
             except Exception:  # pylint: disable=broad-exception-caught
                 logger.exception("Error in detection loop")
@@ -661,80 +664,85 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             else self._profile
         )
         set_task_context(str(session_id))
-        try:
-            # Wait for dependencies before starting
-            if session.depends_on:
-                await self._wait_for_dependencies(session)
+        with trace_span(
+            _tracer,
+            "flow.session",
+            session_id=str(session_id),
+        ):
+            try:
+                # Wait for dependencies before starting
+                if session.depends_on:
+                    await self._wait_for_dependencies(session)
 
-            while self._running and session.state not in (
-                TaskSessionState.COMPLETED,
-                TaskSessionState.FAILED,
-            ):
-                live.mark_queued(event_id)
-                async with self._gate.slot(session.priority):
-                    prev_state = session.state
-                    lock = (
-                        asyncio.Lock()
-                        if self._task_config.use_worktrees
-                        else self._work_dir_lock
-                    )
-                    orchestrator = TaskOrchestrator(
-                        session,
-                        self.config,
-                        self._task_config,
-                        on_progress=self._on_agent_progress,
-                        work_dir_lock=lock,
-                        save_callback=self._save_state,
-                        profile=profile,
-                        verified_ref=self._verified_ref,
-                        on_verified_ref=self._set_verified_ref,
-                    )
-                    try:
-                        await orchestrator.tick()
-                    except InfrastructureError as ie:
-                        if session.infra_retry_count < self._max_infra_retries:
-                            session.infra_retry_count += 1
-                            logger.warning(
-                                "Session #%d: infra failure (%s), retrying (%d/%d)",
-                                session_id,
-                                ie,
-                                session.infra_retry_count,
-                                self._max_infra_retries,
-                            )
-                            session.state = TaskSessionState.DETECTED
-                            self._save_state()
-                            continue
-                        raise
-                    self._handle_state_transition(session, prev_state)
-                    self._save_state()
-
-                if session.state not in (
+                while self._running and session.state not in (
                     TaskSessionState.COMPLETED,
                     TaskSessionState.FAILED,
                 ):
-                    await asyncio.sleep(self._task_config.tick_interval)
+                    live.mark_queued(event_id)
+                    async with self._gate.slot(session.priority):
+                        prev_state = session.state
+                        lock = (
+                            asyncio.Lock()
+                            if self._task_config.use_worktrees
+                            else self._work_dir_lock
+                        )
+                        orchestrator = TaskOrchestrator(
+                            session,
+                            self.config,
+                            self._task_config,
+                            on_progress=self._on_agent_progress,
+                            work_dir_lock=lock,
+                            save_callback=self._save_state,
+                            profile=profile,
+                            verified_ref=self._verified_ref,
+                            on_verified_ref=self._set_verified_ref,
+                        )
+                        try:
+                            await orchestrator.tick()
+                        except InfrastructureError as ie:
+                            if session.infra_retry_count < self._max_infra_retries:
+                                session.infra_retry_count += 1
+                                logger.warning(
+                                    "Session #%d: infra failure (%s), retrying (%d/%d)",
+                                    session_id,
+                                    ie,
+                                    session.infra_retry_count,
+                                    self._max_infra_retries,
+                                )
+                                session.state = TaskSessionState.DETECTED
+                                self._save_state()
+                                continue
+                            raise
+                        self._handle_state_transition(session, prev_state)
+                        self._save_state()
 
-            # Enqueue for merge if the session signaled merge-ready
-            if session.merge_ready:
-                await self._enqueue_for_merge(session)
+                    if session.state not in (
+                        TaskSessionState.COMPLETED,
+                        TaskSessionState.FAILED,
+                    ):
+                        await asyncio.sleep(self._task_config.tick_interval)
 
-        except asyncio.CancelledError:
-            logger.info("Session #%d cancelled", session_id)
-        except TaskExecutionError as te:
-            logger.error("Session #%d: %s", session_id, te)
-            session.state = TaskSessionState.FAILED
-            session.errors.append(str(te))
-            self._handle_state_transition(session, TaskSessionState.RUNNING)
-            self._save_state()
-        except Exception:  # pylint: disable=broad-exception-caught
-            logger.exception("Session #%d crashed unexpectedly", session_id)
-            session.state = TaskSessionState.FAILED
-            session.errors.append("session task crashed")
-            self._handle_state_transition(session, TaskSessionState.RUNNING)
-            self._save_state()
-        finally:
-            clear_task_context()
-            self._session_tasks.pop(session_id, None)
+                # Enqueue for merge if the session signaled merge-ready
+                if session.merge_ready:
+                    await self._enqueue_for_merge(session)
+
+            except asyncio.CancelledError:
+                logger.info("Session #%d cancelled", session_id)
+            except TaskExecutionError as te:
+                logger.error("Session #%d: %s", session_id, te)
+                session.state = TaskSessionState.FAILED
+                session.errors.append(str(te))
+                self._handle_state_transition(session, TaskSessionState.RUNNING)
+                self._save_state()
+            except Exception:  # pylint: disable=broad-exception-caught
+                logger.exception("Session #%d crashed unexpectedly", session_id)
+                session.state = TaskSessionState.FAILED
+                session.errors.append("session task crashed")
+                self._handle_state_transition(session, TaskSessionState.RUNNING)
+                self._save_state()
+            finally:
+                clear_task_context()
+                self._session_tasks.pop(session_id, None)
 
     async def _wait_for_dependencies(self, session: TaskSession) -> None:
         """Block until all sessions in ``depends_on`` have completed.

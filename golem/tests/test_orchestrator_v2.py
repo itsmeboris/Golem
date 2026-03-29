@@ -3593,3 +3593,254 @@ class TestOrchestratorPhaseContext:
             await orch._run_agent_monolithic()
 
         mock_clear.assert_called()
+
+
+class TestOrchestratorTracing:
+    """Verify that key orchestrator methods create OTel spans via trace_span."""
+
+    async def test_tick_creates_span(self):
+        """tick() wraps execution in an orchestrator.tick span."""
+        session = TaskSession(
+            parent_issue_id=7,
+            state=TaskSessionState.DETECTED,
+            grace_deadline="2000-01-01T00:00:00+00:00",
+        )
+        orch = _make_orch(session)
+        orch._run_agent = AsyncMock()
+
+        captured_spans: list = []
+
+        def fake_trace_span(_tracer, name, **_attrs):  # pylint: disable=unused-argument
+            import contextlib
+
+            @contextlib.contextmanager
+            def _cm():
+                captured_spans.append(name)
+                yield _make_noop_span()
+
+            return _cm()
+
+        with patch("golem.orchestrator.trace_span", side_effect=fake_trace_span):
+            await orch.tick()
+
+        assert "orchestrator.tick" in captured_spans
+
+    async def test_tick_detected_creates_build_span(self):
+        """_tick_detected() wraps agent invocation in an orchestrator.build span."""
+        session = TaskSession(
+            parent_issue_id=8,
+            state=TaskSessionState.DETECTED,
+            grace_deadline="",
+        )
+        orch = _make_orch(session)
+        orch._run_agent = AsyncMock()
+
+        captured_spans: list = []
+
+        def fake_trace_span(_tracer, name, **_attrs):  # pylint: disable=unused-argument
+            import contextlib
+
+            @contextlib.contextmanager
+            def _cm():
+                captured_spans.append(name)
+                yield _make_noop_span()
+
+            return _cm()
+
+        with patch("golem.orchestrator.trace_span", side_effect=fake_trace_span):
+            await orch._tick_detected()
+
+        assert "orchestrator.build" in captured_spans
+
+    async def test_run_verification_creates_span_with_attributes(self):
+        """_run_verification() creates a span and sets verify.passed attribute."""
+        from golem.verifier import VerificationResult
+
+        session = TaskSession(parent_issue_id=9, parent_subject="Test")
+        orch = _make_orch(session)
+
+        pass_vr = VerificationResult(
+            passed=True,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="3 passed",
+            duration_s=0.5,
+        )
+
+        span_attrs: dict = {}
+        captured_spans: list = []
+
+        def fake_trace_span(_tracer, name, **_attrs):  # pylint: disable=unused-argument
+            import contextlib
+
+            @contextlib.contextmanager
+            def _cm():
+                captured_spans.append(name)
+                span = _make_noop_span(span_attrs)
+                yield span
+
+            return _cm()
+
+        with (
+            patch("golem.orchestrator.trace_span", side_effect=fake_trace_span),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch("golem.orchestrator.run_verification", return_value=pass_vr),
+        ):
+            result = await orch._run_verification("/work")
+
+        assert "orchestrator.verify" in captured_spans
+        assert span_attrs.get("verify.passed") is True
+        assert span_attrs.get("verify.duration_s") == 0.5
+        assert result is pass_vr
+
+    async def test_run_validation_creates_span_with_verdict(self):
+        """_run_validation() creates a span and sets review.verdict attribute."""
+        session = TaskSession(parent_issue_id=10, parent_subject="Fix")
+        profile = MagicMock()
+        profile.task_source.get_task_description.return_value = "desc"
+        orch = _make_orch(session, profile=profile)
+
+        verdict = ValidationVerdict(
+            verdict="PASS",
+            confidence=0.9,
+            summary="ok",
+            cost_usd=0.05,
+        )
+
+        span_attrs: dict = {}
+        captured_spans: list = []
+
+        def fake_trace_span(_tracer, name, **_attrs):  # pylint: disable=unused-argument
+            import contextlib
+
+            @contextlib.contextmanager
+            def _cm():
+                captured_spans.append(name)
+                span = _make_noop_span(span_attrs)
+                yield span
+
+            return _cm()
+
+        with (
+            patch("golem.orchestrator.trace_span", side_effect=fake_trace_span),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch("golem.orchestrator.run_validation", return_value=verdict),
+        ):
+            result = await orch._run_validation(10, "/work")
+
+        assert "orchestrator.review" in captured_spans
+        assert span_attrs.get("review.verdict") == "PASS"
+        assert span_attrs.get("review.confidence") == 0.9
+        assert span_attrs.get("gen_ai.usage.cost_usd") == 0.05
+        assert result is verdict
+
+    async def test_invoke_agent_token_attributes_set_on_span(self):
+        """invoke_agent span receives GenAI token attributes from CLIResult."""
+        session = TaskSession(parent_issue_id=11, parent_subject="Fix bug")
+        profile = MagicMock()
+        profile.task_source.get_task_description.return_value = "desc"
+        profile.prompt_provider.format.return_value = "prompt"
+        profile.tool_provider.servers_for_subject.return_value = []
+        orch = _make_orch(session, profile=profile)
+
+        cli_result = CLIResult(
+            output={"result": "done"},
+            cost_usd=0.75,
+            trace_events=[],
+            input_tokens=1000,
+            output_tokens=500,
+        )
+
+        # Track attrs per span name to avoid cross-span interference
+        span_attrs_by_name: dict[str, dict] = {}
+        captured_spans: list = []
+
+        def fake_trace_span(_tracer, name, **_attrs):  # pylint: disable=unused-argument
+            import contextlib
+
+            @contextlib.contextmanager
+            def _cm():
+                captured_spans.append(name)
+                store: dict = {}
+                span_attrs_by_name[name] = store
+                yield _make_noop_span(store)
+
+            return _cm()
+
+        from golem.verifier import VerificationResult
+
+        pass_vr = VerificationResult(
+            passed=True,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="5 passed",
+            duration_s=1.0,
+        )
+
+        with (
+            patch("golem.orchestrator.trace_span", side_effect=fake_trace_span),
+            patch("golem.orchestrator.resolve_work_dir", return_value="/work"),
+            patch("golem.orchestrator.invoke_cli_monitored", return_value=cli_result),
+            patch("golem.orchestrator.run_verification", return_value=pass_vr),
+            patch(
+                "golem.orchestrator.run_validation",
+                return_value=ValidationVerdict(
+                    verdict="PASS", confidence=0.9, summary="ok"
+                ),
+            ),
+            patch(
+                "golem.orchestrator.commit_changes",
+                return_value=MagicMock(committed=False, sha=""),
+            ),
+            patch("golem.orchestrator._write_prompt"),
+            patch("golem.orchestrator._write_trace", return_value="/trace"),
+            patch("golem.orchestrator._StreamingTraceWriter"),
+            patch.object(orch, "_preflight_check"),
+            patch("golem.orchestrator.save_checkpoint"),
+            patch("golem.orchestrator.delete_checkpoint"),
+            patch.object(orch, "_write_report"),
+            patch.object(orch, "_record_run"),
+        ):
+            await orch._run_agent_monolithic()
+
+        assert "orchestrator.invoke_agent" in captured_spans
+        invoke_attrs = span_attrs_by_name["orchestrator.invoke_agent"]
+        assert invoke_attrs.get("gen_ai.usage.input_tokens") == 1000
+        assert invoke_attrs.get("gen_ai.usage.output_tokens") == 500
+        assert invoke_attrs.get("gen_ai.usage.cost_usd") == 0.75
+
+    def test_noop_fallback_no_crash(self):
+        """trace_span with no-op tracer does not raise even with attribute calls."""
+        import golem.orchestrator as orch_mod
+        import golem.tracing as tracing
+
+        noop_tracer = tracing._NoOpTracer()
+        with patch.object(tracing, "_OTEL_AVAILABLE", False):
+            with patch.object(orch_mod, "_tracer", noop_tracer):
+                with orch_mod.trace_span(noop_tracer, "test.span", key="val") as span:
+                    span.set_attribute("gen_ai.usage.input_tokens", 100)
+                    span.set_attribute("gen_ai.usage.output_tokens", 50)
+                    span.set_attribute("gen_ai.usage.cost_usd", 0.01)
+
+
+def _make_noop_span(store: dict | None = None):
+    """Return a mock span that records set_attribute calls in *store*."""
+
+    class _RecordingSpan:
+        def set_attribute(self, key, value):
+            if store is not None:
+                store[key] = value
+
+        def set_status(self, _status):
+            pass
+
+        def record_exception(self, _exc):
+            pass
+
+    return _RecordingSpan()

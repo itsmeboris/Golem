@@ -2530,23 +2530,23 @@ class TestToastNotificationSystem:
         cancel_fetch_idx = body.index(
             "S.sessions = await fetchSessions();", cancel_ok_idx
         )
-        assert cancel_ok_idx < cancel_fetch_idx, (
-            "Cancel success toast must appear before fetchSessions call"
-        )
+        assert (
+            cancel_ok_idx < cancel_fetch_idx
+        ), "Cancel success toast must appear before fetchSessions call"
         # For rerun: showToast comes before fetchSessions in the ok branch
         rerun_ok_idx = body.index("showToast('Task resubmitted', 'success')")
         rerun_fetch_idx = body.index(
             "S.sessions = await fetchSessions();", rerun_ok_idx
         )
-        assert rerun_ok_idx < rerun_fetch_idx, (
-            "Rerun success toast must appear before fetchSessions call"
-        )
+        assert (
+            rerun_ok_idx < rerun_fetch_idx
+        ), "Rerun success toast must appear before fetchSessions call"
         # For submit modal: showToast comes before _closeResubmitModal
         submit_ok_idx = body.index("showToast('Task submitted', 'success')")
         close_modal_idx = body.index("_closeResubmitModal();", submit_ok_idx)
-        assert submit_ok_idx < close_modal_idx, (
-            "Submit success toast must appear before _closeResubmitModal call"
-        )
+        assert (
+            submit_ok_idx < close_modal_idx
+        ), "Submit success toast must appear before _closeResubmitModal call"
 
 
 class TestSafeToThread:
@@ -3196,7 +3196,9 @@ class TestMobileResponsiveCSS:
 class TestXssEscaping:
     """SEC-012: esc() must escape single and double quotes for safe attribute use."""
 
-    shared_js_path = Path(__file__).resolve().parent.parent / "core" / "dashboard_shared.js"
+    shared_js_path = (
+        Path(__file__).resolve().parent.parent / "core" / "dashboard_shared.js"
+    )
     analytics_js_path = (
         Path(__file__).resolve().parent.parent / "core" / "prompt_analytics.js"
     )

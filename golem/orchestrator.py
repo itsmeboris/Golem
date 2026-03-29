@@ -59,12 +59,14 @@ from .observation_hooks import (
 from .instinct_store import InstinctStore
 from .pitfall_extractor import classify_pitfall, extract_pitfalls
 from .pitfall_writer import update_agents_md_from_instincts
+from .tracing import get_tracer, trace_span
 from .validation import ValidationVerdict, run_validation
 from .verifier import VerificationResult, run_verification
 from .workdir import resolve_work_dir
 from .worktree_manager import cleanup_worktree, create_worktree
 
 logger = logging.getLogger("golem.orchestrator")
+_tracer = get_tracer("golem.orchestrator")
 
 SESSIONS_FILE = DATA_DIR / "state" / "golem_sessions.json"
 
@@ -375,12 +377,18 @@ class TaskOrchestrator:
         """Advance the session state machine by one tick."""
         self.session.updated_at = _now_iso()
 
-        if self.session.state == TaskSessionState.DETECTED:
-            await self._tick_detected()
-        elif self.session.state == TaskSessionState.HUMAN_REVIEW:
-            await self._tick_human_review()
-        # RUNNING is handled within _tick_detected (blocks until agent finishes)
-        # COMPLETED and FAILED are terminal — no action
+        with trace_span(
+            _tracer,
+            "orchestrator.tick",
+            session_id=str(self.session.parent_issue_id),
+            state=self.session.state.value,
+        ):
+            if self.session.state == TaskSessionState.DETECTED:
+                await self._tick_detected()
+            elif self.session.state == TaskSessionState.HUMAN_REVIEW:
+                await self._tick_human_review()
+            # RUNNING is handled within _tick_detected (blocks until agent finishes)
+            # COMPLETED and FAILED are terminal — no action
 
         return self.session
 
@@ -412,7 +420,12 @@ class TaskOrchestrator:
         self.session.started_at = self.session.updated_at
         set_task_context(str(self.session.parent_issue_id), phase="BUILD")
 
-        await self._run_agent()
+        with trace_span(
+            _tracer,
+            "orchestrator.build",
+            session_id=str(self.session.parent_issue_id),
+        ):
+            await self._run_agent()
 
     async def _tick_human_review(self) -> None:
         """Re-attempt a task using human feedback as guidance."""
@@ -509,12 +522,24 @@ class TaskOrchestrator:
                 task_description=description,
             )
             self.session.prompt_hash = compute_prompt_hash(load_prompt("run_task.txt"))
-            result, trace_writer, mcp_servers = await self._invoke_agent(
-                issue_id,
-                prompt,
-                work_dir,
-                tracker,
-            )
+            with trace_span(
+                _tracer,
+                "orchestrator.invoke_agent",
+                session_id=str(issue_id),
+            ) as invoke_span:
+                result, trace_writer, mcp_servers = await self._invoke_agent(
+                    issue_id,
+                    prompt,
+                    work_dir,
+                    tracker,
+                )
+                invoke_span.set_attribute(
+                    "gen_ai.usage.input_tokens", result.input_tokens
+                )
+                invoke_span.set_attribute(
+                    "gen_ai.usage.output_tokens", result.output_tokens
+                )
+                invoke_span.set_attribute("gen_ai.usage.cost_usd", result.cost_usd)
             self._populate_session_from_tracker(tracker, result, time.time() - start)
             self._update_task(issue_id, status=TaskStatus.FIXED, progress=80)
             self._record_handoff(
@@ -799,20 +824,28 @@ class TaskOrchestrator:
         callback = self._chain_event_callback(tracker.handle_event)
 
         description = self._get_description(issue_id)
-        verdict = await self._run_validation_in_executor(
-            issue_id=issue_id,
-            subject=self.session.parent_subject,
-            description=description,
-            session_data=self.session.to_dict(),
-            work_dir=work_dir,
-            model=self.task_config.validation_model,
-            budget_usd=self.task_config.validation_budget_usd,
-            timeout_seconds=self.task_config.validation_timeout_seconds,
-            callback=callback,
-            sandbox_enabled=self.task_config.sandbox_enabled,
-            sandbox_cpu_seconds=self.task_config.sandbox_cpu_seconds,
-            sandbox_memory_gb=self.task_config.sandbox_memory_gb,
-        )
+        with trace_span(
+            _tracer,
+            "orchestrator.review",
+            session_id=str(issue_id),
+        ) as span:
+            verdict = await self._run_validation_in_executor(
+                issue_id=issue_id,
+                subject=self.session.parent_subject,
+                description=description,
+                session_data=self.session.to_dict(),
+                work_dir=work_dir,
+                model=self.task_config.validation_model,
+                budget_usd=self.task_config.validation_budget_usd,
+                timeout_seconds=self.task_config.validation_timeout_seconds,
+                callback=callback,
+                sandbox_enabled=self.task_config.sandbox_enabled,
+                sandbox_cpu_seconds=self.task_config.sandbox_cpu_seconds,
+                sandbox_memory_gb=self.task_config.sandbox_memory_gb,
+            )
+            span.set_attribute("review.verdict", verdict.verdict)
+            span.set_attribute("review.confidence", verdict.confidence)
+            span.set_attribute("gen_ai.usage.cost_usd", verdict.cost_usd)
         self._apply_verdict(verdict)
 
         # Mine validation output for observation signals
@@ -856,9 +889,20 @@ class TaskOrchestrator:
         set_task_context(str(self.session.parent_issue_id), phase="VERIFY")
 
         self._slog.info("Running deterministic verification")
-        result = await asyncio.get_running_loop().run_in_executor(
-            None, run_verification, work_dir
-        )
+        with trace_span(
+            _tracer,
+            "orchestrator.verify",
+            session_id=str(self.session.parent_issue_id),
+        ) as span:
+            result = await asyncio.get_running_loop().run_in_executor(
+                None, run_verification, work_dir
+            )
+            span.set_attribute("verify.passed", result.passed)
+            span.set_attribute("verify.black_ok", result.black_ok)
+            span.set_attribute("verify.pylint_ok", result.pylint_ok)
+            span.set_attribute("verify.pytest_ok", result.pytest_ok)
+            span.set_attribute("verify.duration_s", result.duration_s)
+
         self.session.verification_result = result.to_dict()
 
         # Mine verification output for observation signals
