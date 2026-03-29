@@ -45,6 +45,7 @@ async def _safe_to_thread(func, *args, **kwargs):
 
 try:
     from fastapi import Query
+    from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import (
         HTMLResponse,
         JSONResponse,
@@ -55,6 +56,7 @@ try:
     FASTAPI_AVAILABLE = True
 except ImportError:  # pragma: no cover
     FASTAPI_AVAILABLE = False
+    CORSMiddleware = None  # type: ignore[assignment,misc]
     Query = None
     HTMLResponse = None
     JSONResponse = None
@@ -611,6 +613,15 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
     if not FASTAPI_AVAILABLE:
         logger.warning("FastAPI not available — dashboard routes not mounted")
         return
+
+    # Restrict cross-origin requests to localhost origins only (daemon is local).
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[],  # no static origins; all matching done via regex
+        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+        allow_methods=["GET", "POST"],
+        allow_headers=["*"],
+    )
 
     @app.get("/api/live")
     async def api_live() -> JSONResponse:

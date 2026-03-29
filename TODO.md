@@ -20,7 +20,7 @@ See https://github.com/itsmeboris/Golem/issues
 
 - [x] BUG-004: **Notifier fix_iteration passthrough** — `fix_iteration` now passed through in both notify calls (2026-03-29)
 - [x] SEC-002: **Dashboard event_id path traversal** — added `_is_within()` guard on all resolved paths (GH #64, 2026-03-29)
-- [ ] SEC-003: **API missing CORS protection** — no `CORSMiddleware` on FastAPI app; cross-origin requests unrestricted from any browser origin (GH #65)
+- [x] SEC-003: **API missing CORS protection** — added CORSMiddleware restricted to localhost/127.0.0.1 origins (GH #65, 2026-03-29)
 - [ ] SEC-004: **API missing rate limiting** — `/api/submit`, `/api/submit/batch`, `/api/cancel` have no rate limits; resource exhaustion risk (GH #66)
 - [ ] SEC-005: **Dashboard API unauthenticated** — all `/api/*` endpoints (traces, analytics, SSE) publicly accessible; no auth middleware (GH #67)
 - [ ] SEC-006: **MCP tool schema validation** — poisoning defense (GH #18)

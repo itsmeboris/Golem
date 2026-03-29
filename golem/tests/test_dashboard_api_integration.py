@@ -306,3 +306,76 @@ class TestApiTraceIntegration:
             resp = client.get("/api/trace/golem-10-20260101")
         assert resp.status_code == 200
         assert resp.json() == {}
+
+
+# ---------------------------------------------------------------------------
+# SEC-003: CORS middleware — localhost-only policy
+# ---------------------------------------------------------------------------
+
+
+class TestCorsMiddleware:
+    """Verify CORS headers are restricted to localhost/127.0.0.1 origins."""
+
+    @pytest.fixture()
+    def cors_client(self, tmp_path):
+        """Mount dashboard and return TestClient with a sessions file."""
+        from fastapi import FastAPI
+        from starlette.testclient import TestClient
+
+        sessions_file = tmp_path / "sessions.json"
+        sessions_file.write_text("{}", encoding="utf-8")
+
+        app = FastAPI()
+        _dashboard_module._parsed_trace_cache.clear()
+
+        with (
+            patch("golem.core.dashboard.FASTAPI_AVAILABLE", True),
+            patch("golem.core.dashboard.TRACES_DIR", tmp_path / "traces"),
+            patch("golem.core.dashboard.REPORTS_DIR", tmp_path / "reports"),
+            patch("golem.core.dashboard._LOG_DIR", tmp_path / "logs"),
+            patch("golem.core.dashboard._SESSIONS_FILE", sessions_file),
+        ):
+            mount_dashboard(app)
+            with TestClient(app, raise_server_exceptions=False) as tc:
+                yield tc
+
+        _dashboard_module._parsed_trace_cache.clear()
+
+    @pytest.mark.parametrize(
+        "origin",
+        [
+            "http://localhost:8081",
+            "http://localhost:3000",
+            "http://127.0.0.1:8081",
+            "http://127.0.0.1",
+            "http://localhost",
+        ],
+        ids=[
+            "localhost_8081",
+            "localhost_3000",
+            "127_0_0_1_8081",
+            "127_0_0_1",
+            "localhost_no_port",
+        ],
+    )
+    def test_allowed_localhost_origin_gets_cors_header(self, cors_client, origin):
+        """Requests from localhost/127.0.0.1 receive Access-Control-Allow-Origin."""
+        resp = cors_client.get("/api/ping", headers={"Origin": origin})
+        assert resp.status_code == 200
+        assert resp.headers.get("access-control-allow-origin") == origin
+
+    @pytest.mark.parametrize(
+        "origin",
+        [
+            "http://evil.com",
+            "http://attacker.example.com",
+            "http://notlocalhost:8081",
+            "https://evil.com",
+        ],
+        ids=["evil_com", "attacker", "notlocalhost", "evil_https"],
+    )
+    def test_untrusted_origin_gets_no_cors_header(self, cors_client, origin):
+        """Requests from external origins do NOT receive Access-Control-Allow-Origin."""
+        resp = cors_client.get("/api/ping", headers={"Origin": origin})
+        assert resp.status_code == 200
+        assert "access-control-allow-origin" not in resp.headers
