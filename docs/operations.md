@@ -417,6 +417,32 @@ This prevents cascading failures when the base branch is temporarily broken.
 
 ---
 
+## Mutation Testing
+
+Mutation testing verifies that the test suite actually catches bugs — not just
+that it achieves line coverage. `mutmut` injects small code mutations (e.g.,
+flipping `+` to `-`, changing `True` to `False`) and checks whether any test
+fails. Surviving mutants indicate untested behavior.
+
+```bash
+# Run mutation testing (slow — one pytest run per mutant)
+make mutation
+
+# View results from last run
+make mutation-report
+
+# Or directly:
+python -m mutmut run
+python -m mutmut results
+```
+
+mutmut is configured in `pyproject.toml` under `[tool.mutmut]`. The runner
+uses `--no-cov --tb=no -x` to keep each per-mutant pytest run as fast as
+possible. Results are cached in `.mutmut-cache`; re-running skips already-
+tested mutants.
+
+---
+
 ## Configuration Reference
 
 ### Settings

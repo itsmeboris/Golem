@@ -1,4 +1,4 @@
-.PHONY: setup test lint
+.PHONY: setup test lint mutation mutation-report
 
 setup:
 	git config core.hooksPath .githooks
@@ -12,3 +12,10 @@ lint:
 	python -m pylint --disable=all --enable=W0611,W0612,W0101,W0613 golem/
 	python scripts/pyflakes_noqa.py golem/
 	python -m vulture golem/ vulture_whitelist.py --min-confidence 80
+
+mutation:  ## Run mutation testing (slow — runs pytest per mutant)
+	python -m mutmut run --paths-to-mutate golem/ --tests-dir golem/tests/
+	python -m mutmut results
+
+mutation-report:  ## Show surviving mutants from last run
+	python -m mutmut results

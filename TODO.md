@@ -27,7 +27,7 @@ See https://github.com/itsmeboris/Golem/issues
 - [x] FEAT-003: **Dashboard prompt comparison UI** — added Prompts tab with table showing hash, runs, success rate bar, cost, duration (GH #82, 2026-03-29)
 - [x] FEAT-004: **CLI `logs` command** — golem logs -n 50 --follow with tail and follow modes (GH #83, 2026-03-29)
 - [ ] FEAT-002b: **Knowledge graph not integrated** — `query_for_context()` not wired into context_injection; uses private `_store._load()`; keyword tokenization doesn't strip punctuation (GH #132)
-- [ ] TEST-002: **Mutation testing** — mutmut integration (GH #17)
+- [x] TEST-002: **Mutation testing** — mutmut config in pyproject.toml + Makefile targets + smoke test (GH #17, 2026-03-29)
 - [ ] UX-005: **Dashboard empty states** — blank screen when no tasks; no first-time guidance; no feedback when filters match nothing (GH #118)
 - [ ] UX-006: **Toast notification system** — replace browser `alert()` (9 instances) with styled toast/snackbar; add button loading states during async ops (GH #119)
 - [ ] UX-007: **Loading states** — skeleton loader CSS exists but never used; no spinners on any API call or page transition (GH #120)
