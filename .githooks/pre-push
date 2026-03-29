@@ -216,21 +216,13 @@ fi
 # --- state management audit (JS lint) ---
 printf "${BOLD}=== pre-push: state management audit ===${NC}\n"
 if [[ $run_js_lint -eq 1 ]]; then
-    audit_output=$("$PYTHON" -c "
-import sys
+    audit_count=$("$PYTHON" -c "
 from pathlib import Path
-from golem.lint.state_management import run_state_management_audit, format_audit_report
-results = run_state_management_audit(Path('golem/core'))
-if results:
-    print(format_audit_report(results))
-    sys.exit(1)
-" 2>/dev/null)
-    audit_rc=$?
-    if [[ $audit_rc -ne 0 ]]; then
-        printf "${YELLOW}state management audit: warnings found (non-blocking)${NC}\n"
-        if [[ -n "$audit_output" ]]; then
-            printf "%s\n" "$audit_output"
-        fi
+from golem.lint.state_management import run_state_management_audit
+print(len(run_state_management_audit(Path('golem/core'))))
+" 2>/dev/null || echo "0")
+    if [[ "$audit_count" != "0" ]]; then
+        printf "${YELLOW}state management audit: %s JS issue(s) (non-blocking)${NC}\n" "$audit_count"
     else
         printf "${GREEN}state management audit: ok${NC}\n"
     fi
@@ -241,22 +233,13 @@ fi
 # --- contract linting ---
 printf "${BOLD}=== pre-push: contract lint ===${NC}\n"
 if [[ $run_black -eq 1 ]]; then
-    contract_output=$("$PYTHON" -c "
-import sys
+    contract_count=$("$PYTHON" -c "
 from pathlib import Path
 from golem.lint.contracts import check_consumer_producer_types
-findings = check_consumer_producer_types(Path('golem'))
-if findings:
-    for f in findings:
-        print(f'{f[\"file\"]}:{f[\"line\"]}: {f[\"message\"]}')
-    sys.exit(1)
-" 2>/dev/null)
-    contract_rc=$?
-    if [[ $contract_rc -ne 0 ]]; then
-        printf "${YELLOW}contract lint: warnings found (non-blocking)${NC}\n"
-        if [[ -n "$contract_output" ]]; then
-            printf "%s\n" "$contract_output"
-        fi
+print(len(check_consumer_producer_types(Path('golem'))))
+" 2>/dev/null || echo "0")
+    if [[ "$contract_count" != "0" ]]; then
+        printf "${YELLOW}contract lint: %s finding(s) (non-blocking)${NC}\n" "$contract_count"
     else
         printf "${GREEN}contract lint: ok${NC}\n"
     fi

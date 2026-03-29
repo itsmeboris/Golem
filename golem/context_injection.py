@@ -6,6 +6,7 @@ discoveries into AGENTS.md.
 """
 
 import logging
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -13,6 +14,69 @@ logger = logging.getLogger("golem.context_injection")
 
 _CONTEXT_FILES = ["AGENTS.md", "CLAUDE.md"]
 _MAX_CONTEXT_BYTES = 64 * 1024  # 64 KB
+
+
+@dataclass
+class ContextBudget:
+    """Token-aware context sizing for prompt injection."""
+
+    max_tokens: int = 8000
+    _CHARS_PER_TOKEN: int = field(default=4, init=False, repr=False)
+
+    def estimate_tokens(self, text: str) -> int:
+        """Estimate token count (~4 chars per token for English text)."""
+        if not text:
+            return 0
+        return len(text) // self._CHARS_PER_TOKEN
+
+    def fit_sections(
+        self,
+        sections: list[tuple[int, str, str]],
+    ) -> str:
+        """Select sections by priority to fit within max_tokens.
+
+        Args:
+            sections: (priority, label, content) tuples. Lower = more important.
+
+        Returns:
+            Combined content that fits within budget.
+        """
+        if not sections:
+            return ""
+
+        # Sort by priority (lower number = more important)
+        sorted_sections = sorted(sections, key=lambda s: s[0])
+
+        result_parts: list[str] = []
+        used_tokens = 0
+
+        for _priority, label, content in sorted_sections:
+            section_text = f"## {label}\n\n{content.strip()}"
+            section_tokens = self.estimate_tokens(section_text)
+
+            if used_tokens + section_tokens <= self.max_tokens:
+                # Fits entirely
+                result_parts.append(section_text)
+                used_tokens += section_tokens
+            else:
+                # Try to include a truncated version
+                remaining_tokens = self.max_tokens - used_tokens
+                if remaining_tokens > 100:
+                    max_chars = remaining_tokens * self._CHARS_PER_TOKEN
+                    truncated = content.strip()[:max_chars]
+                    # Find last newline to avoid mid-line truncation
+                    last_nl = truncated.rfind("\n")
+                    if last_nl > max_chars // 2:
+                        truncated = truncated[:last_nl]
+                    section_text = (
+                        f"## {label} (truncated)\n\n{truncated}\n\n"
+                        f"...(truncated to fit context budget)"
+                    )
+                    result_parts.append(section_text)
+                    used_tokens += self.estimate_tokens(section_text)
+                break  # No more room
+
+        return "\n\n---\n\n".join(result_parts)
 
 
 def load_workspace_context(work_dir: str) -> str:
@@ -55,15 +119,40 @@ def _find_and_read(base: Path, filename: str) -> str:
         return ""
 
 
-def build_system_prompt(work_dir: str) -> str:
+def build_system_prompt(work_dir: str, max_tokens: int = 8000) -> str:
     """Build a system prompt appendix from workspace context files.
 
-    Returns the formatted prompt to pass via --append-system-prompt,
-    or empty string if no context files are found.
+    Args:
+        work_dir: Workspace directory to search for context files.
+        max_tokens: Token budget for the combined context content.
+
+    Returns:
+        The formatted prompt to pass via --append-system-prompt,
+        or empty string if no context files are found.
     """
-    context = load_workspace_context(work_dir)
-    if not context:
+    budget = ContextBudget(max_tokens=max_tokens)
+    work_path = Path(work_dir).resolve()
+    sections: list[tuple[int, str, str]] = []
+
+    # Priority 1: CLAUDE.md (project rules — highest priority)
+    claude_content = _find_and_read(work_path, "CLAUDE.md")
+    if claude_content:
+        sections.append((1, "CLAUDE.md", claude_content))
+
+    # Priority 2: AGENTS.md (learned patterns)
+    agents_content = _find_and_read(work_path, "AGENTS.md")
+    if agents_content:
+        sections.append((2, "AGENTS.md", agents_content))
+
+    # Priority 3: Role contexts
+    role_section = build_role_context_section()
+    if role_section:
+        sections.append((3, "Role Contexts", role_section))
+
+    if not sections:
         return ""
+
+    context = budget.fit_sections(sections)
 
     return (
         "# Workspace Context\n\n"

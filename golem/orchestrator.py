@@ -750,7 +750,9 @@ class TaskOrchestrator:
                 build_system_prompt,
             )  # pylint: disable=import-outside-toplevel
 
-            system_prompt = build_system_prompt(work_dir)
+            system_prompt = build_system_prompt(
+                work_dir, max_tokens=self.task_config.context_budget_tokens
+            )
 
         cli_config = CLIConfig(
             cli_type=CLIType.CLAUDE,

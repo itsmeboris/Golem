@@ -326,6 +326,7 @@ def _make_orch(session=None, *, profile=None, task_config=None, **kwargs):
         task_config.auto_commit = True
         task_config.retry_budget_usd = 5.0
         task_config.preflight_verify = False
+        task_config.context_budget_tokens = 8000
     config = MagicMock()
     return TaskOrchestrator(
         session,
@@ -565,6 +566,7 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
         tc.max_retries = 1
         tc.auto_commit = True
         tc.retry_budget_usd = 5.0
+        tc.context_budget_tokens = 8000
         orch = _make_orch(session, profile=profile, task_config=tc)
 
         deps = self._mock_deps()

@@ -98,6 +98,7 @@ class GolemFlowConfig(FlowConfig):
     ensemble_candidates: int = 2  # number of parallel candidates
     # Workspace context injection
     context_injection: bool = True  # inject AGENTS.md + CLAUDE.md into agent sessions
+    context_budget_tokens: int = 8000  # token budget for context injection
     # Code simplification pass between BUILD and REVIEW
     enable_simplify_pass: bool = True
     # Multi-perspective parallel review (opt-in via task config or tiered routing)
@@ -338,6 +339,7 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
         ensemble_on_second_retry=data.get("ensemble_on_second_retry", False),
         ensemble_candidates=data.get("ensemble_candidates", 2),
         context_injection=data.get("context_injection", True),
+        context_budget_tokens=data.get("context_budget_tokens", 8000),
         enable_simplify_pass=data.get("enable_simplify_pass", True),
         enhanced_review=data.get("enhanced_review", False),
         review_roles=data.get("review_roles", []),

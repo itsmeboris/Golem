@@ -16,7 +16,7 @@ See https://github.com/itsmeboris/Golem/issues
 
 - [x] INFRA-001: **State management audit rule** — wired into pre-push hook as non-blocking warning (GH #76, 2026-03-29)
 - [x] INFRA-002: **Codebase contract linting** — wired into pre-push hook as non-blocking warning (GH #23, 2026-03-29)
-- [ ] FEAT-001: **Context budget system** — dynamic prompt content sizing (GH #13)
+- [x] FEAT-001: **Context budget system** — ContextBudget with token estimation, priority-based section fitting, and configurable budget (GH #13, 2026-03-29)
 - [ ] FEAT-002: **A-Mem knowledge graph** — structured knowledge graph for AGENTS.md (GH #14)
 - [x] FEAT-003: **Dashboard prompt comparison UI** — added Prompts tab with table showing hash, runs, success rate bar, cost, duration (GH #82, 2026-03-29)
 - [ ] FEAT-004: **CLI `logs` command** — no `golem logs` / `golem logs --follow` subcommand; `status --watch` shows counters but not log output (GH #83)

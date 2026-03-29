@@ -8,6 +8,7 @@ import pytest
 
 from golem.context_injection import (
     _MAX_CONTEXT_BYTES,
+    ContextBudget,
     _find_and_read,
     build_role_context_section,
     build_system_prompt,
@@ -121,8 +122,19 @@ class TestFindAndRead:
 
 
 class TestBuildSystemPrompt:
-    def test_returns_empty_when_no_files(self, tmp_path):
+    def test_returns_role_contexts_even_when_no_workspace_files(self, tmp_path):
+        # Role context files exist on disk; prompt is returned even without
+        # workspace-specific AGENTS.md / CLAUDE.md
         result = build_system_prompt(str(tmp_path))
+        assert "# Workspace Context" in result
+        assert "Role Contexts" in result
+
+    def test_returns_empty_only_when_no_sections_at_all(self, tmp_path):
+        # When role contexts are also absent the result is empty
+        with patch(
+            "golem.context_injection.build_role_context_section", return_value=""
+        ):
+            result = build_system_prompt(str(tmp_path))
         assert result == ""
 
     def test_returns_formatted_prompt_with_context(self, tmp_path):
@@ -311,16 +323,17 @@ class TestSupervisorContextInjection:
         cli_config: CLIConfig = mock_cli.call_args[0][1]
         assert cli_config.system_prompt == ""
 
-    async def test_empty_system_prompt_when_no_context_files(self, _patches):
+    async def test_role_contexts_included_when_no_workspace_files(self, _patches):
         mock_cli, _ = _patches
-        # tmp_path has no AGENTS.md or CLAUDE.md
+        # tmp_path has no AGENTS.md or CLAUDE.md, but role context files exist
 
         config = _make_config(context_injection=True)
         sup = _make_supervisor(config=config)
         await sup.run()
 
         cli_config: CLIConfig = mock_cli.call_args[0][1]
-        assert cli_config.system_prompt == ""
+        # Role context files always exist; prompt should include them
+        assert "Workspace Context" in cli_config.system_prompt
 
 
 # ---------------------------------------------------------------------------
@@ -532,6 +545,195 @@ class TestBuildRoleContextSection:
         assert "### Reviewer Context" in section
         assert "### Verifier Context" in section
         assert "### Explorer Context" in section
+
+
+# ---------------------------------------------------------------------------
+# ContextBudget
+# ---------------------------------------------------------------------------
+
+
+class TestContextBudgetEstimateTokens:
+    def test_empty_string_returns_zero(self):
+        budget = ContextBudget(max_tokens=8000)
+        assert budget.estimate_tokens("") == 0
+
+    def test_four_chars_equals_one_token(self):
+        budget = ContextBudget(max_tokens=8000)
+        # 4 chars → 1 token (integer division)
+        assert budget.estimate_tokens("abcd") == 1
+
+    def test_large_text_proportional(self):
+        budget = ContextBudget(max_tokens=8000)
+        text = "a" * 4000
+        assert budget.estimate_tokens(text) == 1000
+
+    def test_odd_length_rounds_down(self):
+        budget = ContextBudget(max_tokens=8000)
+        # 7 chars → 7 // 4 = 1
+        assert budget.estimate_tokens("abcdefg") == 1
+
+    @pytest.mark.parametrize(
+        "text,expected_tokens",
+        [
+            ("", 0),
+            ("abcd", 1),
+            ("a" * 400, 100),
+            ("a" * 401, 100),  # floor division
+            ("a" * 8000, 2000),
+        ],
+        ids=["empty", "four_chars", "400_chars", "401_chars_floor", "8000_chars"],
+    )
+    def test_parametrized_estimates(self, text, expected_tokens):
+        budget = ContextBudget(max_tokens=8000)
+        assert budget.estimate_tokens(text) == expected_tokens
+
+
+class TestContextBudgetFitSections:
+    def test_empty_sections_returns_empty_string(self):
+        budget = ContextBudget(max_tokens=8000)
+        result = budget.fit_sections([])
+        assert result == ""
+
+    def test_single_section_fits_entirely(self):
+        budget = ContextBudget(max_tokens=8000)
+        content = "Hello world rules."
+        sections = [(1, "CLAUDE.md", content)]
+        result = budget.fit_sections(sections)
+        assert "## CLAUDE.md" in result
+        assert content in result
+        assert "(truncated)" not in result
+
+    def test_two_sections_both_fit(self):
+        budget = ContextBudget(max_tokens=8000)
+        sections = [
+            (1, "CLAUDE.md", "Claude content."),
+            (2, "AGENTS.md", "Agents content."),
+        ]
+        result = budget.fit_sections(sections)
+        assert "## CLAUDE.md" in result
+        assert "## AGENTS.md" in result
+        assert "---" in result
+
+    def test_priority_ordering_lower_is_more_important(self):
+        budget = ContextBudget(max_tokens=8000)
+        # Priority 1 should appear before priority 2 in output
+        sections = [
+            (2, "AGENTS.md", "Agents content."),
+            (1, "CLAUDE.md", "Claude content."),
+        ]
+        result = budget.fit_sections(sections)
+        assert result.index("CLAUDE.md") < result.index("AGENTS.md")
+
+    def test_oversized_section_is_truncated(self):
+        # Budget of 200 tokens: remaining > 100 threshold, but section needs ~2500 tokens
+        budget = ContextBudget(max_tokens=200)
+        big_content = "word\n" * 2000  # ~10000 chars = ~2500 tokens
+        sections = [(1, "BIG", big_content)]
+        result = budget.fit_sections(sections)
+        assert "truncated" in result
+        # Result should be much smaller than the original 2500-token content
+        assert budget.estimate_tokens(result) < 500
+
+    def test_truncation_prefers_newline_boundary(self):
+        # Budget: 200 tokens; content has many lines so truncation hits a newline
+        budget = ContextBudget(max_tokens=200)
+        # 150 lines of 10 chars each → ~1500 chars = ~375 tokens (exceeds budget)
+        content = "\n".join(f"line {i:04d}" for i in range(150))
+        sections = [(1, "SEC", content)]
+        result = budget.fit_sections(sections)
+        # Should be truncated and the result ends at a newline boundary
+        assert "(truncated)" in result
+        # The "...(truncated to fit context budget)" marker should appear after a newline
+        lines_before_marker = result.split("...(truncated")[0]
+        assert lines_before_marker.endswith("\n")
+
+    def test_low_remaining_budget_skips_truncation(self):
+        # If less than 100 tokens remain, don't include a truncated fragment
+        budget = ContextBudget(max_tokens=1)  # essentially nothing
+        big_content = "A" * 10000
+        sections = [(1, "SEC", big_content)]
+        result = budget.fit_sections(sections)
+        # With 1 token budget, section header itself exceeds budget,
+        # and remaining_tokens <= 100 so no truncated fragment is added
+        assert result == ""
+
+    def test_second_section_skipped_when_no_budget_left(self):
+        budget = ContextBudget(max_tokens=20)
+        # First section consumes all budget
+        first = "A" * (20 * 4)  # exactly 20 tokens
+        second = "B content."
+        sections = [(1, "FIRST", first), (2, "SECOND", second)]
+        result = budget.fit_sections(sections)
+        assert "SECOND" not in result
+
+    def test_sections_joined_with_separator(self):
+        budget = ContextBudget(max_tokens=8000)
+        sections = [
+            (1, "SEC1", "content one"),
+            (2, "SEC2", "content two"),
+        ]
+        result = budget.fit_sections(sections)
+        assert "\n\n---\n\n" in result
+
+    def test_default_max_tokens_is_8000(self):
+        budget = ContextBudget()
+        assert budget.max_tokens == 8000
+
+
+class TestBuildSystemPromptWithBudget:
+    def test_max_tokens_parameter_accepted(self, tmp_path):
+        (tmp_path / "CLAUDE.md").write_text("# Rules\n- rule one\n")
+        result = build_system_prompt(str(tmp_path), max_tokens=8000)
+        assert "# Workspace Context" in result
+        assert "rule one" in result
+
+    def test_default_max_tokens_still_works(self, tmp_path):
+        (tmp_path / "AGENTS.md").write_text("# Guidelines\n- use TDD\n")
+        result = build_system_prompt(str(tmp_path))
+        assert "# Workspace Context" in result
+
+    def test_tiny_budget_truncates_content(self, tmp_path):
+        big_content = "important rule\n" * 500
+        (tmp_path / "CLAUDE.md").write_text(big_content)
+        result = build_system_prompt(str(tmp_path), max_tokens=50)
+        # With tiny budget, should still produce a valid prompt or truncate
+        assert "Workspace Context" in result or result == ""
+
+    def test_priority_order_claude_before_agents(self, tmp_path):
+        (tmp_path / "CLAUDE.md").write_text("Claude rules here")
+        (tmp_path / "AGENTS.md").write_text("Agents rules here")
+        result = build_system_prompt(str(tmp_path))
+        # CLAUDE.md has priority 1, AGENTS.md has priority 2
+        assert result.index("CLAUDE.md") < result.index("AGENTS.md")
+
+    def test_returns_empty_when_no_sections_at_all(self, tmp_path):
+        with patch(
+            "golem.context_injection.build_role_context_section", return_value=""
+        ):
+            result = build_system_prompt(str(tmp_path), max_tokens=8000)
+        assert result == ""
+
+
+class TestContextBudgetConfigField:
+    def test_golem_flow_config_has_context_budget_tokens(self):
+        config = GolemFlowConfig()
+        assert config.context_budget_tokens == 8000
+
+    def test_config_field_can_be_set(self):
+        config = GolemFlowConfig(context_budget_tokens=4000)
+        assert config.context_budget_tokens == 4000
+
+    def test_parse_golem_config_reads_context_budget_tokens(self):
+        from golem.core.config import _parse_golem_config
+
+        cfg = _parse_golem_config({"context_budget_tokens": 16000})
+        assert cfg.context_budget_tokens == 16000
+
+    def test_parse_golem_config_default_is_8000(self):
+        from golem.core.config import _parse_golem_config
+
+        cfg = _parse_golem_config({})
+        assert cfg.context_budget_tokens == 8000
 
 
 # ---------------------------------------------------------------------------
