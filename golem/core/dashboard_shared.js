@@ -249,6 +249,25 @@ function el(tag, classes, attrs) {
   return e;
 }
 
+/* ── Hash Routing ─────────────────────────────────────────── */
+
+/**
+ * Update the URL hash without adding a browser history entry.
+ * Uses history.replaceState so the back button is unaffected.
+ * @param {string} hash - Hash fragment without the leading #
+ */
+function updateHash(hash) {
+  history.replaceState(null, '', '#' + hash);
+}
+
+/**
+ * Read the current URL hash route.
+ * @returns {string} Hash fragment without the leading # (empty string if none)
+ */
+function getHashRoute() {
+  return window.location.hash.slice(1) || '';
+}
+
 /* ── Copy to Clipboard ────────────────────────────────────── */
 
 /**

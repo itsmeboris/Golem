@@ -233,9 +233,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (e.target === modalOverlay) _closeResubmitModal();
   });
 
-  // Deep link: #detail/golem-123-20260310 — must load sessions first
-  const hash = location.hash.slice(1);
-  if (hash.startsWith('detail/')) {
+  // Deep link restore on page load — read hash and navigate to matching view
+  const hash = getHashRoute();
+  if (hash.startsWith('task/')) {
+    S.selectedTaskId = hash.slice(5);
+    S.sessions = await fetchSessions();
+    showView('detail');
+  } else if (hash.startsWith('detail/')) {
+    // Legacy format: #detail/<id> — still supported for bookmarked URLs
     S.selectedTaskId = hash.slice(7);
     S.sessions = await fetchSessions();
     showView('detail');
@@ -243,20 +248,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     showView('merge-queue');
   } else if (hash === 'config') {
     showView('config');
+  } else if (hash === 'prompts') {
+    showView('prompts');
   } else {
     showView('overview');
   }
 
   // Browser back/forward support
   window.addEventListener('hashchange', async () => {
-    const h = location.hash.slice(1);
-    if (h.startsWith('detail/')) {
+    const h = getHashRoute();
+    if (h.startsWith('task/')) {
+      S.selectedTaskId = h.slice(5);
+      showView('detail');
+    } else if (h.startsWith('detail/')) {
+      // Legacy format: #detail/<id> — still supported for bookmarked URLs
       S.selectedTaskId = h.slice(7);
       showView('detail');
     } else if (h === 'merge-queue') {
       showView('merge-queue');
     } else if (h === 'config') {
       showView('config');
+    } else if (h === 'prompts') {
+      showView('prompts');
     } else {
       showView('overview');
     }

@@ -2804,3 +2804,153 @@ class TestCopyToClipboard:
             assert (
                 'title="Click to copy"' in body or "title='Click to copy'" in body
             ), f"Missing title='Click to copy' on copy-target in {path.name}"
+
+
+# ---------------------------------------------------------------------------
+# UX-011: Deep linking / URL sharing
+# ---------------------------------------------------------------------------
+
+
+class TestHashRouting:
+    """Verify hash-based URL routing for deep linking and view sharing."""
+
+    @pytest.fixture(autouse=True)
+    def _paths(self):
+        core = Path(__file__).resolve().parent.parent / "core"
+        self.shared_js_path = core / "dashboard_shared.js"
+        self.api_js_path = core / "task_api.js"
+        self.live_js_path = core / "task_live.js"
+
+    # --- updateHash / getHashRoute in shared JS ---
+
+    def test_update_hash_function_exists(self):
+        """updateHash must be defined in dashboard_shared.js."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        assert (
+            "function updateHash(" in body
+        ), "Missing updateHash function in dashboard_shared.js"
+
+    def test_get_hash_route_function_exists(self):
+        """getHashRoute must be defined in dashboard_shared.js."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        assert (
+            "function getHashRoute(" in body
+        ), "Missing getHashRoute function in dashboard_shared.js"
+
+    def test_update_hash_uses_replace_state(self):
+        """updateHash must use history.replaceState to avoid polluting history."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        # Locate updateHash definition and check replaceState appears inside it
+        start = body.find("function updateHash(")
+        assert start != -1, "updateHash not found"
+        block = body[start : start + 300]
+        assert "replaceState" in block, "updateHash must call history.replaceState"
+
+    def test_get_hash_route_reads_location_hash(self):
+        """getHashRoute must read window.location.hash."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        start = body.find("function getHashRoute(")
+        assert start != -1, "getHashRoute not found"
+        block = body[start : start + 200]
+        assert "location.hash" in block, "getHashRoute must read location.hash"
+
+    # --- task_api.js: showView updates hash to #task/<id> ---
+
+    def test_show_view_uses_task_hash_format(self):
+        """showView must update URL to #task/<id> when navigating to task detail."""
+        body = self.api_js_path.read_text(encoding="utf-8")
+        assert (
+            "'#task/'" in body or '"#task/"' in body or "`#task/" in body
+        ), "showView must produce #task/<id> hash for task detail view"
+
+    def test_show_view_uses_merge_queue_hash(self):
+        """showView must update URL to #merge-queue when switching to that tab."""
+        body = self.api_js_path.read_text(encoding="utf-8")
+        assert (
+            "'#merge-queue'" in body or '"#merge-queue"' in body
+        ), "showView must set #merge-queue hash"
+
+    def test_show_view_uses_prompts_hash(self):
+        """showView must update URL to #prompts when switching to the prompts tab."""
+        body = self.api_js_path.read_text(encoding="utf-8")
+        assert (
+            "'#prompts'" in body or '"#prompts"' in body
+        ), "showView must set #prompts hash"
+
+    def test_show_view_uses_overview_hash(self):
+        """showView must update URL to #overview for the overview tab."""
+        body = self.api_js_path.read_text(encoding="utf-8")
+        assert (
+            "'#overview'" in body or '"#overview"' in body
+        ), "showView must set #overview hash"
+
+    # --- task_live.js: DOMContentLoaded reads hash and navigates ---
+
+    def test_dom_content_loaded_reads_hash(self):
+        """DOMContentLoaded handler must call getHashRoute to restore view from URL."""
+        body = self.live_js_path.read_text(encoding="utf-8")
+        assert (
+            "getHashRoute(" in body
+        ), "DOMContentLoaded handler must call getHashRoute() to restore the view"
+
+    def test_dom_content_loaded_handles_task_hash(self):
+        """DOMContentLoaded handler must restore task detail from #task/<id>."""
+        body = self.live_js_path.read_text(encoding="utf-8")
+        assert (
+            "task/" in body
+        ), "DOMContentLoaded handler must handle #task/<id> deep links"
+
+    def test_dom_content_loaded_handles_prompts_hash(self):
+        """DOMContentLoaded handler must restore prompts tab from #prompts."""
+        body = self.live_js_path.read_text(encoding="utf-8")
+        assert (
+            "'prompts'" in body or '"prompts"' in body
+        ), "DOMContentLoaded handler must handle #prompts hash"
+
+    # --- task_live.js: hashchange event listener ---
+
+    def test_hashchange_listener_present(self):
+        """task_live.js must register a hashchange event listener."""
+        body = self.live_js_path.read_text(encoding="utf-8")
+        assert "hashchange" in body, "task_live.js must listen for the hashchange event"
+
+    def test_hashchange_calls_get_hash_route(self):
+        """hashchange handler must use getHashRoute() to read the new URL."""
+        body = self.live_js_path.read_text(encoding="utf-8")
+        # getHashRoute must appear in or after the hashchange registration
+        hashchange_idx = body.find("hashchange")
+        assert hashchange_idx != -1, "hashchange listener not found"
+        # getHashRoute must appear somewhere after the hashchange keyword
+        after = body[hashchange_idx:]
+        assert "getHashRoute(" in after, "hashchange handler must call getHashRoute()"
+
+    def test_hashchange_handles_task_hash(self):
+        """hashchange handler must navigate to task detail on #task/<id>."""
+        body = self.live_js_path.read_text(encoding="utf-8")
+        # Find hashchange block and confirm task/ handling is inside it
+        hashchange_idx = body.find("hashchange")
+        assert hashchange_idx != -1, "hashchange listener not found"
+        after = body[hashchange_idx:]
+        assert "task/" in after, "hashchange handler must handle #task/<id> hash format"
+
+    def test_hashchange_handles_prompts_hash(self):
+        """hashchange handler must navigate to prompts tab on #prompts."""
+        body = self.live_js_path.read_text(encoding="utf-8")
+        hashchange_idx = body.find("hashchange")
+        assert hashchange_idx != -1, "hashchange listener not found"
+        after = body[hashchange_idx:]
+        assert (
+            "'prompts'" in after or '"prompts"' in after
+        ), "hashchange handler must handle #prompts hash"
+
+    @pytest.mark.parametrize(
+        "tab_hash",
+        ["overview", "merge-queue", "config", "prompts"],
+        ids=["overview", "merge-queue", "config", "prompts"],
+    )
+    def test_all_tabs_have_hash_support(self, tab_hash):
+        """Every top-level tab must have hash routing coverage in task_live.js."""
+        body = self.live_js_path.read_text(encoding="utf-8")
+        assert (
+            tab_hash in body
+        ), f"task_live.js missing hash route support for #{tab_hash}"

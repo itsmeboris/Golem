@@ -102,14 +102,16 @@ async function showView(view) {
     t.classList.toggle('active', t.dataset.view === view)
   );
 
-  // Update URL hash — use pushState to avoid triggering hashchange
+  // Update URL hash — use pushState to add a browser history entry
   if (view === 'detail' && S.selectedTaskId) {
-    const newHash = `#detail/${S.selectedTaskId}`;
+    const newHash = `#task/${S.selectedTaskId}`;
     if (location.hash !== newHash) history.pushState(null, '', newHash);
   } else if (view === 'merge-queue') {
     if (location.hash !== '#merge-queue') history.pushState(null, '', '#merge-queue');
   } else if (view === 'config') {
     if (location.hash !== '#config') history.pushState(null, '', '#config');
+  } else if (view === 'prompts') {
+    if (location.hash !== '#prompts') history.pushState(null, '', '#prompts');
   } else {
     if (location.hash !== '#overview') history.pushState(null, '', '#overview');
   }
