@@ -1556,6 +1556,14 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
             resp = await handlers["/dashboard/config_tab.css"]()
         assert resp.media_type == "text/css"
 
+    async def test_prompt_analytics_js(self, handlers):
+        with patch.object(
+            _FileCache, "read", return_value="async function renderPromptAnalytics(){}"
+        ):
+            resp = await handlers["/dashboard/prompt_analytics.js"]()
+        assert resp.media_type == "application/javascript"
+        assert b"renderPromptAnalytics" in resp.body
+
     def test_dashboard_html_has_config_tab(self):
         """Config tab nav button and view div must be in the HTML."""
         html = Path(__file__).resolve().parent.parent / "core" / "task_dashboard.html"

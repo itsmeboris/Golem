@@ -658,13 +658,18 @@ class TestContextBudgetFitSections:
         assert result == ""
 
     def test_second_section_skipped_when_no_budget_left(self):
-        budget = ContextBudget(max_tokens=20)
-        # First section consumes all budget
-        first = "A" * (20 * 4)  # exactly 20 tokens
-        second = "B content."
+        # Budget of 200 tokens: first section consumes it entirely, second is excluded.
+        budget = ContextBudget(max_tokens=200)
+        # First section: 200 tokens * 4 chars/token = 800 chars, fills the budget.
+        first = "A" * 800
+        second = "B content that must be excluded."
         sections = [(1, "FIRST", first), (2, "SECOND", second)]
         result = budget.fit_sections(sections)
+        # The first section must be present (not trivially empty result)
+        assert "## FIRST" in result
+        # The second section must be excluded because the budget was exhausted
         assert "SECOND" not in result
+        assert "B content" not in result
 
     def test_sections_joined_with_separator(self):
         budget = ContextBudget(max_tokens=8000)
@@ -693,11 +698,13 @@ class TestBuildSystemPromptWithBudget:
         assert "# Workspace Context" in result
 
     def test_tiny_budget_truncates_content(self, tmp_path):
+        # Write large content; with a large budget the full content fits.
         big_content = "important rule\n" * 500
         (tmp_path / "CLAUDE.md").write_text(big_content)
-        result = build_system_prompt(str(tmp_path), max_tokens=50)
-        # With tiny budget, should still produce a valid prompt or truncate
-        assert "Workspace Context" in result or result == ""
+        result_large = build_system_prompt(str(tmp_path), max_tokens=8000)
+        result_small = build_system_prompt(str(tmp_path), max_tokens=50)
+        # Small budget must produce a shorter result than large budget
+        assert len(result_small) < len(result_large)
 
     def test_priority_order_claude_before_agents(self, tmp_path):
         (tmp_path / "CLAUDE.md").write_text("Claude rules here")
