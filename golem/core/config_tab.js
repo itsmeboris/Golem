@@ -10,6 +10,7 @@
     try {
       const resp = await fetch("/api/config", {
         headers: window.ADMIN_TOKEN ? {"Authorization": "Bearer " + window.ADMIN_TOKEN} : {},
+        signal: AbortSignal.timeout(10000),
       });
       if (!resp.ok) throw new Error("Failed to fetch config");
       configData = await resp.json();
@@ -127,6 +128,7 @@
           ...(window.ADMIN_TOKEN ? {"Authorization": "Bearer " + window.ADMIN_TOKEN} : {}),
         },
         body: JSON.stringify(unsavedChanges),
+        signal: AbortSignal.timeout(30000),
       });
       const data = await resp.json();
       if (data.success) {

@@ -133,7 +133,7 @@ async function renderMergeQueue() {
       btn.disabled = true;
       btn.textContent = 'Retrying…';
       try {
-        const resp = await fetch(`/api/merge-queue/retry/${btn.dataset.sessionId}`, { method: 'POST' });
+        const resp = await fetch(`/api/merge-queue/retry/${btn.dataset.sessionId}`, { method: 'POST', signal: AbortSignal.timeout(30000) });
         if (resp.ok) {
           await renderMergeQueue();
         } else {

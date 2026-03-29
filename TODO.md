@@ -61,7 +61,7 @@ See https://github.com/itsmeboris/Golem/issues
 
 - [ ] FEAT-005: **Evaluator-optimizer loop** — prompt auto-tuning (GH #15)
 - [ ] FEAT-006: **OpenTelemetry tracing** — agent observability (GH #16)
-- [ ] UX-004: **Frontend fetch calls lack timeout** — all `fetch()` in task_api.js/task_live.js have no AbortSignal; network hangs block UI indefinitely (GH #96)
+- [x] UX-004: **Frontend fetch calls lack timeout** — added AbortSignal.timeout (10s GET, 30s POST) to all fetch calls (GH #96, 2026-03-29)
 - [ ] TEST-004: **Multiple source modules lack test files** — 13+ modules (batch_cli, profile, prompts, core/slack, backends/github, notifiers, mcp_tools) have no dedicated tests; error paths unverified (GH #97)
 
 ---

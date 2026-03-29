@@ -19,14 +19,14 @@ const S = {
 
 // ── API Client ─────────────────────────────────
 async function fetchSessions() {
-  const res = await fetch('/api/sessions');
+  const res = await fetch('/api/sessions', { signal: AbortSignal.timeout(10000) });
   const data = await res.json();
   return data.sessions || {};
 }
 
 async function fetchMergeQueue() {
   try {
-    const resp = await fetch('/api/merge-queue');
+    const resp = await fetch('/api/merge-queue', { signal: AbortSignal.timeout(10000) });
     if (!resp.ok) return null;
     return await resp.json();
   } catch (_e) {
@@ -44,7 +44,7 @@ async function fetchParsedTrace(eventId, incremental = false) {
     url += `?since_event=${S.lastEventCounts[eventId]}`;
   }
 
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
   if (!res.ok) return null;
   const data = await res.json();
 
@@ -55,14 +55,14 @@ async function fetchParsedTrace(eventId, incremental = false) {
 }
 
 async function fetchPrompt(eventId) {
-  const res = await fetch(`/api/prompt/${eventId}`);
+  const res = await fetch(`/api/prompt/${eventId}`, { signal: AbortSignal.timeout(10000) });
   if (!res.ok) return null;
   const data = await res.json();
   return data.prompt || '';
 }
 
 async function cancelTask(taskId) {
-  const res = await fetch(`/api/cancel/${taskId}`, { method: 'POST' });
+  const res = await fetch(`/api/cancel/${taskId}`, { method: 'POST', signal: AbortSignal.timeout(30000) });
   if (!res.ok) {
     try { return await res.json(); } catch (_) { return { ok: false, detail: res.statusText }; }
   }
@@ -70,7 +70,7 @@ async function cancelTask(taskId) {
 }
 
 async function clearFailedSessions() {
-  const res = await fetch('/api/sessions/clear-failed', { method: 'POST' });
+  const res = await fetch('/api/sessions/clear-failed', { method: 'POST', signal: AbortSignal.timeout(30000) });
   if (!res.ok) {
     try { return await res.json(); } catch (_) { return { ok: false, detail: res.statusText }; }
   }
@@ -82,6 +82,7 @@ async function resubmitTask(prompt, subject) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt, subject }),
+    signal: AbortSignal.timeout(30000),
   });
   if (!res.ok) {
     try { return await res.json(); } catch (_) { return { ok: false, detail: res.statusText }; }
