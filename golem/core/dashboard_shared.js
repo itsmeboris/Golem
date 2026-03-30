@@ -277,6 +277,7 @@ function getHashRoute() {
  *   Escape      — close open modal; if detail view, go back to overview
  *   ArrowDown   — select next task row in overview list
  *   ArrowUp     — select previous task row in overview list
+ *   Enter       — open selected task in detail view
  *   Ctrl/Cmd+K  — focus the task search input
  *   1           — switch to overview tab
  *   2           — switch to detail tab
@@ -335,6 +336,15 @@ document.addEventListener('keydown', function(e) {
         if (typeof renderPreview === 'function') renderPreview(eventId);
       }
       rows[nextIdx].scrollIntoView({ block: 'nearest' });
+    }
+    return;
+  }
+
+  /* Enter — open selected task in detail view */
+  if (e.key === 'Enter') {
+    if (typeof S !== 'undefined' && S.selectedTaskId) {
+      e.preventDefault();
+      if (typeof selectTask === 'function') selectTask(S.selectedTaskId);
     }
     return;
   }
