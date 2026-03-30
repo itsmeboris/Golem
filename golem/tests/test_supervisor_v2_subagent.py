@@ -3236,16 +3236,37 @@ class TestMCPToolValidationWiring:
 
         profile.tool_provider.validate_tools.assert_not_called()
 
-    def test_validate_tools_called_with_empty_tools_list(self):
-        """Init event with empty tools list triggers validation with empty list."""
+    def test_validate_tools_skipped_for_empty_tools_list(self):
+        """Init event with empty tools list does not trigger validation."""
         profile = _make_profile()
-        profile.tool_provider.validate_tools.return_value = ([], [])
         sup = _make_supervisor(profile=profile)
 
         event = self._make_init_event([])
         sup._handle_mcp_tool_validation(event)
 
-        profile.tool_provider.validate_tools.assert_called_once_with([])
+        profile.tool_provider.validate_tools.assert_not_called()
+
+    def test_string_tools_filtered_out(self):
+        """Init event with only string tool names (built-in tools) is skipped."""
+        profile = _make_profile()
+        sup = _make_supervisor(profile=profile)
+
+        event = self._make_init_event(["Task", "Read", "Write", "Bash"])
+        sup._handle_mcp_tool_validation(event)
+
+        profile.tool_provider.validate_tools.assert_not_called()
+
+    def test_mixed_string_and_dict_tools(self):
+        """Only dict tools are passed to validate_tools; strings are filtered."""
+        profile = _make_profile()
+        profile.tool_provider.validate_tools.return_value = ([], [])
+        sup = _make_supervisor(profile=profile)
+
+        mcp_tool = {"name": "my_tool", "description": "x", "inputSchema": {}}
+        event = self._make_init_event(["Task", "Read", mcp_tool, "Bash"])
+        sup._handle_mcp_tool_validation(event)
+
+        profile.tool_provider.validate_tools.assert_called_once_with([mcp_tool])
 
     def test_validation_warnings_logged_for_invalid_tools(self, caplog):
         """Warnings from validate_tools are logged at WARNING level."""

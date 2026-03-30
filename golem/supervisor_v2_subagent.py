@@ -139,12 +139,17 @@ class SubagentSupervisor:
         if event.get("type") != "system" or event.get("subtype") != "init":
             return
         tools = event.get("tools")
-        if tools is None:
+        if not tools:
+            return
+        # The init event's "tools" list contains tool names (strings) for
+        # built-in tools and dict objects for MCP tools.  Only validate dicts.
+        mcp_tools = [t for t in tools if isinstance(t, dict)]
+        if not mcp_tools:
             return
         provider = getattr(self.profile, "tool_provider", None)
         if provider is None:
             return
-        _valid, warnings = provider.validate_tools(tools)
+        _valid, warnings = provider.validate_tools(mcp_tools)
         if warnings:
             self._slog.warning(
                 "MCP tool validation: %d tool(s) rejected from init event",
