@@ -2130,6 +2130,24 @@ class TestDetectBaseBranch:
             call_kwargs = mock_run.call_args[1]
             assert call_kwargs["timeout"] == 30
 
+    def test_detect_base_branch_passes_sandbox_preexec(self):
+        """subprocess.run is called with preexec_fn set to the sandbox preexec callable."""
+        mock_result = MagicMock(returncode=0, stdout="refs/remotes/origin/main\n")
+        sentinel = object()
+        with (
+            patch(
+                "golem.supervisor_v2_subagent.subprocess.run",
+                return_value=mock_result,
+            ) as mock_run,
+            patch(
+                "golem.supervisor_v2_subagent.make_sandbox_preexec",
+                return_value=sentinel,
+            ),
+        ):
+            SubagentSupervisor._detect_base_branch("/work")
+            call_kwargs = mock_run.call_args[1]
+            assert call_kwargs["preexec_fn"] is sentinel
+
 
 class TestCreatePullRequestAfterCommit:
     """Supervisor calls create_pull_request after a successful commit."""
