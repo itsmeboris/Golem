@@ -6,9 +6,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import golem.context_injection as _ci_module
 from golem.context_injection import (
+    _CODE_RATIO,
     _MAX_CONTEXT_BYTES,
+    _PROSE_RATIO,
+    _UNICODE_RATIO,
     ContextBudget,
+    _estimate_chars_per_token,
     _find_and_read,
     build_role_context_section,
     build_system_prompt,
@@ -553,39 +558,128 @@ class TestBuildRoleContextSection:
 
 
 class TestContextBudgetEstimateTokens:
-    def test_empty_string_returns_zero(self):
-        budget = ContextBudget(max_tokens=8000)
-        assert budget.estimate_tokens("") == 0
-
-    def test_four_chars_equals_one_token(self):
-        budget = ContextBudget(max_tokens=8000)
-        # 4 chars → 1 token (integer division)
-        assert budget.estimate_tokens("abcd") == 1
-
-    def test_large_text_proportional(self):
-        budget = ContextBudget(max_tokens=8000)
-        text = "a" * 4000
-        assert budget.estimate_tokens(text) == 1000
-
-    def test_odd_length_rounds_down(self):
-        budget = ContextBudget(max_tokens=8000)
-        # 7 chars → 7 // 4 = 1
-        assert budget.estimate_tokens("abcdefg") == 1
-
     @pytest.mark.parametrize(
         "text,expected_tokens",
         [
             ("", 0),
-            ("abcd", 1),
-            ("a" * 400, 100),
-            ("a" * 401, 100),  # floor division
-            ("a" * 8000, 2000),
+            ("abcd", 1),  # int(4/4.5)=0 → max(1,0)=1
+            ("x", 1),  # 1 char → max(1, int(1/4.5))=1
+            ("abcdefg", 1),  # int(7/4.5)=1
+            ("a" * 450, 100),  # int(450/4.5)=100
+            ("a" * 451, 100),  # int(451/4.5)=100 (floor)
+            ("a" * 4000, 888),  # int(4000/4.5)=888
+            ("a" * 9000, 2000),  # int(9000/4.5)=2000
         ],
-        ids=["empty", "four_chars", "400_chars", "401_chars_floor", "8000_chars"],
+        ids=[
+            "empty",
+            "four_chars",
+            "one_char",
+            "seven_chars",
+            "450_chars",
+            "451_chars_floor",
+            "4000_chars",
+            "9000_chars",
+        ],
     )
-    def test_parametrized_estimates(self, text, expected_tokens):
+    def test_heuristic_estimates(self, text, expected_tokens):
         budget = ContextBudget(max_tokens=8000)
-        assert budget.estimate_tokens(text) == expected_tokens
+        with patch.object(_ci_module, "_tiktoken_encoder", None):
+            assert budget.estimate_tokens(text) == expected_tokens
+
+    def test_tiktoken_path_used_when_encoder_available(self):
+        budget = ContextBudget(max_tokens=8000)
+        mock_encoder = MagicMock()
+        mock_encoder.encode.return_value = [1, 2, 3, 4, 5]  # 5 tokens
+        with patch.object(_ci_module, "_tiktoken_encoder", mock_encoder):
+            result = budget.estimate_tokens("hello world")
+        assert result == 5
+        mock_encoder.encode.assert_called_once_with("hello world")
+
+    def test_tiktoken_not_used_when_encoder_is_none(self):
+        budget = ContextBudget(max_tokens=8000)
+        text = "a" * 900  # int(900/4.5) = 200
+        with patch.object(_ci_module, "_tiktoken_encoder", None):
+            result = budget.estimate_tokens(text)
+        assert result == 200
+
+    def test_empty_string_returns_zero_with_tiktoken(self):
+        budget = ContextBudget(max_tokens=8000)
+        mock_encoder = MagicMock()
+        with patch.object(_ci_module, "_tiktoken_encoder", mock_encoder):
+            result = budget.estimate_tokens("")
+        assert result == 0
+        mock_encoder.encode.assert_not_called()
+
+    def test_code_heavy_content_estimates_more_tokens_than_prose(self):
+        budget = ContextBudget(max_tokens=8000)
+        line_count = 100
+        code_content = "```python\n" + ("x = 1\n" * line_count) + "```\n"
+        prose_content = "a" * len(code_content)
+
+        with patch.object(_ci_module, "_tiktoken_encoder", None):
+            code_tokens = budget.estimate_tokens(code_content)
+            prose_tokens = budget.estimate_tokens(prose_content)
+
+        # Code (ratio ~3.2) produces more tokens than prose (ratio 4.5) for same length
+        assert code_tokens > prose_tokens
+
+    def test_non_ascii_content_estimates_more_tokens_than_ascii(self):
+        budget = ContextBudget(max_tokens=8000)
+        unicode_text = "你好世界" * 200  # 800 non-ASCII chars
+        ascii_text = "a" * len(unicode_text)  # same length, pure ASCII
+
+        with patch.object(_ci_module, "_tiktoken_encoder", None):
+            unicode_tokens = budget.estimate_tokens(unicode_text)
+            ascii_tokens = budget.estimate_tokens(ascii_text)
+
+        # Non-ASCII (ratio ~2.5) → more tokens than ASCII prose (ratio 4.5)
+        assert unicode_tokens > ascii_tokens
+
+
+class TestEstimateCharsPerToken:
+    """Tests for the module-level _estimate_chars_per_token helper."""
+
+    def test_pure_prose_returns_prose_ratio(self):
+        # SPEC-6: pure ASCII prose → ratio near 4.5
+        text = "The quick brown fox jumps over the lazy dog. " * 20
+        ratio = _estimate_chars_per_token(text)
+        assert abs(ratio - _PROSE_RATIO) < 0.3
+
+    def test_pure_code_block_returns_code_ratio(self):
+        # SPEC-4: content entirely inside fenced code blocks → ratio near 3.2
+        code = "```python\n" + ("result = compute(x)\n" * 50) + "```\n"
+        ratio = _estimate_chars_per_token(code)
+        # The delimiters are also counted as code chars; ratio blends toward 3.2
+        assert abs(ratio - _CODE_RATIO) < 0.3
+
+    def test_non_ascii_heavy_returns_unicode_ratio(self):
+        # SPEC-4: non-ASCII-heavy content → ratio near 2.5
+        text = "你好世界" * 100  # 400 non-ASCII chars, pure CJK
+        ratio = _estimate_chars_per_token(text)
+        assert abs(ratio - _UNICODE_RATIO) < 0.3
+
+    def test_empty_string_returns_prose_ratio(self):
+        ratio = _estimate_chars_per_token("")
+        assert ratio == _PROSE_RATIO
+
+    def test_very_short_text_returns_positive_ratio(self):
+        ratio = _estimate_chars_per_token("x")
+        assert ratio >= 1.0
+
+    def test_unmatched_backtick_block_handled_gracefully(self):
+        # SPEC-4 edge case: unmatched ``` doesn't crash
+        text = "Some text\n```python\nsome code without closing\n"
+        ratio = _estimate_chars_per_token(text)
+        assert ratio >= 1.0
+
+    def test_mixed_code_and_prose_blends_ratios(self):
+        # Mixed content returns ratio between code (~3.2) and prose (~4.5)
+        prose_part = "The quick brown fox jumps over the lazy dog.\n" * 20
+        code_part = "```python\n" + ("x = compute()\n" * 20) + "```\n"
+        mixed = prose_part + code_part
+        ratio = _estimate_chars_per_token(mixed)
+        # Ratio must be strictly between pure code and pure prose
+        assert _CODE_RATIO < ratio < _PROSE_RATIO
 
 
 class TestContextBudgetFitSections:
@@ -660,11 +754,13 @@ class TestContextBudgetFitSections:
     def test_second_section_skipped_when_no_budget_left(self):
         # Budget of 200 tokens: first section consumes it entirely, second is excluded.
         budget = ContextBudget(max_tokens=200)
-        # First section: 200 tokens * 4 chars/token = 800 chars, fills the budget.
-        first = "A" * 800
+        # First section: needs > 200 tokens to fill the budget when combined with header.
+        # At ratio 4.5, "## FIRST\n\n" + "A"*950 = ~960 chars → ~213 tokens (> 200).
+        first = "A" * 950
         second = "B content that must be excluded."
         sections = [(1, "FIRST", first), (2, "SECOND", second)]
-        result = budget.fit_sections(sections)
+        with patch.object(_ci_module, "_tiktoken_encoder", None):
+            result = budget.fit_sections(sections)
         # The first section must be present (not trivially empty result)
         assert "## FIRST" in result
         # The second section must be excluded because the budget was exhausted
