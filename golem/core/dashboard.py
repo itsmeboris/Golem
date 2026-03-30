@@ -539,8 +539,8 @@ async def _sse_event_stream():
     heartbeat_counter = 0
     try:
         while True:
-            await asyncio.sleep(1)
-            heartbeat_counter += 1
+            await asyncio.sleep(3)
+            heartbeat_counter += 3
             sent_event = False
 
             # --- session file ---

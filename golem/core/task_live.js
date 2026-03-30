@@ -61,8 +61,9 @@ async function _flushSSEUpdates() {
 
 // ── Debounce helper ────────────────────────────
 function _scheduleRender() {
-  if (_renderTimeout !== null) return; // already scheduled within 500ms window
-  _renderTimeout = setTimeout(_flushSSEUpdates, 500);
+  if (_renderTimeout !== null) return; // already scheduled within debounce window
+  // 2s debounce prevents rapid re-renders when the daemon saves state frequently
+  _renderTimeout = setTimeout(_flushSSEUpdates, 2000);
 }
 
 // ── SSE connection ─────────────────────────────

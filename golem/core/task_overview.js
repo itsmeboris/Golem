@@ -12,7 +12,7 @@ async function renderOverview() {
   const listEl = document.getElementById('ov-task-list');
   if (!listEl) return;
 
-  // Show skeleton loaders while data loads
+  // Show skeleton loaders on first load only
   if (Object.keys(S.sessions).length === 0) {
     listEl.innerHTML = [1, 2, 3].map(() =>
       '<div class="skeleton skeleton-card"></div>'
@@ -20,6 +20,8 @@ async function renderOverview() {
   }
 
   const sessions = await fetchSessions();
+  // Skip full DOM rebuild if session data hasn't changed
+  if (!sessionsChanged(sessions)) return;
   S.sessions = sessions;
 
   listEl.innerHTML = '';

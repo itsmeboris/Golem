@@ -18,10 +18,19 @@ const S = {
 };
 
 // ── API Client ─────────────────────────────────
+let _lastSessionsJSON = '';
+
 async function fetchSessions() {
   const res = await fetch('/api/sessions', { signal: AbortSignal.timeout(10000) });
   const data = await res.json();
   return data.sessions || {};
+}
+
+function sessionsChanged(newSessions) {
+  const json = JSON.stringify(newSessions);
+  if (json === _lastSessionsJSON) return false;
+  _lastSessionsJSON = json;
+  return true;
 }
 
 async function fetchMergeQueue() {
