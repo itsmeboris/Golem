@@ -177,9 +177,9 @@ class TestFindConfigPath:
 
 class TestVerificationTimeoutConfig:
     def test_default_value(self):
-        """verification_timeout_seconds defaults to 120."""
+        """verification_timeout_seconds defaults to 300."""
         cfg = GolemFlowConfig()
-        assert cfg.verification_timeout_seconds == 120
+        assert cfg.verification_timeout_seconds == 300
 
     def test_custom_value_from_yaml(self, tmp_path, monkeypatch):
         """verification_timeout_seconds is parsed from YAML config."""

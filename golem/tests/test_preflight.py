@@ -7,9 +7,9 @@ from golem.core.config import GolemFlowConfig
 
 class TestVerificationTimeoutConfig:
     def test_default_verification_timeout(self):
-        """GolemFlowConfig.verification_timeout_seconds defaults to 120."""
+        """GolemFlowConfig.verification_timeout_seconds defaults to 300."""
         cfg = GolemFlowConfig()
-        assert cfg.verification_timeout_seconds == 120
+        assert cfg.verification_timeout_seconds == 300
 
     def test_custom_verification_timeout(self):
         """GolemFlowConfig.verification_timeout_seconds can be set."""
@@ -33,8 +33,8 @@ class TestVerificationTimeoutConfig:
                     orch._preflight_check("/tmp/fake")
         mock_rv.assert_called_once_with("/tmp/fake", timeout=300)
 
-    def test_orchestrator_default_timeout_is_120(self):
-        """_preflight_check uses 120 when verification_timeout_seconds is not set."""
+    def test_orchestrator_default_timeout_is_300(self):
+        """_preflight_check uses 300 when verification_timeout_seconds is not set."""
         from golem.orchestrator import TaskOrchestrator, TaskSession
 
         session = TaskSession(parent_issue_id=99)
@@ -48,7 +48,7 @@ class TestVerificationTimeoutConfig:
             with patch("pathlib.Path.is_dir", return_value=True):
                 with patch("pathlib.Path.exists", return_value=True):
                     orch._preflight_check("/tmp/fake")
-        mock_rv.assert_called_once_with("/tmp/fake", timeout=120)
+        mock_rv.assert_called_once_with("/tmp/fake", timeout=300)
 
 
 class TestPreflightVerification:

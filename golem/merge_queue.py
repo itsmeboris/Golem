@@ -78,7 +78,7 @@ class MergeQueue:
         self,
         on_merge_agent: OnMergeAgent = None,
         on_state_change: "Callable[[], None] | None" = None,
-        verification_timeout: int = 120,
+        verification_timeout: int = 300,
     ):
         self._queue: list[MergeEntry] = []
         self._processing: list[MergeEntry] = []

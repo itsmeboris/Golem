@@ -2891,9 +2891,9 @@ class TestMergeQueueVerificationTimeout:
         assert flow._merge_queue._verification_timeout == 300
 
     def test_merge_queue_uses_default_verification_timeout(self, monkeypatch, tmp_path):
-        """MergeQueue._verification_timeout defaults to 120 when not configured."""
+        """MergeQueue._verification_timeout defaults to 300 when not configured."""
         flow = _make_flow(monkeypatch, tmp_path)
-        assert flow._merge_queue._verification_timeout == 120
+        assert flow._merge_queue._verification_timeout == 300
 
 
 class TestFlowSandboxPreexec:

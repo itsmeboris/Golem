@@ -466,7 +466,7 @@ tested mutants.
 | `clarity_threshold` | `3` | Minimum clarity score (1–5) to proceed without human clarification |
 | `context_injection` | `true` | Auto-inject AGENTS.md + CLAUDE.md from workspace into agent sessions as system prompt context |
 | `enable_simplify_pass` | `true` | Run a code-cleanup pass between BUILD and REVIEW phases |
-| `verification_timeout_seconds` | `300` | Timeout for black/pylint/pytest verification runs (pre-flight, post-merge, validation) |
+| `verification_timeout_seconds` | `300` | Timeout for black/pylint/pytest verification runs — pre-flight, post-merge, validation (raised from 120s due to 4285-test suite) |
 | `api_key` | `""` | API key for `/api/*` endpoints; empty = no auth required |
 | `ensemble_on_second_retry` | `false` | On second retry, spawn N parallel candidates in separate worktrees with different strategy hints; validate each and commit the best PASS result. Falls back to escalation if no candidate passes |
 | `ensemble_candidates` | `2` | Number of parallel candidates for ensemble retry (each runs in its own worktree) |

@@ -1033,10 +1033,10 @@ class TestPostMergeVerification:
         expected_wt = str(tmp_path / "data" / "agent" / "verify-worktrees" / "5")
         mock_rv.assert_called_once_with(expected_wt, timeout=300)
 
-    def test_verify_merge_default_timeout_is_120(self):
-        """MergeQueue default verification_timeout is 120 seconds."""
+    def test_verify_merge_default_timeout_is_300(self):
+        """MergeQueue default verification_timeout is 300 seconds."""
         q = MergeQueue()
-        assert q._verification_timeout == 120
+        assert q._verification_timeout == 300
 
 
 # ---------------------------------------------------------------------------
