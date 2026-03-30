@@ -19,6 +19,10 @@ import pytest
 # Skip entire module if playwright is not installed
 pw_mod = pytest.importorskip("playwright")
 
+# Mark all tests in this module as e2e — excluded from pre-flight verification
+# and normal `pytest` runs (addopts = "-m 'not integration'").
+pytestmark = pytest.mark.integration
+
 from playwright.async_api import async_playwright  # noqa: E402
 
 
