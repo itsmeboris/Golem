@@ -6,7 +6,7 @@ discoveries into AGENTS.md.
 """
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -15,19 +15,78 @@ logger = logging.getLogger("golem.context_injection")
 _CONTEXT_FILES = ["AGENTS.md", "CLAUDE.md"]
 _MAX_CONTEXT_BYTES = 64 * 1024  # 64 KB
 
+# Calibrated chars-per-token ratios for heuristic estimation
+_CODE_RATIO = 3.2  # code blocks (shorter tokens, symbols)
+_PROSE_RATIO = 4.5  # English prose (longer words)
+_UNICODE_RATIO = 2.5  # non-ASCII / CJK (multi-byte, shorter token coverage)
+_TRUNCATION_RATIO = 3.5  # conservative ratio for tokens→chars in truncation
+
+# Optional tiktoken encoder — used when available for exact counts
+_tiktoken_encoder = None
+try:
+    import tiktoken  # pylint: disable=import-outside-toplevel
+
+    _tiktoken_encoder = tiktoken.get_encoding("cl100k_base")  # pragma: no cover
+except ImportError:
+    pass
+
+
+def _estimate_chars_per_token(text: str) -> float:
+    """Return a content-aware chars-per-token ratio for *text*.
+
+    Detects fenced code blocks (triple-backtick delimiters) and non-ASCII
+    characters to compute a weighted blend of the calibrated ratio constants.
+
+    Returns a value >= 1.0.
+    """
+    if not text:
+        return _PROSE_RATIO
+
+    total_chars = len(text)
+    code_chars = 0
+    in_code_block = False
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_code_block = not in_code_block
+            code_chars += len(line) + 1  # +1 for newline
+        elif in_code_block:
+            code_chars += len(line) + 1
+
+    # Count non-ASCII characters (outside code blocks for a rough heuristic)
+    non_ascii_chars = sum(1 for ch in text if ord(ch) > 127)
+
+    code_frac = code_chars / total_chars
+    non_ascii_frac = non_ascii_chars / total_chars
+    prose_frac = max(0.0, 1.0 - code_frac - non_ascii_frac)
+
+    ratio = (
+        code_frac * _CODE_RATIO
+        + non_ascii_frac * _UNICODE_RATIO
+        + prose_frac * _PROSE_RATIO
+    )
+    return max(1.0, ratio)
+
 
 @dataclass
 class ContextBudget:
     """Token-aware context sizing for prompt injection."""
 
     max_tokens: int = 8000
-    _CHARS_PER_TOKEN: int = field(default=4, init=False, repr=False)
 
     def estimate_tokens(self, text: str) -> int:
-        """Estimate token count (~4 chars per token for English text)."""
+        """Estimate token count using tiktoken when available, otherwise heuristic."""
         if not text:
             return 0
-        return len(text) // self._CHARS_PER_TOKEN
+        if _tiktoken_encoder is not None:
+            return len(_tiktoken_encoder.encode(text))
+        return self._heuristic_estimate(text)
+
+    def _heuristic_estimate(self, text: str) -> int:
+        """Content-aware heuristic token estimate when tiktoken is unavailable."""
+        ratio = _estimate_chars_per_token(text)
+        return max(1, int(len(text) / ratio))
 
     def fit_sections(
         self,
@@ -62,7 +121,7 @@ class ContextBudget:
                 # Try to include a truncated version
                 remaining_tokens = self.max_tokens - used_tokens
                 if remaining_tokens > 100:
-                    max_chars = remaining_tokens * self._CHARS_PER_TOKEN
+                    max_chars = int(remaining_tokens * _TRUNCATION_RATIO)
                     truncated = content.strip()[:max_chars]
                     # Find last newline to avoid mid-line truncation
                     last_nl = truncated.rfind("\n")
