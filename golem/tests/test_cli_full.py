@@ -2305,10 +2305,27 @@ class TestCmdLogs:
         from golem.cli import DEFAULT_DAEMON_LOG_DIR
 
         args = MagicMock(log_dir=None, lines=5, follow=False)
-        with patch.object(
-            type(DEFAULT_DAEMON_LOG_DIR),
-            "glob",
-            return_value=[],
+        latest = DEFAULT_DAEMON_LOG_DIR / "daemon_latest.log"
+        with (
+            patch.object(
+                type(DEFAULT_DAEMON_LOG_DIR),
+                "glob",
+                return_value=[],
+            ),
+            patch.object(type(latest), "exists", return_value=False),
         ):
             result = cmd_logs(args)
         assert result == 1
+
+    def test_logs_prefers_daemon_latest_symlink(self, tmp_path):
+        """cmd_logs follows daemon_latest.log symlink when it exists."""
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        actual_log = log_dir / "agent_20260330.log"
+        actual_log.write_text("line1\nline2\nline3\n")
+        symlink = log_dir / "daemon_latest.log"
+        symlink.symlink_to(actual_log)
+
+        args = MagicMock(log_dir=log_dir, lines=2, follow=False)
+        result = cmd_logs(args)
+        assert result == 0

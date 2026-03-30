@@ -1098,14 +1098,18 @@ def cmd_logs(args) -> int:
     """Handler for the 'logs' subcommand — view daemon log output."""
     log_dir = args.log_dir or DEFAULT_DAEMON_LOG_DIR
 
-    log_files = sorted(
-        log_dir.glob("*.log"), key=lambda f: f.stat().st_mtime, reverse=True
-    )
-    if not log_files:
-        print("No log files found in %s" % log_dir)
-        return 1
-
-    log_file = log_files[0]
+    # Prefer the daemon_latest.log symlink — it always points to the active log
+    latest_link = log_dir / "daemon_latest.log"
+    if latest_link.exists():
+        log_file = latest_link.resolve()
+    else:
+        log_files = sorted(
+            log_dir.glob("*.log"), key=lambda f: f.stat().st_mtime, reverse=True
+        )
+        if not log_files:
+            print("No log files found in %s" % log_dir)
+            return 1
+        log_file = log_files[0]
     lines = args.lines or 50
 
     if args.follow:
