@@ -23,8 +23,8 @@ class SandboxLimits:
     cpu_seconds: int = 3600  # 1 hour CPU time
     memory_bytes: int = 4 * 1024**3  # 4 GB virtual memory
     file_size_bytes: int = 1 * 1024**3  # 1 GB max file size
-    max_processes: int = 256  # max child processes
-    nofile: int = 1024  # max open files
+    max_processes: int = 0  # 0 = no limit (NPROC too restrictive for pytest/gh)
+    nofile: int = 4096  # max open files
 
 
 _DEFAULT_LIMITS = SandboxLimits()
@@ -54,7 +54,9 @@ def make_sandbox_preexec(limits: SandboxLimits | None = None):
 
 
 def _apply_rlimit(resource_id: int, soft: int, hard: int) -> None:
-    """Set a single resource limit, logging debug on failure without raising."""
+    """Set a single resource limit, logging on failure without raising."""
+    if soft == 0 and hard == 0:
+        return  # 0 means no limit — skip
     try:
         resource.setrlimit(resource_id, (soft, hard))
     except (ValueError, OSError) as exc:

@@ -23,8 +23,8 @@ class TestSandboxLimits:
         assert limits.cpu_seconds == 3600
         assert limits.memory_bytes == 4 * 1024**3
         assert limits.file_size_bytes == 1 * 1024**3
-        assert limits.max_processes == 256
-        assert limits.nofile == 1024
+        assert limits.max_processes == 0
+        assert limits.nofile == 4096
 
     def test_custom_limits(self):
         limits = SandboxLimits(cpu_seconds=60, memory_bytes=1024)
@@ -151,6 +151,19 @@ class TestMakeSandboxPreexec:
         ]
         assert mock_set.call_args_list == expected_calls
 
+    def test_zero_limit_skips_setrlimit(self):
+        """When a limit is 0, setrlimit should not be called for it."""
+        limits = SandboxLimits(cpu_seconds=100, max_processes=0, nofile=64)
+        fn = make_sandbox_preexec(limits)
+
+        with patch("golem.sandbox.resource.setrlimit") as mock_set:
+            fn()
+
+        called_resources = {c.args[0] for c in mock_set.call_args_list}
+        assert resource.RLIMIT_NPROC not in called_resources
+        assert resource.RLIMIT_CPU in called_resources
+        assert resource.RLIMIT_NOFILE in called_resources
+
     def test_preexec_continues_after_one_limit_fails(self):
         """A failing limit must not prevent subsequent limits from being applied."""
         call_count = []
@@ -162,7 +175,9 @@ class TestMakeSandboxPreexec:
                 fail_on_first[0] = False
                 raise OSError("first limit fails")
 
-        fn = make_sandbox_preexec()
+        # Use explicit non-zero limits so all 5 are attempted
+        limits = SandboxLimits(max_processes=256)
+        fn = make_sandbox_preexec(limits)
         with patch("golem.sandbox.resource.setrlimit", side_effect=_side_effect):
             fn()
 
