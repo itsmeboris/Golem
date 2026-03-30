@@ -45,17 +45,32 @@ def _estimate_chars_per_token(text: str) -> float:
     total_chars = len(text)
     code_chars = 0
     in_code_block = False
+    code_ranges: list[tuple[int, int]] = []  # (start, end) char offsets
+    pos = 0
 
-    for line in text.splitlines():
+    for line in text.splitlines(keepends=True):
         stripped = line.strip()
         if stripped.startswith("```"):
             in_code_block = not in_code_block
-            code_chars += len(line) + 1  # +1 for newline
+            code_chars += len(line)
+            if in_code_block:
+                code_ranges.append((pos, -1))  # start marker
+            elif code_ranges and code_ranges[-1][1] == -1:
+                code_ranges[-1] = (code_ranges[-1][0], pos + len(line))
         elif in_code_block:
-            code_chars += len(line) + 1
+            code_chars += len(line)
+        pos += len(line)
 
-    # Count non-ASCII characters (outside code blocks for a rough heuristic)
-    non_ascii_chars = sum(1 for ch in text if ord(ch) > 127)
+    code_chars = min(code_chars, total_chars)
+
+    # Count non-ASCII characters OUTSIDE code blocks only
+    code_set = set()
+    for start, end in code_ranges:
+        if end >= 0:
+            code_set.update(range(start, end))
+    non_ascii_chars = sum(
+        1 for i, ch in enumerate(text) if ord(ch) > 127 and i not in code_set
+    )
 
     code_frac = code_chars / total_chars
     non_ascii_frac = non_ascii_chars / total_chars

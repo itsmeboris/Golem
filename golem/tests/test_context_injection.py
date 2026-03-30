@@ -681,6 +681,22 @@ class TestEstimateCharsPerToken:
         # Ratio must be strictly between pure code and pure prose
         assert _CODE_RATIO < ratio < _PROSE_RATIO
 
+    def test_non_ascii_inside_code_not_double_counted(self):
+        """CJK chars inside fenced code blocks count as code, not unicode."""
+        code_with_cjk = "```\n你好世界\n```\n"
+        ratio = _estimate_chars_per_token(code_with_cjk)
+        # Should be near code ratio (3.2), NOT inflated by unicode ratio
+        assert abs(ratio - _CODE_RATIO) < 0.3
+
+    def test_fractions_never_exceed_one(self):
+        """code_frac + non_ascii_frac + prose_frac should not exceed 1.0."""
+        # Worst case: code block with all CJK content
+        text = "```\n" + "你好世界\n" * 50 + "```\n"
+        ratio = _estimate_chars_per_token(text)
+        # If fractions summed >1.0 the ratio would be <2.5 (unicode drag)
+        # Correct behavior: code dominates, ratio near 3.2
+        assert ratio >= _UNICODE_RATIO
+
 
 class TestContextBudgetFitSections:
     def test_empty_sections_returns_empty_string(self):
