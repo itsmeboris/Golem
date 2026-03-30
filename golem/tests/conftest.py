@@ -39,6 +39,13 @@ def _isolate_data_dir(tmp_path, monkeypatch):
         data_dir / "state" / "checkpoints",
     )
 
+    # SESSIONS_FILE is computed at import time from DATA_DIR, so it must be
+    # patched separately — otherwise tests write to the real production file
+    # during pre-flight verification (3 parallel pytest runs clobber each other).
+    sessions_file = data_dir / "state" / "golem_sessions.json"
+    monkeypatch.setattr("golem.orchestrator.SESSIONS_FILE", sessions_file)
+    monkeypatch.setattr("golem.flow.SESSIONS_FILE", sessions_file)
+
 
 @pytest.fixture
 def temp_config_file(tmp_path):
