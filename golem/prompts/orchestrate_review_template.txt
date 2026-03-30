@@ -54,6 +54,16 @@ to these high-value bug classes:
    verification - tautological assertions (`assert f(x) == f(x)`),
    assertion-free test functions, or tests where all assertions are
    against mock return values rather than computed output.
+6. **Classification overlap / partition invariants**: When code classifies
+   input into exclusive categories (fractions, enum branches, tagged
+   unions), verify that (a) categories are mutually exclusive — the same
+   input region is not counted in two buckets, (b) fractions/percentages
+   sum to the expected total (≤1.0, ==100%, etc.), and (c) edge inputs
+   that straddle boundaries are tested (e.g., non-ASCII characters
+   inside code blocks, items matching multiple regex patterns).
+7. **Boundary / empty-input behavior**: For each new function, check what
+   happens with empty input, single-element input, and input at the
+   exact boundary of any threshold or limit. Verify these are tested.
 
 Only report issues with confidence >= 80. Read each file once - do not
 re-read or run tests.

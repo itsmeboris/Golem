@@ -30,6 +30,12 @@ Focus on the following anti-patterns:
    refactor without catching bugs. Prefer asserting on observable output instead.
 8. **Negation assertions**: `assert state != DETECTED` — any wrong state passes.
    Assert the specific expected state instead.
+9. **Missing invariant assertions**: When the code under test computes fractions,
+   percentages, or partitions input into categories, tests MUST verify the
+   mathematical invariant (e.g., fractions sum to ≤1.0, counts ≤ total, categories
+   are mutually exclusive). Missing these allows classification overlap bugs.
+10. **Missing boundary inputs**: New functions should have tests for empty input,
+    single-element input, and inputs at exact threshold/limit boundaries.
 
 ## Threshold
 

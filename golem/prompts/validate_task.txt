@@ -86,6 +86,14 @@ successfully completed task #{issue_id}.
      (suggesting frontend/backend naming convention mismatch) or direct
      ``.json()["key"]`` / ``.json().get("key")`` access on API responses
      without type validation — verify keys match the backend response shape.
+   - *Classification overlap*: When code partitions input into exclusive
+     categories (fractions, percentages, enum branches), verify that
+     categories are mutually exclusive and fractions/percentages sum to
+     the expected total. Common bug: counting the same input range in two
+     buckets (e.g., non-ASCII chars inside code blocks counted as both
+     "code" and "unicode").
+   - *Boundary blindness*: New functions lacking tests for empty input,
+     single-element input, or inputs at exact threshold boundaries.
    If any antipattern is detected in a code_change task, flag each in concerns.
 8. **Cross-Module Consistency**: When the diff adds or modifies code that
    reads from shared data structures (dicts, JSON, dataclass fields):
