@@ -171,6 +171,7 @@ class TaskSession:
     merge_branch: str = ""
     merge_retry_count: int = 0
     # Dashboard enrichment
+    model: str = ""  # task_model used for this session (e.g. "sonnet", "opus")
     started_at: str = ""
     files_changed: list[str] = field(default_factory=list)
     prompt_hash: str = ""
@@ -241,6 +242,7 @@ class TaskSession:
             checkpoint_phase=data.get("checkpoint_phase", ""),
             merge_deferred=data.get("merge_deferred", False),
             merge_branch=data.get("merge_branch", ""),
+            model=data.get("model", ""),
             started_at=data.get("started_at", ""),
             files_changed=data.get("files_changed", []),
             merge_queued_at=data.get("merge_queued_at", ""),

@@ -1546,6 +1546,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
             parent_issue_id=issue_id,
             parent_subject=subject,
             state=TaskSessionState.DETECTED,
+            model=self._task_config.task_model or "",
             created_at=now,
             updated_at=now,
             grace_deadline=grace,
