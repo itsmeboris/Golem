@@ -3106,6 +3106,25 @@ class TestKeyboardShortcuts:
             view in after
         ), f"Tab view '{view}' missing from keydown tab-switch handler"
 
+    def test_enter_key_opens_selected_task(self):
+        """Enter key must be handled in the keydown listener to open the selected task."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        start = body.find("keydown")
+        assert start != -1, "keydown listener not found"
+        after = body[start:]
+        assert "Enter" in after, "Enter key not handled in keydown listener"
+
+    def test_enter_key_calls_select_task(self):
+        """Enter key handler must call selectTask to open the task detail view."""
+        body = self.shared_js_path.read_text(encoding="utf-8")
+        start = body.find("'Enter'")
+        if start == -1:
+            start = body.find('"Enter"')
+        assert start != -1, "Enter key handler not found"
+        # selectTask must appear after the Enter check
+        after = body[start:]
+        assert "selectTask" in after, "Enter handler must call selectTask"
+
 
 # ---------------------------------------------------------------------------
 # UX-008: Mobile responsive CSS
@@ -3127,12 +3146,12 @@ class TestMobileResponsiveCSS:
             "max-width" in body and "1024px" in body
         ), "dashboard_shared.css missing @media (max-width: 1024px)"
 
-    def test_media_query_600_present(self):
-        """CSS must contain a @media query for max-width: 600px."""
+    def test_media_query_768_present(self):
+        """CSS must contain a @media query for max-width: 768px."""
         body = self.shared_css_path.read_text(encoding="utf-8")
         assert (
-            "max-width" in body and "600px" in body
-        ), "dashboard_shared.css missing @media (max-width: 600px)"
+            "max-width" in body and "768px" in body
+        ), "dashboard_shared.css missing @media (max-width: 768px)"
 
     def test_touch_target_min_height_44px_in_media_query(self):
         """Touch targets must have min-height: 44px inside a @media block."""
@@ -3182,7 +3201,7 @@ class TestMobileResponsiveCSS:
 
     @pytest.mark.parametrize(
         "breakpoint",
-        ["1024px", "600px"],
+        ["1024px", "768px"],
         ids=["tablet", "mobile"],
     )
     def test_both_breakpoints_present(self, breakpoint):

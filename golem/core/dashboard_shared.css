@@ -528,7 +528,7 @@ body{font-family:var(--font-sans);background:var(--bg-base);color:var(--text-pri
   .metric-card,.mr-card{padding:0.6rem 0.75rem}
 }
 
-@media (max-width: 600px) {
+@media (max-width: 768px) {
   /* Body font size reduction */
   body{font-size:14px}
 
