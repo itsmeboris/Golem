@@ -33,6 +33,7 @@ from .orchestrator import (
     _now_iso,
 )
 from .profile import GolemProfile
+from .sandbox import make_sandbox_preexec
 from .ensemble import EnsembleResult, pick_best_result
 from .validation import ValidationVerdict, run_validation
 from .workdir import resolve_work_dir
@@ -1412,6 +1413,7 @@ class SubagentSupervisor:
                 check=False,
                 cwd=work_dir,
                 timeout=30,
+                preexec_fn=make_sandbox_preexec(),
             )
         except subprocess.TimeoutExpired:
             logger.warning("_detect_base_branch timed out; defaulting to master")

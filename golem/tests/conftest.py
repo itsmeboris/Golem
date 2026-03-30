@@ -46,6 +46,11 @@ def _isolate_data_dir(tmp_path, monkeypatch):
     monkeypatch.setattr("golem.orchestrator.SESSIONS_FILE", sessions_file)
     monkeypatch.setattr("golem.flow.SESSIONS_FILE", sessions_file)
 
+    # GolemFlow.SESSIONS_DIR is a class attribute computed at import time from
+    # DATA_DIR, so patching DATA_DIR alone doesn't redirect it.  Patch it
+    # explicitly so _save_state() writes batch files to the temp directory.
+    monkeypatch.setattr("golem.flow.GolemFlow.SESSIONS_DIR", data_dir / "state")
+
 
 @pytest.fixture
 def temp_config_file(tmp_path):
