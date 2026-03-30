@@ -115,7 +115,7 @@ class CLIConfig:
     resume_session_id: str = ""  # --resume <session_id> for warm retries
     sandbox_enabled: bool = True  # Apply OS-level resource limits via preexec_fn
     sandbox_cpu_seconds: int = 3600  # CPU time limit passed to SandboxLimits
-    sandbox_memory_gb: int = 4  # Memory limit (GB) passed to SandboxLimits
+    sandbox_memory_gb: int = 0  # 0 = no RLIMIT_AS (breaks Bun/JIT runtimes)
 
 
 @dataclass

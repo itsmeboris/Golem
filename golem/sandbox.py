@@ -21,7 +21,9 @@ class SandboxLimits:
     """Resource limits for sandboxed subprocesses."""
 
     cpu_seconds: int = 3600  # 1 hour CPU time
-    memory_bytes: int = 4 * 1024**3  # 4 GB virtual memory
+    memory_bytes: int = 0  # 0 = no limit (RLIMIT_AS limits virtual address space,
+    # not RSS; Bun/Chromium/JIT runtimes map far more virtual memory than they
+    # use physically, causing spurious OOM kills at 4GB)
     file_size_bytes: int = 1 * 1024**3  # 1 GB max file size
     max_processes: int = 0  # 0 = no limit (NPROC too restrictive for pytest/gh)
     nofile: int = 4096  # max open files

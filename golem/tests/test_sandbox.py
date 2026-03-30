@@ -21,7 +21,7 @@ class TestSandboxLimits:
     def test_default_limits(self):
         limits = SandboxLimits()
         assert limits.cpu_seconds == 3600
-        assert limits.memory_bytes == 4 * 1024**3
+        assert limits.memory_bytes == 0
         assert limits.file_size_bytes == 1 * 1024**3
         assert limits.max_processes == 0
         assert limits.nofile == 4096
@@ -54,7 +54,7 @@ class TestGetDefaultLimits:
     def test_returns_default_values(self):
         limits = get_default_limits()
         assert limits.cpu_seconds == 3600
-        assert limits.memory_bytes == 4 * 1024**3
+        assert limits.memory_bytes == 0
 
     def test_returns_independent_copies(self):
         """Each call returns a new SandboxLimits (not the same object)."""
@@ -176,7 +176,7 @@ class TestMakeSandboxPreexec:
                 raise OSError("first limit fails")
 
         # Use explicit non-zero limits so all 5 are attempted
-        limits = SandboxLimits(max_processes=256)
+        limits = SandboxLimits(max_processes=256, memory_bytes=1024)
         fn = make_sandbox_preexec(limits)
         with patch("golem.sandbox.resource.setrlimit", side_effect=_side_effect):
             fn()
@@ -217,7 +217,7 @@ class TestCLIConfigSandboxFields:
 
     def test_default_sandbox_memory_gb(self):
         cfg = CLIConfig()
-        assert cfg.sandbox_memory_gb == 4
+        assert cfg.sandbox_memory_gb == 0
 
     def test_custom_sandbox_cpu_seconds(self):
         cfg = CLIConfig(sandbox_cpu_seconds=7200)
@@ -258,13 +258,13 @@ class TestSandboxPreexecHelper:
 
     def test_default_config_uses_default_limits(self):
         """Default CLIConfig values produce limits matching GolemFlowConfig defaults."""
-        cfg = CLIConfig()  # sandbox_cpu_seconds=3600, sandbox_memory_gb=4
+        cfg = CLIConfig()  # sandbox_cpu_seconds=3600, sandbox_memory_gb=0
         with patch("golem.core.cli_wrapper.make_sandbox_preexec") as mock_make:
             mock_make.return_value = lambda: None
             _sandbox_preexec(cfg)
         limits_arg = mock_make.call_args[0][0]
         assert limits_arg.cpu_seconds == 3600
-        assert limits_arg.memory_bytes == 4 * 1024**3
+        assert limits_arg.memory_bytes == 0
 
 
 class TestSandboxPreexecIntegration:

@@ -132,7 +132,7 @@ class GolemFlowConfig(FlowConfig):
     # Subprocess sandboxing (OS-level resource limits via preexec_fn)
     sandbox_enabled: bool = True
     sandbox_cpu_seconds: int = 3600
-    sandbox_memory_gb: int = 4
+    sandbox_memory_gb: int = 0  # 0 = no limit (RLIMIT_AS breaks Bun/JIT runtimes)
     # Structured logging: emit JSON lines instead of text
     json_logging: bool = False
     # Prompt evaluation: periodic evaluation of prompt template performance
@@ -385,7 +385,7 @@ def _parse_golem_config(data: dict[str, Any]) -> GolemFlowConfig:
         # Sandbox
         sandbox_enabled=data.get("sandbox_enabled", True),
         sandbox_cpu_seconds=data.get("sandbox_cpu_seconds", 3600),
-        sandbox_memory_gb=data.get("sandbox_memory_gb", 4),
+        sandbox_memory_gb=data.get("sandbox_memory_gb", 0),
         # Structured logging
         json_logging=data.get("json_logging", False),
         # Prompt evaluation
