@@ -390,7 +390,9 @@ def run_mutation_testing(
         )
 
     start = time.time()
-    cmd = ["mutmut", "run", "--paths-to-mutate=" + ",".join(file_paths)]
+    # mutmut v3 reads paths from pyproject.toml [tool.mutmut] —
+    # the --paths-to-mutate flag was removed in v3.
+    cmd = ["mutmut", "run"]
     success, output = _run_cmd(cmd, work_dir, timeout)
     duration = round(time.time() - start, 2)
 

@@ -703,14 +703,8 @@ class TestRunVerification:
         mock_run.side_effect = side_effect
         run_verification(str(tmp_path))
         assert len(mutmut_calls) >= 1
-        paths_arg = next(
-            arg for arg in mutmut_calls[0] if arg.startswith("--paths-to-mutate=")
-        )
-        paths = paths_arg.split("=", 1)[1].split(",")
-        assert "golem/verifier.py" in paths
-        assert "golem/runner.py" in paths
-        assert "golem/tests/test_verifier.py" not in paths
-        assert "README.md" not in paths
+        # mutmut v3 reads paths from pyproject.toml — no --paths-to-mutate flag
+        assert mutmut_calls[0] == ["mutmut", "run"]
 
     @patch("golem.verifier.subprocess.run")
     def test_passed_not_affected_by_mutation_failure(self, mock_run, tmp_path):
@@ -771,7 +765,7 @@ class TestRunMutationTesting:
         called_cmd = mock_run.call_args.args[0]
         assert called_cmd[0] == "mutmut"
         assert called_cmd[1] == "run"
-        assert "--paths-to-mutate=golem/verifier.py" in called_cmd
+        assert called_cmd == ["mutmut", "run"]
 
     @patch("golem.verifier.subprocess.run")
     def test_failed_run(self, mock_run):
@@ -818,12 +812,12 @@ class TestRunMutationTesting:
         assert result.exit_code == 0
 
     @patch("golem.verifier.subprocess.run")
-    def test_paths_joined_with_commas(self, mock_run):
-        """Multiple file paths are comma-separated in the mutmut command."""
+    def test_command_is_simple_mutmut_run(self, mock_run):
+        """mutmut v3 uses pyproject.toml config — no --paths-to-mutate flag."""
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
         run_mutation_testing(["golem/verifier.py", "golem/runner.py"], "/tmp/workdir")
         called_cmd = mock_run.call_args.args[0]
-        assert "--paths-to-mutate=golem/verifier.py,golem/runner.py" in called_cmd
+        assert called_cmd == ["mutmut", "run"]
 
     def test_empty_file_paths_structured_fields_are_zero(self):
         """When file_paths is empty, all count fields are 0 and survived_mutants is empty."""
