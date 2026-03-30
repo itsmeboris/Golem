@@ -1148,33 +1148,26 @@ class TestMutationResultToDict:
         assert d["survived_mutants"] == []
 
 
-class TestSandboxPreexec:
-    """Verify subprocess.run calls in verifier use preexec_fn sandbox."""
+class TestNoSandboxInVerifier:
+    """Verify the verifier does NOT sandbox subprocess calls.
 
-    @pytest.mark.parametrize(
-        "cmd",
-        [
-            ["black", "--check", "."],
-            ["pylint", "--errors-only", "golem/"],
-            ["pytest", "--cov=golem"],
-            ["git", "diff", "--name-only", "HEAD~1"],
-            ["mutmut", "run", "--paths-to-mutate=golem/foo.py"],
-        ],
-        ids=["black", "pylint", "pytest", "git_diff", "mutmut"],
-    )
+    Verification tools (black, pylint, pytest) need full resource access —
+    pytest launches Playwright/Chromium which requires more than 4GB virtual
+    memory. Sandboxing is only for agent CLI subprocesses.
+    """
+
     @patch("golem.verifier.subprocess.run")
-    def test_run_cmd_passes_preexec_fn(self, mock_run, cmd):
-        """_run_cmd must pass a callable preexec_fn to subprocess.run."""
+    def test_run_cmd_has_no_preexec_fn(self, mock_run):
+        """_run_cmd must NOT pass preexec_fn — verification is unsandboxed."""
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-        _run_cmd(cmd, "/tmp/workdir", timeout=30)
+        _run_cmd(["black", "--check", "."], "/tmp/workdir", timeout=30)
         assert mock_run.called
         kwargs = mock_run.call_args[1]
-        assert "preexec_fn" in kwargs, "preexec_fn must be passed to subprocess.run"
-        assert callable(kwargs["preexec_fn"]), "preexec_fn must be callable"
+        assert "preexec_fn" not in kwargs or kwargs["preexec_fn"] is None
 
     @patch("golem.verifier.subprocess.run")
-    def test_run_verification_all_calls_have_preexec_fn(self, mock_run):
-        """All subprocess.run calls from run_verification must include preexec_fn."""
+    def test_run_verification_calls_have_no_preexec_fn(self, mock_run):
+        """All subprocess.run calls from run_verification must omit preexec_fn."""
         mock_run.return_value = MagicMock(
             returncode=0,
             stdout="10 passed\nTOTAL 100 0 100%",
@@ -1183,7 +1176,4 @@ class TestSandboxPreexec:
         run_verification("/tmp/workdir")
         for call in mock_run.call_args_list:
             kwargs = call[1]
-            assert "preexec_fn" in kwargs, (
-                "preexec_fn missing from subprocess.run call: %s" % call
-            )
-            assert callable(kwargs["preexec_fn"])
+            assert "preexec_fn" not in kwargs or kwargs["preexec_fn"] is None
