@@ -296,8 +296,9 @@ class TestVerificationResult:
 
 
 class TestRunVerification:
+    @patch("golem.verifier._has_golem_source", return_value=True)
     @patch("golem.verifier.subprocess.run")
-    def test_all_commands_pass(self, mock_run):
+    def test_all_commands_pass(self, mock_run, _mock_has_golem):
         mock_run.return_value = MagicMock(
             returncode=0,
             stdout="All done!\n64 passed in 1.01s\n" "TOTAL    1000    0   100%\n",
@@ -312,8 +313,9 @@ class TestRunVerification:
         called_tools = {call.args[0][0] for call in mock_run.call_args_list}
         assert called_tools >= {"black", "pylint", "pytest"}
 
+    @patch("golem.verifier._has_golem_source", return_value=True)
     @patch("golem.verifier.subprocess.run")
-    def test_black_fails(self, mock_run):
+    def test_black_fails(self, mock_run, _mock_has_golem):
         def side_effect(*args, **_kwargs):
             cmd = args[0]
             if "black" in cmd:
@@ -330,8 +332,9 @@ class TestRunVerification:
         assert result.black_ok is False
         assert "would reformat" in result.black_output
 
+    @patch("golem.verifier._has_golem_source", return_value=True)
     @patch("golem.verifier.subprocess.run")
-    def test_pytest_fails_with_failures(self, mock_run):
+    def test_pytest_fails_with_failures(self, mock_run, _mock_has_golem):
         def side_effect(*args, **_kwargs):
             cmd = args[0]
             if "pytest" in cmd:
@@ -354,16 +357,18 @@ class TestRunVerification:
         assert "test_bar" in result.failures[0]
         assert result.coverage_pct == 95.0
 
+    @patch("golem.verifier._has_golem_source", return_value=True)
     @patch("golem.verifier.subprocess.run")
-    def test_all_three_run_even_if_first_fails(self, mock_run):
+    def test_all_three_run_even_if_first_fails(self, mock_run, _mock_has_golem):
         mock_run.return_value = MagicMock(returncode=1, stdout="error", stderr="")
         _ = run_verification("/tmp/workdir")
         # Verify all tools were invoked regardless of failures (order-independent)
         called_tools = {call.args[0][0] for call in mock_run.call_args_list}
         assert called_tools >= {"black", "pylint", "pytest"}
 
+    @patch("golem.verifier._has_golem_source", return_value=True)
     @patch("golem.verifier.subprocess.run")
-    def test_deadcode_pylint_fails(self, mock_run):
+    def test_deadcode_pylint_fails(self, mock_run, _mock_has_golem):
         """When dead-code pylint returns non-zero, pylint_ok is False."""
 
         def side_effect(*args, **_kwargs):
@@ -392,8 +397,9 @@ class TestRunVerification:
         assert result.black_ok is True
         assert result.pytest_ok is True
 
+    @patch("golem.verifier._has_golem_source", return_value=True)
     @patch("golem.verifier.subprocess.run")
-    def test_deadcode_pylint_output_combined(self, mock_run):
+    def test_deadcode_pylint_output_combined(self, mock_run, _mock_has_golem):
         """When dead-code pylint fails, output contains both error and dead-code sections."""
 
         def side_effect(*args, **_kwargs):
@@ -420,8 +426,9 @@ class TestRunVerification:
         assert "dead-code warnings" in result.pylint_output
         assert "W0611" in result.pylint_output
 
+    @patch("golem.verifier._has_golem_source", return_value=True)
     @patch("golem.verifier.subprocess.run")
-    def test_all_pass_includes_deadcode_check(self, mock_run):
+    def test_all_pass_includes_deadcode_check(self, mock_run, _mock_has_golem):
         """When all checks pass, 4 subprocess calls are made (black + 2 pylint + pytest)."""
         mock_run.return_value = MagicMock(
             returncode=0,
@@ -442,15 +449,17 @@ class TestRunVerification:
         assert len(errors_only_cmds) == 1
         assert len(deadcode_cmds) == 1
 
+    @patch("golem.verifier._has_golem_source", return_value=True)
     @patch("golem.verifier.subprocess.run")
-    def test_timeout_handled(self, mock_run):
+    def test_timeout_handled(self, mock_run, _mock_has_golem):
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="black", timeout=300)
         result = run_verification("/tmp/workdir")
         assert result.passed is False
         assert "timed out" in result.black_output.lower()
 
+    @patch("golem.verifier._has_golem_source", return_value=True)
     @patch("golem.verifier.subprocess.run")
-    def test_oserror_handled(self, mock_run):
+    def test_oserror_handled(self, mock_run, _mock_has_golem):
         mock_run.side_effect = OSError("No such file or directory: 'black'")
         result = run_verification("/tmp/workdir")
         assert result.passed is False
@@ -482,6 +491,7 @@ class TestRunVerification:
             )
 
         mock_run.side_effect = side_effect
+        (tmp_path / "golem").mkdir(exist_ok=True)
         result = run_verification(str(tmp_path))
         assert result.coverage_delta is not None
         assert result.coverage_delta.all_covered is True
@@ -498,6 +508,7 @@ class TestRunVerification:
             stdout="1 passed\nTOTAL 100 0 100%",
             stderr="",
         )
+        (tmp_path / "golem").mkdir(exist_ok=True)
         result = run_verification(str(tmp_path))
         assert result.coverage_delta is None
         assert not cov_json.exists()  # still cleaned up
@@ -513,12 +524,14 @@ class TestRunVerification:
             stdout="1 passed\nTOTAL 100 0 100%",
             stderr="",
         )
+        (tmp_path / "golem").mkdir(exist_ok=True)
         result = run_verification(str(tmp_path))
         assert result.coverage_delta is None
         assert not cov_json.exists()  # still cleaned up
 
+    @patch("golem.verifier._has_golem_source", return_value=True)
     @patch("golem.verifier.subprocess.run")
-    def test_coverage_delta_none_when_no_json(self, mock_run):
+    def test_coverage_delta_none_when_no_json(self, mock_run, _mock_has_golem):
         """When coverage.json does not exist, coverage_delta is None."""
         mock_run.return_value = MagicMock(
             returncode=0,
@@ -556,6 +569,7 @@ class TestRunVerification:
             )
 
         mock_run.side_effect = side_effect
+        (tmp_path / "golem").mkdir(exist_ok=True)
         result = run_verification(str(tmp_path))
         d = result.to_dict()
         cd = d["coverage_delta"]
@@ -602,13 +616,15 @@ class TestRunVerification:
             )
 
         mock_run.side_effect = side_effect
+        (tmp_path / "golem").mkdir(exist_ok=True)
         result = run_verification(str(tmp_path))
         assert result.mutation_result is not None
         assert result.mutation_result.passed is True
         assert result.mutation_result.exit_code == 0
 
+    @patch("golem.verifier._has_golem_source", return_value=True)
     @patch("golem.verifier.subprocess.run")
-    def test_mutation_skipped_when_pytest_fails(self, mock_run):
+    def test_mutation_skipped_when_pytest_fails(self, mock_run, _mock_has_golem):
         """When pytest fails, mutation testing is skipped and mutation_result is None."""
 
         def side_effect(*args, **_kwargs):
@@ -648,6 +664,7 @@ class TestRunVerification:
             )
 
         mock_run.side_effect = side_effect
+        (tmp_path / "golem").mkdir(exist_ok=True)
         result = run_verification(str(tmp_path))
         d = result.to_dict()
         assert "mutation_result" in d
@@ -701,6 +718,7 @@ class TestRunVerification:
             )
 
         mock_run.side_effect = side_effect
+        (tmp_path / "golem").mkdir(exist_ok=True)
         run_verification(str(tmp_path))
         assert len(mutmut_calls) >= 1
         # mutmut v3 reads paths from pyproject.toml — no --paths-to-mutate flag
@@ -732,6 +750,7 @@ class TestRunVerification:
             )
 
         mock_run.side_effect = side_effect
+        (tmp_path / "golem").mkdir(exist_ok=True)
         result = run_verification(str(tmp_path))
         assert result.passed is True
         assert result.mutation_result is not None

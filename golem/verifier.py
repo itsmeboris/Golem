@@ -333,6 +333,11 @@ def _parse_pytest_output(output: str) -> tuple[int, list[str], float]:
     return test_count, failures, coverage
 
 
+def _has_golem_source(work_dir: str) -> bool:
+    """Return True if work_dir is Golem's own source repo (has golem/ subdir)."""
+    return Path(work_dir, "golem").is_dir()
+
+
 def _get_changed_files(work_dir: str) -> list[str]:
     """Get list of files changed relative to HEAD~1 or merge-base."""
     try:
