@@ -154,6 +154,18 @@ golem dashboard --port 8081
 
 For a full walkthrough with expected output, see the **[Getting Started](https://github.com/itsmeboris/Golem/wiki/Getting-Started)** wiki page.
 
+### 4. Recommended Plugins (Optional)
+
+Golem embeds its core methodologies (TDD, debugging, verification) directly in its prompts — no plugins required. However, these Claude Code plugins enhance the experience for interactive development alongside Golem:
+
+| Plugin | What it adds | Install |
+|--------|-------------|---------|
+| **superpowers** | Structured planning, parallel agents, code review workflows | `claude plugins install superpowers` |
+| **code-review** | PR review automation with confidence scoring | `claude plugins install code-review` |
+| **code-simplifier** | Code clarity and reuse analysis | `claude plugins install code-simplifier` |
+
+Run `golem setup` to check your environment and see which plugins are installed.
+
 ---
 
 ## How It Works
