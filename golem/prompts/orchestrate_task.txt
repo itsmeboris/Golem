@@ -256,10 +256,7 @@ Working directory: {work_dir}
 
 Invoke the 'verification-before-completion' skill before running checks.
 
-Run these commands in sequence and report results:
-1. black --check golem/
-2. pylint --errors-only golem/
-3. pytest --cov=golem --cov-fail-under=100
+{verify_commands_section}
 ````
 
 This is the ONLY full-suite run in the entire workflow.

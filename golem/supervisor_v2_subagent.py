@@ -110,6 +110,48 @@ class SubagentSupervisor:
     def _format_prompt(self, name: str, **kwargs: Any) -> str:
         return self.profile.prompt_provider.format(name, **kwargs)
 
+    def _build_verify_section(self, work_dir: str) -> str:
+        """Build the VERIFY phase command block based on repo config.
+
+        Used to fill the {verify_commands_section} placeholder in
+        orchestrate_task.txt.
+        """
+        from .verify_config import (
+            load_verify_config,
+        )  # pylint: disable=import-outside-toplevel
+        from .verifier import (
+            _has_golem_source,
+        )  # pylint: disable=import-outside-toplevel
+
+        cfg = load_verify_config(work_dir)
+        if cfg and cfg.commands:
+            lines = []
+            for i, cmd in enumerate(cfg.commands, 1):
+                lines.append(f"{i}. {' '.join(cmd.cmd)}  # {cmd.role}")
+            cmd_block = "\n".join(lines)
+            return (
+                "Read .golem/verify.yaml to confirm the command list,"
+                " then run:\n\n" + cmd_block
+            )
+        if _has_golem_source(work_dir):
+            return (
+                "Run these commands in sequence and report results:\n"
+                "1. black --check golem/\n"
+                "2. pylint --errors-only golem/\n"
+                "3. pytest --cov=golem --cov-fail-under=100"
+            )
+        return (
+            "Read CONTRIBUTING.md, Makefile, and any CI config files "
+            "(.github/workflows/) to discover the verification commands"
+            " for this repo. Run what you find.\n"
+            "If you discover commands not already in .golem/verify.yaml,"
+            " report them at the end of your output as:\n"
+            "  DISCOVERED_COMMANDS:\n"
+            "    format: <cmd>\n"
+            "    lint: <cmd>\n"
+            "    test: <cmd>"
+        )
+
     def _get_mcp_servers(self, subject: str) -> list[str]:
         servers = self.profile.tool_provider.servers_for_subject(subject)
         max_servers = self.task_config.max_mcp_servers
@@ -581,6 +623,7 @@ class SubagentSupervisor:
             simplify_section=simplify_section,
             enhanced_review_section=enhanced_review_section,
             role_contexts=role_contexts,
+            verify_commands_section=self._build_verify_section(work_dir),
         )
 
     # -- CLI invocation --------------------------------------------------------

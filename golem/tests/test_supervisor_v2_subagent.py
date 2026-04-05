@@ -3370,3 +3370,56 @@ class TestMCPToolValidationWiring:
         called_tools = profile.tool_provider.validate_tools.call_args[0][0]
         assert len(called_tools) == 1
         assert called_tools[0]["name"] == "tool_a"
+
+
+class TestBuildVerifySection:
+    def test_returns_config_commands_when_verify_yaml_present(self, tmp_path):
+        from golem.verify_config import VerifyCommand, VerifyConfig, save_verify_config
+
+        cfg = VerifyConfig(
+            version=1,
+            commands=[
+                VerifyCommand(role="test", cmd=["npm", "test"], source="auto-detected")
+            ],
+            detected_at="2026-04-05T00:00:00Z",
+            stack=["javascript"],
+        )
+        save_verify_config(str(tmp_path), cfg)
+        sup = _make_supervisor()
+        section = sup._build_verify_section(str(tmp_path))
+        assert "npm test" in section
+        assert "test" in section
+
+    def test_returns_python_commands_for_golem_source(self, tmp_path):
+        (tmp_path / "golem").mkdir()
+        sup = _make_supervisor()
+        section = sup._build_verify_section(str(tmp_path))
+        assert "black --check golem/" in section
+        assert "pylint --errors-only golem/" in section
+        assert "pytest" in section
+
+    def test_returns_discovery_prompt_for_unknown_repo(self, tmp_path):
+        sup = _make_supervisor()
+        section = sup._build_verify_section(str(tmp_path))
+        assert "CONTRIBUTING.md" in section
+        assert "DISCOVERED_COMMANDS" in section
+
+    def test_config_takes_priority_over_golem_source(self, tmp_path):
+        from golem.verify_config import VerifyCommand, VerifyConfig, save_verify_config
+
+        (tmp_path / "golem").mkdir()
+        cfg = VerifyConfig(
+            version=1,
+            commands=[
+                VerifyCommand(
+                    role="test", cmd=["cargo", "test"], source="auto-detected"
+                )
+            ],
+            detected_at="2026-04-05T00:00:00Z",
+            stack=["rust"],
+        )
+        save_verify_config(str(tmp_path), cfg)
+        sup = _make_supervisor()
+        section = sup._build_verify_section(str(tmp_path))
+        assert "cargo test" in section
+        assert "black" not in section
