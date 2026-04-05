@@ -549,3 +549,36 @@ class PhaseHandoffDict(TypedDict):
     open_questions: list[str]
     warnings: list[str]
     timestamp: str
+
+
+class PlanStepDict(TypedDict):
+    """A single task in an implementation plan produced by the PLAN phase.
+
+    Producers: orchestrate_task.txt PLAN phase (via Planner subagent output)
+    Consumers: orchestrate_task.txt BUILD phase (forwarded verbatim to Builders)
+    """
+
+    task_name: str
+    files_created: list[str]
+    files_modified: list[str]
+    files_tested: list[str]
+    step_descriptions: list[str]
+
+
+class PlanHandoffDict(TypedDict):
+    """Structured plan produced by the PLAN phase and consumed by BUILD.
+
+    Producers: orchestrate_task.txt PLAN phase (Planner subagent output)
+    Consumers: orchestrate_task.txt BUILD phase (forwarded verbatim to Builders)
+    """
+
+    from_phase: str
+    to_phase: str
+    complexity: str
+    file_map: list[FileRoleDict]
+    steps: list[PlanStepDict]
+    test_strategy: str
+    open_questions: list[str]
+    warnings: list[str]
+    plan_reviewer_status: str
+    timestamp: str

@@ -185,24 +185,11 @@ Write: ``## Phase: PLAN``
 
 This phase is its own turn — do NOT combine it with UNDERSTAND or BUILD.
 
-Using what you learned in Phase 1, decide:
-- What files need to change (re-read key interfaces if needed)
-- Whether to use one Builder or multiple (prefer one unless subtasks
-  touch completely independent modules)
-- The implementation approach and test strategy
+{structured_planning_section}
 
-Write 3-7 **specification statements**:
-
-````
-## Specification
-- SPEC-1: When X happens, the system should Y
-- SPEC-2: Function foo(a, b) returns Z when a > 0
-...
-````
-
-After writing the plan, use a tool call (e.g. re-read a key file that
-Builders will modify, or invoke a relevant skill) before proceeding to
-Phase 3. This ensures the plan is recorded as a separate dashboard phase.
+After the plan is finalized, read ``golem/prompts/orchestrate_builder_template.txt``
+with the Read tool before proceeding to Phase 3. This ensures the plan is
+recorded as a separate dashboard phase and Builders have the template.
 
 ### Phase 3: Build
 

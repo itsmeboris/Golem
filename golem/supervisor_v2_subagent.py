@@ -612,6 +612,22 @@ class SubagentSupervisor:
             )  # pylint: disable=import-outside-toplevel
 
             role_contexts = build_role_context_section()
+        structured_planning_section = (
+            "Read ``golem/prompts/orchestrate_planner_template.txt`` with the Read\n"
+            'tool, then dispatch a Planner (subagent_type: "reviewer") following\n'
+            "that template exactly.\n\n"
+            "The Planner will produce:\n"
+            "1. A File Map: every file that changes and its responsibility\n"
+            "2. Step-by-step implementation tasks with exact code (TDD order)\n"
+            "3. A test strategy: what is tested, which edge cases are covered\n\n"
+            "After the Planner returns:\n"
+            "- **Trivial** tasks: accept the plan directly — skip plan review.\n"
+            "- **Standard** and **Complex** tasks: dispatch a Plan Reviewer\n"
+            '  (subagent_type: "reviewer") to validate completeness, no\n'
+            "  placeholders, type consistency, and buildability.\n\n"
+            "Write the final plan as a ``## Implementation Plan`` section in your\n"
+            "PLAN phase message. Builders receive this verbatim — zero placeholders.\n"
+        )
         return self._format_prompt(
             "orchestrate_task.txt",
             issue_id=issue_id,
@@ -624,6 +640,7 @@ class SubagentSupervisor:
             enhanced_review_section=enhanced_review_section,
             role_contexts=role_contexts,
             verify_commands_section=self._build_verify_section(work_dir),
+            structured_planning_section=structured_planning_section,
         )
 
     # -- CLI invocation --------------------------------------------------------

@@ -11,6 +11,12 @@ Invoke the 'test-driven-development' skill before writing any code.
 ## Specification
 [All SPEC statements from Phase 2]
 
+## Implementation Plan (from PLAN phase)
+[If the PLAN phase produced a structured plan, the orchestrator pastes the
+## Implementation Plan section here verbatim. Follow the steps in order.
+Each step specifies exact code — execute as written, do not skip or reorder.
+If no structured plan exists (legacy mode), follow ## Specification above.]
+
 ## Context from exploration
 [Phase 1 findings - file structures, patterns, key code snippets]
 
