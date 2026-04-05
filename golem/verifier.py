@@ -17,11 +17,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from golem.types import (
+    CommandResultDict,
     CoverageDataDict,
     MutationResultDict,
     SurvivedMutantDict,
     VerificationResultDict,
 )
+from golem.verify_config import VerifyConfig, load_verify_config
 
 logger = logging.getLogger("golem.verifier")
 
@@ -43,6 +45,7 @@ class VerificationResult:
     duration_s: float = 0.0
     coverage_delta: "CoverageDelta | None" = None
     mutation_result: "MutationResult | None" = None
+    command_results: list[CommandResultDict] = field(default_factory=list)
 
     def to_dict(self) -> VerificationResultDict:
         """Serialize for JSON persistence."""
@@ -59,6 +62,8 @@ class VerificationResult:
             "coverage_pct": self.coverage_pct,
             "duration_s": self.duration_s,
         }
+        if self.command_results:
+            result["command_results"] = list(self.command_results)
         if self.coverage_delta:
             result["coverage_delta"] = {
                 "all_covered": self.coverage_delta.all_covered,
@@ -430,8 +435,10 @@ def run_mutation_testing(
     )
 
 
-def run_verification(work_dir: str, *, timeout: int = 300) -> VerificationResult:
-    """Run black, pylint, pytest and return structured results.
+def _run_python_verification(
+    work_dir: str, *, timeout: int = 300
+) -> VerificationResult:
+    """Run black, pylint, pytest and return structured results for Golem's own repo.
 
     All three commands run regardless of earlier failures to collect
     complete evidence.
@@ -506,4 +513,100 @@ def run_verification(work_dir: str, *, timeout: int = 300) -> VerificationResult
         duration_s=round(time.time() - start, 2),
         coverage_delta=coverage_delta,
         mutation_result=mutation_result,
+    )
+
+
+def _run_generic_verification(
+    config: VerifyConfig, work_dir: str, *, timeout: int = 300
+) -> VerificationResult:
+    """Run verification using commands from .golem/verify.yaml.
+
+    All commands run regardless of earlier failures to collect complete evidence.
+    Returns a VerificationResult with command_results populated.
+    The legacy black_ok/pylint_ok/pytest_ok fields carry no meaning here
+    and are set to True; callers should inspect command_results instead.
+    """
+    start = time.time()
+    results: list[CommandResultDict] = []
+    all_passed = True
+
+    for cmd_cfg in config.commands:
+        cmd_timeout = cmd_cfg.timeout if cmd_cfg.timeout is not None else timeout
+        cmd_start = time.time()
+        ok, output = _run_cmd(cmd_cfg.cmd, work_dir, cmd_timeout)
+        duration = round(time.time() - cmd_start, 2)
+        if not ok:
+            all_passed = False
+        entry: CommandResultDict = {
+            "role": cmd_cfg.role,
+            "cmd": " ".join(cmd_cfg.cmd),
+            "passed": ok,
+            "output": output,
+            "duration_s": duration,
+        }
+        results.append(entry)
+        logger.info(
+            "Command [%s] %s %s in %.1fs",
+            cmd_cfg.role,
+            " ".join(cmd_cfg.cmd),
+            "OK" if ok else "FAILED",
+            duration,
+        )
+
+    logger.info(
+        "Generic verification %s: %d command(s) in %.1fs",
+        "PASSED" if all_passed else "FAILED",
+        len(results),
+        time.time() - start,
+    )
+
+    return VerificationResult(
+        passed=all_passed,
+        black_ok=True,
+        black_output="",
+        pylint_ok=True,
+        pylint_output="",
+        pytest_ok=True,
+        pytest_output="",
+        test_count=0,
+        failures=[],
+        coverage_pct=0.0,
+        duration_s=round(time.time() - start, 2),
+        command_results=results,
+    )
+
+
+def run_verification(work_dir: str, *, timeout: int = 300) -> VerificationResult:
+    """Run verification and return structured results.
+
+    Dispatch logic:
+      1. .golem/verify.yaml present  -> generic config-driven engine
+      2. golem/ subdir present       -> hardcoded Python path (black/pylint/pytest)
+      3. Neither                     -> no-op pass (no commands configured)
+
+    All call sites use the same signature: run_verification(work_dir, *, timeout).
+    """
+    verify_config = load_verify_config(work_dir)
+    if verify_config is not None:
+        return _run_generic_verification(verify_config, work_dir, timeout=timeout)
+
+    if _has_golem_source(work_dir):
+        return _run_python_verification(work_dir, timeout=timeout)
+
+    logger.info(
+        "No .golem/verify.yaml and no golem/ source in %s — skipping verification",
+        work_dir,
+    )
+    return VerificationResult(
+        passed=True,
+        black_ok=True,
+        black_output="",
+        pylint_ok=True,
+        pylint_output="",
+        pytest_ok=True,
+        pytest_output="",
+        test_count=0,
+        failures=[],
+        coverage_pct=0.0,
+        duration_s=0.0,
     )

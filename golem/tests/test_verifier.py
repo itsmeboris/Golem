@@ -5,6 +5,7 @@
 
 import json
 import subprocess
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -238,8 +239,9 @@ class TestParsePytestOutput:
 
 
 class TestVerificationResult:
+    @patch("golem.verifier._has_golem_source", return_value=True)
     @patch("golem.verifier.subprocess.run")
-    def test_all_pass_computed(self, mock_run):
+    def test_all_pass_computed(self, mock_run, _mock_has_golem):
         """run_verification computes passed=True when all tools succeed."""
         mock_run.return_value = MagicMock(
             returncode=0,
@@ -254,8 +256,9 @@ class TestVerificationResult:
         assert result.test_count == 64
         assert result.coverage_pct == 100.0
 
+    @patch("golem.verifier._has_golem_source", return_value=True)
     @patch("golem.verifier.subprocess.run")
-    def test_partial_failure_computed(self, mock_run):
+    def test_partial_failure_computed(self, mock_run, _mock_has_golem):
         """run_verification computes passed=False when pylint fails."""
 
         def side_effect(cmd, **_kw):
@@ -274,8 +277,9 @@ class TestVerificationResult:
         assert result.pylint_ok is False
         assert result.pytest_ok is True
 
+    @patch("golem.verifier._has_golem_source", return_value=True)
     @patch("golem.verifier.subprocess.run")
-    def test_to_dict_matches_contract(self, mock_run):
+    def test_to_dict_matches_contract(self, mock_run, _mock_has_golem):
         """to_dict() output from run_verification matches VerificationResultDict."""
         mock_run.return_value = MagicMock(
             returncode=0,
@@ -1190,3 +1194,141 @@ class TestNoSandboxInVerifier:
         for call in mock_run.call_args_list:
             kwargs = call[1]
             assert "preexec_fn" not in kwargs or kwargs["preexec_fn"] is None
+
+
+class TestGenericVerification:
+    """Tests for config-driven verification via .golem/verify.yaml."""
+
+    @patch("golem.verifier.subprocess.run")
+    def test_uses_verify_config_when_present(self, mock_run, tmp_path):
+        from golem.verify_config import VerifyCommand, VerifyConfig, save_verify_config
+
+        cfg = VerifyConfig(
+            version=1,
+            commands=[
+                VerifyCommand(role="test", cmd=["npm", "test"], source="auto-detected")
+            ],
+            detected_at="2026-04-05T00:00:00Z",
+            stack=["javascript"],
+        )
+        save_verify_config(str(tmp_path), cfg)
+        mock_run.return_value = MagicMock(returncode=0, stdout="5 passed", stderr="")
+        result = run_verification(str(tmp_path))
+        assert result.passed is True
+        called = {call.args[0][0] for call in mock_run.call_args_list}
+        assert "black" not in called
+        assert "npm" in called
+
+    @patch("golem.verifier.subprocess.run")
+    def test_no_config_no_golem_source_returns_no_op_pass(self, mock_run):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = run_verification(tmpdir)
+        assert result.passed is True
+        assert result.command_results == []
+        mock_run.assert_not_called()
+
+    @patch("golem.verifier.subprocess.run")
+    def test_command_results_populated(self, mock_run, tmp_path):
+        from golem.verify_config import VerifyCommand, VerifyConfig, save_verify_config
+
+        cfg = VerifyConfig(
+            version=1,
+            commands=[
+                VerifyCommand(
+                    role="lint", cmd=["cargo", "clippy"], source="auto-detected"
+                ),
+                VerifyCommand(
+                    role="test", cmd=["cargo", "test"], source="auto-detected"
+                ),
+            ],
+            detected_at="2026-04-05T00:00:00Z",
+            stack=["rust"],
+        )
+        save_verify_config(str(tmp_path), cfg)
+        mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
+        result = run_verification(str(tmp_path))
+        assert result.command_results is not None
+        assert len(result.command_results) == 2
+        assert result.command_results[0]["role"] == "lint"
+        assert result.command_results[1]["role"] == "test"
+        assert all(r["passed"] for r in result.command_results)
+
+    @patch("golem.verifier.subprocess.run")
+    def test_all_commands_run_on_partial_failure(self, mock_run, tmp_path):
+        from golem.verify_config import VerifyCommand, VerifyConfig, save_verify_config
+
+        cfg = VerifyConfig(
+            version=1,
+            commands=[
+                VerifyCommand(
+                    role="format", cmd=["gofmt", "-l", "."], source="auto-detected"
+                ),
+                VerifyCommand(
+                    role="test", cmd=["go", "test", "./..."], source="auto-detected"
+                ),
+            ],
+            detected_at="2026-04-05T00:00:00Z",
+            stack=["go"],
+        )
+        save_verify_config(str(tmp_path), cfg)
+
+        def side_effect(cmd, **_kw):
+            if cmd[0] == "gofmt":
+                return MagicMock(returncode=1, stdout="main.go", stderr="")
+            return MagicMock(returncode=0, stdout="ok", stderr="")
+
+        mock_run.side_effect = side_effect
+        result = run_verification(str(tmp_path))
+        assert result.passed is False
+        called = {call.args[0][0] for call in mock_run.call_args_list}
+        assert "gofmt" in called
+        assert "go" in called
+
+    @patch("golem.verifier.subprocess.run")
+    def test_golem_source_uses_hardcoded_path(self, mock_run, tmp_path):
+        (tmp_path / "golem").mkdir()
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout="10 passed\nTOTAL 100 0 100%", stderr=""
+        )
+        run_verification(str(tmp_path))
+        called = {call.args[0][0] for call in mock_run.call_args_list}
+        assert "black" in called
+        assert "pylint" in called
+        assert "pytest" in called
+
+    @patch("golem.verifier.subprocess.run")
+    def test_to_dict_includes_command_results(self, mock_run, tmp_path):
+        from golem.verify_config import VerifyCommand, VerifyConfig, save_verify_config
+
+        cfg = VerifyConfig(
+            version=1,
+            commands=[
+                VerifyCommand(
+                    role="test", cmd=["go", "test", "./..."], source="auto-detected"
+                )
+            ],
+            detected_at="2026-04-05T00:00:00Z",
+            stack=["go"],
+        )
+        save_verify_config(str(tmp_path), cfg)
+        mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
+        result = run_verification(str(tmp_path))
+        d = result.to_dict()
+        assert "command_results" in d
+        assert d["command_results"][0]["role"] == "test"
+
+    @patch("golem.verifier.subprocess.run")
+    def test_no_command_results_not_in_to_dict_for_python_path(self, mock_run):
+        """Python hardcoded path produces to_dict() without command_results key."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Path(tmpdir, "golem").mkdir()
+            mock_run.return_value = MagicMock(
+                returncode=0, stdout="1 passed\nTOTAL 100 0 100%", stderr=""
+            )
+            result = run_verification(tmpdir)
+        d = result.to_dict()
+        assert "command_results" not in d
