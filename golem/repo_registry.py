@@ -12,7 +12,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .core.config import GOLEM_HOME
+from .detect_stack import detect_verify_config
 from .types import RepoEntryDict
+from .verify_config import save_verify_config
 
 logger = logging.getLogger(__name__)
 
@@ -57,8 +59,15 @@ class RepoRegistry:
             json.dumps(data, indent=2) + "\n", encoding="utf-8"
         )
 
-    def attach(self, path: str, heartbeat: bool = True) -> None:
-        """Add or update a repo entry. Auto-saves."""
+    def attach(
+        self, path: str, heartbeat: bool = True, *, run_detection: bool = False
+    ) -> None:
+        """Add or update a repo entry. Auto-saves.
+
+        If run_detection=True, runs buildpack-style stack detection and writes
+        .golem/verify.yaml to the target repo. Detection failures are logged
+        but do not block the attach operation.
+        """
         resolved = str(Path(path).resolve())
         normalized = resolved if resolved == "/" else resolved.rstrip("/")
         for repo in self._repos:
@@ -66,6 +75,8 @@ class RepoRegistry:
                 repo["heartbeat"] = heartbeat
                 repo["attached_at"] = datetime.now(timezone.utc).isoformat()
                 self.save()
+                if run_detection:
+                    self._run_detection(normalized)
                 return
         entry: RepoEntryDict = {
             "path": normalized,
@@ -74,6 +85,26 @@ class RepoRegistry:
         }
         self._repos.append(entry)
         self.save()
+        if run_detection:
+            self._run_detection(normalized)
+
+    def _run_detection(self, path: str) -> None:
+        """Run stack detection and write .golem/verify.yaml. Non-fatal on error."""
+        try:
+            config = detect_verify_config(path, dry_run=True)
+            save_verify_config(path, config)
+            logger.info(
+                "Detection complete for %s: stack=%s commands=%d",
+                path,
+                config.stack,
+                len(config.commands),
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.warning(
+                "Stack detection failed for %s — verify.yaml not written",
+                path,
+                exc_info=True,
+            )
 
     def detach(self, path: str) -> bool:
         """Remove a repo entry. Returns True if found. Auto-saves."""

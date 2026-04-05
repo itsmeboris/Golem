@@ -133,3 +133,60 @@ class TestRepoRegistryEnvOverride:
         monkeypatch.setenv("GOLEM_REGISTRY_PATH", str(custom))
         reg = RepoRegistry()
         assert reg._registry_path == custom
+
+
+class TestRepoRegistryDetection:
+    def test_attach_triggers_detection_when_enabled(self, tmp_path):
+        from unittest.mock import patch
+
+        from golem.verify_config import VerifyConfig
+
+        mock_cfg = VerifyConfig(
+            version=1, commands=[], detected_at="2026-04-05T00:00:00Z", stack=[]
+        )
+        with (
+            patch(
+                "golem.repo_registry.detect_verify_config", return_value=mock_cfg
+            ) as mock_detect,
+            patch("golem.repo_registry.save_verify_config") as mock_save,
+        ):
+            reg = RepoRegistry(registry_path=tmp_path / "repos.json")
+            reg.attach(str(tmp_path), run_detection=True)
+        mock_detect.assert_called_once_with(str(tmp_path), dry_run=True)
+        mock_save.assert_called_once()
+
+    def test_attach_skips_detection_by_default(self, tmp_path):
+        from unittest.mock import patch
+
+        with patch("golem.repo_registry.detect_verify_config") as mock_detect:
+            reg = RepoRegistry(registry_path=tmp_path / "repos.json")
+            reg.attach(str(tmp_path))
+        mock_detect.assert_not_called()
+
+    def test_attach_detection_failure_does_not_block(self, tmp_path):
+        from unittest.mock import patch
+
+        with patch(
+            "golem.repo_registry.detect_verify_config",
+            side_effect=OSError("disk full"),
+        ):
+            reg = RepoRegistry(registry_path=tmp_path / "repos.json")
+            reg.attach(str(tmp_path), run_detection=True)
+        assert len(reg.list_repos()) == 1
+
+    def test_reattach_with_detection(self, tmp_path):
+        from unittest.mock import patch
+
+        from golem.verify_config import VerifyConfig
+
+        mock_cfg = VerifyConfig(
+            version=1, commands=[], detected_at="2026-04-05T00:00:00Z", stack=[]
+        )
+        with (
+            patch("golem.repo_registry.detect_verify_config", return_value=mock_cfg),
+            patch("golem.repo_registry.save_verify_config"),
+        ):
+            reg = RepoRegistry(registry_path=tmp_path / "repos.json")
+            reg.attach(str(tmp_path))
+            reg.attach(str(tmp_path), run_detection=True)
+        assert len(reg.list_repos()) == 1

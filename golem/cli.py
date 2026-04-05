@@ -8,6 +8,7 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 import signal
 import sys
 import time
@@ -69,6 +70,16 @@ logger = logging.getLogger("golem.cli")
 DEFAULT_DAEMON_LOG_DIR = DATA_DIR / "logs"
 DEFAULT_PID_FILE = DATA_DIR / "daemon.pid"
 DEFAULT_DASHBOARD_PID_FILE = DATA_DIR / "dashboard.pid"
+
+# Plugin detection — path to Claude Code's installed-plugins registry
+_PLUGINS_FILE = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
+
+# Recommended plugins for Golem development workflows
+_RECOMMENDED_PLUGINS: list[tuple[str, str, str]] = [
+    ("superpowers", "planning, TDD, debugging workflows", "RECOMMENDED"),
+    ("code-review", "PR review automation", "RECOMMENDED"),
+    ("code-simplifier", "code clarity and reuse", "OPTIONAL"),
+]
 
 
 def _get_profile(config: Config) -> GolemProfile:
@@ -1065,6 +1076,101 @@ def cmd_init(args) -> int:
     return run_wizard(output, use_defaults=defaults)
 
 
+def _check_plugins() -> list[str]:
+    """Read installed plugin names from _PLUGINS_FILE.
+
+    Returns a list of plugin name strings.  Returns [] if the file is absent
+    or cannot be parsed.
+    """
+    if not _PLUGINS_FILE.exists():
+        return []
+    try:
+        raw = _PLUGINS_FILE.read_text(encoding="utf-8")
+        data = json.loads(raw)
+        plugins = data.get("plugins", [])
+        return [p.get("name", "") for p in plugins if isinstance(p, dict)]
+    except (OSError, json.JSONDecodeError, AttributeError):
+        logger.warning("Could not parse plugins file %s", _PLUGINS_FILE)
+        return []
+
+
+def cmd_setup(args) -> int:  # pylint: disable=unused-argument
+    """Handler for the 'setup' subcommand — validate environment and recommend plugins."""
+    ok_mark = "[ok]"
+    fail_mark = "[x]"
+    not_installed = "[--]"
+
+    print("\nGolem Environment Setup")
+    print("=======================")
+    print()
+
+    # --- Environment checks ---
+    issues: list[str] = []
+    print("Environment:")
+
+    # git
+    if shutil.which("git"):
+        print(f"  {ok_mark} git found")
+    else:
+        print(f"  {fail_mark} git not found — required; install git")
+        issues.append("git not in PATH")
+
+    # claude CLI
+    if shutil.which("claude"):
+        print(f"  {ok_mark} claude CLI found")
+    else:
+        print(
+            f"  {fail_mark} claude CLI not found — install from https://claude.ai/cli"
+        )
+        issues.append("claude CLI not in PATH")
+
+    # Python version
+    vi = sys.version_info
+    if (vi[0], vi[1]) >= (3, 11):
+        print(f"  {ok_mark} Python 3.11+")
+    else:
+        print(f"  {fail_mark} Python {vi[0]}.{vi[1]} — upgrade to Python 3.11+")
+        issues.append("Python < 3.11")
+
+    # ~/.golem/config.yaml
+    config_path = GOLEM_HOME / "config.yaml"
+    if config_path.exists():
+        print(f"  {ok_mark} ~/.golem/config.yaml exists")
+    else:
+        print(f"  {fail_mark} ~/.golem/config.yaml missing")
+        issues.append("~/.golem/config.yaml missing — run 'golem init'")
+
+    print()
+
+    # --- Plugin checks ---
+    print("Recommended Claude Code Plugins:")
+    installed = _check_plugins()
+
+    for plugin_name, description, tier in _RECOMMENDED_PLUGINS:
+        tier_label = f" ({tier.lower()})" if tier == "OPTIONAL" else ""
+        if plugin_name in installed:
+            print(f"  {ok_mark} {plugin_name} — {description}{tier_label}")
+        else:
+            print(f"  {not_installed} {plugin_name} — {description}{tier_label}")
+            print(f"       Install: claude plugins install {plugin_name}")
+
+    print()
+
+    # --- Summary ---
+    if issues:
+        print("Actions needed:")
+        for issue in issues:
+            print(f"  - {issue}")
+    else:
+        print("Environment ready")
+
+    if not config_path.exists():
+        print()
+        print("Run 'golem init' to configure interactively.")
+
+    return 0
+
+
 def cmd_attach(args) -> int:
     """Handler for the 'attach' subcommand — register a repo."""
     path = getattr(args, "path", None) or os.getcwd()
@@ -1074,10 +1180,27 @@ def cmd_attach(args) -> int:
         return 1
 
     heartbeat = not getattr(args, "no_heartbeat", False)
+    skip_detection = getattr(args, "no_detect", False)
     reg = RepoRegistry()
-    reg.attach(path, heartbeat=heartbeat)
+    reg.attach(path, heartbeat=heartbeat, run_detection=not skip_detection)
     hb_label = "heartbeat on" if heartbeat else "heartbeat off"
     print(f"  Attached: {path} ({hb_label})")
+
+    if not skip_detection:
+        from .verify_config import (
+            load_verify_config,
+        )  # pylint: disable=import-outside-toplevel
+
+        cfg = load_verify_config(path)
+        if cfg and cfg.commands:
+            print(f"  Detected stack: {', '.join(cfg.stack)}")
+            for cmd in cfg.commands:
+                print(f"    [{cmd.role}] {' '.join(cmd.cmd)}")
+        else:
+            print(
+                "  No verification commands detected"
+                " (add .golem/verify.yaml manually)"
+            )
     return 0
 
 
@@ -1325,6 +1448,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     init_p.set_defaults(func=cmd_init)
 
+    # setup
+    setup_p = sub.add_parser("setup", help="Validate environment and recommend plugins")
+    setup_p.set_defaults(func=cmd_setup)
+
     # attach
     attach_p = sub.add_parser("attach", help="Register a repo with the daemon")
     attach_p.add_argument(
@@ -1334,6 +1461,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--no-heartbeat",
         action="store_true",
         help="Attach without heartbeat scanning",
+    )
+    attach_p.add_argument(
+        "--no-detect",
+        action="store_true",
+        help="Skip automatic stack detection (do not write .golem/verify.yaml)",
     )
     attach_p.set_defaults(func=cmd_attach)
 

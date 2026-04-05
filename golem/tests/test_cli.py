@@ -690,3 +690,77 @@ class TestEnsureGolemHome:
 
         _ensure_golem_home()
         assert (golem_home / "config.yaml").read_text() == "custom: true"
+
+
+class TestCmdAttachDetection:
+    def test_attach_prints_detected_stack(self, tmp_path, capsys):
+        from unittest.mock import patch
+
+        from golem.verify_config import VerifyCommand, VerifyConfig
+
+        mock_cfg = VerifyConfig(
+            version=1,
+            commands=[
+                VerifyCommand(role="test", cmd=["npm", "test"], source="auto-detected")
+            ],
+            detected_at="2026-04-05T00:00:00Z",
+            stack=["javascript"],
+        )
+
+        class Args:
+            path = str(tmp_path)
+            no_heartbeat = False
+            no_detect = False
+
+        with (
+            patch("golem.cli.RepoRegistry") as MockReg,
+            patch("golem.verify_config.load_verify_config", return_value=mock_cfg),
+        ):
+            MockReg.return_value.attach.return_value = None
+            result = cmd_attach(Args())
+
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "javascript" in captured.out
+        assert "[test] npm test" in captured.out
+
+    def test_attach_prints_no_commands_when_empty(self, tmp_path, capsys):
+        from unittest.mock import patch
+
+        from golem.verify_config import VerifyConfig
+
+        mock_cfg = VerifyConfig(
+            version=1, commands=[], detected_at="2026-04-05T00:00:00Z", stack=[]
+        )
+
+        class Args:
+            path = str(tmp_path)
+            no_heartbeat = False
+            no_detect = False
+
+        with (
+            patch("golem.cli.RepoRegistry") as MockReg,
+            patch("golem.verify_config.load_verify_config", return_value=mock_cfg),
+        ):
+            MockReg.return_value.attach.return_value = None
+            result = cmd_attach(Args())
+
+        assert result == 0
+        assert "No verification commands detected" in capsys.readouterr().out
+
+    def test_attach_no_detect_skips_output(self, tmp_path, capsys):
+        from unittest.mock import patch
+
+        class Args:
+            path = str(tmp_path)
+            no_heartbeat = False
+            no_detect = True
+
+        with patch("golem.cli.RepoRegistry") as MockReg:
+            MockReg.return_value.attach.return_value = None
+            result = cmd_attach(Args())
+
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "Detected stack" not in out
+        assert "No verification commands" not in out
