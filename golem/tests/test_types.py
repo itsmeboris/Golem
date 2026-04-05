@@ -8,6 +8,8 @@ the TypedDict contract — no tautological dict construction.
 import dataclasses
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from golem.config_editor import FieldInfo, FieldMeta, get_config_by_category
 from golem.core.config import Config
 from golem.core.live_state import LiveState
@@ -17,6 +19,7 @@ from golem.handoff import create_handoff
 from golem.types import (
     ActiveTaskDict,
     AlertDict,
+    CommandResultDict,
     CompletedTaskDict,
     ConfigSnapshotDict,
     FieldInfoDict,
@@ -37,6 +40,8 @@ from golem.types import (
     TrackerExportDict,
     ValidationResultDict,
     VerificationResultDict,
+    VerifyCommandDict,
+    VerifyConfigDict,
 )
 from golem.verifier import run_verification
 
@@ -448,3 +453,29 @@ class TestPhaseHandoffDictContract:
             assert key in result, "Missing required key: %s" % key
         assert result["from_phase"] == "BUILD"
         assert result["to_phase"] == "REVIEW"
+
+
+class TestVerifyConfigDicts:
+    @pytest.mark.parametrize("key", ["role", "cmd", "source"])
+    def test_verify_command_required_keys_present(self, key):
+        assert key in VerifyCommandDict.__required_keys__  # pylint: disable=no-member
+
+    @pytest.mark.parametrize("key", ["version", "commands", "detected_at", "stack"])
+    def test_verify_config_required_keys_present(self, key):
+        assert key in VerifyConfigDict.__required_keys__  # pylint: disable=no-member
+
+    @pytest.mark.parametrize("key", ["role", "cmd", "passed", "output", "duration_s"])
+    def test_command_result_required_keys_present(self, key):
+        assert key in CommandResultDict.__required_keys__  # pylint: disable=no-member
+
+    def test_timeout_is_optional_on_verify_command(self):
+        assert (
+            "timeout"
+            not in VerifyCommandDict.__required_keys__  # pylint: disable=no-member
+        )
+
+    def test_coverage_threshold_is_optional_on_verify_config(self):
+        assert (
+            "coverage_threshold"
+            not in VerifyConfigDict.__required_keys__  # pylint: disable=no-member
+        )

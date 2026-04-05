@@ -239,6 +239,48 @@ class VerificationResultDict(TypedDict):
     duration_s: float
     coverage_delta: NotRequired[dict[str, Any]]
     mutation_result: NotRequired["MutationResultDict"]
+    command_results: NotRequired[list["CommandResultDict"]]
+
+
+class VerifyCommandDict(TypedDict):
+    """A single verification command in a repo's verify config.
+
+    Producers: detect_stack.py detect_verify_config(), verify_config.py load_verify_config()
+    Consumers: verifier.py _run_generic_verification()
+    """
+
+    role: str  # "format" | "lint" | "test" | "typecheck"
+    cmd: list[str]  # command as list, e.g. ["npm", "test"]
+    source: str  # "auto-detected" | "ci-parsed" | "agent-discovered" | "user"
+    timeout: NotRequired[int]  # per-command timeout override; absent = use global
+
+
+class VerifyConfigDict(TypedDict):
+    """Per-repo verification configuration stored in .golem/verify.yaml.
+
+    Producers: detect_stack.py detect_verify_config(), verify_config.py load_verify_config()
+    Consumers: verifier.py run_verification(), cli.py cmd_attach()
+    """
+
+    version: int  # schema version; currently 1
+    commands: list[VerifyCommandDict]
+    detected_at: str  # ISO 8601 UTC
+    stack: list[str]  # detected languages, e.g. ["python", "javascript"]
+    coverage_threshold: NotRequired[float]  # e.g. 80.0; absent = not enforced
+
+
+class CommandResultDict(TypedDict):
+    """Result of running a single verification command.
+
+    Producers: verifier.py _run_generic_verification()
+    Consumers: orchestrator.py, dashboard, validate_task.txt
+    """
+
+    role: str  # matches VerifyCommandDict.role
+    cmd: str  # command joined as string for display
+    passed: bool
+    output: str
+    duration_s: float
 
 
 class SurvivedMutantDict(TypedDict):
