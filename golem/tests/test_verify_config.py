@@ -85,6 +85,17 @@ class TestLoadVerifyConfig:
         assert result is not None
         assert result.commands == []
 
+    def test_skips_non_dict_command_entry(self, tmp_path):
+        cfg_path = tmp_path / ".golem" / "verify.yaml"
+        cfg_path.parent.mkdir()
+        cfg_path.write_text(
+            "version: 1\ndetected_at: '2026-01-01T00:00:00Z'\nstack: []\n"
+            "commands:\n  - just a string\n"
+        )
+        result = load_verify_config(str(tmp_path))
+        assert result is not None
+        assert result.commands == []
+
     def test_skips_command_with_empty_cmd(self, tmp_path):
         cfg_path = tmp_path / ".golem" / "verify.yaml"
         cfg_path.parent.mkdir()
@@ -118,6 +129,32 @@ class TestLoadVerifyConfig:
         golem_dir.mkdir()
         (golem_dir / "verify.yaml").symlink_to(evil)
         result = load_verify_config(str(tmp_path))
+        assert result is None
+
+    def test_resolve_outside_root_rejected(self, tmp_path):
+        """Non-symlink path that resolves outside root is rejected."""
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from golem.verify_config import _resolve_config_path
+
+        cfg_path = tmp_path / ".golem" / "verify.yaml"
+        cfg_path.parent.mkdir()
+        cfg_path.write_text("version: 1\n")
+
+        outside = Path("/outside/evil.yaml")
+        orig_resolve = Path.resolve
+
+        def mock_resolve(self_path, *a, **kw):
+            if str(self_path).endswith("verify.yaml"):
+                return outside
+            return orig_resolve(self_path, *a, **kw)
+
+        with (
+            patch.object(Path, "resolve", mock_resolve),
+            patch.object(Path, "is_symlink", return_value=False),
+        ):
+            result = _resolve_config_path(str(tmp_path))
         assert result is None
 
     def test_loads_command_with_timeout(self, tmp_path):

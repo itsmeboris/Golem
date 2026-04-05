@@ -179,6 +179,11 @@ class TestDetectMakefileTargets:
     def test_no_makefile_returns_empty_set(self, tmp_path):
         assert _detect_makefile_targets(tmp_path) == set()
 
+    def test_unreadable_makefile_returns_empty_set(self, tmp_path):
+        makefile = tmp_path / "Makefile"
+        makefile.mkdir()  # directory, not a file — triggers OSError on read
+        assert _detect_makefile_targets(tmp_path) == set()
+
 
 class TestParseGitHubActions:
     def test_test_job_run_step_extracted(self, tmp_path):
@@ -225,6 +230,34 @@ class TestParseGitHubActions:
         wf_dir.mkdir(parents=True)
         (wf_dir / "ci.yml").write_text(
             "jobs:\n  deploy:\n    steps:\n      - run: kubectl apply -f k8s/\n"
+        )
+        assert _parse_github_actions(tmp_path) == []
+
+    def test_yaml_without_jobs_key_skipped(self, tmp_path):
+        wf_dir = tmp_path / ".github" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "ci.yml").write_text("name: CI\non: push\n")
+        assert _parse_github_actions(tmp_path) == []
+
+    def test_non_dict_job_skipped(self, tmp_path):
+        wf_dir = tmp_path / ".github" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "ci.yml").write_text("jobs:\n  test: a string not a dict\n")
+        assert _parse_github_actions(tmp_path) == []
+
+    def test_non_dict_step_skipped(self, tmp_path):
+        wf_dir = tmp_path / ".github" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "ci.yml").write_text(
+            "jobs:\n  test:\n    steps:\n      - not a dict\n"
+        )
+        assert _parse_github_actions(tmp_path) == []
+
+    def test_step_without_run_skipped(self, tmp_path):
+        wf_dir = tmp_path / ".github" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "ci.yml").write_text(
+            "jobs:\n  test:\n    steps:\n      - uses: actions/checkout@v3\n"
         )
         assert _parse_github_actions(tmp_path) == []
 
@@ -320,6 +353,17 @@ class TestDetectVerifyConfig:
         result = detect_verify_config(str(tmp_path), dry_run=False)
         test_cmds = [c for c in result.commands if c.role == "test"]
         assert len(test_cmds) >= 1
+
+    def test_ci_only_commands_for_unknown_stack(self, tmp_path):
+        wf_dir = tmp_path / ".github" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "ci.yml").write_text(
+            "jobs:\n  test:\n    steps:\n      - run: make test\n"
+        )
+        result = detect_verify_config(str(tmp_path), dry_run=False)
+        assert len(result.commands) == 1
+        assert result.commands[0].role == "test"
+        assert result.commands[0].source == "ci-parsed"
 
     def test_dry_run_calls_version_check(self, tmp_path):
         (tmp_path / "Cargo.toml").write_text('[package]\nname = "x"\n')
