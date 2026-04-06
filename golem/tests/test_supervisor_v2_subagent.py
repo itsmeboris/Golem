@@ -1180,6 +1180,20 @@ class TestCheckpointHelpers:
             sup._delete_checkpoint(42)  # should not raise
 
 
+class TestSetupWorkDirSessionOverride:
+    """session.base_work_dir takes priority over resolve_work_dir auto-detection."""
+
+    async def test_uses_session_base_work_dir(self):
+        cfg = _make_config(preflight_verify=False, use_worktrees=False)
+        sup = _make_supervisor(config=cfg)
+        sup.session.base_work_dir = "/custom/repo"
+        with patch("golem.supervisor_v2_subagent.resolve_work_dir") as mock_resolve:
+            work_dir = await sup._setup_work_dir(42, "desc")
+        mock_resolve.assert_not_called()
+        assert work_dir == "/custom/repo"
+        assert sup._base_work_dir == "/custom/repo"
+
+
 class TestPreflightSupervisor:
     """Cover preflight verification failure branches in _setup_work_dir."""
 

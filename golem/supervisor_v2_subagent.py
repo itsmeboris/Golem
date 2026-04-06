@@ -314,6 +314,8 @@ class SubagentSupervisor:
         """Resolve base work dir and optionally create worktree."""
         if self._work_dir_override:
             self._base_work_dir = self._work_dir_override
+        elif self.session.base_work_dir:
+            self._base_work_dir = self.session.base_work_dir
         else:
             self._base_work_dir = resolve_work_dir(
                 subject=self.session.parent_subject,
@@ -323,6 +325,7 @@ class SubagentSupervisor:
                 project_root=str(PROJECT_ROOT),
             )
 
+        self.session.base_work_dir = self._base_work_dir
         work_dir = self._base_work_dir
         if self.task_config.use_worktrees:
             self._emit_event("Creating isolated worktree...")
