@@ -261,7 +261,6 @@ class TestParseGitHubActions:
         )
         assert _parse_github_actions(tmp_path) == []
 
-
     def test_setup_commands_skipped_in_ci(self, tmp_path):
         """Install/setup lines before the real test command must be skipped."""
         wf_dir = tmp_path / ".github" / "workflows"
@@ -281,8 +280,7 @@ class TestParseGitHubActions:
         wf_dir = tmp_path / ".github" / "workflows"
         wf_dir.mkdir(parents=True)
         (wf_dir / "ci.yml").write_text(
-            "jobs:\n  test:\n    steps:\n"
-            "      - run: cd frontend && npm test\n"
+            "jobs:\n  test:\n    steps:\n" "      - run: cd frontend && npm test\n"
         )
         cmds = _parse_github_actions(tmp_path)
         assert len(cmds) == 1
@@ -293,8 +291,7 @@ class TestParseGitHubActions:
         wf_dir = tmp_path / ".github" / "workflows"
         wf_dir.mkdir(parents=True)
         (wf_dir / "ci.yml").write_text(
-            "jobs:\n  test:\n    steps:\n"
-            "      - run: CI=1 pytest -q\n"
+            "jobs:\n  test:\n    steps:\n" "      - run: CI=1 pytest -q\n"
         )
         cmds = _parse_github_actions(tmp_path)
         assert len(cmds) == 1
@@ -305,8 +302,7 @@ class TestParseGitHubActions:
         wf_dir = tmp_path / ".github" / "workflows"
         wf_dir.mkdir(parents=True)
         (wf_dir / "ci.yml").write_text(
-            'jobs:\n  test:\n    steps:\n'
-            '      - run: pytest -m "not e2e"\n'
+            "jobs:\n  test:\n    steps:\n" '      - run: pytest -m "not e2e"\n'
         )
         cmds = _parse_github_actions(tmp_path)
         assert len(cmds) == 1
@@ -317,8 +313,7 @@ class TestParseGitHubActions:
         wf_dir = tmp_path / ".github" / "workflows"
         wf_dir.mkdir(parents=True)
         (wf_dir / "ci.yml").write_text(
-            "jobs:\n  test:\n    steps:\n"
-            "      - run: pytest -m 'not e2e\n"
+            "jobs:\n  test:\n    steps:\n" "      - run: pytest -m 'not e2e\n"
         )
         cmds = _parse_github_actions(tmp_path)
         assert cmds == []
@@ -328,8 +323,7 @@ class TestParseGitHubActions:
         wf_dir = tmp_path / ".github" / "workflows"
         wf_dir.mkdir(parents=True)
         (wf_dir / "ci.yml").write_text(
-            "jobs:\n  test:\n    steps:\n"
-            "      - run: |\n          cd frontend &&\n"
+            "jobs:\n  test:\n    steps:\n" "      - run: |\n          cd frontend &&\n"
         )
         cmds = _parse_github_actions(tmp_path)
         assert cmds == []

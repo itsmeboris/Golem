@@ -219,7 +219,9 @@ class TestRepoRegistryDetection:
 
         fresh = VerifyConfig(
             version=1,
-            commands=[VerifyCommand(role="test", cmd=["pytest"], source="auto-detected")],
+            commands=[
+                VerifyCommand(role="test", cmd=["pytest"], source="auto-detected")
+            ],
             detected_at="",
             stack=["python"],
         )

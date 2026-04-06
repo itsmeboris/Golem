@@ -839,7 +839,9 @@ class TestResolveWorkdirVerifyYamlCopy:
 
             assert work_dir == wt_str
             dst_file = pathlib.Path(wt_str) / ".golem" / "verify.yaml"
-            assert dst_file.exists(), "verify.yaml should have been copied into worktree"
+            assert (
+                dst_file.exists()
+            ), "verify.yaml should have been copied into worktree"
             assert dst_file.read_text() == "commands:\n  - pytest\n"
 
     def test_verify_yaml_not_copied_when_absent(self, tmp_path):
@@ -866,9 +868,9 @@ class TestResolveWorkdirVerifyYamlCopy:
                 orch._resolve_workdir(42, "desc")
 
             dst_file = pathlib.Path(wt_str) / ".golem" / "verify.yaml"
-            assert not dst_file.exists(), (
-                "verify.yaml must not be created when source is absent"
-            )
+            assert (
+                not dst_file.exists()
+            ), "verify.yaml must not be created when source is absent"
 
     def test_verify_yaml_not_overwritten_when_already_present(self, tmp_path):
         """verify.yaml is not overwritten if it already exists in the worktree."""
@@ -900,9 +902,9 @@ class TestResolveWorkdirVerifyYamlCopy:
                 orch._resolve_workdir(42, "desc")
 
             dst_file = wt_golem / "verify.yaml"
-            assert dst_file.read_text() == existing_content, (
-                "Existing verify.yaml in worktree must not be overwritten"
-            )
+            assert (
+                dst_file.read_text() == existing_content
+            ), "Existing verify.yaml in worktree must not be overwritten"
 
 
 class TestStreamingTraceWriter:

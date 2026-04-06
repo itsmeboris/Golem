@@ -34,12 +34,14 @@ Attach is idempotent — re-attaching updates settings (e.g., toggle heartbeat).
 On first attach, Golem auto-detects the repo's language and tools (Python/JS/Rust/Go/Ruby/Makefile)
 and writes `.golem/verify.yaml` with the discovered verification commands.
 Existing configs are preserved on re-attach — use `--force-detect` to regenerate.
+Attach also adds `.golem/` to the repo's `.gitignore` to prevent worktree artifacts from blocking merges.
 No daemon restart required; the heartbeat reloads the registry each tick.
 
 ### Ad-hoc Tasks
 
 `golem run -p "..."` defaults `work_dir` to the caller's `os.getcwd()`.
-Explicit `--cwd /path` still overrides. Issue-based runs (`golem run <id>`)
+Explicit `--cwd /path` overrides and works from any directory — the config
+is auto-discovered from `~/.golem/config.yaml`. Issue-based runs (`golem run <id>`)
 use the full resolution chain (description directive → subject tag → config
 default).
 

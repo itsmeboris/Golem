@@ -221,9 +221,7 @@ class TestSaveVerifyConfig:
         target.write_text("original", encoding="utf-8")
         (golem_dir / "verify.yaml").symlink_to(target)
 
-        cfg = VerifyConfig(
-            version=1, commands=[], detected_at="", stack=[]
-        )
+        cfg = VerifyConfig(version=1, commands=[], detected_at="", stack=[])
         save_verify_config(str(tmp_path), cfg)
         # External file must NOT be overwritten
         assert target.read_text(encoding="utf-8") == "original"
@@ -235,9 +233,7 @@ class TestSaveVerifyConfig:
         cfg_path = golem_dir / "verify.yaml"
         cfg_path.write_text("original", encoding="utf-8")
 
-        cfg = VerifyConfig(
-            version=1, commands=[], detected_at="", stack=[]
-        )
+        cfg = VerifyConfig(version=1, commands=[], detected_at="", stack=[])
         # Patch relative_to to simulate resolving outside root
         real_relative_to = Path.relative_to
 
