@@ -1342,8 +1342,8 @@ def _build_parser() -> argparse.ArgumentParser:
         "-c",
         "--config",
         type=Path,
-        default="config.yaml",
-        help="Path to configuration file (default: config.yaml)",
+        default=None,
+        help="Path to configuration file (default: ~/.golem/config.yaml)",
     )
     parser.add_argument(
         "-v", "--verbose", action="store_true", help="Enable verbose logging"
