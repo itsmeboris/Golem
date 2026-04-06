@@ -10,6 +10,7 @@ build/
 .env
 .mcp.env
 .venv
+.codex
 
 # Runtime data
 /config.yaml
