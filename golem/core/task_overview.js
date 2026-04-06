@@ -53,7 +53,8 @@ async function renderOverview() {
       const id = String(session.parent_issue_id || session.id || eventId).toLowerCase();
       const subject = (session.parent_subject || '').toLowerCase();
       const state = (session.state || '').toLowerCase();
-      return id.includes(q) || subject.includes(q) || state.includes(q);
+      const repo = (session.base_work_dir || '').toLowerCase();
+      return id.includes(q) || subject.includes(q) || state.includes(q) || repo.includes(q);
     });
   }
 
@@ -200,12 +201,17 @@ function renderTaskRow(eventId, session) {
     depsHtml = sections;
   }
 
+  // Extract short repo name from base_work_dir
+  const workDir = session.base_work_dir || '';
+  const repoName = workDir ? workDir.split('/').filter(Boolean).pop() || '' : '';
+
   const div = document.createElement('div');
   div.className = 'ov-task';
   div.dataset.eventId = eventId;
   div.innerHTML = `
     <span class="ov-task-id copy-target" onclick="event.stopPropagation();copyToClipboard('${esc(String(eventId))}')" title="Click to copy">#${esc(String(issueId))}</span>
     <span class="ov-task-subject">${esc(truncText(subject, 60))}</span>
+    ${repoName ? `<span class="ov-task-repo" title="${esc(workDir)}">${esc(repoName)}</span>` : ''}
     ${activity ? `<span class="ov-task-activity">${activity}</span>` : '<span class="ov-task-activity"></span>'}
     <span class="ov-task-badge ${chipClass}">${esc(stateLabel)}</span>
     <span class="ov-task-cost">${cost}</span>
@@ -259,13 +265,17 @@ async function renderPreview(eventId) {
     </div>`;
   }
 
+  const previewWorkDir = session.base_work_dir || '';
+  const previewRepo = previewWorkDir ? previewWorkDir.split('/').filter(Boolean).pop() || '' : '';
+  const repoTag = previewRepo ? `<span class="ov-preview-repo" title="${esc(previewWorkDir)}">${esc(previewRepo)}</span>` : '';
+
   let headerExtra = '';
   if (running) {
     const phase = session.supervisor_phase || '';
-    headerExtra = `<p>running${dur ? ' · ' + dur : ''}${cost !== '—' ? ' · ' + cost : ''}${phase ? ' · ' + esc(phase) + ' phase' : ''}</p>`;
+    headerExtra = `<p>${repoTag}running${dur ? ' · ' + dur : ''}${cost !== '—' ? ' · ' + cost : ''}${phase ? ' · ' + esc(phase) + ' phase' : ''}</p>`;
   } else {
     const agents = (trace && trace.totals) ? (trace.totals.total_agents || 0) : 0;
-    headerExtra = `<p>completed${dur ? ' · ' + dur : ''}${cost !== '—' ? ' · ' + cost : ''}${agents ? ' · ' + agents + ' agents' : ''}</p>`;
+    headerExtra = `<p>${repoTag}completed${dur ? ' · ' + dur : ''}${cost !== '—' ? ' · ' + cost : ''}${agents ? ' · ' + agents + ' agents' : ''}</p>`;
   }
 
   let bodyHtml = '';

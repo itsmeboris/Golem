@@ -371,6 +371,7 @@ html,body{height:100%;font-family:var(--font-sans);background:var(--bg-base);col
 .ov-task.selected{background:var(--accent-dim);border-left:3px solid var(--accent)}
 .ov-task-id{font-family:var(--font-mono);font-size:0.8rem;font-weight:700;color:var(--text-secondary);min-width:58px}
 .ov-task-subject{flex:1;font-size:0.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.ov-task-repo{font-size:0.65rem;font-family:var(--font-mono);color:var(--text-muted);background:var(--border-subtle);padding:0.1rem 0.45rem;border-radius:4px;flex-shrink:0;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default}
 .ov-task-activity{font-size:0.73rem;font-family:var(--font-mono);color:var(--text-muted);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ov-task-badge{font-size:0.65rem;font-weight:700;padding:0.12rem 0.5rem;border-radius:10px;flex-shrink:0;text-transform:uppercase;letter-spacing:0.03em}
 .ov-task-badge.running{background:var(--blue-bg);color:var(--blue)}
@@ -384,6 +385,7 @@ html,body{height:100%;font-family:var(--font-sans);background:var(--bg-base);col
 .ov-preview-header{padding:0.85rem 1.25rem;border-bottom:1px solid var(--border-subtle)}
 .ov-preview-header h3{font-size:0.9rem;font-weight:700}
 .ov-preview-header p{font-size:0.78rem;color:var(--text-muted);margin-top:0.18rem}
+.ov-preview-repo{font-size:0.65rem;font-family:var(--font-mono);background:var(--border-subtle);color:var(--text-muted);padding:0.08rem 0.4rem;border-radius:3px;margin-right:0.4rem;cursor:default}
 .ov-preview-body{flex:1;overflow-y:auto;padding:0.85rem 1.25rem}
 .ov-mini-phase{display:flex;align-items:center;gap:0.55rem;padding:0.35rem 0;font-size:0.82rem}
 .ov-mini-phase .ph-name{font-weight:700;min-width:85px}

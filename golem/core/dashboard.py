@@ -1059,10 +1059,13 @@ def _format_active_task(task: ActiveTaskDict, sessions: dict) -> list[str]:
     elapsed = format_duration(task.get("elapsed_s", 0))
     sess = sessions.get(int(num)) if num != "?" else None
     cost = getattr(sess, "total_cost_usd", 0.0)
+    work_dir = getattr(sess, "base_work_dir", "")
+    repo = work_dir.split("/")[-1] if work_dir else ""
+    repo_label = f"  Repo: {repo}" if repo else ""
     return [
         f"    #{num:>5s}  {subject}",
         f"           Phase: {task.get('phase', '?')}  Model: {task.get('model', '?')}"
-        f"  Elapsed: {elapsed}  Cost: ${cost:.2f}",
+        f"  Elapsed: {elapsed}  Cost: ${cost:.2f}{repo_label}",
     ]
 
 
