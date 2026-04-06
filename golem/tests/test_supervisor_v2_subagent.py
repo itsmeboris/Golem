@@ -1369,6 +1369,110 @@ class TestVerifiedRef:
             await sup._setup_work_dir(42, "desc")
 
 
+class TestVerifyYamlCopyToWorktreeSupervisor:
+    """Cover the verify.yaml copy-to-worktree logic in _setup_work_dir."""
+
+    async def test_verify_yaml_copied_into_worktree(self, tmp_path):
+        """verify.yaml is copied from base repo into worktree when it exists."""
+        import pathlib
+        import tempfile
+
+        base_dir = tmp_path / "base"
+        base_dir.mkdir()
+        golem_dir = base_dir / ".golem"
+        golem_dir.mkdir()
+        (golem_dir / "verify.yaml").write_text("commands:\n  - pytest\n")
+
+        with tempfile.TemporaryDirectory() as wt_str:
+            cfg = _make_config(
+                use_worktrees=True,
+                preflight_verify=False,
+                default_work_dir=str(base_dir),
+            )
+            sup = _make_supervisor(
+                config=cfg,
+                work_dir_override=str(base_dir),
+            )
+
+            with patch(
+                "golem.supervisor_v2_subagent.create_worktree",
+                return_value=wt_str,
+            ):
+                await sup._setup_work_dir(42, "desc")
+
+            dst_file = pathlib.Path(wt_str) / ".golem" / "verify.yaml"
+            assert dst_file.exists(), "verify.yaml should have been copied into worktree"
+            assert dst_file.read_text() == "commands:\n  - pytest\n"
+
+    async def test_verify_yaml_not_copied_when_absent(self, tmp_path):
+        """No copy occurs when base repo has no .golem/verify.yaml."""
+        import pathlib
+        import tempfile
+
+        base_dir = tmp_path / "base"
+        base_dir.mkdir()
+        # No .golem/verify.yaml in base_dir
+
+        with tempfile.TemporaryDirectory() as wt_str:
+            cfg = _make_config(
+                use_worktrees=True,
+                preflight_verify=False,
+                default_work_dir=str(base_dir),
+            )
+            sup = _make_supervisor(
+                config=cfg,
+                work_dir_override=str(base_dir),
+            )
+
+            with patch(
+                "golem.supervisor_v2_subagent.create_worktree",
+                return_value=wt_str,
+            ):
+                await sup._setup_work_dir(42, "desc")
+
+            dst_file = pathlib.Path(wt_str) / ".golem" / "verify.yaml"
+            assert not dst_file.exists(), (
+                "verify.yaml must not be created when source is absent"
+            )
+
+    async def test_verify_yaml_not_overwritten_when_already_present(self, tmp_path):
+        """verify.yaml is not overwritten if it already exists in the worktree."""
+        import pathlib
+        import tempfile
+
+        base_dir = tmp_path / "base"
+        base_dir.mkdir()
+        (base_dir / ".golem").mkdir()
+        (base_dir / ".golem" / "verify.yaml").write_text("commands:\n  - pytest\n")
+
+        with tempfile.TemporaryDirectory() as wt_str:
+            wt_golem = pathlib.Path(wt_str) / ".golem"
+            wt_golem.mkdir()
+            existing_content = "commands:\n  - existing\n"
+            (wt_golem / "verify.yaml").write_text(existing_content)
+
+            cfg = _make_config(
+                use_worktrees=True,
+                preflight_verify=False,
+                default_work_dir=str(base_dir),
+            )
+            sup = _make_supervisor(
+                config=cfg,
+                work_dir_override=str(base_dir),
+            )
+
+            with patch(
+                "golem.supervisor_v2_subagent.create_worktree",
+                return_value=wt_str,
+            ):
+                await sup._setup_work_dir(42, "desc")
+
+            dst_file = wt_golem / "verify.yaml"
+            assert dst_file.read_text() == existing_content, (
+                "Existing verify.yaml in worktree must not be overwritten"
+            )
+
+
 class TestClarityGate:
     """Cover the clarity check failure path in _execute_phases."""
 

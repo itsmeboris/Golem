@@ -13,6 +13,7 @@ verdicts, ``--resume`` enables warm retries instead of cold-starting.
 import asyncio
 import logging
 import subprocess
+from pathlib import Path
 import time
 from typing import Any
 
@@ -333,6 +334,20 @@ class SubagentSupervisor:
                 self._worktree_path = create_worktree(self._base_work_dir, issue_id)
                 work_dir = self._worktree_path
                 self._slog.info("Using worktree at %s", work_dir)
+                # Copy untracked .golem/verify.yaml into the worktree so
+                # verification can find per-repo commands.
+                src_cfg = Path(self._base_work_dir) / ".golem" / "verify.yaml"
+                if src_cfg.is_file():
+                    dst_dir = Path(work_dir) / ".golem"
+                    dst_dir.mkdir(exist_ok=True)
+                    dst_cfg = dst_dir / "verify.yaml"
+                    if not dst_cfg.exists():
+                        import shutil
+
+                        shutil.copy2(str(src_cfg), str(dst_cfg))
+                        self._slog.info(
+                            "Copied verify.yaml from base repo into worktree"
+                        )
             except RuntimeError as wt_err:
                 self._slog.error(
                     "Worktree creation failed for task #%s: %s. "

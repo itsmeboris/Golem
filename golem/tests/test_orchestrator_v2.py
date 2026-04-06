@@ -809,6 +809,102 @@ class TestRunAgentMonolithic:  # pylint: disable=confusing-with-statement
         assert m_cleanup.call_args[1]["keep_branch"] is True
 
 
+class TestResolveWorkdirVerifyYamlCopy:
+    """Cover the verify.yaml copy-to-worktree logic in _resolve_workdir."""
+
+    def test_verify_yaml_copied_into_worktree(self, tmp_path):
+        """verify.yaml is copied from base repo into worktree when it exists."""
+        import pathlib
+        import tempfile
+
+        base_dir = tmp_path / "base"
+        base_dir.mkdir()
+        golem_dir = base_dir / ".golem"
+        golem_dir.mkdir()
+        (golem_dir / "verify.yaml").write_text("commands:\n  - pytest\n")
+
+        with tempfile.TemporaryDirectory() as wt_str:
+            session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+            tc = MagicMock()
+            tc.supervisor_mode = False
+            tc.use_worktrees = True
+            tc.preflight_verify = False
+            orch = _make_orch(session, task_config=tc, work_dir_override=str(base_dir))
+
+            with patch(
+                "golem.orchestrator.create_worktree",
+                return_value=wt_str,
+            ):
+                work_dir, _ = orch._resolve_workdir(42, "desc")
+
+            assert work_dir == wt_str
+            dst_file = pathlib.Path(wt_str) / ".golem" / "verify.yaml"
+            assert dst_file.exists(), "verify.yaml should have been copied into worktree"
+            assert dst_file.read_text() == "commands:\n  - pytest\n"
+
+    def test_verify_yaml_not_copied_when_absent(self, tmp_path):
+        """No copy occurs when base repo has no .golem/verify.yaml."""
+        import pathlib
+        import tempfile
+
+        base_dir = tmp_path / "base"
+        base_dir.mkdir()
+        # No .golem/verify.yaml in base_dir
+
+        with tempfile.TemporaryDirectory() as wt_str:
+            session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+            tc = MagicMock()
+            tc.supervisor_mode = False
+            tc.use_worktrees = True
+            tc.preflight_verify = False
+            orch = _make_orch(session, task_config=tc, work_dir_override=str(base_dir))
+
+            with patch(
+                "golem.orchestrator.create_worktree",
+                return_value=wt_str,
+            ):
+                orch._resolve_workdir(42, "desc")
+
+            dst_file = pathlib.Path(wt_str) / ".golem" / "verify.yaml"
+            assert not dst_file.exists(), (
+                "verify.yaml must not be created when source is absent"
+            )
+
+    def test_verify_yaml_not_overwritten_when_already_present(self, tmp_path):
+        """verify.yaml is not overwritten if it already exists in the worktree."""
+        import pathlib
+        import tempfile
+
+        base_dir = tmp_path / "base"
+        base_dir.mkdir()
+        (base_dir / ".golem").mkdir()
+        (base_dir / ".golem" / "verify.yaml").write_text("commands:\n  - pytest\n")
+
+        with tempfile.TemporaryDirectory() as wt_str:
+            wt_golem = pathlib.Path(wt_str) / ".golem"
+            wt_golem.mkdir()
+            existing_content = "commands:\n  - existing\n"
+            (wt_golem / "verify.yaml").write_text(existing_content)
+
+            session = TaskSession(parent_issue_id=42, parent_subject="Fix")
+            tc = MagicMock()
+            tc.supervisor_mode = False
+            tc.use_worktrees = True
+            tc.preflight_verify = False
+            orch = _make_orch(session, task_config=tc, work_dir_override=str(base_dir))
+
+            with patch(
+                "golem.orchestrator.create_worktree",
+                return_value=wt_str,
+            ):
+                orch._resolve_workdir(42, "desc")
+
+            dst_file = wt_golem / "verify.yaml"
+            assert dst_file.read_text() == existing_content, (
+                "Existing verify.yaml in worktree must not be overwritten"
+            )
+
+
 class TestStreamingTraceWriter:
     def test_appends_events_and_flushes(self, tmp_path):
         from golem.core.flow_base import _StreamingTraceWriter

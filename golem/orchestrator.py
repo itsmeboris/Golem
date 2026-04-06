@@ -484,6 +484,19 @@ class TaskOrchestrator:
                 work_dir = worktree_path
                 self.session.worktree_path = worktree_path
                 self._slog.info("Using worktree at %s", work_dir)
+                # Copy untracked .golem/verify.yaml into the worktree
+                src_cfg = Path(base_work_dir) / ".golem" / "verify.yaml"
+                if src_cfg.is_file():
+                    dst_dir = Path(work_dir) / ".golem"
+                    dst_dir.mkdir(exist_ok=True)
+                    dst_cfg = dst_dir / "verify.yaml"
+                    if not dst_cfg.exists():
+                        import shutil
+
+                        shutil.copy2(str(src_cfg), str(dst_cfg))
+                        self._slog.info(
+                            "Copied verify.yaml from base repo into worktree"
+                        )
             except RuntimeError as wt_err:
                 self._slog.error(
                     "Worktree creation failed: %s. base_dir=%s, branch=agent/%s",
