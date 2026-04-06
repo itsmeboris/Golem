@@ -141,15 +141,10 @@ class SubagentSupervisor:
                 "3. pytest --cov=golem --cov-fail-under=100"
             )
         return (
-            "Read CONTRIBUTING.md, Makefile, and any CI config files "
-            "(.github/workflows/) to discover the verification commands"
-            " for this repo. Run what you find.\n"
-            "If you discover commands not already in .golem/verify.yaml,"
-            " report them at the end of your output as:\n"
-            "  DISCOVERED_COMMANDS:\n"
-            "    format: <cmd>\n"
-            "    lint: <cmd>\n"
-            "    test: <cmd>"
+            "No verification commands are configured for this repo.\n"
+            "Run 'golem attach --force-detect' to auto-detect the stack,\n"
+            "or create .golem/verify.yaml manually.\n"
+            "Report BLOCKED — verification cannot proceed without commands."
         )
 
     def _get_mcp_servers(self, subject: str) -> list[str]:
@@ -972,14 +967,29 @@ class SubagentSupervisor:
         vr = self.session.verification_result
         if not vr:
             return "(no verification failures)"
+        if vr.get("passed", True):
+            return "(verification passed)"
         parts = []
-        if not vr.get("passed", True):
-            if vr.get("black_output"):
-                parts.append("Black:\n%s" % vr["black_output"])
-            if vr.get("pylint_output"):
-                parts.append("Pylint:\n%s" % vr["pylint_output"])
-            if vr.get("pytest_output"):
-                parts.append("Pytest:\n%s" % vr["pytest_output"][:3000])
+
+        # Generic verification path — use command_results when present
+        if vr.get("command_results"):
+            for cr in vr["command_results"]:
+                if not cr["passed"]:
+                    parts.append(
+                        "%s (%s): FAILED\n%s"
+                        % (cr["role"], cr["cmd"], cr["output"][:3000])
+                    )
+            if vr.get("error"):
+                parts.append(vr["error"])
+            return "\n".join(parts) if parts else "(verification passed)"
+
+        # Legacy Python verification path
+        if vr.get("black_output"):
+            parts.append("Black:\n%s" % vr["black_output"])
+        if vr.get("pylint_output"):
+            parts.append("Pylint:\n%s" % vr["pylint_output"])
+        if vr.get("pytest_output"):
+            parts.append("Pytest:\n%s" % vr["pytest_output"][:3000])
         return "\n".join(parts) if parts else "(verification passed)"
 
     async def _retry_with_resume(

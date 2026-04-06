@@ -276,6 +276,20 @@ class MergeQueue:
     def _format_verification_summary(vr: VerificationResult) -> str:
         """Format a VerificationResult into a human-readable summary string."""
         parts = ["Verification failed after merge:"]
+
+        # Generic verification path — use command_results when present
+        if vr.command_results:
+            for cr in vr.command_results:
+                if not cr["passed"]:
+                    parts.append(
+                        "%s (%s): %s"
+                        % (cr["role"], cr["cmd"], cr["output"][:2000].strip())
+                    )
+            if vr.error:
+                parts.append(vr.error)
+            return "\n".join(parts)
+
+        # Legacy Python verification path
         if vr.black_output:
             parts.append("Black: %s" % vr.black_output.strip())
         if vr.pylint_output:

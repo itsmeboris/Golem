@@ -474,8 +474,9 @@ class TestVerifyConfigDicts:
             not in VerifyCommandDict.__required_keys__  # pylint: disable=no-member
         )
 
-    def test_coverage_threshold_is_optional_on_verify_config(self):
-        assert (
-            "coverage_threshold"
-            not in VerifyConfigDict.__required_keys__  # pylint: disable=no-member
+    def test_coverage_threshold_removed_from_verify_config(self):
+        """coverage_threshold was removed — not enforced."""
+        all_keys = set(VerifyConfigDict.__required_keys__) | set(  # pylint: disable=no-member
+            VerifyConfigDict.__optional_keys__  # pylint: disable=no-member
         )
+        assert "coverage_threshold" not in all_keys

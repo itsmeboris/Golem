@@ -2505,6 +2505,91 @@ class TestFormatVerificationFeedback:
         feedback = orch._format_verification_feedback(result)
         assert feedback == "Independent verification failed:"
 
+    def _make_vr_with_command_results(self, command_results, error=""):
+        """Helper: build a VerificationResult with legacy fields defaulted."""
+        from golem.verifier import VerificationResult
+
+        return VerificationResult(
+            passed=False,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="",
+            command_results=command_results,
+            error=error,
+        )
+
+    def test_command_results_failed_command_in_feedback(self):
+        """Generic command_results branch surfaces failed commands."""
+        from golem.types import CommandResultDict
+
+        cr: CommandResultDict = {
+            "role": "test",
+            "cmd": "pytest -x",
+            "passed": False,
+            "output": "FAILED test_foo.py::test_bar",
+            "duration_s": 1.5,
+        }
+        result = self._make_vr_with_command_results([cr])
+        orch = _make_orch()
+        feedback = orch._format_verification_feedback(result)
+
+        assert "Independent verification failed:" in feedback
+        assert "test (pytest -x): FAILED" in feedback
+        assert "FAILED test_foo.py::test_bar" in feedback
+
+    def test_command_results_passed_command_omitted_in_feedback(self):
+        """Generic command_results branch omits passing commands from feedback."""
+        from golem.types import CommandResultDict
+
+        cr: CommandResultDict = {
+            "role": "lint",
+            "cmd": "pylint golem/",
+            "passed": True,
+            "output": "rated at 10.00/10",
+            "duration_s": 0.4,
+        }
+        result = self._make_vr_with_command_results([cr])
+        orch = _make_orch()
+        feedback = orch._format_verification_feedback(result)
+        assert "pylint" not in feedback
+
+    def test_command_results_with_error_field(self):
+        """Generic command_results branch appends error field when set."""
+        from golem.types import CommandResultDict
+
+        cr: CommandResultDict = {
+            "role": "test",
+            "cmd": "pytest",
+            "passed": False,
+            "output": "some output",
+            "duration_s": 0.2,
+        }
+        result = self._make_vr_with_command_results([cr], error="runner crashed")
+        orch = _make_orch()
+        feedback = orch._format_verification_feedback(result)
+        assert "runner crashed" in feedback
+
+    def test_legacy_error_field_included(self):
+        """Legacy path appends error field when no command_results present."""
+        from golem.verifier import VerificationResult
+
+        result = VerificationResult(
+            passed=False,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="",
+            error="unexpected runner failure",
+        )
+        orch = _make_orch()
+        feedback = orch._format_verification_feedback(result)
+        assert "unexpected runner failure" in feedback
+
 
 class TestRunVerification:
     """Tests for _run_verification method."""

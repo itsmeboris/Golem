@@ -1785,6 +1785,84 @@ class TestFormatVerificationSummary:
         summary = MergeQueue._format_verification_summary(vr)
         assert summary == "Verification failed after merge:"
 
+    def _make_vr_with_command_results(self, command_results, error=""):
+        """Helper: build a VerificationResult with legacy fields defaulted."""
+        return VerificationResult(
+            passed=False,
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="",
+            command_results=command_results,
+            error=error,
+        )
+
+    def test_command_results_failed_command_included(self):
+        """Generic command_results branch surfaces failed commands in the summary."""
+        from golem.types import CommandResultDict
+
+        cr: CommandResultDict = {
+            "role": "test",
+            "cmd": "pytest -x",
+            "passed": False,
+            "output": "FAILED test_foo.py::test_bar",
+            "duration_s": 1.2,
+        }
+        vr = self._make_vr_with_command_results([cr])
+        summary = MergeQueue._format_verification_summary(vr)
+        assert "test (pytest -x):" in summary
+        assert "FAILED test_foo.py::test_bar" in summary
+
+    def test_command_results_passed_command_omitted(self):
+        """Generic command_results branch omits passing commands."""
+        from golem.types import CommandResultDict
+
+        cr: CommandResultDict = {
+            "role": "lint",
+            "cmd": "pylint golem/",
+            "passed": True,
+            "output": "Your code has been rated at 10.00/10",
+            "duration_s": 0.5,
+        }
+        vr = self._make_vr_with_command_results([cr])
+        summary = MergeQueue._format_verification_summary(vr)
+        # Passing commands should not appear in the summary
+        assert "pylint" not in summary
+
+    def test_command_results_with_error_field(self):
+        """Generic command_results branch appends the error field when set."""
+        from golem.types import CommandResultDict
+
+        cr: CommandResultDict = {
+            "role": "test",
+            "cmd": "pytest",
+            "passed": False,
+            "output": "some output",
+            "duration_s": 0.3,
+        }
+        vr = self._make_vr_with_command_results([cr], error="runner timed out")
+        summary = MergeQueue._format_verification_summary(vr)
+        assert "runner timed out" in summary
+
+    def test_command_results_output_truncated_to_2000(self):
+        """Generic command_results branch truncates individual output to 2000 chars."""
+        from golem.types import CommandResultDict
+
+        long_output = "x" * 3000
+        cr: CommandResultDict = {
+            "role": "test",
+            "cmd": "pytest",
+            "passed": False,
+            "output": long_output,
+            "duration_s": 1.0,
+        }
+        vr = self._make_vr_with_command_results([cr])
+        summary = MergeQueue._format_verification_summary(vr)
+        assert "x" * 2000 in summary
+        assert "x" * 2001 not in summary
+
 
 # ---------------------------------------------------------------------------
 # Second agent call exception handling tests

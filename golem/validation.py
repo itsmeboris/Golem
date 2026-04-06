@@ -537,7 +537,19 @@ def _format_verification_evidence(result: Any) -> str:
     """Format a VerificationResult (or None) into human-readable evidence."""
     if result is None:
         return "(no independent verification was run)"
-    lines: list[str] = []
+
+    # Generic verification path — use command_results when present
+    if getattr(result, "command_results", None):
+        lines: list[str] = []
+        for cr in result.command_results:
+            status = "PASS" if cr["passed"] else "FAIL"
+            lines.append(f"- {cr['role']} ({cr['cmd']}): {status}")
+            if not cr["passed"] and cr.get("output"):
+                lines.append(f"  {cr['output'][:500]}")
+        return "\n".join(lines)
+
+    # Legacy Python verification path
+    lines = []
     for name, ok, output in [
         ("black", result.black_ok, result.black_output),
         ("pylint", result.pylint_ok, result.pylint_output),

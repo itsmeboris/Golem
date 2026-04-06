@@ -242,6 +242,75 @@ class TestVerificationFeedback:
         assert "Black:" not in result
         assert "Pytest:" not in result
 
+    def test_command_results_failed_command_in_feedback(self):
+        """Generic command_results branch surfaces failed commands."""
+        session = TaskSession(
+            parent_issue_id=1,
+            parent_subject="t",
+            verification_result={
+                "passed": False,
+                "command_results": [
+                    {
+                        "role": "test",
+                        "cmd": "pytest -x",
+                        "passed": False,
+                        "output": "FAILED test_foo.py::test_bar",
+                        "duration_s": 1.0,
+                    }
+                ],
+            },
+        )
+        sup = _make_supervisor(session=session)
+        result = sup._verification_feedback()
+        assert "test (pytest -x): FAILED" in result
+        assert "FAILED test_foo.py::test_bar" in result
+
+    def test_command_results_passed_command_omitted(self):
+        """Generic command_results branch omits passing commands."""
+        session = TaskSession(
+            parent_issue_id=1,
+            parent_subject="t",
+            verification_result={
+                "passed": False,
+                "command_results": [
+                    {
+                        "role": "lint",
+                        "cmd": "pylint golem/",
+                        "passed": True,
+                        "output": "rated 10/10",
+                        "duration_s": 0.3,
+                    }
+                ],
+            },
+        )
+        sup = _make_supervisor(session=session)
+        result = sup._verification_feedback()
+        # No failures, so falls through to "(verification passed)"
+        assert result == "(verification passed)"
+
+    def test_command_results_with_error_field(self):
+        """Generic command_results branch appends error field when set."""
+        session = TaskSession(
+            parent_issue_id=1,
+            parent_subject="t",
+            verification_result={
+                "passed": False,
+                "command_results": [
+                    {
+                        "role": "test",
+                        "cmd": "pytest",
+                        "passed": False,
+                        "output": "some output",
+                        "duration_s": 0.2,
+                    }
+                ],
+                "error": "runner crashed",
+            },
+        )
+        sup = _make_supervisor(session=session)
+        result = sup._verification_feedback()
+        assert "runner crashed" in result
+
 
 # -- Report parsing ---------------------------------------------------------
 
@@ -3398,11 +3467,11 @@ class TestBuildVerifySection:
         assert "pylint --errors-only golem/" in section
         assert "pytest" in section
 
-    def test_returns_discovery_prompt_for_unknown_repo(self, tmp_path):
+    def test_returns_blocked_prompt_for_unknown_repo(self, tmp_path):
         sup = _make_supervisor()
         section = sup._build_verify_section(str(tmp_path))
-        assert "CONTRIBUTING.md" in section
-        assert "DISCOVERED_COMMANDS" in section
+        assert "No verification commands" in section
+        assert "BLOCKED" in section
 
     def test_config_takes_priority_over_golem_source(self, tmp_path):
         from golem.verify_config import VerifyCommand, VerifyConfig, save_verify_config

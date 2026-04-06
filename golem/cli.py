@@ -1181,8 +1181,14 @@ def cmd_attach(args) -> int:
 
     heartbeat = not getattr(args, "no_heartbeat", False)
     skip_detection = getattr(args, "no_detect", False)
+    force_detect = getattr(args, "force_detect", False)
     reg = RepoRegistry()
-    reg.attach(path, heartbeat=heartbeat, run_detection=not skip_detection)
+    reg.attach(
+        path,
+        heartbeat=heartbeat,
+        run_detection=not skip_detection,
+        force_detect=force_detect,
+    )
     hb_label = "heartbeat on" if heartbeat else "heartbeat off"
     print(f"  Attached: {path} ({hb_label})")
 
@@ -1466,6 +1472,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--no-detect",
         action="store_true",
         help="Skip automatic stack detection (do not write .golem/verify.yaml)",
+    )
+    attach_p.add_argument(
+        "--force-detect",
+        action="store_true",
+        help="Overwrite existing .golem/verify.yaml with fresh detection",
     )
     attach_p.set_defaults(func=cmd_attach)
 

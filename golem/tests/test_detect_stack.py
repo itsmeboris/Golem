@@ -262,6 +262,92 @@ class TestParseGitHubActions:
         assert _parse_github_actions(tmp_path) == []
 
 
+    def test_setup_commands_skipped_in_ci(self, tmp_path):
+        """Install/setup lines before the real test command must be skipped."""
+        wf_dir = tmp_path / ".github" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "ci.yml").write_text(
+            "jobs:\n  test:\n    steps:\n"
+            "      - run: |\n"
+            "          pip install -e .\n"
+            "          pytest tests/\n"
+        )
+        cmds = _parse_github_actions(tmp_path)
+        assert len(cmds) == 1
+        assert cmds[0].cmd[0] == "pytest"
+
+    def test_cd_wrapper_stripped(self, tmp_path):
+        """'cd dir && pytest' extracts 'pytest' as the command."""
+        wf_dir = tmp_path / ".github" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "ci.yml").write_text(
+            "jobs:\n  test:\n    steps:\n"
+            "      - run: cd frontend && npm test\n"
+        )
+        cmds = _parse_github_actions(tmp_path)
+        assert len(cmds) == 1
+        assert cmds[0].cmd == ["npm", "test"]
+
+    def test_env_prefix_stripped(self, tmp_path):
+        """'CI=1 pytest -q' extracts 'pytest -q'."""
+        wf_dir = tmp_path / ".github" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "ci.yml").write_text(
+            "jobs:\n  test:\n    steps:\n"
+            "      - run: CI=1 pytest -q\n"
+        )
+        cmds = _parse_github_actions(tmp_path)
+        assert len(cmds) == 1
+        assert cmds[0].cmd == ["pytest", "-q"]
+
+    def test_quoted_args_preserved(self, tmp_path):
+        """'pytest -m \"not e2e\"' preserves the quoted marker."""
+        wf_dir = tmp_path / ".github" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "ci.yml").write_text(
+            'jobs:\n  test:\n    steps:\n'
+            '      - run: pytest -m "not e2e"\n'
+        )
+        cmds = _parse_github_actions(tmp_path)
+        assert len(cmds) == 1
+        assert cmds[0].cmd == ["pytest", "-m", "not e2e"]
+
+    def test_unmatched_quotes_skipped(self, tmp_path):
+        """Malformed shell syntax with unmatched quotes is skipped."""
+        wf_dir = tmp_path / ".github" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "ci.yml").write_text(
+            "jobs:\n  test:\n    steps:\n"
+            "      - run: pytest -m 'not e2e\n"
+        )
+        cmds = _parse_github_actions(tmp_path)
+        assert cmds == []
+
+    def test_empty_after_strip_skipped(self, tmp_path):
+        """Line that becomes empty after wrapper stripping is skipped."""
+        wf_dir = tmp_path / ".github" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "ci.yml").write_text(
+            "jobs:\n  test:\n    steps:\n"
+            "      - run: |\n          cd frontend &&\n"
+        )
+        cmds = _parse_github_actions(tmp_path)
+        assert cmds == []
+
+    def test_npm_ci_skipped_npm_test_kept(self, tmp_path):
+        """npm ci is a setup command — npm test should be the extracted command."""
+        wf_dir = tmp_path / ".github" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "ci.yml").write_text(
+            "jobs:\n  test:\n    steps:\n"
+            "      - run: npm ci\n"
+            "      - run: npm test\n"
+        )
+        cmds = _parse_github_actions(tmp_path)
+        assert len(cmds) >= 1
+        assert cmds[0].cmd == ["npm", "test"]
+
+
 class TestDryRunTool:
     def test_returns_true_when_tool_available(self, tmp_path):
         with patch("golem.detect_stack.subprocess.run") as mock_run:

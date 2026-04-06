@@ -899,12 +899,42 @@ class TestFormatVerificationEvidence:
             test_count=1,
             failures=[],
             coverage_pct=100.0,
+            command_results=None,
         )
         result = _format_verification_evidence(vr)
         # Output should be truncated to 500 chars
         assert len("x" * 500) == 500
         assert "x" * 501 not in result
         assert "x" * 500 in result
+
+    def test_generic_command_results_shown(self):
+        """When command_results are present, format them instead of legacy fields."""
+        vr = SimpleNamespace(
+            command_results=[
+                {"role": "lint", "cmd": "eslint src/", "passed": True, "output": ""},
+                {
+                    "role": "test",
+                    "cmd": "npm test",
+                    "passed": False,
+                    "output": "1 test failed",
+                },
+            ],
+            black_ok=True,
+            black_output="",
+            pylint_ok=True,
+            pylint_output="",
+            pytest_ok=True,
+            pytest_output="",
+            test_count=0,
+            failures=[],
+            coverage_pct=0.0,
+        )
+        result = _format_verification_evidence(vr)
+        assert "lint (eslint src/): PASS" in result
+        assert "test (npm test): FAIL" in result
+        assert "1 test failed" in result
+        # Legacy fields should NOT appear
+        assert "- black:" not in result
 
 
 class TestReadTypesPy:

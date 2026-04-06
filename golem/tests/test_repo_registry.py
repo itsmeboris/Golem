@@ -190,3 +190,43 @@ class TestRepoRegistryDetection:
             reg.attach(str(tmp_path))
             reg.attach(str(tmp_path), run_detection=True)
         assert len(reg.list_repos()) == 1
+
+    def test_run_detection_skips_when_valid_config_exists(self, tmp_path):
+        """_run_detection skips when verify.yaml has valid commands."""
+        from unittest.mock import patch
+
+        golem_dir = tmp_path / ".golem"
+        golem_dir.mkdir()
+        (golem_dir / "verify.yaml").write_text(
+            "version: 1\ndetected_at: ''\nstack: [python]\n"
+            "commands:\n  - role: test\n    cmd: [pytest]\n    source: user\n",
+            encoding="utf-8",
+        )
+        with patch("golem.repo_registry.detect_verify_config") as mock_detect:
+            reg = RepoRegistry(registry_path=tmp_path / "repos.json")
+            reg._run_detection(str(tmp_path), force=False)
+        mock_detect.assert_not_called()
+
+    def test_run_detection_regenerates_malformed_config(self, tmp_path):
+        """_run_detection regenerates when verify.yaml is malformed."""
+        from unittest.mock import patch
+
+        from golem.verify_config import VerifyCommand, VerifyConfig
+
+        golem_dir = tmp_path / ".golem"
+        golem_dir.mkdir()
+        (golem_dir / "verify.yaml").write_text("{invalid yaml: [", encoding="utf-8")
+
+        fresh = VerifyConfig(
+            version=1,
+            commands=[VerifyCommand(role="test", cmd=["pytest"], source="auto-detected")],
+            detected_at="",
+            stack=["python"],
+        )
+        with (
+            patch("golem.repo_registry.detect_verify_config", return_value=fresh),
+            patch("golem.repo_registry.save_verify_config") as mock_save,
+        ):
+            reg = RepoRegistry(registry_path=tmp_path / "repos.json")
+            reg._run_detection(str(tmp_path), force=False)
+        mock_save.assert_called_once()

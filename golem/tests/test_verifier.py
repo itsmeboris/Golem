@@ -1220,13 +1220,30 @@ class TestGenericVerification:
         assert "npm" in called
 
     @patch("golem.verifier.subprocess.run")
-    def test_no_config_no_golem_source_returns_no_op_pass(self, mock_run):
+    def test_no_config_no_golem_source_fails_closed(self, mock_run):
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
             result = run_verification(tmpdir)
-        assert result.passed is True
+        assert result.passed is False
+        assert "No verification commands" in result.error
         assert result.command_results == []
+        mock_run.assert_not_called()
+
+    @patch("golem.verifier.subprocess.run")
+    def test_empty_commands_fails_closed(self, mock_run, tmp_path):
+        from golem.verify_config import VerifyConfig, save_verify_config
+
+        cfg = VerifyConfig(
+            version=1,
+            commands=[],
+            detected_at="2026-04-05T00:00:00Z",
+            stack=["unknown"],
+        )
+        save_verify_config(str(tmp_path), cfg)
+        result = run_verification(str(tmp_path))
+        assert result.passed is False
+        assert "no commands" in result.error.lower()
         mock_run.assert_not_called()
 
     @patch("golem.verifier.subprocess.run")

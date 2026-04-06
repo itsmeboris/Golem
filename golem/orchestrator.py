@@ -951,6 +951,20 @@ class TaskOrchestrator:
     def _format_verification_feedback(self, result: VerificationResult) -> str:
         """Format verification failures into structured feedback for retry."""
         parts = ["Independent verification failed:"]
+
+        # Generic verification path — use command_results when present
+        if result.command_results:
+            for cr in result.command_results:
+                if not cr["passed"]:
+                    parts.append(
+                        "\n%s (%s): FAILED\n%s"
+                        % (cr["role"], cr["cmd"], cr["output"][:2000])
+                    )
+            if result.error:
+                parts.append("\n%s" % result.error)
+            return "\n".join(parts)
+
+        # Legacy Python verification path
         if not result.black_ok:
             parts.append(f"\nblack --check: FAILED\n{result.black_output}")
         if not result.pylint_ok:
@@ -961,6 +975,8 @@ class TaskOrchestrator:
                 parts.append(f"  - {f}")
             if result.pytest_output:
                 parts.append(f"\n{result.pytest_output[-2000:]}")
+        if result.error:
+            parts.append(f"\n{result.error}")
         return "\n".join(parts)
 
     async def _commit_and_complete(

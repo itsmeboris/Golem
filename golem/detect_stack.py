@@ -6,6 +6,8 @@ Entry point: detect_verify_config(repo_root, *, dry_run=True) -> VerifyConfig
 
 import json
 import logging
+import re
+import shlex
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,6 +20,35 @@ logger = logging.getLogger("golem.detect_stack")
 
 _JOB_KEYWORDS_TEST = frozenset({"test", "tests", "ci", "check", "verify", "pytest"})
 _JOB_KEYWORDS_LINT = frozenset({"lint", "format", "style"})
+
+# Prefixes for setup/install commands that should never be promoted to
+# test/lint roles during CI parsing.
+_SETUP_PREFIXES = (
+    "pip install",
+    "pip3 install",
+    "npm ci",
+    "npm install",
+    "yarn install",
+    "pnpm install",
+    "cargo build",
+    "go mod",
+    "bundle install",
+    "apt ",
+    "apt-get ",
+    "brew ",
+    "sudo ",
+    "cd ",
+    "mkdir ",
+    "cp ",
+    "mv ",
+    "chmod ",
+    "export ",
+    "source ",
+    "set ",
+    "curl ",
+    "wget ",
+    "git ",
+)
 
 
 def _detect_python(root: Path) -> list[VerifyCommand]:
@@ -188,6 +219,24 @@ def _detect_makefile_targets(root: Path) -> set[str]:
     }
 
 
+# Regex to strip leading "cd <dir> &&" and "VAR=value" env wrappers
+_CD_AND_RE = re.compile(r"^cd\s+\S+\s*&&\s*")
+_ENV_ASSIGN_RE = re.compile(r"^[A-Z_][A-Z_0-9]*=\S+\s+")
+
+
+def _strip_shell_wrappers(line: str) -> str:
+    """Strip common shell wrappers (cd ... &&, VAR=val) from a command line.
+
+    Returns the effective command after stripping, or "" if nothing remains.
+    """
+    # Strip "cd dir && rest"
+    line = _CD_AND_RE.sub("", line)
+    # Strip leading env assignments like "CI=1 pytest"
+    while _ENV_ASSIGN_RE.match(line):
+        line = _ENV_ASSIGN_RE.sub("", line, count=1)
+    return line.strip()
+
+
 def _parse_github_actions(root: Path) -> list[VerifyCommand]:
     """Extract run commands from .github/workflows/*.yml test/lint jobs."""
     workflows_dir = root / ".github" / "workflows"
@@ -223,9 +272,18 @@ def _parse_github_actions(root: Path) -> list[VerifyCommand]:
                     line = line.strip()
                     if not line or line.startswith("#") or line.startswith("echo "):
                         continue
-                    cmds.append(
-                        VerifyCommand(role=role, cmd=line.split(), source="ci-parsed")
-                    )
+                    # Strip wrappers first, then check for setup prefixes
+                    effective = _strip_shell_wrappers(line)
+                    if not effective:
+                        continue
+                    if any(effective.startswith(pfx) for pfx in _SETUP_PREFIXES):
+                        continue
+                    try:
+                        parts = shlex.split(effective)
+                    except ValueError:
+                        # Unmatched quotes or other shell syntax — skip
+                        continue
+                    cmds.append(VerifyCommand(role=role, cmd=parts, source="ci-parsed"))
                     break
     return cmds
 

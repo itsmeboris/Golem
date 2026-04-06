@@ -14,7 +14,7 @@ from pathlib import Path
 from .core.config import GOLEM_HOME
 from .detect_stack import detect_verify_config
 from .types import RepoEntryDict
-from .verify_config import save_verify_config
+from .verify_config import load_verify_config, save_verify_config
 
 logger = logging.getLogger(__name__)
 
@@ -60,13 +60,19 @@ class RepoRegistry:
         )
 
     def attach(
-        self, path: str, heartbeat: bool = True, *, run_detection: bool = False
+        self,
+        path: str,
+        heartbeat: bool = True,
+        *,
+        run_detection: bool = False,
+        force_detect: bool = False,
     ) -> None:
         """Add or update a repo entry. Auto-saves.
 
         If run_detection=True, runs buildpack-style stack detection and writes
         .golem/verify.yaml to the target repo. Detection failures are logged
         but do not block the attach operation.
+        If force_detect=True, overwrites any existing verify.yaml.
         """
         resolved = str(Path(path).resolve())
         normalized = resolved if resolved == "/" else resolved.rstrip("/")
@@ -76,7 +82,7 @@ class RepoRegistry:
                 repo["attached_at"] = datetime.now(timezone.utc).isoformat()
                 self.save()
                 if run_detection:
-                    self._run_detection(normalized)
+                    self._run_detection(normalized, force=force_detect)
                 return
         entry: RepoEntryDict = {
             "path": normalized,
@@ -86,10 +92,24 @@ class RepoRegistry:
         self._repos.append(entry)
         self.save()
         if run_detection:
-            self._run_detection(normalized)
+            self._run_detection(normalized, force=force_detect)
 
-    def _run_detection(self, path: str) -> None:
-        """Run stack detection and write .golem/verify.yaml. Non-fatal on error."""
+    def _run_detection(self, path: str, *, force: bool = False) -> None:
+        """Run stack detection and write .golem/verify.yaml. Non-fatal on error.
+
+        If a verify.yaml already exists, detection is skipped to preserve
+        user-maintained configuration.  Use ``golem attach --force-detect``
+        to regenerate.
+        """
+        existing = load_verify_config(path)
+        if existing is not None and existing.commands and not force:
+            logger.info(
+                "Valid verify.yaml with %d command(s) found for %s — skipping "
+                "detection (use --force-detect to regenerate)",
+                len(existing.commands),
+                path,
+            )
+            return
         try:
             config = detect_verify_config(path, dry_run=True)
             save_verify_config(path, config)

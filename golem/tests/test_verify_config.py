@@ -3,6 +3,8 @@
 
 # pylint: disable=missing-function-docstring
 
+from pathlib import Path
+
 from golem.verify_config import (
     VerifyCommand,
     VerifyConfig,
@@ -40,7 +42,8 @@ class TestLoadVerifyConfig:
         assert result.commands[0].role == "test"
         assert result.commands[0].cmd == ["npm", "test"]
 
-    def test_loads_optional_coverage_threshold(self, tmp_path):
+    def test_coverage_threshold_ignored_with_info_log(self, tmp_path):
+        """coverage_threshold is not enforced — loader ignores it gracefully."""
         cfg_path = tmp_path / ".golem" / "verify.yaml"
         cfg_path.parent.mkdir()
         cfg_path.write_text(
@@ -49,7 +52,8 @@ class TestLoadVerifyConfig:
         )
         result = load_verify_config(str(tmp_path))
         assert result is not None
-        assert result.coverage_threshold == 80.0
+        # Field removed from dataclass — should load without error
+        assert not hasattr(result, "coverage_threshold")
 
     def test_returns_none_on_invalid_yaml(self, tmp_path):
         cfg_path = tmp_path / ".golem" / "verify.yaml"
@@ -178,6 +182,76 @@ class TestSaveVerifyConfig:
         save_verify_config(str(tmp_path), cfg)
         assert (tmp_path / ".golem" / "verify.yaml").exists()
 
+    def test_refuses_golem_dir_resolving_outside_root(self, tmp_path, monkeypatch):
+        """save_verify_config refuses if .golem resolves outside repo root."""
+        golem_dir = tmp_path / ".golem"
+        golem_dir.mkdir()
+
+        cfg = VerifyConfig(version=1, commands=[], detected_at="", stack=[])
+        outside = tmp_path.parent / "elsewhere"
+        real_resolve = Path.resolve
+
+        def _fake_resolve(self):
+            if self == golem_dir:
+                return outside
+            return real_resolve(self)
+
+        monkeypatch.setattr(Path, "resolve", _fake_resolve)
+        save_verify_config(str(tmp_path), cfg)
+        monkeypatch.undo()
+        # Must NOT create the file
+        assert not (golem_dir / "verify.yaml").exists()
+
+    def test_refuses_to_write_symlinked_golem_dir(self, tmp_path):
+        """save_verify_config refuses if .golem directory is a symlink."""
+        external_dir = tmp_path / "external"
+        external_dir.mkdir()
+        (tmp_path / ".golem").symlink_to(external_dir)
+
+        cfg = VerifyConfig(version=1, commands=[], detected_at="", stack=[])
+        save_verify_config(str(tmp_path), cfg)
+        # Must NOT create verify.yaml in the symlink target
+        assert not (external_dir / "verify.yaml").exists()
+
+    def test_refuses_to_write_symlink(self, tmp_path):
+        """save_verify_config refuses if .golem/verify.yaml is a symlink."""
+        golem_dir = tmp_path / ".golem"
+        golem_dir.mkdir()
+        target = tmp_path / "external.yaml"
+        target.write_text("original", encoding="utf-8")
+        (golem_dir / "verify.yaml").symlink_to(target)
+
+        cfg = VerifyConfig(
+            version=1, commands=[], detected_at="", stack=[]
+        )
+        save_verify_config(str(tmp_path), cfg)
+        # External file must NOT be overwritten
+        assert target.read_text(encoding="utf-8") == "original"
+
+    def test_refuses_to_write_outside_repo(self, tmp_path, monkeypatch):
+        """save_verify_config refuses if resolved path escapes repo root."""
+        golem_dir = tmp_path / ".golem"
+        golem_dir.mkdir()
+        cfg_path = golem_dir / "verify.yaml"
+        cfg_path.write_text("original", encoding="utf-8")
+
+        cfg = VerifyConfig(
+            version=1, commands=[], detected_at="", stack=[]
+        )
+        # Patch relative_to to simulate resolving outside root
+        real_relative_to = Path.relative_to
+
+        def _fake_relative_to(self, other):
+            if self == cfg_path.resolve() and other == tmp_path.resolve():
+                raise ValueError("outside repo")
+            return real_relative_to(self, other)
+
+        monkeypatch.setattr(Path, "relative_to", _fake_relative_to)
+        save_verify_config(str(tmp_path), cfg)
+        monkeypatch.undo()
+        # File must NOT be overwritten
+        assert cfg_path.read_text(encoding="utf-8") == "original"
+
     def test_round_trip(self, tmp_path):
         cmd = VerifyCommand(role="test", cmd=["pytest"], source="auto-detected")
         cfg = VerifyConfig(
@@ -193,18 +267,32 @@ class TestSaveVerifyConfig:
         assert loaded.commands[0].cmd == ["pytest"]
         assert loaded.stack == ["python"]
 
-    def test_round_trip_coverage_threshold(self, tmp_path):
+    def test_coverage_threshold_not_round_tripped(self, tmp_path):
+        """coverage_threshold is removed from schema — not persisted."""
         cfg = VerifyConfig(
             version=1,
             commands=[],
             detected_at="2026-04-05T00:00:00Z",
             stack=[],
-            coverage_threshold=90.0,
         )
         save_verify_config(str(tmp_path), cfg)
         loaded = load_verify_config(str(tmp_path))
         assert loaded is not None
-        assert loaded.coverage_threshold == 90.0
+        assert not hasattr(loaded, "coverage_threshold")
+
+    def test_invalid_timeout_ignored_gracefully(self, tmp_path):
+        """Non-numeric timeout does not crash — command loads with timeout=None."""
+        cfg_path = tmp_path / ".golem" / "verify.yaml"
+        cfg_path.parent.mkdir()
+        cfg_path.write_text(
+            "version: 1\ndetected_at: ''\nstack: []\n"
+            "commands:\n  - role: test\n    cmd: [pytest]\n"
+            "    source: user\n    timeout: fast\n"
+        )
+        result = load_verify_config(str(tmp_path))
+        assert result is not None
+        assert len(result.commands) == 1
+        assert result.commands[0].timeout is None
 
     def test_round_trip_with_timeout(self, tmp_path):
         cmd = VerifyCommand(

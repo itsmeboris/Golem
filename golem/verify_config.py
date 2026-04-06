@@ -65,7 +65,8 @@ class VerifyConfig:
     commands: list[VerifyCommand] = field(default_factory=list)
     detected_at: str = ""
     stack: list[str] = field(default_factory=list)
-    coverage_threshold: float | None = None
+    # coverage_threshold removed — was persisted but never enforced.
+    # Re-add when generic coverage parsing is implemented.
 
     def to_dict(self) -> VerifyConfigDict:
         """Serialize to TypedDict for YAML persistence."""
@@ -75,8 +76,6 @@ class VerifyConfig:
             "detected_at": self.detected_at,
             "stack": list(self.stack),
         }
-        if self.coverage_threshold is not None:
-            d["coverage_threshold"] = self.coverage_threshold
         return d
 
 
@@ -127,11 +126,22 @@ def _parse_command(raw: Any) -> VerifyCommand | None:
     if source not in _VALID_SOURCES:
         source = "user"
 
+    parsed_timeout = None
+    if timeout is not None:
+        try:
+            parsed_timeout = int(timeout)
+        except (ValueError, TypeError):
+            logger.warning(
+                "Invalid timeout value %r for %s command — ignoring timeout",
+                timeout,
+                role,
+            )
+
     return VerifyCommand(
         role=role,
         cmd=[str(c) for c in cmd],
         source=source,
-        timeout=int(timeout) if timeout is not None else None,
+        timeout=parsed_timeout,
     )
 
 
@@ -169,22 +179,65 @@ def load_verify_config(repo_root: str) -> "VerifyConfig | None":
         if parsed is not None:
             commands.append(parsed)
 
-    threshold = raw.get("coverage_threshold")
+    if "coverage_threshold" in raw:
+        logger.info(
+            "coverage_threshold in %s is not yet enforced — ignoring",
+            repo_root,
+        )
+
     return VerifyConfig(
         version=version,
         commands=commands,
         detected_at=str(raw.get("detected_at", "")),
         stack=list(raw.get("stack", [])),
-        coverage_threshold=float(threshold) if threshold is not None else None,
     )
 
 
 def save_verify_config(repo_root: str, config: VerifyConfig) -> None:
-    """Write config to {repo_root}/.golem/verify.yaml, creating the directory."""
+    """Write config to {repo_root}/.golem/verify.yaml, creating the directory.
+
+    Refuses to write if the target path is a symlink or resolves outside
+    the repo root (path traversal prevention).
+    """
     root = Path(repo_root).resolve()
     golem_dir = root / ".golem"
+
+    # Guard: reject symlinked .golem directory
+    if golem_dir.is_symlink():
+        logger.warning(
+            "Refusing to write verify.yaml — .golem dir %s is a symlink",
+            golem_dir,
+        )
+        return
     golem_dir.mkdir(exist_ok=True)
+    # Validate .golem stays inside repo root
+    try:
+        golem_dir.resolve().relative_to(root)
+    except ValueError:
+        logger.warning(
+            "Refusing to write verify.yaml — .golem dir %s resolves outside repo root %s",
+            golem_dir,
+            root,
+        )
+        return
+
     cfg_path = golem_dir / "verify.yaml"
+
+    # Guard: reject symlinked verify.yaml file
+    if cfg_path.is_symlink():
+        logger.warning("Refusing to write verify.yaml — %s is a symlink", cfg_path)
+        return
+    if cfg_path.exists():
+        try:
+            cfg_path.resolve().relative_to(root)
+        except ValueError:
+            logger.warning(
+                "Refusing to write verify.yaml — %s resolves outside repo root %s",
+                cfg_path,
+                root,
+            )
+            return
+
     data = config.to_dict()
     cfg_path.write_text(
         yaml.dump(data, default_flow_style=False, sort_keys=False),

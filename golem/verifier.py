@@ -46,6 +46,7 @@ class VerificationResult:
     coverage_delta: "CoverageDelta | None" = None
     mutation_result: "MutationResult | None" = None
     command_results: list[CommandResultDict] = field(default_factory=list)
+    error: str = ""
 
     def to_dict(self) -> VerificationResultDict:
         """Serialize for JSON persistence."""
@@ -528,6 +529,24 @@ def _run_generic_verification(
     """
     start = time.time()
     results: list[CommandResultDict] = []
+
+    if not config.commands:
+        logger.warning("verify.yaml loaded but contains zero commands for %s", work_dir)
+        return VerificationResult(
+            passed=False,
+            black_ok=False,
+            black_output="",
+            pylint_ok=False,
+            pylint_output="",
+            pytest_ok=False,
+            pytest_output="",
+            test_count=0,
+            failures=[],
+            coverage_pct=0.0,
+            duration_s=0.0,
+            error="verify.yaml has no commands — run 'golem attach' to re-detect",
+        )
+
     all_passed = True
 
     for cmd_cfg in config.commands:
@@ -560,14 +579,24 @@ def _run_generic_verification(
         time.time() - start,
     )
 
+    # Map generic results to legacy booleans so callers that still
+    # inspect black_ok/pylint_ok/pytest_ok see the correct failure state.
+    # Build a summary of failed command output for the legacy pytest_output
+    # field, which is the primary carrier of failure text in existing code.
+    failed_output = "\n".join(
+        "%s (%s): %s" % (cr["role"], cr["cmd"], cr["output"][:2000])
+        for cr in results
+        if not cr["passed"]
+    )
+
     return VerificationResult(
         passed=all_passed,
-        black_ok=True,
+        black_ok=all_passed,
         black_output="",
-        pylint_ok=True,
+        pylint_ok=all_passed,
         pylint_output="",
-        pytest_ok=True,
-        pytest_output="",
+        pytest_ok=all_passed,
+        pytest_output=failed_output,
         test_count=0,
         failures=[],
         coverage_pct=0.0,
@@ -593,20 +622,22 @@ def run_verification(work_dir: str, *, timeout: int = 300) -> VerificationResult
     if _has_golem_source(work_dir):
         return _run_python_verification(work_dir, timeout=timeout)
 
-    logger.info(
-        "No .golem/verify.yaml and no golem/ source in %s — skipping verification",
-        work_dir,
+    error_msg = (
+        "No .golem/verify.yaml and no golem/ source in %s "
+        "— verification cannot proceed without configured commands"
     )
+    logger.warning(error_msg, work_dir)
     return VerificationResult(
-        passed=True,
-        black_ok=True,
+        passed=False,
+        black_ok=False,
         black_output="",
-        pylint_ok=True,
+        pylint_ok=False,
         pylint_output="",
-        pytest_ok=True,
+        pytest_ok=False,
         pytest_output="",
         test_count=0,
         failures=[],
         coverage_pct=0.0,
         duration_s=0.0,
+        error="No verification commands configured — run 'golem attach' to detect",
     )

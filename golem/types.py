@@ -266,7 +266,6 @@ class VerifyConfigDict(TypedDict):
     commands: list[VerifyCommandDict]
     detected_at: str  # ISO 8601 UTC
     stack: list[str]  # detected languages, e.g. ["python", "javascript"]
-    coverage_threshold: NotRequired[float]  # e.g. 80.0; absent = not enforced
 
 
 class CommandResultDict(TypedDict):
