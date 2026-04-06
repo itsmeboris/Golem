@@ -666,3 +666,38 @@ class TestEmptyVerifyYaml:
         save_verify_config(str(tmp_path), cfg)
         result = run_verification(str(tmp_path))
         assert result.error != ""
+
+
+class TestSessionWorkDirPreserved:
+    """Orchestrator must use session.base_work_dir when already set."""
+
+    def test_resolve_workdir_uses_session_base_work_dir(self, tmp_path):
+        """When session.base_work_dir is set (from --cwd), it takes priority
+        over resolve_work_dir() auto-detection."""
+        from unittest.mock import MagicMock, patch
+
+        from golem.core.config import GolemFlowConfig
+        from golem.orchestrator import TaskOrchestrator, TaskSession
+
+        session = TaskSession(
+            parent_issue_id=999,
+            parent_subject="test task",
+            base_work_dir=str(tmp_path),
+        )
+        config = MagicMock()
+        task_config = GolemFlowConfig(use_worktrees=False)
+        profile = MagicMock()
+
+        orch = TaskOrchestrator(
+            session=session,
+            config=config,
+            task_config=task_config,
+            profile=profile,
+        )
+
+        with patch("golem.orchestrator.resolve_work_dir") as mock_resolve:
+            work_dir, _ = orch._resolve_workdir(999, "test")
+
+        # resolve_work_dir should NOT be called — session already has it
+        mock_resolve.assert_not_called()
+        assert work_dir == str(tmp_path)

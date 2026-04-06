@@ -464,6 +464,9 @@ class TaskOrchestrator:
         """Return ``(work_dir, worktree_path)`` for a session."""
         if self._work_dir_override:
             base_work_dir = self._work_dir_override
+        elif self.session.base_work_dir:
+            # Session already has a work dir (set at submission time via --cwd)
+            base_work_dir = self.session.base_work_dir
         else:
             base_work_dir = resolve_work_dir(
                 subject=self.session.parent_subject,

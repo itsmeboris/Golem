@@ -1159,6 +1159,8 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
         session = self._create_session(task_id, subject)
         session.execution_mode = "issue" if issue_mode else "prompt"
         session.grace_deadline = _now_iso()
+        if work_dir:
+            session.base_work_dir = work_dir
         self._sessions[task_id] = session
         self._save_state()
 
