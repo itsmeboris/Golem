@@ -331,7 +331,12 @@ class SubagentSupervisor:
         if self.task_config.use_worktrees:
             self._emit_event("Creating isolated worktree...")
             try:
-                self._worktree_path = create_worktree(self._base_work_dir, issue_id)
+                # Use .golem/worktrees for external repos so worktrees
+                # are covered by .gitignore and don't pollute the repo.
+                wt_root = str(Path(self._base_work_dir) / ".golem" / "worktrees")
+                self._worktree_path = create_worktree(
+                    self._base_work_dir, issue_id, worktree_root=wt_root
+                )
                 work_dir = self._worktree_path
                 self._slog.info("Using worktree at %s", work_dir)
                 # Copy untracked .golem/verify.yaml into the worktree so

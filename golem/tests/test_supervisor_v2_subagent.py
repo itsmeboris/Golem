@@ -1264,7 +1264,9 @@ class TestVerifiedRef:
             patch("pathlib.Path.is_dir", return_value=True),
         ):
             await sup._setup_work_dir(42, "desc")
-            mock_wt.assert_called_once_with("/repo", 42)
+            mock_wt.assert_called_once_with(
+                "/repo", 42, worktree_root="/repo/.golem/worktrees"
+            )
 
     async def test_on_verified_ref_called_on_preflight_pass(self):
         """on_verified_ref callback fires with HEAD SHA after pre-flight passes."""
@@ -1314,7 +1316,7 @@ class TestVerifiedRef:
         )
         create_calls = []
 
-        def fake_create(_base, iid, start_point=None):
+        def fake_create(_base, iid, start_point=None, **_kw):
             create_calls.append(start_point)
             return f"/wt/{iid}"
 

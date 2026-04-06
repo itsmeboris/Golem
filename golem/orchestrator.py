@@ -480,7 +480,10 @@ class TaskOrchestrator:
         worktree_path = ""
         if self.task_config.use_worktrees:
             try:
-                worktree_path = create_worktree(base_work_dir, issue_id)
+                wt_root = str(Path(base_work_dir) / ".golem" / "worktrees")
+                worktree_path = create_worktree(
+                    base_work_dir, issue_id, worktree_root=wt_root
+                )
                 work_dir = worktree_path
                 self.session.worktree_path = worktree_path
                 self._slog.info("Using worktree at %s", work_dir)

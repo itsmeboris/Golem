@@ -81,6 +81,7 @@ class RepoRegistry:
                 repo["heartbeat"] = heartbeat
                 repo["attached_at"] = datetime.now(timezone.utc).isoformat()
                 self.save()
+                self._ensure_gitignore(normalized)
                 if run_detection:
                     self._run_detection(normalized, force=force_detect)
                 return
@@ -91,8 +92,28 @@ class RepoRegistry:
         }
         self._repos.append(entry)
         self.save()
+        self._ensure_gitignore(normalized)
         if run_detection:
             self._run_detection(normalized, force=force_detect)
+
+    @staticmethod
+    def _ensure_gitignore(path: str) -> None:
+        """Ensure .golem/ is in .gitignore so merges aren't blocked."""
+        repo_dir = Path(path)
+        if not repo_dir.is_dir():
+            return
+        gitignore = repo_dir / ".gitignore"
+        entry = ".golem/"
+        if gitignore.exists():
+            content = gitignore.read_text(encoding="utf-8")
+            if entry in content.splitlines():
+                return
+        try:
+            with gitignore.open("a", encoding="utf-8") as f:
+                f.write(f"\n{entry}\n")
+            logger.info("Added %s to .gitignore in %s", entry, path)
+        except OSError:
+            logger.debug("Could not update .gitignore in %s", path)
 
     def _run_detection(self, path: str, *, force: bool = False) -> None:
         """Run stack detection and write .golem/verify.yaml. Non-fatal on error.
