@@ -50,7 +50,7 @@ golem/
 ├── orchestrator.py      — durable state machine, checkpoints every tick
 ├── flow.py              — agent invocation and event-streaming pipeline
 ├── validation.py        — validation agent dispatch and verdict parsing
-├── verifier.py          — deterministic checks (black / pylint / pytest)
+├── verifier.py          — deterministic checks; config-driven or Python fallback
 ├── worktree_manager.py  — git worktree lifecycle for parallel isolation
 ├── event_tracker.py     — stream-json events → Milestone objects
 ├── types.py             — shared TypedDict contracts (import from here)

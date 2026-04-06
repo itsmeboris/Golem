@@ -43,7 +43,7 @@ Settings under `flows.golem.*` in `config.yaml`.
 | `ast_analysis` | `true` | Run ast-grep structural rules during validation (requires `sg` binary) |
 | `context_injection` | `true` | Inject `AGENTS.md` + `CLAUDE.md` into agent sessions |
 | `enable_simplify_pass` | `true` | Run a code-cleanup pass between BUILD and REVIEW phases |
-| `verification_timeout_seconds` | `300` | Timeout for black/pylint/pytest verification runs (pre-flight, post-merge, validation) |
+| `verification_timeout_seconds` | `300` | Timeout applied to each configured verification command (from .golem/verify.yaml or Python fallback) across pre-flight, post-merge, and validation runs |
 | `ensemble_on_second_retry` | `false` | Spawn parallel candidates with different strategies on second retry |
 | `ensemble_candidates` | `2` | Number of parallel candidates for ensemble retry |
 | `auto_commit` | `true` | Commit on PASS validation verdict |

@@ -6,7 +6,7 @@ Frequently asked questions about Golem — both for operators running the daemon
 
 ### How is Golem different from running Claude Code directly?
 
-Claude Code is interactive — you drive every step, reviewing output and deciding what comes next. Golem is autonomous — submit a prompt and walk away. It manages the full pipeline on your behalf: agent execution in isolated git worktrees, deterministic verification (black, pylint, pytest), a separate validation agent that reviews the evidence, automatic retries with structured feedback on partial results, a sequential merge queue that never touches your working tree, and per-task budget caps.
+Claude Code is interactive — you drive every step, reviewing output and deciding what comes next. Golem is autonomous — submit a prompt and walk away. It manages the full pipeline on your behalf: agent execution in isolated git worktrees, deterministic verification (config-driven via .golem/verify.yaml, with a Python fallback to black/pylint/pytest), a separate validation agent that reviews the evidence, automatic retries with structured feedback on partial results, a sequential merge queue that never touches your working tree, and per-task budget caps.
 
 Golem is built on top of the Claude Code CLI. It adds orchestration, quality gates, and operational controls that make Claude Code safe to run unattended.
 
@@ -42,7 +42,7 @@ To integrate any other tracker (Jira, Linear, Azure DevOps, etc.), implement fiv
 
 Golem handles failures differently depending on the type:
 
-- **Verification failure** (black/pylint/pytest): the agent retries immediately with structured feedback pointing to the specific failures. This does not consume the task's retry budget.
+- **Verification failure**: the agent retries immediately with structured feedback pointing to the specific failures. This does not consume the task's retry budget.
 - **PARTIAL validation verdict**: the validation agent identified issues but the work is salvageable. Golem retries with the validator's feedback, up to `max_retries` (default `1`).
 - **FAIL validation verdict**: the task is marked `FAILED` and your team is notified with the reason.
 - **Budget or timeout exceeded**: the task moves to `FAILED`.

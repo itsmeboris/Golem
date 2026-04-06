@@ -26,7 +26,7 @@ flowchart TD
     SR -- "issues found" --> B
     SR -- pass --> QR["REVIEW: Quality\nCode quality ≥80% confidence\nBugs, edge cases, naming"]
     QR -- "fixes needed" --> B
-    QR -- pass --> V["VERIFY\nblack · pylint · pytest --cov\nCircuit breaker on repeated failures"]
+    QR -- pass --> V["VERIFY\nper-repo commands\n(.golem/verify.yaml)\nCircuit breaker on repeated failures"]
     V -- fail --> B
     V -- pass --> Done(["Report complete"])
 ```

@@ -32,7 +32,7 @@ stateDiagram-v2
     RUNNING --> FAILED : timeout / budget exceeded
 
     VERIFYING --> VALIDATING : all checks pass
-    VERIFYING --> RETRYING : black / pylint / pytest fail
+    VERIFYING --> RETRYING : verification commands fail
 
     VALIDATING --> MergeQueue : PASS verdict
     VALIDATING --> RETRYING : PARTIAL verdict
@@ -57,7 +57,7 @@ stateDiagram-v2
 |-------|-------------|--------------|-----------|
 | **DETECTED** | Task submitted via any method | Waits for dependency resolution and grace deadline. Dependency-ordered batches stay here until `depends_on` tasks reach COMPLETED. | All deps met; grace deadline passed |
 | **RUNNING** | Deps met; or RETRYING dispatches a new attempt | Orchestrator coordinates subagents through 5 phases (UNDERSTAND → PLAN → BUILD → REVIEW → VERIFY) in an isolated git worktree. Infrastructure failures (network timeouts, subprocess crashes) auto-retry without consuming the retry budget. | BUILD phase complete; or timeout/budget hit |
-| **VERIFYING** | RUNNING phase complete | Deterministic checks run: `black` (formatting), `pylint --errors-only` (lint), `pytest --cov` (tests + 100% coverage). Also runs AST analysis on changed files and checks coverage delta. | All checks pass (→ VALIDATING) or any check fails (→ RETRYING) |
+| **VERIFYING** | RUNNING phase complete | Runs verification commands from `.golem/verify.yaml` (auto-detected at `golem attach` time); falls back to Python-specific checks (`black`, `pylint --errors-only`, `pytest --cov`) for repos with a `golem/` directory. Also runs AST analysis on changed files and checks coverage delta. | All checks pass (→ VALIDATING) or any check fails (→ RETRYING) |
 | **VALIDATING** | VERIFYING passes | A separate Claude Validation Agent session reviews the work: spec fidelity checks against SPEC statements, reproduction test detection for bug fixes, documentation relevance checks for user-facing changes, and overall evidence quality. | PASS (→ Merge Queue), PARTIAL (→ RETRYING), or FAIL (→ FAILED) |
 | **RETRYING** | VERIFYING fail or VALIDATING PARTIAL | Packages verification failure details or validation feedback into structured context. Decrements the retry budget. | Immediately → RUNNING with enriched feedback |
 | **COMPLETED** | Merge Queue succeeds | Work rebased onto HEAD and fast-forwarded into main. Configured Notifier fires a completion event. Pitfall extraction and learning loop run asynchronously. | Terminal state |

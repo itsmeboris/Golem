@@ -35,7 +35,7 @@ flowchart TB
         api_gw --> flow["Flow Engine\ngolem/flow.py"]
         flow --> orch["Orchestrator\ngolem/orchestrator.py"]
 
-        orch --> vfy["Verifier\nblack · pylint · pytest"]
+        orch --> vfy["Verifier\nper-repo commands\n(.golem/verify.yaml)"]
         vfy -- pass --> val["Validation Agent\ngolem/validation.py"]
         vfy -- fail --> retry["Retry w/ Feedback"]
         retry --> orch
@@ -73,7 +73,9 @@ structured verdict.
 | `golem/handoff.py` | Structured phase handoff documents between orchestrator phases |
 | `golem/validation.py` | Validation agent dispatch and verdict parsing |
 | `golem/parallel_review.py` | Multi-perspective reviewer coordination |
-| `golem/verifier.py` | Deterministic checks (black / pylint / pytest) |
+| `golem/verifier.py` | Deterministic checks; config-driven generic or Python fallback (black / pylint / pytest) |
+| `golem/verify_config.py` | Loads and validates `.golem/verify.yaml` per-repo verification config |
+| `golem/detect_stack.py` | Detects repo language/stack to select appropriate verification fallback |
 | `golem/observation_hooks.py` | Deterministic signal extraction from verification output |
 | `golem/worktree_manager.py` | Git worktree lifecycle for parallel isolation |
 | `golem/merge_queue.py` | Sequential merge pipeline with conflict resolution; dual-lock (asyncio + threading) for thread-safe reads |
@@ -142,7 +144,7 @@ sequenceDiagram
     Daemon->>Orchestrator: spawn session
     Orchestrator->>Builder: dispatch (UNDERSTAND → PLAN → BUILD)
     Builder-->>Orchestrator: build complete
-    Orchestrator->>Verifier: black + pylint + pytest
+    Orchestrator->>Verifier: run .golem/verify.yaml commands
     alt verification fails
         Verifier-->>Orchestrator: structured failure feedback
         Orchestrator->>Builder: retry with feedback

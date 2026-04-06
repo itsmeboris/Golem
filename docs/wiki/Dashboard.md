@@ -36,7 +36,7 @@ Status badges:
 | Badge | Meaning |
 |-------|---------|
 | RUNNING | Task is executing in an active Claude session |
-| VERIFYING | Running `black`, `pylint`, `pytest` checks |
+| VERIFYING | Running verification commands from .golem/verify.yaml (or black/pylint/pytest for Python) |
 | VALIDATING | Validation agent reviewing the work |
 | RETRYING | Retrying after PARTIAL verdict |
 | COMPLETED | Validated, merged, and committed |

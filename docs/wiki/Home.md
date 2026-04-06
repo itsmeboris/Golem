@@ -6,7 +6,7 @@
 flowchart LR
     submit["Submit Task"] --> daemon["Golem Daemon"]
     daemon --> orchestrate["Orchestrate\n5-phase pipeline"]
-    orchestrate --> verify["Verify\nblack · pylint · pytest"]
+    orchestrate --> verify["Verify\nper-repo commands"]
     verify --> validate["Validate\nAI review agent"]
     validate --> merge["Merge Queue\nrebase + commit"]
     merge --> notify["Notify Team"]

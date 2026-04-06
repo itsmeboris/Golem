@@ -71,7 +71,7 @@ For persistent failures, view the structured verification output:
 curl "http://localhost:8081/api/trace-parsed/{task_id}" | python3 -m json.tool
 ```
 
-Look for the `VERIFY` phase events. The error output from `black`, `pylint`, and `pytest` is captured in the trace.
+Look for the `VERIFY` phase events. The error output from the verification commands (see .golem/verify.yaml) is captured in the trace.
 
 You can also run the checks manually in the worktree to reproduce the error:
 

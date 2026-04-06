@@ -115,7 +115,7 @@ When you ran `golem run -p "..."`, Golem:
 | **PLAN** | Writes specification statements (SPEC-1, SPEC-2, ...) |
 | **BUILD** | Dispatches builder subagents with context chaining |
 | **REVIEW** | Spec compliance check, then code quality review |
-| **VERIFY** | Full-suite `black`, `pylint`, `pytest --cov` |
+| **VERIFY** | Full-suite verification (.golem/verify.yaml commands or Python fallback) |
 
 5. After VERIFY passes, a separate **validation agent** reviews the evidence and returns a PASS / PARTIAL / FAIL verdict
 6. On PASS, the result is committed via the **merge queue** (rebase onto HEAD, fast-forward merge)

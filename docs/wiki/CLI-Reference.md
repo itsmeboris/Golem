@@ -289,3 +289,61 @@ golem batch list
 | `list` | List all known batches |
 
 See the [architecture docs](https://github.com/itsmeboris/golem/blob/master/docs/architecture.md) for the batch file format and `depends_on` ordering.
+
+---
+
+### `golem attach`
+
+Register an additional repository with the Golem daemon for multi-repo management.
+
+```
+golem attach [REPO_PATH] [--force-detect]
+```
+
+| Flag | Description |
+|------|-------------|
+| `REPO_PATH` | Path to the git repository to attach (default: current directory) |
+| `--force-detect` | Re-run stack detection and regenerate `.golem/verify.yaml` even if one already exists |
+
+At attach time, Golem auto-detects the repository's language stack and writes a `.golem/verify.yaml` with appropriate verification commands. For Python repos with a `golem/` directory, this file is omitted and the built-in Python fallback (`black`, `pylint`, `pytest`) is used instead.
+
+```bash
+# Attach the current directory
+golem attach
+
+# Attach a specific repo path
+golem attach /path/to/other-repo
+
+# Re-run stack detection (e.g. after adding a new test framework)
+golem attach --force-detect
+```
+
+Attached repos are stored in `~/.golem/repos.json`. Use `golem repos list` to see all attached repos and `golem repos detach REPO_PATH` to remove one.
+
+---
+
+### `golem setup`
+
+Generate or update the `.golem/verify.yaml` verification config for the current repository.
+
+```
+golem setup [--stack STACK] [--force]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--stack STACK` | Override auto-detected stack (`python`, `node`, `rust`, `go`, etc.) |
+| `--force` | Overwrite an existing `.golem/verify.yaml` |
+
+`golem setup` runs the same stack detection logic as `golem attach` but only writes the verification config — it does not register the repo. Use it to bootstrap `.golem/verify.yaml` for a repo that you want to manage manually, or to regenerate the config after changing your tooling.
+
+```bash
+# Auto-detect and write .golem/verify.yaml
+golem setup
+
+# Override stack detection
+golem setup --stack node
+
+# Overwrite an existing config
+golem setup --force
+```
