@@ -107,7 +107,7 @@ flowchart LR
 |-------|-------------|
 | **DETECTED** | Task received; waits for dependency resolution and grace deadline |
 | **RUNNING** | Claude instances execute in isolated worktrees (infra failures auto-retry) |
-| **VERIFYING** | Deterministic checks — `black`, `pylint`, `pytest` with 100% coverage, plus AST analysis and coverage delta on changed files. Failure skips the reviewer and retries immediately with structured feedback |
+| **VERIFYING** | Deterministic checks — per-repo commands from `.golem/verify.yaml` (auto-detected at `golem attach`) or Python fallback (`black`, `pylint`, `pytest`), plus AST analysis and coverage delta on changed files. Repos without configured commands fail closed. Failure skips the reviewer and retries immediately with structured feedback |
 | **VALIDATING** | A separate validation agent reviews the work with verification evidence, spec fidelity checks, reproduction test detection for bug fixes, and documentation relevance checks for user-facing changes |
 | **RETRYING** | Partial result — agent retries with validation feedback. On second retry with `ensemble_on_second_retry` enabled, spawns N parallel candidates in separate worktrees with different strategy hints; `pick_best_result()` selects the best PASS result and rsyncs the winner back to the work directory. On the last retry, `_check_promoted_and_escalate()` checks whether any observation signals have been promoted past the frequency threshold — if so, the task escalates instead of retrying |
 | **COMPLETED** | Validated, merged via merge queue, and team notified |
@@ -174,7 +174,7 @@ flowchart TD
 | **Build** | Dispatch Builders with exploration context, spec statements, and prior builder output (**context chaining** — each builder's summary feeds the next). Builders self-verify with targeted `pytest -x` + `black --check`. Bug-fix tasks require a reproduction test first. Writes `## Phase: BUILD` marker. |
 | **Spec Review** | Verifies implementation matches each SPEC statement. Reads actual code — does not trust Builder self-reports. Issues trigger a fix-and-re-review cycle. |
 | **Quality Review** | Only after Spec Review passes. Checks code quality, bugs, edge cases, naming. Reports issues with >= 80% confidence. Writes `## Phase: REVIEW` marker. |
-| **Verify** | Full-suite `black`, `pylint`, `pytest --cov` — the only full run in the workflow. Circuit breaker stops after repeated identical failures. Writes `## Phase: VERIFY` marker. |
+| **Verify** | Full verification via `.golem/verify.yaml` commands (or `black`, `pylint`, `pytest --cov` for Python repos) — the only full run in the workflow. Circuit breaker stops after repeated identical failures. Writes `## Phase: VERIFY` marker. |
 
 When `parallel_review` is enabled, the REVIEW phase dispatches multiple specialized reviewers concurrently — Spec, Quality, Security, Consistency, and Test Quality perspectives (`golem/parallel_review.py`). Results are aggregated by confidence score.
 

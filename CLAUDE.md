@@ -14,7 +14,9 @@ passing work — all without human intervention.
 | `golem/handoff.py` | Structured phase handoff documents between orchestrator phases |
 | `golem/validation.py` | Validation agent dispatch and verdict parsing |
 | `golem/parallel_review.py` | Multi-perspective reviewer coordination |
-| `golem/verifier.py` | Deterministic checks (black / pylint / pytest) |
+| `golem/verifier.py` | Deterministic checks; three-way dispatch: config-driven generic, Python hardcoded, or fail-closed |
+| `golem/verify_config.py` | Per-repo verification config loader/saver (`.golem/verify.yaml`); path-traversal safe |
+| `golem/detect_stack.py` | Buildpack-style language detection + CI parsing for auto-generating verify configs |
 | `golem/observation_hooks.py` | Deterministic signal extraction from verification output |
 | `golem/worktree_manager.py` | Git worktree lifecycle for parallel isolation |
 | `golem/merge_queue.py` | Sequential merge pipeline with conflict resolution; dual-lock (asyncio + threading) for thread-safe reads |
@@ -53,7 +55,7 @@ Each task flows through: **DETECT → PLAN → BUILD → REVIEW → VERIFY**
 2. **PLAN**: Orchestrator builds the prompt; context budget selects relevant knowledge
 3. **BUILD**: Claude CLI session executes the task in an isolated git worktree
 4. **REVIEW**: Validation agent assesses the output; parallel reviewers check security/quality/tests
-5. **VERIFY**: Deterministic checks (black, pylint, pytest); merge queue with conflict resolution
+5. **VERIFY**: Deterministic checks via `.golem/verify.yaml` (auto-detected per repo) or Python fallback (black, pylint, pytest); merge queue with conflict resolution
 
 ### Concurrency Model
 - **asyncio event loop** — one per daemon process; detection loop + session tasks
@@ -124,7 +126,7 @@ async with lock:
 
 - **Branch**: all agent work happens on `agent/{session_id}` branches in worktrees
 - **Merge**: sequential through `MergeQueue` with rebase + fast-forward
-- **Verification**: black + pylint + pytest run BEFORE merge (post-merge re-verification too)
+- **Verification**: per-repo commands from `.golem/verify.yaml` (or black + pylint + pytest for Golem) run BEFORE merge (post-merge re-verification too)
 - **Conflict resolution**: merge agent gets a second chance with verification output
 
 ---
@@ -156,6 +158,7 @@ to decide retry vs commit.
 | Traces | `data/traces/golem/` | JSONL per session |
 | Instincts | `.golem/instincts.json` | JSON (InstinctStore) |
 | Repos | `~/.golem/repos.json` | JSON (RepoRegistry) |
+| Verify config | `{repo}/.golem/verify.yaml` | YAML (per-repo verification commands) |
 | Daemon logs | `data/logs/` | Rotated text logs |
 | Prompt runs | `data/prompt_runs/` | JSON per run |
 

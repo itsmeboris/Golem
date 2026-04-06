@@ -23,12 +23,17 @@ directory.
 ```bash
 golem attach                        # register cwd, heartbeat on
 golem attach --no-heartbeat         # register cwd, heartbeat off
+golem attach --force-detect         # regenerate .golem/verify.yaml
 golem attach /path/to/dir           # register explicit path
 golem detach                        # unregister cwd
 golem detach /path/to/dir           # unregister explicit path
+golem setup                         # validate environment and recommend plugins
 ```
 
 Attach is idempotent — re-attaching updates settings (e.g., toggle heartbeat).
+On first attach, Golem auto-detects the repo's language and tools (Python/JS/Rust/Go/Ruby/Makefile)
+and writes `.golem/verify.yaml` with the discovered verification commands.
+Existing configs are preserved on re-attach — use `--force-detect` to regenerate.
 No daemon restart required; the heartbeat reloads the registry each tick.
 
 ### Ad-hoc Tasks
