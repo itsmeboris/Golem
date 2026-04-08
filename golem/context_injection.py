@@ -153,23 +153,6 @@ class ContextBudget:
         return "\n\n---\n\n".join(result_parts)
 
 
-def load_workspace_context(work_dir: str) -> str:
-    """Load AGENTS.md and CLAUDE.md from *work_dir*, return combined content.
-
-    Each file's content is wrapped in a labeled section. Returns empty string
-    if neither file exists.
-    """
-    work_path = Path(work_dir).resolve()
-    sections = []
-
-    for filename in _CONTEXT_FILES:
-        content = _find_and_read(work_path, filename)
-        if content:
-            sections.append(f"## {filename}\n\n{content.strip()}")
-
-    return "\n\n---\n\n".join(sections)
-
-
 def _find_and_read(base: Path, filename: str) -> str:
     """Read *filename* from *base* directory. Returns content or empty string."""
     path = base / filename

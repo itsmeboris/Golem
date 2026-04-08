@@ -364,8 +364,6 @@ def _get_changed_files(work_dir: str) -> list[str]:
 
 def _load_coverage_delta(cov_json_path: Path, work_dir: str) -> CoverageDelta | None:
     """Parse coverage delta from JSON, cleaning up the file afterwards."""
-    if not cov_json_path.exists():
-        return None
     try:
         raw_data = json.loads(cov_json_path.read_text())
         cov_data = _validate_coverage_data(raw_data)

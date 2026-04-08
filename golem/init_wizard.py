@@ -232,6 +232,7 @@ def _setup_git_hooks() -> None:
             text=True,
             cwd=str(repo_root),
             check=False,
+            timeout=10,
             preexec_fn=make_sandbox_preexec(),
         ).stdout.strip()
         if cur == ".githooks":
@@ -240,6 +241,7 @@ def _setup_git_hooks() -> None:
             ["git", "config", "core.hooksPath", ".githooks"],
             cwd=str(repo_root),
             check=True,
+            timeout=10,
             preexec_fn=make_sandbox_preexec(),
         )
         print("\nGit hooks configured (core.hooksPath = .githooks)")

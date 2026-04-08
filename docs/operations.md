@@ -223,7 +223,7 @@ The daemon handles `SIGHUP` gracefully:
 golem config set heartbeat_enabled true
 
 # Manual
-kill -HUP $(cat data/golem.pid)
+kill -HUP $(cat ~/.golem/data/daemon.pid)
 ```
 
 ### Configuration

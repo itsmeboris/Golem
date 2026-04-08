@@ -56,7 +56,7 @@ golem/
 ├── types.py             — shared TypedDict contracts (import from here)
 ├── backends/            — issue-tracker adapters (GitHub, Redmine, local)
 ├── prompts/             — prompt templates for each agent role
-├── core/                — Flask web UI + config management
+├── core/                — FastAPI web UI + config management
 └── tests/               — mirrors source structure, 100% coverage required
 ```
 

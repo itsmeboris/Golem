@@ -64,11 +64,12 @@ def read_runs(
     """
     if log_file is None:
         log_file = DEFAULT_RUN_LOG
-    if not log_file.exists():
-        return []
-
     records: list[RunRecordDict] = []
-    with open(log_file, encoding="utf-8") as fh:
+    try:
+        fh = open(log_file, encoding="utf-8")
+    except FileNotFoundError:
+        return []
+    with fh:
         for line in fh:
             line = line.strip()
             if not line:
@@ -103,12 +104,13 @@ def purge_flow(flow_name: str, log_file: Path | None = None) -> int:
     """Remove all run-log entries for *flow_name*.  Returns count removed."""
     if log_file is None:
         log_file = DEFAULT_RUN_LOG
-    if not log_file.exists():
-        return 0
-
     kept: list[str] = []
     removed = 0
-    with open(log_file, encoding="utf-8") as fh:
+    try:
+        fh = open(log_file, encoding="utf-8")
+    except FileNotFoundError:
+        return 0
+    with fh:
         for line in fh:
             stripped = line.strip()
             if not stripped:

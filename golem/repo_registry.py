@@ -104,10 +104,15 @@ class RepoRegistry:
             return
         gitignore = repo_dir / ".gitignore"
         entry = ".golem/"
-        if gitignore.exists():
+        try:
             content = gitignore.read_text(encoding="utf-8")
             if entry in content.splitlines():
                 return
+        except FileNotFoundError:
+            pass
+        except OSError:
+            logger.debug("Could not read .gitignore in %s", path)
+            return
         try:
             with gitignore.open("a", encoding="utf-8") as f:
                 f.write(f"\n{entry}\n")

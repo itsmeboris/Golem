@@ -91,7 +91,7 @@ structured verdict.
 | `golem/log_context.py` | Structured logging with `TaskContextFilter` (task_id/phase via contextvars) and `JsonFormatter` |
 | `golem/health.py` | Daemon health monitoring with threshold-based alerting |
 | `golem/instinct_store.py` | Confidence-weighted pitfall memory with decay/promotion |
-| `golem/core/dashboard.py` | Flask web UI for live task monitoring |
+| `golem/core/dashboard.py` | FastAPI web UI for live task monitoring |
 | `golem/pitfall_extractor.py` | Extracts + deduplicates pitfalls from session data |
 | `golem/pitfall_writer.py` | Categorized write of pitfalls to root `AGENTS.md` |
 | `golem/heartbeat.py` | Self-directed work: Tier 1 issue triage, Tier 2 self-improvement, batching, promotion |

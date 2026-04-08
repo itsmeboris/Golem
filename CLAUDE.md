@@ -29,7 +29,7 @@ passing work — all without human intervention.
 | `golem/mcp_validator.py` | Runtime MCP tool schema validation; rejects tools with invalid schemas to prevent agent confusion |
 | `golem/health.py` | Daemon health monitoring with threshold-based alerting; `compute_status()` derives three-tier health status; UNHEALTHY pauses detection |
 | `golem/instinct_store.py` | Confidence-weighted pitfall memory with decay/promotion |
-| `golem/core/dashboard.py` | Flask web UI for live task monitoring |
+| `golem/core/dashboard.py` | FastAPI web UI for live task monitoring |
 | `golem/pitfall_extractor.py` | Extracts + deduplicates pitfalls from session data |
 | `golem/pitfall_writer.py` | Categorized write of pitfalls to root `AGENTS.md` |
 | `golem/heartbeat.py` | Heartbeat scheduler: round-robin across workers, global budget, inflight tracking |
@@ -152,15 +152,15 @@ to decide retry vs commit.
 
 | Data | Location | Format |
 |---|---|---|
-| Session state | `data/state.json` | JSON (two-phase atomic write) |
-| Batch state | `data/batches.json` | JSON (two-phase atomic write) |
-| Checkpoints | `data/checkpoints/` | JSON per session |
-| Traces | `data/traces/golem/` | JSONL per session |
-| Instincts | `.golem/instincts.json` | JSON (InstinctStore) |
+| Session state | `~/.golem/data/state/golem_sessions.json` | JSON (two-phase atomic write) |
+| Batch state | `~/.golem/data/state/golem_batches.json` | JSON (two-phase atomic write) |
+| Checkpoints | `~/.golem/data/state/checkpoints/<id>/` | JSON per session |
+| Traces | `~/.golem/data/traces/golem/` | JSONL per session |
+| Instincts | `~/.golem/data/instinct_store.json` | JSON (InstinctStore) |
 | Repos | `~/.golem/repos.json` | JSON (RepoRegistry) |
 | Verify config | `{repo}/.golem/verify.yaml` | YAML (per-repo verification commands) |
-| Daemon logs | `data/logs/` | Rotated text logs |
-| Prompt runs | `data/prompt_runs/` | JSON per run |
+| Daemon logs | `~/.golem/data/logs/` | Rotated text logs |
+| Prompt runs | `~/.golem/data/prompt_runs/` | JSON per run |
 
 ## Dependencies
 
@@ -172,7 +172,6 @@ to decide retry vs commit.
 ### Python packages (core)
 - `pyyaml` — config parsing
 - `fastapi` + `uvicorn` — dashboard API
-- `aiofiles` — async file I/O in dashboard
 
 ### Python packages (optional)
 - `opentelemetry-api` + `opentelemetry-sdk` — tracing (NoOp fallback if absent)
@@ -261,3 +260,12 @@ python -m golem
 # View daemon logs
 golem logs -n 50 --follow
 ```
+
+## graphify
+
+This project has a graphify knowledge graph at graphify-out/.
+
+Rules:
+- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
+- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
+- After modifying code files in this session, run `python3 -c "from graphify.watch import _rebuild_code; from pathlib import Path; _rebuild_code(Path('.'))"` to keep the graph current

@@ -1256,6 +1256,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                     cwd=work_dir,
                     check=False,
                     capture_output=True,
+                    timeout=60,
                     preexec_fn=make_sandbox_preexec(),
                 )
                 result = run_verification(wt_path)
@@ -1266,6 +1267,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                     cwd=work_dir,
                     check=False,
                     capture_output=True,
+                    timeout=60,
                     preexec_fn=make_sandbox_preexec(),
                 )
                 return None
@@ -1275,6 +1277,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                     cwd=work_dir,
                     check=False,
                     capture_output=True,
+                    timeout=60,
                     preexec_fn=make_sandbox_preexec(),
                 )
 
@@ -1295,6 +1298,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                 cwd=work_dir,
                 check=False,
                 capture_output=True,
+                timeout=60,
                 preexec_fn=make_sandbox_preexec(),
             )
             result = run_verification(wt_path)
@@ -1305,6 +1309,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                 cwd=work_dir,
                 check=False,
                 capture_output=True,
+                timeout=60,
                 preexec_fn=make_sandbox_preexec(),
             )
             return None
@@ -1314,6 +1319,7 @@ class GolemFlow(BaseFlow, PollableFlow, WebhookableFlow):
                 cwd=work_dir,
                 check=False,
                 capture_output=True,
+                timeout=60,
                 preexec_fn=make_sandbox_preexec(),
             )
         return lo if not result.passed else None

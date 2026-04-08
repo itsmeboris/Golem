@@ -280,7 +280,7 @@ resume cleanly on restart. Daemon logs show `Checkpoint for #NNN is corrupt`.
 
 **What happened:** The checkpoint file contains invalid JSON, most likely from
 an interrupted write. The file has been automatically renamed to
-`data/state/checkpoints/<issue_id>/checkpoint.json.corrupt` so the data is
+`~/.golem/data/state/checkpoints/<issue_id>/checkpoint.json.corrupt` so the data is
 preserved for inspection.
 
 **Solution:**
@@ -289,13 +289,13 @@ The affected task is treated as if no checkpoint exists and will restart from
 its last known phase. If you need to inspect the corrupt file:
 
 ```bash
-cat data/state/checkpoints/<issue_id>/checkpoint.json.corrupt
+cat ~/.golem/data/state/checkpoints/<issue_id>/checkpoint.json.corrupt
 ```
 
 To force a clean restart of the task, remove the corrupt backup and resubmit:
 
 ```bash
-rm -rf data/state/checkpoints/<issue_id>/
+rm -rf ~/.golem/data/state/checkpoints/<issue_id>/
 golem run -p "..." # resubmit the original prompt
 ```
 

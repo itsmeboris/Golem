@@ -27,9 +27,10 @@ PROMPTS_DIR = Path(__file__).parent / "prompts"
 def load_prompt(name: str) -> str:
     """Read a prompt template file by name."""
     prompt_file = PROMPTS_DIR / name
-    if not prompt_file.exists():
-        raise FileNotFoundError(f"Prompt file not found: {prompt_file}")
-    return prompt_file.read_text()
+    try:
+        return prompt_file.read_text()
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Prompt file not found: {prompt_file}") from None
 
 
 def _apply_description_guard(name: str, kwargs: dict) -> None:
@@ -79,7 +80,8 @@ class FilePromptProvider:
         """Load a template from the configured directory and fill placeholders."""
         _apply_description_guard(template_name, kwargs)
         prompt_file = self._dir / template_name
-        if not prompt_file.exists():
-            raise FileNotFoundError(f"Prompt file not found: {prompt_file}")
-        template = prompt_file.read_text()
+        try:
+            template = prompt_file.read_text()
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Prompt file not found: {prompt_file}") from None
         return template.format_map(_SafeDict(kwargs))

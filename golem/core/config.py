@@ -531,15 +531,15 @@ def load_config(config_path: str | Path | None = None) -> Config:
     resolved_path = _find_config_path(config_path)
     if resolved_path is None:
         return Config()  # No config specified and auto-discovery found nothing
-    if not resolved_path.exists():
+    try:
+        with open(
+            resolved_path, encoding="utf-8"
+        ) as config_file:  # pylint: disable=unspecified-encoding
+            raw_config = yaml.safe_load(config_file) or {}
+    except FileNotFoundError:
         if config_path is not None:
             raise FileNotFoundError("Config file not found: %s" % resolved_path)
         return Config()  # Auto-discovered path no longer exists, use defaults
-
-    with open(
-        resolved_path, encoding="utf-8"
-    ) as config_file:  # pylint: disable=unspecified-encoding
-        raw_config = yaml.safe_load(config_file) or {}
 
     raw_config = _expand_env_vars(raw_config)
     flows_data = raw_config.get("flows", {})

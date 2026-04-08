@@ -421,6 +421,8 @@ class SubagentSupervisor:
                         text=True,
                         check=False,
                         cwd=work_dir,
+                        timeout=30,
+                        preexec_fn=make_sandbox_preexec(),
                     )
                     if result.returncode == 0:
                         self._on_verified_ref(result.stdout.strip())
@@ -1275,6 +1277,7 @@ class SubagentSupervisor:
                 capture_output=True,
                 text=True,
                 timeout=120,
+                preexec_fn=make_sandbox_preexec(),
             )
             if rsync_result.returncode != 0:
                 self._slog.error(

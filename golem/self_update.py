@@ -166,6 +166,7 @@ class SelfUpdateManager:
                 check=True,
                 capture_output=True,
                 text=True,
+                timeout=30,
                 preexec_fn=make_sandbox_preexec(),
             )
             logger.info("Rolled back to %s", sha)
@@ -181,6 +182,7 @@ class SelfUpdateManager:
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=30,
                 preexec_fn=make_sandbox_preexec(),
             )
             return result.stdout.strip()
@@ -196,6 +198,7 @@ class SelfUpdateManager:
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=30,
                 preexec_fn=make_sandbox_preexec(),
             )
             return result.stdout.strip()
@@ -210,6 +213,7 @@ class SelfUpdateManager:
                 check=True,
                 capture_output=True,
                 text=True,
+                timeout=60,
                 preexec_fn=make_sandbox_preexec(),
             )
             return True
@@ -223,6 +227,7 @@ class SelfUpdateManager:
                 ["git", "merge-base", "--is-ancestor", "HEAD", remote_sha],
                 capture_output=True,
                 text=True,
+                timeout=30,
                 preexec_fn=make_sandbox_preexec(),
             )
             return result.returncode == 0
@@ -237,6 +242,7 @@ class SelfUpdateManager:
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=30,
                 preexec_fn=make_sandbox_preexec(),
             )
             return result.stdout
@@ -251,6 +257,7 @@ class SelfUpdateManager:
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=30,
                 preexec_fn=make_sandbox_preexec(),
             )
             return result.stdout

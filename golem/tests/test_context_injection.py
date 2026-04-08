@@ -19,60 +19,12 @@ from golem.context_injection import (
     build_system_prompt,
     load_all_role_contexts,
     load_role_context,
-    load_workspace_context,
     write_back_discoveries,
 )
 from golem.core.cli_wrapper import CLIConfig, CLIResult
 from golem.core.config import GolemFlowConfig
 from golem.orchestrator import TaskSession
 from golem.supervisor_v2_subagent import SubagentSupervisor
-
-# ---------------------------------------------------------------------------
-# load_workspace_context
-# ---------------------------------------------------------------------------
-
-
-class TestLoadWorkspaceContext:
-    def test_no_files_returns_empty(self, tmp_path):
-        result = load_workspace_context(str(tmp_path))
-        assert result == ""
-
-    def test_only_agents_md(self, tmp_path):
-        (tmp_path / "AGENTS.md").write_text("# Guidelines\n- rule one\n")
-        result = load_workspace_context(str(tmp_path))
-        assert "## AGENTS.md" in result
-        assert "rule one" in result
-        assert "CLAUDE.md" not in result
-
-    def test_only_claude_md(self, tmp_path):
-        (tmp_path / "CLAUDE.md").write_text("# Claude config\n- tip one\n")
-        result = load_workspace_context(str(tmp_path))
-        assert "## CLAUDE.md" in result
-        assert "tip one" in result
-        assert "AGENTS.md" not in result
-
-    def test_both_files_concatenated(self, tmp_path):
-        (tmp_path / "AGENTS.md").write_text("agents content")
-        (tmp_path / "CLAUDE.md").write_text("claude content")
-        result = load_workspace_context(str(tmp_path))
-        assert "## AGENTS.md" in result
-        assert "agents content" in result
-        assert "## CLAUDE.md" in result
-        assert "claude content" in result
-        # separator between sections
-        assert "---" in result
-
-    def test_both_files_agents_before_claude(self, tmp_path):
-        (tmp_path / "AGENTS.md").write_text("agents content")
-        (tmp_path / "CLAUDE.md").write_text("claude content")
-        result = load_workspace_context(str(tmp_path))
-        assert result.index("AGENTS.md") < result.index("CLAUDE.md")
-
-    def test_content_is_stripped(self, tmp_path):
-        (tmp_path / "AGENTS.md").write_text("  trimmed  \n\n\n")
-        result = load_workspace_context(str(tmp_path))
-        assert result.endswith("trimmed")
-
 
 # ---------------------------------------------------------------------------
 # _find_and_read

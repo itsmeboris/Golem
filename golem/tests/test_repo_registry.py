@@ -135,6 +135,25 @@ class TestRepoRegistryEnvOverride:
         assert reg._registry_path == custom
 
 
+class TestEnsureGitignore:
+    def test_oserror_on_read_is_handled(self, tmp_path):
+        """OSError reading .gitignore should log and return, not crash."""
+        from unittest.mock import patch
+
+        repo_dir = tmp_path / "repo"
+        repo_dir.mkdir()
+        gitignore = repo_dir / ".gitignore"
+        gitignore.write_text("existing content\n")
+        # Make read_text raise a non-FileNotFoundError OSError
+        with patch.object(
+            type(gitignore), "read_text", side_effect=PermissionError("denied")
+        ):
+            # Should not raise
+            RepoRegistry._ensure_gitignore(str(repo_dir))
+        # .gitignore should be unchanged (we returned early)
+        assert gitignore.read_text() == "existing content\n"
+
+
 class TestRepoRegistryDetection:
     def test_attach_triggers_detection_when_enabled(self, tmp_path):
         from unittest.mock import patch

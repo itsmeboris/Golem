@@ -136,7 +136,7 @@ Key behaviors:
 ## Checkpoint and Recovery
 
 The Orchestrator checkpoints full session state on every tick to
-`data/sessions/<task_id>.json`.
+`~/.golem/data/state/checkpoints/<task_id>/checkpoint.json`.
 
 ```mermaid
 sequenceDiagram
