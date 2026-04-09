@@ -33,20 +33,18 @@ _SIGNAL_FILES = [
 ]
 
 
-def _find_python() -> str:
-    """Find the correct python executable (python3 or python)."""
-    for candidate in ["python3", "python"]:
-        try:
-            result = subprocess.run(
-                [candidate, "--version"],
-                capture_output=True,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                return candidate
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            continue
-    return "python3"  # fallback
+def _resolve_python_cmd(cmd: list[str]) -> list[str]:
+    """Normalize python commands to use the current interpreter.
+
+    Replaces 'python', 'python3', or any python variant at cmd[0] with
+    sys.executable so that verify commands run under the same interpreter
+    that has the project's tools installed (black, pylint, pytest, etc.).
+    """
+    if not cmd:
+        return cmd
+    if cmd[0] in ("python", "python3", "python3.11", "python3.12"):
+        return [sys.executable] + cmd[1:]
+    return cmd
 
 
 def verify_commands(repo_path: str) -> dict:
@@ -67,18 +65,13 @@ def verify_commands(repo_path: str) -> dict:
     if not commands:
         return {"ok": False, "error": "No verify commands found in golem.md"}
 
-    python_exe = _find_python()
     results = []
     all_passed = True
 
     for cmd_entry in commands:
-        cmd = list(cmd_entry["cmd"])
+        cmd = _resolve_python_cmd(list(cmd_entry["cmd"]))
         timeout = cmd_entry.get("timeout", 120)
         role = cmd_entry["role"]
-
-        # Auto-fix python/python3: replace "python" with detected executable
-        if cmd and cmd[0] in ("python", "python3"):
-            cmd[0] = python_exe
 
         try:
             proc = subprocess.run(
