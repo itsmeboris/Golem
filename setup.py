@@ -8,7 +8,6 @@ from pathlib import Path
 from setuptools import setup
 from setuptools.command.build_py import build_py as _build_py
 
-
 _IGNORE_PATTERNS = shutil.ignore_patterns(
     "__pycache__",
     ".pytest_cache",
