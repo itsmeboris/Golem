@@ -72,6 +72,6 @@ Long-running processes. Informational only.
    - Use `lint` role for linting (e.g., `pylint`, `ruff check`, `eslint`, `pyflakes`, `vulture`)
    - Use `test` role for test runners (e.g., `pytest`, `jest`, `go test`)
    - Use `typecheck` role for type checking (e.g., `mypy`, `tsc --noEmit`)
-   - Set realistic timeouts (30s for lint/format, 120s for tests)
+   - Set realistic timeouts (30s for lint/format, 300s for tests). Test suites often take 1-2 minutes — use 300s to avoid flaky timeouts under load
    - If a Makefile `lint` target runs 5 tools, list ALL 5 as separate verify entries — not just one
    - If a pre-push hook runs checks, include those too
