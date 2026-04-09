@@ -1876,6 +1876,54 @@ class TestMountDashboardRoutes:  # pylint: disable=too-many-public-methods
 
 
 # ---------------------------------------------------------------------------
+# /api/health/detail endpoint
+# ---------------------------------------------------------------------------
+
+
+class TestHealthDetailEndpoint:
+    """Test the /api/health/detail route handler."""
+
+    @pytest.fixture()
+    def handlers(self):
+        app = MagicMock()
+        routes: dict = {}
+
+        def capture_route(path, **_kwargs):
+            def decorator(fn):
+                routes[path] = fn
+                return fn
+
+            return decorator
+
+        app.get = capture_route
+        with patch("golem.core.dashboard.FASTAPI_AVAILABLE", True):
+            with patch(
+                "golem.core.dashboard.Query", lambda default=None, **kw: default
+            ):
+                mount_dashboard(app)
+        return routes
+
+    async def test_returns_expected_fields(self, handlers):
+        """GET /api/health/detail returns uptime, active tasks, queue depth, memory."""
+        with patch("golem.core.dashboard.LiveState") as mock_ls:
+            mock_ls.get.return_value.snapshot.return_value = {
+                "uptime_s": 3600.0,
+                "active_count": 2,
+                "queue_depth": 1,
+            }
+            with patch("golem.core.dashboard.resource") as mock_res:
+                mock_res.RUSAGE_SELF = 0
+                mock_res.getrusage.return_value = MagicMock(ru_maxrss=49152)
+                resp = await handlers["/api/health/detail"]()
+        body = json.loads(resp.body)
+        assert body["uptime_s"] == 3600.0
+        assert body["active_tasks"] == 2
+        assert body["queue_depth"] == 1
+        assert body["memory_rss_mb"] == pytest.approx(48.0, abs=0.1)
+        assert isinstance(body["timestamp"], int)
+
+
+# ---------------------------------------------------------------------------
 # /api/cost-analytics endpoint
 # ---------------------------------------------------------------------------
 

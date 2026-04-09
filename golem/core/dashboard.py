@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import resource
 import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
@@ -663,6 +664,20 @@ def mount_dashboard(  # pylint: disable=too-many-locals,too-many-statements
     @app.get("/api/ping")
     async def api_ping() -> JSONResponse:
         return JSONResponse(content={"status": "ok", "timestamp": int(time.time())})
+
+    @app.get("/api/health/detail")
+    async def api_health_detail() -> JSONResponse:
+        snap = LiveState.get().snapshot()
+        rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        return JSONResponse(
+            content={
+                "uptime_s": snap.get("uptime_s", 0),
+                "active_tasks": snap.get("active_count", 0),
+                "queue_depth": snap.get("queue_depth", 0),
+                "memory_rss_mb": round(rss_kb / 1024, 1),
+                "timestamp": int(time.time()),
+            }
+        )
 
     @app.get("/api/events")
     async def api_events(request: Request) -> StreamingResponse:
