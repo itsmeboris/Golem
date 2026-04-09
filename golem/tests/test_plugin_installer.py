@@ -143,7 +143,13 @@ class TestInstallPlugin:
         assert entry["scope"] == "user"
 
         # Check marketplace
-        mp_json = plugins_base / "marketplaces" / "golem-local" / ".claude-plugin" / "marketplace.json"
+        mp_json = (
+            plugins_base
+            / "marketplaces"
+            / "golem-local"
+            / ".claude-plugin"
+            / "marketplace.json"
+        )
         assert mp_json.exists()
         mp = json.loads(mp_json.read_text())
         assert mp["name"] == "golem-local"
@@ -196,7 +202,9 @@ class TestInstallPlugin:
         assert result["ok"] is False
         # Original should be restored
         assert (cache_path / ".claude-plugin" / "plugin.json").exists()
-        assert (cache_path / ".claude-plugin" / "plugin.json").read_text() == original_json
+        assert (
+            cache_path / ".claude-plugin" / "plugin.json"
+        ).read_text() == original_json
 
     def test_install_oserror(self, tmp_path):
         source = tmp_path / "source"
@@ -362,9 +370,7 @@ class TestRegisterPlugin:
         plugins_base.mkdir()
         existing = {
             "version": 2,
-            "plugins": {
-                "other@marketplace": [{"scope": "user", "version": "1.0.0"}]
-            },
+            "plugins": {"other@marketplace": [{"scope": "user", "version": "1.0.0"}]},
         }
         (plugins_base / "installed_plugins.json").write_text(json.dumps(existing))
 
@@ -397,7 +403,10 @@ class TestEnablePluginInSettings:
         assert settings["enabledPlugins"]["golem@golem-local"] is True
 
     def test_adds_to_existing_settings(self, tmp_path):
-        existing = {"permissions": {"allow": ["Read"]}, "enabledPlugins": {"other@mp": True}}
+        existing = {
+            "permissions": {"allow": ["Read"]},
+            "enabledPlugins": {"other@mp": True},
+        }
         (tmp_path / "settings.json").write_text(json.dumps(existing))
 
         _enable_plugin_in_settings(tmp_path, "golem@golem-local")
@@ -436,7 +445,13 @@ class TestCreateMarketplace:
 
         _create_marketplace(plugins_base, install_path, "0.1.0")
 
-        mp_json = plugins_base / "marketplaces" / "golem-local" / ".claude-plugin" / "marketplace.json"
+        mp_json = (
+            plugins_base
+            / "marketplaces"
+            / "golem-local"
+            / ".claude-plugin"
+            / "marketplace.json"
+        )
         assert mp_json.exists()
         mp = json.loads(mp_json.read_text())
         assert mp["name"] == "golem-local"
@@ -498,7 +513,9 @@ class TestCreateMarketplace:
 
     def test_replaces_directory_with_symlink(self, tmp_path):
         plugins_base = tmp_path / "plugins"
-        mp_plugin_dir = plugins_base / "marketplaces" / "golem-local" / "plugins" / "golem"
+        mp_plugin_dir = (
+            plugins_base / "marketplaces" / "golem-local" / "plugins" / "golem"
+        )
         mp_plugin_dir.mkdir(parents=True)
         (mp_plugin_dir / "old_file.txt").write_text("old")
 

@@ -74,7 +74,10 @@ def get_plugin_source_dir() -> Path:
 
     # 2. Installed mode: golem/_plugin_data/ (copied during build)
     installed_path = Path(__file__).parent / "_plugin_data"
-    if installed_path.is_dir() and (installed_path / ".claude-plugin" / "plugin.json").exists():
+    if (
+        installed_path.is_dir()
+        and (installed_path / ".claude-plugin" / "plugin.json").exists()
+    ):
         return installed_path
 
     # 3. Not found — return repo path (will fail with clear error in install_plugin)
@@ -187,9 +190,7 @@ def _register_plugin(plugins_base: Path, install_path: Path, version: str) -> No
     _enable_plugin_in_settings(plugins_base.parent, plugin_key)
 
 
-def _create_marketplace(
-    plugins_base: Path, install_path: Path, version: str
-) -> None:
+def _create_marketplace(plugins_base: Path, install_path: Path, version: str) -> None:
     """Create the marketplace directory that Claude Code needs to discover the plugin."""
     mp_dir = plugins_base / "marketplaces" / _MARKETPLACE_NAME
     mp_meta = mp_dir / ".claude-plugin"

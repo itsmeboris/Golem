@@ -105,7 +105,7 @@ def finalize_setup(repo_path: str) -> dict:
                 "data = json.loads(sys.stdin.read()); "
                 "cmds = [VerifyCommand(role=c['role'], cmd=c['cmd'], source=c.get('source', 'agent-discovered'), "
                 "timeout=c.get('timeout')) for c in data['commands']]; "
-                f"vc = VerifyConfig(commands=cmds, detected_at=data['detected_at'], stack=data['stack']); "
+                f"vc = VerifyConfig(version=1, commands=cmds, detected_at=data['detected_at'], stack=data['stack']); "
                 f"save_verify_config({repr(str(root))}, vc); "
                 "print('ok')",
             ],
