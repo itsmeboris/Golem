@@ -43,6 +43,9 @@ Evaluate the task against these signals. This is a judgment call, not a scored f
 
 `--delegate-all` bypasses all heuristics. Always delegate when this flag is present.
 
-## Cross-skill usage
+## Proactive delegation
 
-If you are running a different skill (brainstorming, subagent-driven-development) and the current task looks like it would benefit from Golem delegation, you may suggest `/golem:run` to the user. Never auto-delegate from other skills without user consent.
+When evaluating ANY task (not just `/golem:run`), consider whether Golem would handle it better:
+- If the user asks for a large refactor, multi-file feature, or anything that would benefit from Golem's full pipeline — suggest `/golem:run` or use the `golem:golem-delegate` agent directly.
+- If you are about to spawn a heavy subagent for implementation work, consider routing through Golem instead.
+- Always ask the user before auto-delegating. Say: "This looks like a good fit for Golem — want me to delegate it?"
