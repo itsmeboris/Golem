@@ -46,6 +46,6 @@ Evaluate the task against these signals. This is a judgment call, not a scored f
 ## Proactive delegation
 
 When evaluating ANY task (not just `/golem:run`), consider whether Golem would handle it better:
-- If the user asks for a large refactor, multi-file feature, or anything that would benefit from Golem's full pipeline — suggest `/golem:run` or use the `golem:golem-delegate` agent directly.
+- If the user asks for a large refactor, multi-file feature, or anything that would benefit from Golem's full pipeline — suggest `/golem:run`. Do not call the `golem:golem-delegate` agent directly (it skips heuristic evaluation and prompt shaping).
 - If you are about to spawn a heavy subagent for implementation work, consider routing through Golem instead.
 - Always ask the user before auto-delegating. Say: "This looks like a good fit for Golem — want me to delegate it?"
