@@ -305,8 +305,10 @@ class TestResolvePythonCmd:
         ids=["python", "python3", "3.11", "3.12", "3.13", "3.14.1"],
     )
     def test_rewrites_python_variants(self, cmd0):
+        import sys
+
         result = setup_flow._resolve_python_cmd([cmd0, "-m", "black"])
-        assert result[0] != cmd0
+        assert result[0] == sys.executable
         assert result[1:] == ["-m", "black"]
 
     @pytest.mark.parametrize(
