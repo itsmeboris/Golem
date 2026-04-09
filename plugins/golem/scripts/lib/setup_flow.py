@@ -1,15 +1,11 @@
 """Setup flow helpers — signal collection and verify.yaml finalization."""
 
 import json
-import os
 import re
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-
-import yaml
-
 
 # Files to look for when collecting repo signals
 _SIGNAL_FILES = [
@@ -79,13 +75,15 @@ def verify_commands(repo_path: str) -> dict:
         exe = cmd[0] if cmd else ""
         if exe != sys.executable and not _shutil.which(exe):
             all_passed = False
-            results.append({
-                "role": role,
-                "cmd": cmd,
-                "passed": False,
-                "error": f"'{exe}' not found in PATH. "
-                f"Check the command name or install the tool.",
-            })
+            results.append(
+                {
+                    "role": role,
+                    "cmd": cmd,
+                    "passed": False,
+                    "error": f"'{exe}' not found in PATH. "
+                    f"Check the command name or install the tool.",
+                }
+            )
             continue
 
         try:
@@ -111,20 +109,24 @@ def verify_commands(repo_path: str) -> dict:
             results.append(entry)
         except FileNotFoundError as exc:
             all_passed = False
-            results.append({
-                "role": role,
-                "cmd": cmd,
-                "passed": False,
-                "error": f"Command not found: {exc}",
-            })
+            results.append(
+                {
+                    "role": role,
+                    "cmd": cmd,
+                    "passed": False,
+                    "error": f"Command not found: {exc}",
+                }
+            )
         except subprocess.TimeoutExpired:
             all_passed = False
-            results.append({
-                "role": role,
-                "cmd": cmd,
-                "passed": False,
-                "error": f"Timed out after {timeout}s",
-            })
+            results.append(
+                {
+                    "role": role,
+                    "cmd": cmd,
+                    "passed": False,
+                    "error": f"Timed out after {timeout}s",
+                }
+            )
 
     return {
         "ok": all_passed,
@@ -201,7 +203,8 @@ def finalize_setup(repo_path: str) -> dict:
     try:
         result = subprocess.run(
             [
-                python_exe, "-c",
+                python_exe,
+                "-c",
                 "import json, sys; "
                 "from golem.verify_config import VerifyConfig, VerifyCommand, save_verify_config; "
                 "data = json.loads(sys.stdin.read()); "
@@ -217,7 +220,10 @@ def finalize_setup(repo_path: str) -> dict:
             text=True,
         )
         if result.returncode != 0:
-            return {"ok": False, "error": f"save_verify_config failed: {result.stderr.strip()}"}
+            return {
+                "ok": False,
+                "error": f"save_verify_config failed: {result.stderr.strip()}",
+            }
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
         return {"ok": False, "error": f"Failed to write verify.yaml: {exc}"}
 

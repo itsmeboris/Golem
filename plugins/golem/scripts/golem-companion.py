@@ -26,10 +26,21 @@ from pathlib import Path
 # Add lib/ to path
 sys.path.insert(0, str(Path(__file__).parent / "lib"))
 
-from daemon import attach_repo, ensure_running, is_daemon_running, is_golem_installed, is_repo_attached
-from delegation import structure_task_metadata
+from daemon import (
+    attach_repo,
+    ensure_running,
+    is_daemon_running,
+    is_golem_installed,
+    is_repo_attached,
+)
 from setup_flow import collect_repo_signals, finalize_setup, verify_commands
-from state import flush_stats_to_global, get_session_jobs, get_session_stats, record_delegation, update_job_status
+from state import (
+    flush_stats_to_global,
+    get_session_jobs,
+    get_session_stats,
+    record_delegation,
+    update_job_status,
+)
 
 
 def _output(data, use_json: bool = False) -> None:
@@ -107,42 +118,59 @@ def cmd_run(args) -> int:
             record_delegation(task_id, prompt, mode)
 
         if not task_id or result.returncode != 0:
-            _output({
-                "ok": False,
-                "output": result.stdout.strip(),
-                "error": result.stderr.strip(),
-            }, args.json)
+            _output(
+                {
+                    "ok": False,
+                    "output": result.stdout.strip(),
+                    "error": result.stderr.strip(),
+                },
+                args.json,
+            )
             return result.returncode or 1
 
         # --wait: poll golem status until task completes
         if args.wait:
             import time
+
             for _ in range(360):  # 30 min max (5s intervals)
                 time.sleep(5)
                 status = subprocess.run(
                     ["golem", "status", "--task", str(task_id)],
-                    capture_output=True, timeout=10, text=True,
+                    capture_output=True,
+                    timeout=10,
+                    text=True,
                 )
                 output_text = status.stdout.strip()
                 if "COMPLETED" in output_text or "FAILED" in output_text:
-                    update_job_status(task_id, "completed" if "COMPLETED" in output_text else "failed")
-                    _output({
-                        "ok": "COMPLETED" in output_text,
-                        "task_id": task_id,
-                        "output": output_text,
-                    }, args.json)
+                    update_job_status(
+                        task_id, "completed" if "COMPLETED" in output_text else "failed"
+                    )
+                    _output(
+                        {
+                            "ok": "COMPLETED" in output_text,
+                            "task_id": task_id,
+                            "output": output_text,
+                        },
+                        args.json,
+                    )
                     return 0 if "COMPLETED" in output_text else 1
 
-            _output({"ok": False, "task_id": task_id, "error": "timed out waiting"}, args.json)
+            _output(
+                {"ok": False, "task_id": task_id, "error": "timed out waiting"},
+                args.json,
+            )
             return 1
 
         # --background (default): return immediately
-        _output({
-            "ok": True,
-            "task_id": task_id,
-            "mode": "background",
-            "output": result.stdout.strip(),
-        }, args.json)
+        _output(
+            {
+                "ok": True,
+                "task_id": task_id,
+                "mode": "background",
+                "output": result.stdout.strip(),
+            },
+            args.json,
+        )
         return 0
 
     except FileNotFoundError:
@@ -196,6 +224,7 @@ def cmd_status(args) -> int:
 def cmd_query(args) -> int:
     """Query: fetch task results from Golem's control API."""
     from pathlib import Path
+
     if not args.task_id:
         _output({"error": "task-id required"}, args.json)
         return 1
@@ -249,10 +278,14 @@ def cmd_query(args) -> int:
                 try:
                     diff_result = subprocess.run(
                         ["git", "diff", "--name-only", f"{commit_sha}~1", commit_sha],
-                        capture_output=True, timeout=10, text=True,
+                        capture_output=True,
+                        timeout=10,
+                        text=True,
                     )
                     if diff_result.returncode == 0:
-                        files_changed = [f for f in diff_result.stdout.strip().splitlines() if f]
+                        files_changed = [
+                            f for f in diff_result.stdout.strip().splitlines() if f
+                        ]
                 except (FileNotFoundError, subprocess.TimeoutExpired):
                     pass
 
@@ -338,10 +371,13 @@ def cmd_cancel(args) -> int:
         result = subprocess.run(cmd, capture_output=True, timeout=10, text=True)
         if result.returncode == 0:
             update_job_status(args.task_id, "cancelled")
-        _output({
-            "ok": result.returncode == 0,
-            "output": result.stdout.strip(),
-        }, args.json)
+        _output(
+            {
+                "ok": result.returncode == 0,
+                "output": result.stdout.strip(),
+            },
+            args.json,
+        )
         return result.returncode
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
         _output({"error": str(exc)}, args.json)
@@ -364,7 +400,9 @@ def cmd_session_start(args) -> int:
                 "Use /golem:status to check running tasks."
             )
         else:
-            print("[Golem] Daemon active but repo not attached. Use /golem:setup to bootstrap.")
+            print(
+                "[Golem] Daemon active but repo not attached. Use /golem:setup to bootstrap."
+            )
     else:
         print("[Golem] Daemon not running. Use /golem:setup to bootstrap.")
 

@@ -6,9 +6,7 @@ We use importlib to load it.
 """
 
 import importlib.util
-import io
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path

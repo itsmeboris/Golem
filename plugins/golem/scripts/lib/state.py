@@ -21,6 +21,7 @@ def _state_file() -> Path:
     # Fallback: key by resolved cwd (stable across invocations in same repo)
     # Use hashlib (deterministic) instead of hash() (randomized per-process)
     import hashlib
+
     cwd_hash = hashlib.sha256(str(Path.cwd().resolve()).encode()).hexdigest()[:12]
     return _STATE_DIR / f"repo-{cwd_hash}.json"
 
@@ -45,13 +46,15 @@ def _save_state(state: dict) -> None:
 def record_delegation(task_id: int, prompt: str, mode: str) -> None:
     """Record a task delegation in session state."""
     state = _load_state()
-    state["jobs"].append({
-        "task_id": task_id,
-        "prompt": prompt[:200],  # truncate for storage
-        "mode": mode,
-        "delegated_at": time.time(),
-        "status": "running",
-    })
+    state["jobs"].append(
+        {
+            "task_id": task_id,
+            "prompt": prompt[:200],  # truncate for storage
+            "mode": mode,
+            "delegated_at": time.time(),
+            "status": "running",
+        }
+    )
     state["stats"]["delegated"] += 1
     _save_state(state)
 
@@ -96,10 +99,12 @@ def flush_stats_to_global() -> None:
         except (json.JSONDecodeError, OSError):
             existing = []
 
-    existing.append({
-        "timestamp": time.time(),
-        "pid": os.getpid(),
-        **stats,
-    })
+    existing.append(
+        {
+            "timestamp": time.time(),
+            "pid": os.getpid(),
+            **stats,
+        }
+    )
 
     global_path.write_text(json.dumps(existing, indent=2))

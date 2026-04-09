@@ -1,8 +1,6 @@
 """Daemon lifecycle helpers — check, start, ensure running."""
 
-import json
 import subprocess
-import sys
 from pathlib import Path
 
 
@@ -41,6 +39,7 @@ def is_repo_attached(cwd: str | None = None) -> bool:
         return False
     try:
         import json
+
         repos = json.loads(registry_path.read_text())
         # Registry stores resolved absolute paths as keys
         return str(target) in repos

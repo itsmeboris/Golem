@@ -1,6 +1,5 @@
 """Task metadata structuring for delegation heuristic."""
 
-import json
 import re
 
 
@@ -17,16 +16,34 @@ def structure_task_metadata(prompt: str) -> dict:
 
     # Complexity keywords
     complexity_keywords = {
-        "refactor", "migrate", "migration", "rename", "restructure",
-        "rewrite", "overhaul", "redesign", "across", "all", "every",
-        "cross-cutting", "modules", "components",
+        "refactor",
+        "migrate",
+        "migration",
+        "rename",
+        "restructure",
+        "rewrite",
+        "overhaul",
+        "redesign",
+        "across",
+        "all",
+        "every",
+        "cross-cutting",
+        "modules",
+        "components",
     }
     found_complexity = [w for w in words if w in complexity_keywords]
 
     # Simplicity keywords
     simplicity_keywords = {
-        "fix", "typo", "tweak", "bump", "update", "change",
-        "rename", "config", "comment",
+        "fix",
+        "typo",
+        "tweak",
+        "bump",
+        "update",
+        "change",
+        "rename",
+        "config",
+        "comment",
     }
     found_simplicity = [w for w in words if w in simplicity_keywords]
 

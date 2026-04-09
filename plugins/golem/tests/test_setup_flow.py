@@ -1,8 +1,6 @@
 """Tests for plugins/golem/scripts/lib/setup_flow.py."""
 
-import json
 import subprocess
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -313,8 +311,26 @@ class TestResolvePythonCmd:
 
     @pytest.mark.parametrize(
         "cmd0",
-        ["python2", "python2.7", "python.11", "black", "pylint", "pytest", "pythonic", "node"],
-        ids=["python2", "python2.7", "python.11", "black", "pylint", "pytest", "pythonic", "node"],
+        [
+            "python2",
+            "python2.7",
+            "python.11",
+            "black",
+            "pylint",
+            "pytest",
+            "pythonic",
+            "node",
+        ],
+        ids=[
+            "python2",
+            "python2.7",
+            "python.11",
+            "black",
+            "pylint",
+            "pytest",
+            "pythonic",
+            "node",
+        ],
     )
     def test_does_not_rewrite_non_python3(self, cmd0):
         result = setup_flow._resolve_python_cmd([cmd0, "--check"])
