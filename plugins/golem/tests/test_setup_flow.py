@@ -294,3 +294,29 @@ class TestEnsureGitignored:
         setup_flow._ensure_gitignored(tmp_path, "secret.txt")
         content = gitignore.read_text()
         assert content == "*.pyc\nsecret.txt\n"
+
+
+class TestResolvePythonCmd:
+    """Test _resolve_python_cmd accept/reject cases."""
+
+    @pytest.mark.parametrize(
+        "cmd0",
+        ["python", "python3", "python3.11", "python3.12", "python3.13", "python3.14.1"],
+        ids=["python", "python3", "3.11", "3.12", "3.13", "3.14.1"],
+    )
+    def test_rewrites_python_variants(self, cmd0):
+        result = setup_flow._resolve_python_cmd([cmd0, "-m", "black"])
+        assert result[0] != cmd0
+        assert result[1:] == ["-m", "black"]
+
+    @pytest.mark.parametrize(
+        "cmd0",
+        ["python2", "python2.7", "python.11", "black", "pylint", "pytest", "pythonic", "node"],
+        ids=["python2", "python2.7", "python.11", "black", "pylint", "pytest", "pythonic", "node"],
+    )
+    def test_does_not_rewrite_non_python3(self, cmd0):
+        result = setup_flow._resolve_python_cmd([cmd0, "--check"])
+        assert result[0] == cmd0
+
+    def test_empty_cmd_unchanged(self):
+        assert setup_flow._resolve_python_cmd([]) == []
