@@ -132,6 +132,7 @@ class TestCmdSetup:
     def test_returns_1_when_golem_not_installed(self):
         args = MagicMock()
         args.finalize = False
+        args.verify = False
         args.cwd = None
         args.json = False
 
@@ -143,6 +144,7 @@ class TestCmdSetup:
     def test_returns_0_when_all_checks_pass(self, tmp_path, capsys):
         args = MagicMock()
         args.finalize = False
+        args.verify = False
         args.cwd = str(tmp_path)
         args.json = True
 
