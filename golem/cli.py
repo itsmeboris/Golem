@@ -50,6 +50,7 @@ from .orchestrator import (
 from .profile import build_profile
 from .repo_registry import RepoRegistry
 from .log_context import setup_logging
+from .plugin_installer import detect_ai_tools, get_plugin_source_dir, install_plugin
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -1335,6 +1336,37 @@ def _add_batch_subparser(sub: argparse._SubParsersAction) -> None:
     batch_p.set_defaults(func=cmd_batch)
 
 
+def cmd_install_plugins(args) -> int:
+    """Install the golem plugin to detected AI tools."""
+    plugin_dir = Path(args.plugin_dir) if args.plugin_dir else None
+    tools = detect_ai_tools(plugin_dir=plugin_dir)
+
+    if not tools:
+        print("No AI tools detected. Use --plugin-dir to specify a target directory.")
+        return 1
+
+    source = get_plugin_source_dir()
+    if not source.is_dir():
+        print(f"Plugin source not found at {source}")
+        return 1
+
+    success = 0
+    for name, target in tools.items():
+        print(f"Installing golem plugin to {name}: {target}")
+        result = install_plugin(source, target)
+        if result["ok"]:
+            print("  OK")
+            success += 1
+        else:
+            print(f"  FAILED: {result['error']}")
+
+    if success == 0:
+        return 1
+
+    print(f"\nInstalled to {success}/{len(tools)} tool(s).")
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Build the CLI argument parser."""
     parser = argparse.ArgumentParser(description="Golem", prog="golem")
@@ -1498,6 +1530,18 @@ def _build_parser() -> argparse.ArgumentParser:
     config_sub.add_parser("list", help="List all config values")
     config_p.set_defaults(func=cmd_config)
 
+    # install-plugins
+    install_p = sub.add_parser(
+        "install-plugins",
+        help="Install the golem plugin to detected AI tools (Claude Code, etc.)",
+    )
+    install_p.add_argument(
+        "--plugin-dir",
+        default=None,
+        help="Override target directory instead of auto-detecting",
+    )
+    install_p.set_defaults(func=cmd_install_plugins)
+
     return parser
 
 
@@ -1527,9 +1571,34 @@ def _ensure_golem_home() -> None:
         logger.info("Created default config at %s", config_path)
 
 
+def _check_plugin_install_hint() -> None:
+    """Print a one-time hint about golem install-plugins if no AI tool plugin found."""
+    golem_home = Path.home() / ".golem"
+    marker = golem_home / ".plugin_hint_shown"
+    if marker.exists():
+        return
+
+    # Check if any AI tool has the golem plugin installed
+    claude_plugin = Path.home() / ".claude" / "plugins" / "golem"
+    if claude_plugin.is_dir():
+        return
+
+    # Show hint once
+    print(
+        "\n  Tip: Run 'golem install-plugins' to enable AI tool integrations"
+        " (Claude Code, etc.)\n"
+    )
+    try:
+        golem_home.mkdir(parents=True, exist_ok=True)
+        marker.touch()
+    except OSError:
+        pass
+
+
 def main() -> int:
     """CLI entry point for Golem."""
     _ensure_golem_home()
+    _check_plugin_install_hint()
     parser = _build_parser()
     args = parser.parse_args()
     if args.verbose:

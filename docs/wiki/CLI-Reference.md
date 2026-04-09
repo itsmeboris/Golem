@@ -324,26 +324,40 @@ Attached repos are stored in `~/.golem/repos.json`. Use `golem repos list` to se
 
 ### `golem setup`
 
-Generate or update the `.golem/verify.yaml` verification config for the current repository.
+Validate the environment and recommend plugins.
 
 ```
-golem setup [--stack STACK] [--force]
+golem setup
+```
+
+Checks that required dependencies (`git`, `claude`) are available and reports their versions. No flags — this is a read-only diagnostic command.
+
+```bash
+golem setup
+```
+
+---
+
+### `golem install-plugins`
+
+Install the Golem plugin to detected AI tools (Claude Code, etc.).
+
+```bash
+golem install-plugins [--plugin-dir PATH]
 ```
 
 | Flag | Description |
-|------|-------------|
-| `--stack STACK` | Override auto-detected stack (`python`, `node`, `rust`, `go`, etc.) |
-| `--force` | Overwrite an existing `.golem/verify.yaml` |
+|---|---|
+| `--plugin-dir PATH` | Override auto-detection, install to this directory |
 
-`golem setup` runs the same stack detection logic as `golem attach` but only writes the verification config — it does not register the repo. Use it to bootstrap `.golem/verify.yaml` for a repo that you want to manage manually, or to regenerate the config after changing your tooling.
+Running again overwrites the previous installation (always up-to-date).
 
-```bash
-# Auto-detect and write .golem/verify.yaml
-golem setup
+**Detection:** Checks for `~/.claude/` (Claude Code), with WSL Windows home detection. Future: Cursor, Codex.
 
-# Override stack detection
-golem setup --stack node
-
-# Overwrite an existing config
-golem setup --force
-```
+**What it installs:** The Golem plugin provides slash commands for AI agents:
+- `/golem:setup` — bootstrap daemon + repo + generate `golem.md`
+- `/golem:run` — smart task delegation with complexity heuristics
+- `/golem:status` — daemon health and task monitoring
+- `/golem:query` — retrieve completed task results
+- `/golem:config` — view/edit configuration
+- `/golem:cancel` — cancel running tasks

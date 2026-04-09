@@ -35,6 +35,8 @@ passing work — all without human intervention.
 | `golem/heartbeat.py` | Heartbeat scheduler: round-robin across workers, global budget, inflight tracking |
 | `golem/heartbeat_worker.py` | Per-repo heartbeat scan logic: tiers, dedup, coverage, cooldowns, promotion |
 | `golem/repo_registry.py` | Attach/detach registry for multi-repo management (`~/.golem/repos.json`) |
+| `golem/plugin_installer.py` | AI-tool plugin installer; detects Claude Code (others planned) and copies `plugins/golem/` to plugin directories |
+| `plugins/golem/` | Claude Code plugin: commands (`/golem:setup`, `/golem:run`, `/golem:status`, `/golem:query`, `/golem:config`, `/golem:cancel`), delegation agent, companion scripts |
 | `golem/git_utils.py` | Git detection (`is_git_repo`) and GitHub remote parsing (`detect_github_remote`) |
 | `golem/data_retention.py` | Startup cleanup of old traces/checkpoints (>30 days) |
 | `golem/startup.py` | Startup dependency validation (git, claude in PATH) |
@@ -259,6 +261,12 @@ python -m golem
 
 # View daemon logs
 golem logs -n 50 --follow
+
+# Install AI tool plugins
+golem install-plugins
+
+# Install to specific directory
+golem install-plugins --plugin-dir ~/.claude/plugins/golem
 ```
 
 ## graphify

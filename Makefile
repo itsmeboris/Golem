@@ -1,4 +1,4 @@
-.PHONY: setup test lint mutation mutation-report
+.PHONY: setup test lint mutation mutation-report plugin-data
 
 setup:
 	git config core.hooksPath .githooks
@@ -19,3 +19,7 @@ mutation:  ## Run mutation testing (slow — runs pytest per mutant)
 
 mutation-report:  ## Show surviving mutants from last run
 	python -m mutmut results
+
+plugin-data:  ## Manually stage plugin source into golem/_plugin_data for packaging/debugging
+	rm -rf golem/_plugin_data
+	cp -r plugins/golem golem/_plugin_data

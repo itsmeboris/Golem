@@ -1,0 +1,1 @@
+"""Golem companion script library."""

@@ -31,6 +31,7 @@ flowchart LR
 3. **[[Sub-Agents]]** — the 5-phase orchestrated pipeline
 4. **[[Backends]]** — profile system, built-in integrations, adding your own
 5. **[[Development Guide|Development-Guide]]** — contribute to Golem itself
+6. **Delegate tasks from Claude Code** → [[Claude Code Plugin]]
 
 ---
 
@@ -44,6 +45,7 @@ flowchart LR
 | **Merge Queue** | Sequential pipeline that rebases validated work onto HEAD and commits |
 | **Profile** | Pluggable bundle of backends (task source, state, notifier, tools, prompts) |
 | **Heartbeat** | Autonomous self-improvement system that finds work when the daemon is idle |
+| **Plugin** | Claude Code integration for delegating tasks via `/golem:run` slash commands |
 
 ---
 

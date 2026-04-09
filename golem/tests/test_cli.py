@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from golem.cli import (
+    _check_plugin_install_hint,
     _cmd_run_prompt,
     _make_event_handler,
     _now_iso,
@@ -16,6 +17,7 @@ from golem.cli import (
     _submit_to_daemon,
     cmd_attach,
     cmd_detach,
+    cmd_install_plugins,
     cmd_run,
     cmd_poll,
     cmd_stop,
@@ -764,3 +766,128 @@ class TestCmdAttachDetection:
         out = capsys.readouterr().out
         assert "Detected stack" not in out
         assert "No verification commands" not in out
+
+
+class TestCmdInstallPlugins:
+    """Tests for the install-plugins subcommand."""
+
+    @patch("golem.cli.detect_ai_tools")
+    @patch("golem.cli.install_plugin")
+    @patch("golem.cli.get_plugin_source_dir")
+    def test_installs_to_detected_tools(
+        self, mock_source, mock_install, mock_detect, tmp_path
+    ):
+        target_path = tmp_path / ".claude" / "plugins" / "golem"
+        source_path = tmp_path / "source"
+        source_path.mkdir()
+        mock_detect.return_value = {"claude": target_path}
+        mock_source.return_value = source_path
+        mock_install.return_value = {"ok": True, "target": str(target_path)}
+
+        args = argparse.Namespace(
+            plugin_dir=None,
+            func=cmd_install_plugins,
+        )
+        result = cmd_install_plugins(args)
+        assert result == 0
+        mock_install.assert_called_once_with(source_path, target_path)
+
+    @patch("golem.cli.detect_ai_tools")
+    def test_no_tools_detected(self, mock_detect):
+        mock_detect.return_value = {}
+
+        args = argparse.Namespace(
+            plugin_dir=None,
+            func=cmd_install_plugins,
+        )
+        result = cmd_install_plugins(args)
+        assert result == 1
+
+    @patch("golem.cli.detect_ai_tools")
+    @patch("golem.cli.install_plugin")
+    @patch("golem.cli.get_plugin_source_dir")
+    def test_plugin_dir_override(
+        self, mock_source, mock_install, mock_detect, tmp_path
+    ):
+        override = tmp_path / "custom"
+        source_path = tmp_path / "source"
+        source_path.mkdir()
+        mock_detect.return_value = {"custom": override}
+        mock_source.return_value = source_path
+        mock_install.return_value = {"ok": True, "target": str(override)}
+
+        args = argparse.Namespace(
+            plugin_dir=str(override),
+            func=cmd_install_plugins,
+        )
+        result = cmd_install_plugins(args)
+        assert result == 0
+        mock_detect.assert_called_once_with(plugin_dir=override)
+
+    @patch("golem.cli.detect_ai_tools")
+    @patch("golem.cli.get_plugin_source_dir")
+    def test_source_not_found(self, mock_source, mock_detect, tmp_path):
+        mock_detect.return_value = {"claude": tmp_path / "target"}
+        mock_source.return_value = tmp_path / "nonexistent"
+
+        args = argparse.Namespace(plugin_dir=None)
+        result = cmd_install_plugins(args)
+        assert result == 1
+
+    @patch("golem.cli.detect_ai_tools")
+    @patch("golem.cli.install_plugin")
+    @patch("golem.cli.get_plugin_source_dir")
+    def test_install_failure(self, mock_source, mock_install, mock_detect, tmp_path):
+        source_path = tmp_path / "source"
+        source_path.mkdir()
+        mock_detect.return_value = {"claude": tmp_path / "target"}
+        mock_source.return_value = source_path
+        mock_install.return_value = {"ok": False, "error": "permission denied"}
+
+        args = argparse.Namespace(plugin_dir=None)
+        result = cmd_install_plugins(args)
+        assert result == 1
+
+
+class TestCheckPluginInstallHint:
+    """Tests for _check_plugin_install_hint."""
+
+    def test_skips_when_marker_exists(self, tmp_path, capsys):
+        golem_home = tmp_path / ".golem"
+        golem_home.mkdir()
+        (golem_home / ".plugin_hint_shown").touch()
+
+        with patch("golem.cli.Path.home", return_value=tmp_path):
+            _check_plugin_install_hint()
+
+        assert capsys.readouterr().out == ""
+
+    def test_skips_when_plugin_installed(self, tmp_path, capsys):
+        claude_plugin = tmp_path / ".claude" / "plugins" / "golem"
+        claude_plugin.mkdir(parents=True)
+
+        with patch("golem.cli.Path.home", return_value=tmp_path):
+            _check_plugin_install_hint()
+
+        assert capsys.readouterr().out == ""
+        assert not (tmp_path / ".golem" / ".plugin_hint_shown").exists()
+
+    def test_shows_hint_and_creates_marker(self, tmp_path, capsys):
+        (tmp_path / ".golem").mkdir()
+
+        with patch("golem.cli.Path.home", return_value=tmp_path):
+            _check_plugin_install_hint()
+
+        output = capsys.readouterr().out
+        assert "golem install-plugins" in output
+        assert (tmp_path / ".golem" / ".plugin_hint_shown").exists()
+
+    def test_hint_survives_marker_write_failure(self, tmp_path, capsys):
+        (tmp_path / ".golem").mkdir()
+
+        with patch("golem.cli.Path.home", return_value=tmp_path):
+            with patch("golem.cli.Path.touch", side_effect=OSError("read-only")):
+                _check_plugin_install_hint()
+
+        output = capsys.readouterr().out
+        assert "golem install-plugins" in output

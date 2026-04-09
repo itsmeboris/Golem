@@ -102,6 +102,8 @@ structured verdict.
 | `golem/startup.py` | Startup dependency validation (git, claude in PATH) |
 | `golem/backends/` | Issue-tracker adapters (GitHub, Redmine, local, MCP) |
 | `golem/prompts/` | Prompt templates for each agent role; `_SafeDict` replaces missing placeholders with `""` |
+| `golem/plugin_installer.py` | AI-tool plugin installer; detects Claude Code and copies `plugins/golem/` |
+| `plugins/golem/` | Claude Code plugin — commands, skills, agent, companion scripts |
 
 ---
 
@@ -321,6 +323,12 @@ verdict (PASS > PARTIAL > FAIL) then confidence.
 temporary worktrees at the midpoint commit and running `run_verification()`
 until the culprit session is identified. The result is reported with the
 issue ID and affected files.
+
+---
+
+### Plugin Layer
+
+The Claude Code plugin (`plugins/golem/`) provides AI agents with direct access to Golem's pipeline via slash commands. Commands invoke the companion script (`golem-companion.py`), which wraps the `golem` CLI and HTTP control API. The delegation heuristic evaluates task complexity before routing to Golem. See [[Claude Code Plugin]] for details.
 
 ---
 

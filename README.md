@@ -164,6 +164,27 @@ Golem embeds its core methodologies (TDD, debugging, verification) directly in i
 | **code-review** | PR review automation with confidence scoring | `claude plugins install code-review` |
 | **code-simplifier** | Code clarity and reuse analysis | `claude plugins install code-simplifier` |
 
+5. **Install Golem AI Plugin**
+
+   ```bash
+   golem install-plugins
+   ```
+
+   This installs the Golem plugin to detected AI tools (Claude Code, etc.),
+   enabling `/golem:run` for smart task delegation and `/golem:setup` for
+   per-repo bootstrapping.
+
+   This enables slash commands inside Claude Code:
+
+   | Command | Purpose |
+   |---|---|
+   | `/golem:setup` | Bootstrap Golem for a repo |
+   | `/golem:run` | Smart task delegation |
+   | `/golem:status` | Check task progress |
+   | `/golem:query` | Get completed results |
+   | `/golem:config` | View/edit config |
+   | `/golem:cancel` | Cancel a task |
+
 Run `golem setup` to check your environment and see which plugins are installed.
 
 ---

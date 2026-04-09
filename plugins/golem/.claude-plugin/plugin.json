@@ -1,0 +1,8 @@
+{
+  "name": "golem",
+  "version": "0.1.0",
+  "description": "Delegate complex tasks to Golem's autonomous agent pipeline. Smart delegation, daemon management, and task monitoring.",
+  "author": {
+    "name": "Golem"
+  }
+}

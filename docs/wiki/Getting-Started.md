@@ -137,6 +137,29 @@ The `budget_per_task_usd` setting (default: `$10.00`) caps spend per task. Retri
 
 ---
 
+## Step 5 (Optional): Install the Claude Code Plugin
+
+If you use Claude Code, install the Golem plugin for smart task delegation:
+
+```bash
+golem install-plugins
+```
+
+This enables six slash commands inside Claude Code:
+
+| Command | Purpose |
+|---|---|
+| `/golem:setup` | Bootstrap Golem for the current repo — daemon, attach, generate `golem.md` |
+| `/golem:run` | Smart delegation — evaluates complexity, delegates to Golem if warranted |
+| `/golem:status` | Daemon health and task monitoring |
+| `/golem:query` | Retrieve completed task results |
+| `/golem:config` | View/edit Golem configuration |
+| `/golem:cancel` | Cancel a running task |
+
+See [[Claude Code Plugin]] for the full guide.
+
+---
+
 ## Next Steps
 
 - **[[Configuration]]** — full reference for all settings, profiles, and environment variables

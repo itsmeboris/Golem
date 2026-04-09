@@ -9,6 +9,26 @@ See https://github.com/itsmeboris/Golem/issues
 
 ### P1 — Important
 
+- [ ] PLUGIN-001: **golem.md AI-generated project context** — `/golem:setup` generates golem.md but the attach flow should also create it; golem.md replaces detect_stack.py as the primary source for verify.yaml commands. Requires AI agent to explore repo, generate structured commands, and verify they pass before writing verify.yaml. (2026-04-09)
+- [x] PLUGIN-002: **Package plugin data in wheel/sdist** — automated staging of `plugins/golem` during builds via `setup.py`, explicit inclusion of `_plugin_data/.claude-plugin/plugin.json` in wheel package-data, manual `make plugin-data` retained only for packaging/debugging, and dual-path get_plugin_source_dir() for repo vs installed package (2026-04-09)
+
+### P2 — Normal
+
+- [ ] PLUGIN-003: **detect_stack.py deprecation path** — once golem.md is the standard source for verify commands, deprecate detect_stack.py. Keep as fallback when neither golem.md nor verify.yaml exists, log deprecation warning. (2026-04-09)
+- [ ] PLUGIN-004: **Auto-update golem.md on repo changes** — SessionEnd or post-push hook that detects when project dependencies or CI config changed and re-generates golem.md + verify.yaml. Should diff existing golem.md against current repo state. (2026-04-09)
+- [ ] PLUGIN-005: **Delegation analytics** — track which tasks were delegated vs handled inline, success rates, and task complexity signals. Store in `~/.golem/data/plugin-stats.json` (already wired in session-end hook). Use data to tune heuristic thresholds over time. (2026-04-09)
+- [ ] PLUGIN-006: **Additional AI tool support** — extend `golem install-plugins` to detect and install to Cursor (`~/.cursor/`), Codex (`~/.codex/`), Windsurf, and future tools. Each tool needs its own plugin directory convention mapping. (2026-04-09)
+- [x] PLUGIN-007: **Post-pip-install message** — added _check_plugin_install_hint() in cli.py main(); prints one-time hint on first run if no AI tool plugin found, writes marker to suppress future hints (2026-04-09)
+
+### P3 — Low Priority
+
+- [ ] PLUGIN-008: **Cross-tool plugin format standardization** — as Claude Code, Cursor, and Codex plugin specs converge, standardize the plugin structure so one source works across all tools without per-tool adaptation. (2026-04-09)
+- [x] PLUGIN-009: **Companion script test suite** — 145 tests across 6 test files covering daemon.py, state.py, setup_flow.py, delegation.py, and golem-companion.py. Includes parametrized tests, path traversal validation, and subprocess mocking. (2026-04-09)
+
+---
+
+### P1 — Important (completed)
+
 - [x] SEC-006: **MCP tool schema validation** — validate_and_filter_tools() in KeywordToolProvider (GH #18, 2026-03-29)
 - [x] SEC-006b: **MCP validation not wired into registration** — wired _handle_mcp_tool_validation into supervisor event callback (GH #131, 2026-03-29)
 - [x] SEC-007: **Runtime subprocess sandboxing** — SandboxLimits + make_sandbox_preexec wired into cli_wrapper (GH #19, 2026-03-29)

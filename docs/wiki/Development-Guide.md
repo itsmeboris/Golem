@@ -58,6 +58,8 @@ golem/
 ├── prompts/             — prompt templates for each agent role
 ├── core/                — FastAPI web UI + config management
 └── tests/               — mirrors source structure, 100% coverage required
+plugins/
+└── golem/               — Claude Code plugin (commands, skills, agent, scripts)
 ```
 
 ---
@@ -248,6 +250,23 @@ class TestFeatureName:
         output = await async_function(mock_dep)
         assert output == "result"
 ```
+
+---
+
+## Plugin Development
+
+The Claude Code plugin source lives in `plugins/golem/`. Key directories:
+
+| Directory | Contents |
+|---|---|
+| `commands/` | Slash command definitions (`.md` with YAML frontmatter) |
+| `skills/` | Internal skills for delegation heuristics and result handling |
+| `agents/` | The `golem-delegate` forwarding agent |
+| `scripts/` | Python companion script + `lib/` modules |
+| `hooks/` | SessionStart/SessionEnd lifecycle hooks |
+| `tests/` | 145 tests for companion scripts (`pytest plugins/golem/tests/`) |
+
+The installer (`golem/plugin_installer.py`) copies this directory to detected AI tool plugin paths.
 
 ---
 

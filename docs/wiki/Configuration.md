@@ -257,3 +257,14 @@ logging:
 ```
 
 For the full `config.yaml.example` with all available options, see the [project repository](https://github.com/itsmeboris/golem/blob/master/config.yaml.example).
+
+---
+
+## Plugin Settings
+
+The Claude Code plugin uses the daemon's existing HTTP API and configuration. No additional config keys are needed.
+
+- **Install path:** `~/.claude/plugins/golem/` (auto-detected by `golem install-plugins`; override with `--plugin-dir`)
+- **API auth:** The plugin reads `dashboard.api_key` from `config.yaml` for `/golem:query` API calls
+- **`golem.md`:** Generated per-repo by `/golem:setup`. Machine-owned, added to `.gitignore` automatically
+- **`verify.yaml`:** Derived from `golem.md` during setup. Authoritative between setups.

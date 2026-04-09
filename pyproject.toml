@@ -8,7 +8,7 @@ version = "0.2.0"
 description = "An autonomous AI agent — picks up work, executes it, validates the results, and reports back."
 readme = "README.md"
 requires-python = ">=3.11"
-license = "MIT"
+license = {text = "MIT"}
 keywords = ["ai", "agent", "automation", "claude", "llm", "task-execution"]
 authors = [
     { name = "Boris Sobol" },
@@ -63,6 +63,19 @@ golem = "golem.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["golem*"]
+
+[tool.setuptools.package-data]
+golem = [
+    "_plugin_data/**/*",
+    "_plugin_data/.claude-plugin/plugin.json",
+]
+
+[tool.setuptools.exclude-package-data]
+golem = [
+    "_plugin_data/**/__pycache__/*",
+    "_plugin_data/**/*.pyc",
+    "_plugin_data/**/*.pyo",
+]
 
 [tool.black]
 target-version = ["py311"]

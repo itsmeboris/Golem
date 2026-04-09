@@ -1,0 +1,27 @@
+{
+  "description": "Golem daemon lifecycle hooks.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/golem-companion.py\" session-start",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/golem-companion.py\" session-end",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

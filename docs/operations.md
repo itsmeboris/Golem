@@ -28,6 +28,7 @@ golem attach /path/to/dir           # register explicit path
 golem detach                        # unregister cwd
 golem detach /path/to/dir           # unregister explicit path
 golem setup                         # validate environment and recommend plugins
+golem install-plugins               # Install Golem plugin to detected AI tools
 ```
 
 Attach is idempotent — re-attaching updates settings (e.g., toggle heartbeat).

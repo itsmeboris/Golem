@@ -108,3 +108,19 @@ golem run -p "Fix the flaky test in test_flow.py"
 `golem run` auto-starts the daemon if it isn't running, submits the task, waits for completion, and exits with the task's result code. This is suitable for CI pipelines where you have the Claude CLI configured and authenticated in your CI environment.
 
 For parallel workloads, use the batch API (`POST /api/submit/batch`) and poll `GET /api/batch/{group_id}` for completion.
+
+---
+
+### How do I use Golem from inside Claude Code?
+
+Install the plugin with `golem install-plugins`, then use `/golem:run <task>` to delegate work. The plugin evaluates task complexity and delegates to Golem when the task is large enough. Use `/golem:setup` first to bootstrap a repo with `golem.md` project context. See [[Claude Code Plugin]] for the full guide.
+
+---
+
+### What does `/golem:setup` generate?
+
+It creates two files:
+1. **`golem.md`** — AI-generated project context (stack, test commands, architecture, conventions). Machine-owned, gitignored.
+2. **`.golem/verify.yaml`** — Structured verification config derived from the verified commands in `golem.md`. Used by Golem's verifier during the VERIFY phase.
+
+The setup flow verifies each command actually works before writing `verify.yaml`.

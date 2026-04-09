@@ -15,6 +15,7 @@
 **Extending Golem**
 - [[Backends]]
 - [[Development Guide|Development-Guide]]
+- [[Claude Code Plugin|Claude-Code-Plugin]]
 
 **Resources**
 - [[FAQ]]
