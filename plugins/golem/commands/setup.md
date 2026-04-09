@@ -40,15 +40,27 @@ If `--regenerate` was passed, ignore any existing `golem.md`.
 
 ## Step 3: Verify commands
 
-Unless `--skip-verify` was passed:
-1. Extract each `verify` command from golem.md
-2. Run each one with its specified timeout
-3. If any fail, revise the golem.md entry and retry (up to 2 retries per command)
-4. If a command cannot be made to pass after retries, remove it from golem.md and warn the user
+Unless `--skip-verify` was passed, run the companion's internal verification:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/golem-companion.py" setup --verify --json
+```
+
+This runs all `verify` commands from golem.md internally with proper timeouts. It auto-detects python/python3 and fixes the executable path. Only failures are reported with error output.
+
+If all commands pass: proceed to Step 4.
+
+If any command fails:
+1. Read the failure details from the JSON output (`failed` array with `stdout`, `stderr`, `error`)
+2. Revise the failing command in golem.md (fix the command, adjust timeout, or remove it)
+3. Re-run `setup --verify --json` (up to 2 retries total)
+4. If a command still fails after retries, remove it from golem.md and warn the user
+
+Do NOT run verify commands yourself via Bash — always use the companion's `--verify` flag.
 
 ## Step 4: Finalize
 
-If verification passed (or `--skip-verify` was NOT used):
+If verification passed:
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/golem-companion.py" setup --finalize --json
 ```

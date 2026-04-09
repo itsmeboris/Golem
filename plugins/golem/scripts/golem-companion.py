@@ -28,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).parent / "lib"))
 
 from daemon import attach_repo, ensure_running, is_daemon_running, is_golem_installed, is_repo_attached
 from delegation import structure_task_metadata
-from setup_flow import collect_repo_signals, finalize_setup
+from setup_flow import collect_repo_signals, finalize_setup, verify_commands
 from state import flush_stats_to_global, get_session_jobs, get_session_stats, record_delegation, update_job_status
 
 
@@ -48,6 +48,11 @@ def cmd_setup(args) -> int:
     """Setup: check golem, start daemon, attach repo, collect signals."""
     if args.finalize:
         result = finalize_setup(args.cwd or os.getcwd())
+        _output(result, args.json)
+        return 0 if result.get("ok") else 1
+
+    if args.verify:
+        result = verify_commands(args.cwd or os.getcwd())
         _output(result, args.json)
         return 0 if result.get("ok") else 1
 
@@ -439,6 +444,7 @@ def main() -> int:
     # setup
     setup_p = sub.add_parser("setup", parents=[json_parent])
     setup_p.add_argument("--finalize", action="store_true")
+    setup_p.add_argument("--verify", action="store_true")
     setup_p.add_argument("--regenerate", action="store_true")
     setup_p.add_argument("--update", action="store_true")
     setup_p.add_argument("--skip-verify", action="store_true")

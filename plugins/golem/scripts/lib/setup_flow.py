@@ -33,6 +33,100 @@ _SIGNAL_FILES = [
 ]
 
 
+def _find_python() -> str:
+    """Find the correct python executable (python3 or python)."""
+    for candidate in ["python3", "python"]:
+        try:
+            result = subprocess.run(
+                [candidate, "--version"],
+                capture_output=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                return candidate
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            continue
+    return "python3"  # fallback
+
+
+def verify_commands(repo_path: str) -> dict:
+    """Run all verify commands from golem.md internally.
+
+    Returns a dict with results per command. Only includes error details
+    for failed commands — passing commands are reported minimally to save tokens.
+    """
+    root = Path(repo_path)
+    golem_md = root / "golem.md"
+
+    if not golem_md.exists():
+        return {"ok": False, "error": "golem.md not found"}
+
+    content = golem_md.read_text()
+    commands = _parse_verify_commands(content)
+
+    if not commands:
+        return {"ok": False, "error": "No verify commands found in golem.md"}
+
+    python_exe = _find_python()
+    results = []
+    all_passed = True
+
+    for cmd_entry in commands:
+        cmd = list(cmd_entry["cmd"])
+        timeout = cmd_entry.get("timeout", 120)
+        role = cmd_entry["role"]
+
+        # Auto-fix python/python3: replace "python" with detected executable
+        if cmd and cmd[0] in ("python", "python3"):
+            cmd[0] = python_exe
+
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                timeout=timeout,
+                text=True,
+                cwd=str(root),
+            )
+            passed = proc.returncode == 0
+            entry = {
+                "role": role,
+                "cmd": cmd,
+                "passed": passed,
+            }
+            if not passed:
+                all_passed = False
+                # Include error output only for failures
+                entry["stdout"] = proc.stdout[-2000:] if proc.stdout else ""
+                entry["stderr"] = proc.stderr[-2000:] if proc.stderr else ""
+                entry["returncode"] = proc.returncode
+            results.append(entry)
+        except FileNotFoundError as exc:
+            all_passed = False
+            results.append({
+                "role": role,
+                "cmd": cmd,
+                "passed": False,
+                "error": f"Command not found: {exc}",
+            })
+        except subprocess.TimeoutExpired:
+            all_passed = False
+            results.append({
+                "role": role,
+                "cmd": cmd,
+                "passed": False,
+                "error": f"Timed out after {timeout}s",
+            })
+
+    return {
+        "ok": all_passed,
+        "total": len(results),
+        "passed": sum(1 for r in results if r["passed"]),
+        "failed": [r for r in results if not r["passed"]],
+        "results": results,
+    }
+
+
 def collect_repo_signals(repo_path: str) -> dict:
     """Collect repo signals for golem.md generation.
 
