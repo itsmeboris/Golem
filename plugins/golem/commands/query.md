@@ -1,10 +1,14 @@
 ---
 description: Retrieve results from a completed Golem task, including verification status and phase trace
 argument-hint: '<task-id> [--raw]'
-allowed-tools: Bash(python3:*), Bash(golem:*)
+allowed-tools: Bash(python3:*), Bash(golem:*), AskUserQuestion
 ---
 
-Run:
+If no task-id was provided in `$ARGUMENTS`:
+1. Run `/golem:status` first to show recent tasks
+2. Then use `AskUserQuestion` to ask which task ID to query
+
+Otherwise, run:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/golem-companion.py" query $ARGUMENTS --json
