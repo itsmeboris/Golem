@@ -6,7 +6,7 @@ Global flags that apply to every command:
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-c, --config PATH` | `config.yaml` | Path to configuration file |
+| `-c, --config PATH` | `~/.golem/config.yaml` | Path to configuration file |
 | `-v, --verbose` | off | Enable verbose (DEBUG) logging |
 
 ---
@@ -321,7 +321,7 @@ golem attach /path/to/other-repo
 golem attach --force-detect
 ```
 
-Attached repos are stored in `~/.golem/repos.json`. Use `golem status` to see attached repos and `golem detach REPO_PATH` to remove one.
+Attached repos are stored in `~/.golem/repos.json`. Use `golem detach REPO_PATH` to remove one.
 
 ---
 
