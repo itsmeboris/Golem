@@ -11,3 +11,4 @@
 - Summarize findings concisely with file:line references
 - Do NOT modify any files — read-only exploration
 - Report patterns, conventions, and potential gotchas
+- If a graphify knowledge graph exists (graphify-out/), check graphify-out/GRAPH_REPORT.md and graphify-out/wiki/index.md first for architecture overview

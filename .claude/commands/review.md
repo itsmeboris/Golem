@@ -3,13 +3,11 @@ description: Run a code review on current changes using the scout and reviewer a
 argument-hint: "[commit-range or empty for unstaged]"
 ---
 
-Review the current code changes using a structured pipeline:
+Review the current code changes using a two-phase approach:
 
-1. First, use the **scout** agent to explore and understand the changed files:
-   - Run `git diff` (or the specified commit range: $ARGUMENTS) to identify changes
-   - Read the changed files for full context
+1. **Explore** — Run `git diff` (or the specified commit range: $ARGUMENTS) to identify changes. Read the changed files for full context. Use the Agent tool with `subagent_type: "scout"` for codebase exploration.
 
-2. Then, use the **reviewer** agent to perform adversarial code review:
+2. **Review** — Use the Agent tool with `subagent_type: "reviewer"` to perform adversarial code review:
    - Check for bugs, logic errors, and convention violations
    - Use confidence-based filtering (only report issues >= 80 confidence)
    - Verify test coverage for new code paths

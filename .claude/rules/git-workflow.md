@@ -33,11 +33,17 @@ Closes SEC-007b (GH #133)
 - The merge queue handles squashing automatically during fast-forward
 - Never rewrite history on master after push
 
+## Pre-commit Checks
+The `.githooks/pre-commit` hook runs on staged Python files:
+1. `pylint --disable=all --enable=W0611,W0612,W0101,W0613` dead-code + unused-argument check
+2. `pyflakes` via `scripts/pyflakes_noqa.py`
+3. `vulture` dead-code analysis
+
 ## Pre-push Checks
 The `.githooks/pre-push` hook runs:
 1. `black --check` on changed Python files
 2. `pylint --errors-only` on changed Python files
-3. `pylint --enable=W0611,W0612,W0101` dead-code check
+3. `pylint --disable=all --enable=W0611,W0612,W0101` dead-code check
 4. State management audit (JS, non-blocking)
 5. Contract linting (non-blocking)
 6. `pytest` with 100% coverage requirement

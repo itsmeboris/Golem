@@ -138,9 +138,10 @@ This is equivalent to `golem config` but in the browser. Changes write atomicall
 The REST API is served on the same port as the dashboard. All endpoints return JSON.
 
 **Security:** All `/api/*` endpoints (except `/api/health` and `/api/flow/status`)
-require an `X-Api-Key` header when `api_key` is configured. Mutation endpoints
-(`/api/submit`, `/api/submit/batch`, `/api/cancel`) are additionally rate-limited
-to 10 requests/minute per client IP (sliding window). CORS is restricted to
+require an `Authorization: Bearer <token>` header (or `?token=` query param)
+when `api_key` is configured. Mutation endpoints (`/api/submit`,
+`/api/submit/batch`, `/api/cancel`) are additionally rate-limited to 10
+requests/minute per client IP (sliding window). CORS is restricted to
 `localhost`/`127.0.0.1` origins only. File reads in `/api/submit` validate paths
 against CWD and registered repos, and open with `O_NOFOLLOW` to prevent symlink
 attacks.
@@ -152,6 +153,8 @@ attacks.
 | Endpoint | Method | Auth | Description |
 |----------|--------|------|-------------|
 | `/api/health` | GET | None | Readiness probe — returns `{"ok": true, "pid": ..., "uptime_seconds": ...}` |
+| `/api/health/detail` | GET | None | Detailed health with active alerts and metrics |
+| `/api/ping` | GET | None | Simple liveness check |
 
 ### Submission
 
@@ -167,7 +170,11 @@ attacks.
 |----------|--------|------|-------------|
 | `/api/analytics` | GET | API key | Quality metrics — pass/fail rates, avg cost, retry effectiveness, top failure reasons |
 | `/api/cost-analytics` | GET | API key | Cost analytics — spend per task, totals, budget remaining |
+| `/api/analytics/by-prompt` | GET | API key | Analytics grouped by prompt hash |
 | `/api/live` | GET | API key | Live dashboard state — active tasks, queue depth, uptime, recently completed tasks |
+| `/api/events` | GET | API key | Server-Sent Events (SSE) stream for real-time dashboard updates |
+| `/api/heartbeat` | GET | API key | Current heartbeat state — daily spend, last scan, inflight tasks |
+| `/api/heartbeat/trigger` | POST | API key | Manually trigger a heartbeat scan |
 
 ### Sessions
 

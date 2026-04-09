@@ -10,7 +10,7 @@ Golem supports five ways to configure it, all writing to the same `config.yaml`:
 
 | Method | Command / Location | Notes |
 |--------|-------------------|-------|
-| **YAML file** | `config.yaml` in project root | Direct edit; reload with `kill -HUP $(cat data/daemon.pid)` |
+| **YAML file** | `~/.golem/config.yaml` | Direct edit; reload with `kill -HUP $(cat ~/.golem/data/daemon.pid)` (see [[CLI Reference\|CLI-Reference]]) |
 | **CLI set** | `golem config set <field> <value>` | Writes atomically and sends SIGHUP to reload |
 | **Interactive TUI** | `golem config` (no subcommand) | Full-screen editor with category navigation |
 | **Dashboard Config tab** | `http://localhost:8081/dashboard` | Browser-based; optional daemon reload on save |

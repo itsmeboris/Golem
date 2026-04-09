@@ -15,9 +15,10 @@ results. Do not read files, do not explore, do not fix anything.
 
 Run each command and capture the output:
 
-1. ``black --check golem/``
+1. ``black --check .``
 2. ``pylint --errors-only golem/``
-3. ``pytest golem/tests/ -x -q --cov=golem --cov-fail-under=100``
+3. ``pylint --disable=all --enable=W0611,W0612,W0101 golem/`` (dead-code check)
+4. ``pytest golem/tests/ -x -q --cov=golem --cov-fail-under=100``
 
 ## Output Format
 
@@ -25,7 +26,8 @@ Run each command and capture the output:
 ## Verification Results
 
 - **black**: PASS or FAIL
-- **pylint**: PASS or FAIL
+- **pylint (errors)**: PASS or FAIL
+- **pylint (dead-code)**: PASS or FAIL
 - **pytest**: PASS or FAIL (N passed, coverage%)
 
 ## Failures (if any)

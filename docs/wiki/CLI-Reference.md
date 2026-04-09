@@ -16,7 +16,7 @@ Global flags that apply to every command:
 Execute a task. Submits to the running daemon (auto-starting it if needed).
 
 ```
-golem run [TASK_ID] [-p PROMPT] [-f FILE] [-s SUBJECT] [-C WORK_DIR] [--dry] [--mcp | --no-mcp]
+golem run [TASK_ID] [-p PROMPT] [-f FILE] [--subject SUBJECT] [-C WORK_DIR] [--dry] [--mcp | --no-mcp]
 ```
 
 | Flag | Description |
@@ -24,7 +24,7 @@ golem run [TASK_ID] [-p PROMPT] [-f FILE] [-s SUBJECT] [-C WORK_DIR] [--dry] [--
 | `TASK_ID` | Optional issue ID to run directly (for issue-tracker profiles) |
 | `-p, --prompt TEXT` | Submit an inline prompt to the daemon |
 | `-f, --file PATH` | Read the prompt from a file and submit it |
-| `-s, --subject TEXT` | Override the task subject/title |
+| `--subject TEXT` | Override the task subject/title |
 | `-C, --cwd PATH` | Override the working directory for this task |
 | `--dry` | Preview what would run without executing |
 | `--mcp` | Enable MCP servers (keyword-scoped from task subject) |
@@ -110,8 +110,8 @@ golem daemon [--foreground] [--log-dir PATH] [--pid-file PATH] [--port N]
 | Flag | Description |
 |------|-------------|
 | `--foreground` | Stay attached to the terminal (no background fork) |
-| `--log-dir PATH` | Directory for log files (default: `data/logs/`) |
-| `--pid-file PATH` | PID file path (default: `data/daemon.pid`) |
+| `--log-dir PATH` | Directory for log files (default: `~/.golem/data/logs/`) |
+| `--pid-file PATH` | PID file path (default: `~/.golem/data/daemon.pid`) |
 | `--port N` | Dashboard port (overrides config) |
 
 **Starting the daemon:**
@@ -133,7 +133,7 @@ golem stop
 **Restarting (applies config changes without dropping active tasks):**
 
 ```bash
-kill -HUP $(cat data/daemon.pid)
+kill -HUP $(cat ~/.golem/data/daemon.pid)
 # Or, after golem config set:
 golem config set task_model opus   # automatically sends SIGHUP
 ```
@@ -142,7 +142,10 @@ golem config set task_model opus   # automatically sends SIGHUP
 
 ```bash
 # Last 50 lines from the daemon log
-golem daemon logs 50
+golem logs -n 50
+
+# Follow log output in real time
+golem logs --follow
 
 # Or using the REST API
 curl http://localhost:8081/api/logs
@@ -212,7 +215,7 @@ The interactive TUI (`golem config` with no subcommand) requires `prompt_toolkit
 
 ### `golem init`
 
-First-run wizard that generates `config.yaml`.
+First-run wizard that generates `~/.golem/config.yaml`.
 
 ```
 golem init [-o OUTPUT] [--defaults]
@@ -220,7 +223,7 @@ golem init [-o OUTPUT] [--defaults]
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-o, --output PATH` | `config.yaml` | Output file path |
+| `-o, --output PATH` | `~/.golem/config.yaml` | Output file path |
 | `--defaults` | off | Use default values without prompting (non-interactive) |
 
 ```bash
@@ -318,7 +321,7 @@ golem attach /path/to/other-repo
 golem attach --force-detect
 ```
 
-Attached repos are stored in `~/.golem/repos.json`. Use `golem repos list` to see all attached repos and `golem repos detach REPO_PATH` to remove one.
+Attached repos are stored in `~/.golem/repos.json`. Use `golem status` to see attached repos and `golem detach REPO_PATH` to remove one.
 
 ---
 

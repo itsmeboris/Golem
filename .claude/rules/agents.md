@@ -9,7 +9,10 @@ External verification + validation run as separate subprocesses after.
 
 ## Development Agents (.claude/agents/)
 For interactive development of Golem itself:
-scout (haiku) → builder (sonnet) → reviewer (sonnet) → verifier (haiku)
+scout (sonnet) → builder (sonnet) → reviewer (opus) → verifier (sonnet)
+
+The `code-reviewer` agent (opus) is a standalone PR/diff reviewer, not part
+of the main pipeline.
 
 Skills are preloaded via `skills` frontmatter — agents receive full skill
 content at startup without needing to invoke the Skill tool:
@@ -18,8 +21,8 @@ content at startup without needing to invoke the Skill tool:
 - **scout**: `ast-grep`
 
 ## Model Selection
-- **haiku**: Fast read-only tasks (scouting, verification)
-- **sonnet**: Code generation (building, implementing, reviewing)
+- **sonnet**: Most agents — scouting, building, implementing, verification
+- **opus**: Deep reasoning — reviewing, standalone code review
 
 ## Key Principles
 - Builder writes tests first (TDD), then implementation

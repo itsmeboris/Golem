@@ -43,6 +43,23 @@ passing work — all without human intervention.
 | `golem/batch_cli.py` | Batch submission CLI subcommands (submit, status, list) |
 | `golem/backends/` | Issue-tracker adapters (GitHub, Redmine, local, MCP) |
 | `golem/prompts/` | Prompt templates for each agent role; `_SafeDict` replaces missing placeholders with `""` |
+| `golem/supervisor_v2_subagent.py` | `SubagentSupervisor` — drives the 5-phase agent pipeline per task |
+| `golem/cli.py` | CLI interface and all subcommands (run, status, config, attach, etc.) |
+| `golem/sandbox.py` | OS-level resource limits via `make_sandbox_preexec()` for subprocess calls |
+| `golem/notifications.py` | Slack/Teams notification dispatch on task completion/failure |
+| `golem/checkpoint.py` | Checkpoint save/restore for crash recovery |
+| `golem/committer.py` | Git commit logic for validated task results |
+| `golem/interfaces.py` | Protocol definitions for backends and pluggable components |
+| `golem/config_editor.py` | Config field editing with validation |
+| `golem/config_tui.py` | Interactive TUI config editor (`golem config`) |
+| `golem/cost_analytics.py` | Cost tracking and spend-per-task analytics |
+| `golem/analytics.py` | Quality metrics: pass/fail rates, retry effectiveness |
+| `golem/tracing.py` | OpenTelemetry span management (NoOp fallback if absent) |
+| `golem/merge_review.py` | Merge conflict resolution agent dispatch |
+| `golem/init_wizard.py` | First-run wizard for `golem init` |
+| `golem/self_update.py` | Git-based self-update mechanism |
+| `golem/workdir.py` | Working directory and `GOLEM_HOME` path management |
+| `golem/errors.py` | Custom exception hierarchy |
 
 > See `docs/architecture.md` for runtime pipeline, task lifecycle, sub-agents, and skills.
 
@@ -61,7 +78,7 @@ Each task flows through: **DETECT → PLAN → BUILD → REVIEW → VERIFY**
 
 ### Concurrency Model
 - **asyncio event loop** — one per daemon process; detection loop + session tasks
-- **Session tasks** — each `_process_session()` is an independent `asyncio.Task`
+- **Session tasks** — each task session is an independent `asyncio.Task`
 - **Subprocess isolation** — Claude CLI runs in `subprocess.Popen` with sandbox limits
 - **Git worktrees** — parallel branches for build isolation; cleaned on crash recovery
 - **Merge queue** — dual-lock (asyncio.Lock for async, threading.Lock for thread-safe reads)
@@ -70,7 +87,7 @@ Each task flows through: **DETECT → PLAN → BUILD → REVIEW → VERIFY**
 ### Data Flow
 ```
 Issue tracker → HeartbeatWorker → GolemFlow._detection_loop()
-  → TaskOrchestrator._tick_detected() → SubagentSupervisor.run_pipeline()
+  → TaskOrchestrator._tick_detected() → SubagentSupervisor.run()
     → CLI session (BUILD) → VerificationResult → ValidationVerdict
       → MergeQueue.process_all() → fast-forward to main branch
 ```
@@ -90,8 +107,8 @@ Issue tracker → HeartbeatWorker → GolemFlow._detection_loop()
 - `golem logs --follow` — real-time daemon log output
 - `golem status` — quick view of recent sessions
 - Dashboard at `http://localhost:8081/dashboard` — visual session timeline
-- Trace files in `data/traces/golem/` — JSONL event streams per session
-- Checkpoint files in `data/checkpoints/` — JSON state snapshots
+- Trace files in `~/.golem/data/traces/golem/` — JSONL event streams per session
+- Checkpoint files in `~/.golem/data/state/checkpoints/` — JSON state snapshots
 
 ---
 
@@ -136,7 +153,7 @@ async with lock:
 ## Key Data Models
 
 ### TaskSession
-Central state object for each tracked task. Persisted in `data/state.json`.
+Central state object for each tracked task. Persisted in `~/.golem/data/state/golem_sessions.json`.
 Key fields: `parent_issue_id`, `state` (DETECTED → RUNNING → COMPLETED/FAILED),
 `budget_usd`, `parent_subject`, `checkpoint_phase`, `human_feedback`.
 Serialized via `to_dict()`/`from_dict()` — add new fields to both.

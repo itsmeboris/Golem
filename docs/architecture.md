@@ -185,10 +185,10 @@ Each subagent role is defined in `.claude/agents/` with a specific model, toolse
 | Agent | Model | Tools | Purpose |
 |-------|-------|-------|---------|
 | **Builder** | sonnet | All | Writes code, tests, fixes issues. Self-verifies with targeted tests before reporting |
-| **Spec Reviewer** | sonnet | Read, Grep, Glob | Verifies implementation matches specification — does not trust Builder reports |
-| **Quality Reviewer** | sonnet | Read, Grep, Glob | Code quality, bugs, edge cases. Only reports issues with >= 80% confidence |
-| **Verifier** | haiku | Bash | Runs full-suite linters and tests, returns structured pass/fail |
-| **Scout** | haiku | Read, Grep, Glob | Reserved for unknown codebases — most tasks don't need one |
+| **Spec Reviewer** | opus | Read, Grep, Glob | Verifies implementation matches specification — does not trust Builder reports |
+| **Quality Reviewer** | opus | Read, Grep, Glob | Code quality, bugs, edge cases. Only reports issues with >= 80% confidence |
+| **Verifier** | sonnet | Bash | Runs full-suite linters and tests, returns structured pass/fail |
+| **Scout** | sonnet | Read, Grep, Glob | Reserved for unknown codebases — most tasks don't need one |
 
 ### Skill Discovery
 
@@ -284,7 +284,8 @@ Additional features:
 The daemon exposes a REST API (served on the dashboard port, default `8081`).
 
 **Security:** All `/api/*` endpoints (except `/api/health` and `/api/flow/status`)
-require an `X-Api-Key` header when `api_key` is configured. Mutation endpoints
+require an `Authorization: Bearer <token>` header (or `?token=` query param)
+when `api_key` is configured. Mutation endpoints
 (`/api/submit`, `/api/submit/batch`, `/api/cancel`) are additionally rate-limited
 to 10 requests/minute per client IP (sliding window). CORS is restricted to
 `localhost`/`127.0.0.1` origins only.
@@ -334,11 +335,11 @@ These agents (`.claude/agents/`) are for **interactive development of Golem itse
 
 | Agent | Model | Purpose |
 |---|---|---|
-| `scout` | haiku | Codebase research when developing Golem |
+| `scout` | sonnet | Codebase research when developing Golem |
 | `builder` | sonnet | Implement features/fixes on Golem |
-| `reviewer` | sonnet | Adversarial review of Golem changes |
-| `verifier` | haiku | Run black + pylint + pytest on Golem |
-| `code-reviewer` | sonnet | Standalone PR/diff review |
+| `reviewer` | opus | Adversarial review of Golem changes |
+| `verifier` | sonnet | Run black + pylint + pytest on Golem |
+| `code-reviewer` | opus | Standalone PR/diff review |
 
 Skills are preloaded via `skills` frontmatter in each agent definition — agents receive full skill content at startup without needing to invoke the Skill tool. The builder agent preloads `test-driven-development` and `systematic-debugging`; the verifier preloads `verification-before-completion`.
 

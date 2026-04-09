@@ -15,7 +15,7 @@ Practical diagnosis and recovery guides for common Golem issues.
 3. Open the dashboard Task Detail tab to inspect the current phase — is the agent looping on REVIEW?
 4. Check daemon logs for subprocess errors:
    ```bash
-   golem daemon logs 100
+   golem logs -n 100
    # or via API
    curl http://localhost:8081/api/logs
    ```
@@ -77,12 +77,13 @@ You can also run the checks manually in the worktree to reproduce the error:
 
 ```bash
 # Find the worktree for the task
-ls data/worktrees/
+ls data/agent/worktrees/
 
 # Run checks manually
-cd data/worktrees/task-1042
-black --check golem/
+cd data/agent/worktrees/1042
+black --check .
 pylint --errors-only golem/
+pylint --disable=all --enable=W0611,W0612,W0101 golem/
 pytest golem/tests/ -x -q --cov=golem --cov-fail-under=100
 ```
 
@@ -141,12 +142,12 @@ For **persistent rebase conflicts** (the validated branch has become incompatibl
 
 1. **Stale PID file** — if the daemon crashed previously, its PID file may be left behind:
    ```bash
-   cat data/daemon.pid
+   cat ~/.golem/data/daemon.pid
    ps aux | grep golem   # check if that PID is actually running
    ```
    If the PID is not running, remove the stale file:
    ```bash
-   rm data/daemon.pid
+   rm ~/.golem/data/daemon.pid
    ```
 
 2. **Port already in use** — another process may be listening on port 8081:
@@ -211,7 +212,7 @@ This keeps all output attached to the terminal and prevents the background fork,
 
 5. Check daemon logs for heartbeat tick errors:
    ```bash
-   golem daemon logs 50
+   golem logs -n 50
    ```
 
 **Solution:**
@@ -328,7 +329,7 @@ the next health check interval once alerts clear. To force an immediate check,
 send SIGHUP:
 
 ```bash
-kill -HUP $(cat data/daemon.pid)
+kill -HUP $(cat ~/.golem/data/daemon.pid)
 ```
 
 ---
@@ -337,9 +338,9 @@ kill -HUP $(cat data/daemon.pid)
 
 | Log source | Location / Command |
 |------------|-------------------|
-| Daemon log files | `data/logs/` — one file per start, named `agent_YYYYMMDD_HHMMSS.log` |
-| Latest log symlink | `data/logs/latest.log` |
-| Tail via CLI | `golem daemon logs 100` |
+| Daemon log files | `~/.golem/data/logs/` — one file per start, named `agent_YYYYMMDD_HHMMSS.log` (background start) or `daemon_YYYYMMDD_HHMMSS.log` (foreground) |
+| Latest log symlink | `~/.golem/data/logs/daemon_latest.log` |
+| Tail via CLI | `golem logs -n 100` |
 | Tail via API | `curl http://localhost:8081/api/logs` |
 | Agent traces (JSONL) | Stored when `store_agent_traces: true` in config; viewable in dashboard Task Detail tab |
 | Structured trace | `curl http://localhost:8081/api/trace-parsed/{task_id}` |

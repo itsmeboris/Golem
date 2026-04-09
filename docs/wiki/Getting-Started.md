@@ -46,7 +46,7 @@ The wizard walks you through:
 3. **Budget settings** — per-task dollar cap (default `$10.00`) and timeout
 4. **Model selection** — task model (default: `sonnet`) and orchestrator model (default: `opus`)
 
-The wizard writes `config.yaml` in the current directory. You can re-run it at any time or edit the file directly. See [[Configuration]] for a complete reference.
+The wizard writes `~/.golem/config.yaml`. You can re-run it at any time or edit the file directly. See [[Configuration]] for a complete reference.
 
 ---
 
@@ -62,7 +62,7 @@ The CLI prints a task ID and returns immediately:
 
 ```
   Starting daemon in background...
-  Daemon started (log: data/logs/agent_20260328_143022.log)
+  Daemon started (log: ~/.golem/data/logs/agent_20260328_143022.log)
 
   Submitted task #1
   Track with: golem status

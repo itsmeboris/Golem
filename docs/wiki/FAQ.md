@@ -59,7 +59,7 @@ Three config settings control spending:
 
 ```yaml
 budget_per_task_usd: 10        # cap per task (default 10)
-heartbeat_daily_budget_usd: 20 # cap for autonomous heartbeat work (default 20)
+heartbeat_daily_budget_usd: 1  # cap for autonomous heartbeat work (default 1)
 ```
 
 Task timeouts prevent runaway sessions from accumulating cost even if the budget cap hasn't been hit yet. When a task exceeds its budget, the session is terminated and the task moves to `FAILED`.
@@ -81,8 +81,8 @@ You can also use the `HUMAN_REVIEW` state: when a task fails, post feedback on t
 Currently Golem is built specifically for the Claude Code CLI. Two config settings control which Claude model is used:
 
 ```yaml
-task_model: claude-sonnet-4-5       # model for building tasks
-orchestrate_model: claude-opus-4-5  # model for orchestration and review
+task_model: sonnet       # model for building tasks
+orchestrate_model: opus  # model for orchestration and review
 ```
 
 Sonnet is used for code generation; Opus is used for orchestration, validation, and review phases where reasoning quality matters more than speed.

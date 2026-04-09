@@ -159,10 +159,11 @@ Failure output is structured and fed back to the BUILD phase with:
 | Agent | Model | Tools | Purpose |
 |-------|-------|-------|---------|
 | **Builder** | sonnet | All tools | Writes code, tests, and fixes issues. Self-verifies with targeted `pytest -x` + `black --check` before reporting. |
-| **Spec Reviewer** | sonnet | Read, Grep, Glob | Verifies implementation matches each SPEC statement by reading actual code. Does not trust Builder self-reports. |
-| **Quality Reviewer** | sonnet | Read, Grep, Glob | Code quality, bugs, edge cases. Only reports issues with >= 80% confidence. |
-| **Verifier** | haiku | Bash | Runs full-suite linters and tests, returns structured pass/fail with exact error output. |
-| **Scout** | haiku | Read, Grep, Glob | Reserved for unknown or very large codebases where the Orchestrator needs targeted exploration help. Most tasks do not need one. |
+| **Spec Reviewer** | opus | Read, Grep, Glob | Verifies implementation matches each SPEC statement by reading actual code. Does not trust Builder self-reports. |
+| **Quality Reviewer** | opus | Read, Grep, Glob | Code quality, bugs, edge cases. Only reports issues with >= 80% confidence. |
+| **Verifier** | sonnet | Bash | Runs full-suite linters and tests, returns structured pass/fail with exact error output. |
+| **Scout** | sonnet | Read, Grep, Glob | Reserved for unknown or very large codebases where the Orchestrator needs targeted exploration help. Most tasks do not need one. |
+| **Code Reviewer** | opus | Read, Grep, Glob, Bash | Standalone PR/diff reviewer with confidence-based filtering (>= 80). Read-only — cannot modify files. |
 
 Agent definitions live in `.claude/agents/`. Each definition specifies the
 model, available tools, turn limit, and preloaded skills.
@@ -180,8 +181,8 @@ into agent sessions — agents do not need to discover or fetch them manually.
 | `test-driven-development` | Builder | Red-green-refactor workflow, pytest patterns, coverage requirements |
 | `systematic-debugging` | Builder | Root-cause investigation before attempting fixes |
 | `verification-before-completion` | Verifier | Enforces evidence-based completion claims |
-| `ast-grep` | All | Structural code search using AST patterns |
-| `continual-learning` | Session hooks | Mine conversation transcripts for durable learnings |
+| `ast-grep` | Scout | Structural code search using AST patterns |
+| `continual-learning` | (invoked via hooks, not preloaded) | Mine conversation transcripts for durable learnings |
 
 Skills are loaded via `skills` frontmatter in the agent definition file. When
 new skills are added to `.claude/skills/`, all agents pick them up
