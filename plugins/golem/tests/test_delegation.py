@@ -2,7 +2,7 @@
 
 import pytest
 
-import delegation
+import delegation  # pylint: disable=import-error
 
 
 class TestStructureTaskMetadata:

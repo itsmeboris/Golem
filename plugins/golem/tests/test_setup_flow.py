@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import setup_flow
+import setup_flow  # pylint: disable=import-error
 
 VALID_GOLEM_MD = """\
 # My Project

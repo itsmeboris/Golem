@@ -26,15 +26,19 @@ from pathlib import Path
 # Add lib/ to path
 sys.path.insert(0, str(Path(__file__).parent / "lib"))
 
-from daemon import (
+from daemon import (  # pylint: disable=import-error
     attach_repo,
     ensure_running,
     is_daemon_running,
     is_golem_installed,
     is_repo_attached,
 )
-from setup_flow import collect_repo_signals, finalize_setup, verify_commands
-from state import (
+from setup_flow import (  # pylint: disable=import-error
+    collect_repo_signals,
+    finalize_setup,
+    verify_commands,
+)
+from state import (  # pylint: disable=import-error
     flush_stats_to_global,
     get_session_jobs,
     get_session_stats,

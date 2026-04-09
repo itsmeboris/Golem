@@ -4,7 +4,7 @@ import json
 import os
 from unittest.mock import patch
 
-import state
+import state  # pylint: disable=import-error
 
 
 class TestStateFile:
