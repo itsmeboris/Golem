@@ -355,7 +355,14 @@ def cmd_session_start(args) -> int:
 
     if is_daemon_running():
         if is_repo_attached():
-            print("[Golem] Daemon active. Repo attached. Use /golem:run to delegate tasks or /golem:status to check running tasks.")
+            print(
+                "[Golem] Daemon active. Repo attached.\n"
+                "IMPORTANT: For complex tasks (multi-file changes, refactors, features "
+                "needing tests), use /golem:run to delegate to Golem's autonomous pipeline "
+                "instead of handling inline. Golem runs UNDERSTAND → PLAN → BUILD → REVIEW → "
+                "VERIFY with full test/lint verification.\n"
+                "Use /golem:status to check running tasks."
+            )
         else:
             print("[Golem] Daemon active but repo not attached. Use /golem:setup to bootstrap.")
     else:
