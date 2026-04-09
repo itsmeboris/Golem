@@ -13,7 +13,19 @@ You are generating a `golem.md` file for a software project. This file tells Gol
    - Key architectural patterns
    - Coding conventions
 
-2. Generate `golem.md` following this EXACT structure:
+2. **Find ALL verification commands.** Check these sources — do not rely on just one:
+   - `Makefile` — look for `test`, `lint`, `check`, `verify` targets
+   - `package.json` scripts — `test`, `lint`, `typecheck`, `format`
+   - CI config — `.github/workflows/*.yml`, `.gitlab-ci.yml`, `Jenkinsfile`
+   - Git hooks — `.githooks/`, `.husky/`, `.pre-commit-config.yaml`
+   - `pyproject.toml` — `[tool.pytest]`, `[tool.black]`, `[tool.ruff]`, `[tool.mypy]`
+   - `CLAUDE.md` or `AGENTS.md` — may document required checks
+   - `tox.ini`, `noxfile.py` — test runners with multiple environments
+   
+   Every check that runs in CI or pre-push should appear in the verify section.
+   Missing a check means Golem could commit code that fails CI.
+
+3. Generate `golem.md` following this EXACT structure:
 
 ~~~
 # Project: <repo-name>
@@ -54,10 +66,12 @@ Long-running processes. Informational only.
 <Anything unusual the AI noticed that Golem should know>
 ~~~
 
-3. IMPORTANT:
+4. IMPORTANT:
    - The `verify` section commands will be tested during setup. Only include commands that actually work.
    - Use `format` role for format-check commands (e.g., `black --check`, `ruff format --check`)
-   - Use `lint` role for linting (e.g., `pylint`, `ruff check`, `eslint`)
+   - Use `lint` role for linting (e.g., `pylint`, `ruff check`, `eslint`, `pyflakes`, `vulture`)
    - Use `test` role for test runners (e.g., `pytest`, `jest`, `go test`)
    - Use `typecheck` role for type checking (e.g., `mypy`, `tsc --noEmit`)
    - Set realistic timeouts (30s for lint/format, 120s for tests)
+   - If a Makefile `lint` target runs 5 tools, list ALL 5 as separate verify entries — not just one
+   - If a pre-push hook runs checks, include those too
