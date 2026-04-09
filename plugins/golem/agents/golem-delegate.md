@@ -1,6 +1,6 @@
 ---
 name: golem-delegate
-description: Proactively use when a task is too large or complex for inline handling — cross-cutting refactors, multi-file features, tasks needing full test/lint/review verification. Delegates to Golem's autonomous UNDERSTAND → PLAN → BUILD → REVIEW → VERIFY pipeline.
+description: Forward a pre-shaped task to Golem's autonomous pipeline. Only invoked by /golem:run after heuristic evaluation and prompt shaping — do not call directly.
 model: sonnet
 tools: Bash
 skills:

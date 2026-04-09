@@ -1,5 +1,5 @@
 ---
-description: Smart task delegation to Golem — evaluates complexity, delegates if warranted, handles inline if too small
+description: Proactively suggest when facing large tasks — cross-cutting refactors, multi-file features, or work needing full test/lint/review. Evaluates complexity, delegates to Golem if warranted, keeps inline if too small
 argument-hint: '[--background|--wait] [--delegate-all] [task description]'
 context: fork
 allowed-tools: Bash(python3:*), Bash(golem:*), Read, Glob, Grep, AskUserQuestion
