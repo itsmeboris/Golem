@@ -73,6 +73,21 @@ def verify_commands(repo_path: str) -> dict:
         timeout = cmd_entry.get("timeout", 120)
         role = cmd_entry["role"]
 
+        # Pre-check: verify the executable exists before running
+        import shutil as _shutil
+
+        exe = cmd[0] if cmd else ""
+        if exe != sys.executable and not _shutil.which(exe):
+            all_passed = False
+            results.append({
+                "role": role,
+                "cmd": cmd,
+                "passed": False,
+                "error": f"'{exe}' not found in PATH. "
+                f"Check the command name or install the tool.",
+            })
+            continue
+
         try:
             proc = subprocess.run(
                 cmd,
