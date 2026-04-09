@@ -42,7 +42,7 @@ def _resolve_python_cmd(cmd: list[str]) -> list[str]:
     """
     if not cmd:
         return cmd
-    if cmd[0] in ("python", "python3", "python3.11", "python3.12"):
+    if re.match(r"^python[23]?(\.\d+)*$", cmd[0]):
         return [sys.executable] + cmd[1:]
     return cmd
 
